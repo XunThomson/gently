@@ -71,9 +71,15 @@
     transition: background-color var(--motion-fast), color var(--motion-fast);
 }
 
-.toolbarButton:hover {
+.toolbarButton:hover:not(:disabled) {
     background: var(--toolbar-hover-bg);
     color: var(--toolbar-hover-color);
+}
+
+.toolbarButton:disabled {
+    color: var(--text-tertiary);
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 .toolbarButton[aria-pressed='true'] {

@@ -288,6 +288,28 @@ async function main(): Promise<void> {
     actions.download.remove(addedTask.id);
     check('store: 可移除下载任务', !s().download.tasks.some((t) => t.id === addedTask.id));
 
+    /* 下载引擎：进度推进 → 完成 */
+    const runningTasks = s().download.tasks.filter((t) => t.status === 'downloading');
+    check('store: 存在下载中的任务（引擎前置条件）', runningTasks.length > 0);
+
+    const progressBefore = runningTasks[0].progress;
+    const sizeBefore = runningTasks[0].sizeText;
+    actions.download.tick();
+    const ticked = s().download.tasks.find((t) => t.id === runningTasks[0].id)!;
+    check(
+        'store: 下载引擎推进进度并刷新大小文案',
+        ticked.progress > progressBefore && ticked.sizeText !== sizeBefore,
+    );
+
+    for (let i = 0; i < 40; i += 1) actions.download.tick();
+    check('store: 下载可推进到完成', s().download.tasks.every((t) => t.status !== 'downloading'));
+    check(
+        'store: 完成后进度为 1 且清空速度',
+        s()
+            .download.tasks.filter((t) => t.status === 'done')
+            .every((t) => t.progress === 1 && !t.speedText),
+    );
+
     /* 插件切片 */
     await actions.plugin.load();
     check('store: 插件列表已加载', s().plugin.list.length > 0);

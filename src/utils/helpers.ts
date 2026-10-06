@@ -29,6 +29,10 @@ export function fmt(sec: number): string {
     return `${m}:${s}`;
 }
 
+/** 下载大小文案：已下载 / 总大小 */
+export const formatSizeMb = (doneMb: number, totalMb: number): string =>
+    `${doneMb.toFixed(1)}Mb/${totalMb.toFixed(1)}Mb`;
+
 export function matchesQuery(...fieldsAndQuery: string[]): boolean {
     const query = fieldsAndQuery[fieldsAndQuery.length - 1].trim().toLowerCase();
     if (!query) return true;

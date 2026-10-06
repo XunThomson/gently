@@ -63,6 +63,8 @@ export interface DownloadTask {
     status: DownloadStatus;
     /** 0 ~ 1 */
     progress: number;
+    /** 文件总大小（MB），用于计算已下载大小文案 */
+    totalMb: number;
     /** 已下载 / 总大小，如 3.0Mb/4.12Mb */
     sizeText: string;
     speedText?: string;

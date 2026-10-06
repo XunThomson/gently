@@ -1,5 +1,11 @@
 import {libraryService} from '../../services';
+import {formatSizeMb} from '../../utils/helpers';
 import type {DownloadActions, DownloadState, StoreCtx} from '../types';
+
+/** 每秒推进的下载进度（mock 引擎速度） */
+const PROGRESS_PER_TICK = 0.03;
+/** 曲目时长 → 文件大小（MB）的粗略估算 */
+const sizeOf = (durationSec: number) => Math.max(1, Math.round((durationSec / 30) * 10) / 10);
 
 /** 下载任务切片 */
 export function createDownloadSlice(ctx: StoreCtx) {
@@ -28,6 +34,7 @@ export function createDownloadSlice(ctx: StoreCtx) {
             const {tasks} = ctx.getState().download;
             if (tasks.some((task) => task.track.id === track.id)) return;
 
+            const totalMb = sizeOf(track.durationSec);
             patch({
                 tasks: [
                     {
@@ -35,7 +42,8 @@ export function createDownloadSlice(ctx: StoreCtx) {
                         track,
                         status: 'pending',
                         progress: 0,
-                        sizeText: `0.0Mb/${(track.durationSec / 30).toFixed(1)}Mb`,
+                        totalMb,
+                        sizeText: formatSizeMb(0, totalMb),
                     },
                     ...tasks,
                 ],
@@ -62,6 +70,30 @@ export function createDownloadSlice(ctx: StoreCtx) {
 
         clearFinished() {
             patch({tasks: ctx.getState().download.tasks.filter((t) => t.status !== 'done')});
+        },
+
+        /** 推进所有「下载中」的任务；在同一帧内批量更新，避免多次通知 */
+        tick() {
+            const {tasks} = ctx.getState().download;
+            if (!tasks.some((task) => task.status === 'downloading')) return;
+
+            patch({
+                tasks: tasks.map((task) => {
+                    if (task.status !== 'downloading') return task;
+
+                    const progress = Math.min(1, task.progress + PROGRESS_PER_TICK);
+                    const done = progress >= 1;
+                    const speedMb = (PROGRESS_PER_TICK * task.totalMb).toFixed(1);
+
+                    return {
+                        ...task,
+                        progress,
+                        status: done ? 'done' : 'downloading',
+                        sizeText: formatSizeMb(progress * task.totalMb, task.totalMb),
+                        speedText: done ? undefined : `${speedMb}Mb/s`,
+                    };
+                }),
+            });
         },
     };
 

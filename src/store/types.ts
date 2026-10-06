@@ -147,6 +147,8 @@ export interface DownloadActions {
     pause: (id: string) => void;
     resume: (id: string) => void;
     clearFinished: () => void;
+    /** 下载引擎每秒推进一步，由 useDownloadEngine 驱动 */
+    tick: () => void;
 }
 
 export interface PluginActions {

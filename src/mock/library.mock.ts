@@ -2,6 +2,7 @@ import type {DownloadTask, LocalTrack, PluginInfo, RecentTrack} from '../types';
 import {makeTrack} from './track.mock';
 import {SONG_POOL} from './base.data.mock';
 import {MOCK_SOURCE_INFO} from '../plugins/builtin/mock-source';
+import {formatSizeMb} from '../utils/helpers';
 
 /* ============================== 本地音乐 ============================== */
 
@@ -26,17 +27,17 @@ interface DownloadSeed {
     index: number;
     status: DownloadTask['status'];
     progress: number;
-    sizeText: string;
+    totalMb: number;
     speedText?: string;
 }
 
 const DOWNLOAD_SEEDS: DownloadSeed[] = [
-    {index: 0, status: 'downloading', progress: 0.73, sizeText: '3.0Mb/4.12Mb', speedText: '1.2Mb/s'},
-    {index: 1, status: 'downloading', progress: 0.12, sizeText: '0.4Mb/3.12Mb', speedText: '620Kb/s'},
-    {index: 2, status: 'paused', progress: 0.46, sizeText: '1.8Mb/3.90Mb'},
-    {index: 3, status: 'error', progress: 0.31, sizeText: '1.1Mb/3.50Mb'},
-    {index: 4, status: 'done', progress: 1, sizeText: '4.05Mb/4.05Mb'},
-    {index: 5, status: 'done', progress: 1, sizeText: '3.62Mb/3.62Mb'},
+    {index: 0, status: 'downloading', progress: 0.73, totalMb: 4.12, speedText: '1.2Mb/s'},
+    {index: 1, status: 'downloading', progress: 0.12, totalMb: 3.12, speedText: '620Kb/s'},
+    {index: 2, status: 'paused', progress: 0.46, totalMb: 3.9},
+    {index: 3, status: 'error', progress: 0.31, totalMb: 3.5},
+    {index: 4, status: 'done', progress: 1, totalMb: 4.05},
+    {index: 5, status: 'done', progress: 1, totalMb: 3.62},
 ];
 
 export const DOWNLOAD_TASKS: DownloadTask[] = DOWNLOAD_SEEDS.map((seed) => ({
@@ -44,7 +45,8 @@ export const DOWNLOAD_TASKS: DownloadTask[] = DOWNLOAD_SEEDS.map((seed) => ({
     track: makeTrack(seed.index, 'mock'),
     status: seed.status,
     progress: seed.progress,
-    sizeText: seed.sizeText,
+    totalMb: seed.totalMb,
+    sizeText: formatSizeMb(seed.progress * seed.totalMb, seed.totalMb),
     speedText: seed.speedText,
 }));
 

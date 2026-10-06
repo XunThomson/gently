@@ -23,6 +23,12 @@ export interface ToolbarProps {
     /** 悬浮小窗（置顶小尺寸）开关 */
     onCompactClick?: () => void;
     compact?: boolean;
+    /**
+     * 是否可用原生窗口控制。
+     * 浏览器 / vite dev 下没有 Tauri 宿主，按钮必须禁用，
+     * 否则会出现「点了没反应」的 UI 与效果不一致。
+     */
+    windowControlsEnabled?: boolean;
     onMinimizeClick?: () => void;
     onMaximizeClick?: () => void;
     onCloseClick?: () => void;
@@ -43,6 +49,7 @@ export function Toolbar({
     onSettingsClick,
     onCompactClick,
     compact = false,
+    windowControlsEnabled = false,
     onMinimizeClick,
     onMaximizeClick,
     onCloseClick,
@@ -55,7 +62,7 @@ export function Toolbar({
         label: string,
         icon: ReactNode,
         onClick?: () => void,
-        options: {pressed?: boolean; className?: string} = {},
+        options: {pressed?: boolean; className?: string; disabled?: boolean} = {},
     ) => (
         <button
             type="button"
@@ -63,6 +70,7 @@ export function Toolbar({
             aria-label={label}
             title={label}
             aria-pressed={options.pressed}
+            disabled={options.disabled}
             onClick={onClick}
         >
             {icon}
@@ -82,10 +90,19 @@ export function Toolbar({
 
             <div className={styles.toolbarDivider} aria-hidden="true"/>
 
-            {button(t('toolbar.pip'), <IconPip size={18}/>, onCompactClick, {pressed: compact})}
-            {button(t('toolbar.minimize'), <IconMinimize size={18}/>, onMinimizeClick)}
-            {button(t('toolbar.maximize'), <IconMaximize size={18}/>, onMaximizeClick)}
-            {button(t('toolbar.close'), <IconClose size={18}/>, onCloseClick)}
+            {button(t('toolbar.pip'), <IconPip size={18}/>, onCompactClick, {
+                pressed: compact,
+                disabled: !windowControlsEnabled,
+            })}
+            {button(t('toolbar.minimize'), <IconMinimize size={18}/>, onMinimizeClick, {
+                disabled: !windowControlsEnabled,
+            })}
+            {button(t('toolbar.maximize'), <IconMaximize size={18}/>, onMaximizeClick, {
+                disabled: !windowControlsEnabled,
+            })}
+            {button(t('toolbar.close'), <IconClose size={18}/>, onCloseClick, {
+                disabled: !windowControlsEnabled,
+            })}
         </div>
     );
 }

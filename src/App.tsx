@@ -6,6 +6,7 @@ import {Sidebar} from "./components/shell/sidebar";
 import {PlayerBar} from "./components/shell/player-bar";
 import {appRoutes, buildMenuRoutes} from "./router/meta.tsx";
 import {usePlayerEngine} from "./hooks/usePlayerEngine";
+import {useDownloadEngine} from "./hooks/useDownloadEngine";
 import {useActions} from "./store";
 import {themeConfig} from "./theme";
 import './App.css';
@@ -19,6 +20,7 @@ export default function App() {
     const {load: loadCollection} = useActions().collection;
 
     usePlayerEngine();
+    useDownloadEngine();
 
     /* 收藏与歌单是全局数据（侧边栏常驻），启动时加载一次 */
     useEffect(() => {

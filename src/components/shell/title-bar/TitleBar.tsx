@@ -2,7 +2,7 @@ import {useCallback, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
 import {useActions, useSelect} from '../../../store';
-import {catalogService, windowService} from '../../../services';
+import {catalogService, isTauri, windowService} from '../../../services';
 import {HOT_SEARCH_WORDS} from '../../../mock/search.mock';
 import {themeConfig} from '../../../theme';
 import {SearchBox, type SearchSuggestion} from '../../ui/search-box';
@@ -67,6 +67,7 @@ export function TitleBar() {
             <Toolbar
                 scheme={scheme}
                 compact={compact}
+                windowControlsEnabled={isTauri()}
                 onSchemeToggle={toggleScheme}
                 onThemeMarketClick={() => navigate('/theme')}
                 onSettingsClick={() => navigate('/setting')}
