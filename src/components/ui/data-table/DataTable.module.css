@@ -1,6 +1,7 @@
 .container {
     width: 100%;
     background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
     border: 1px solid var(--border-subtle);
     border-radius: var(--table-radius);
     color: var(--text-primary);
@@ -37,7 +38,7 @@
     color: var(--table-header-color);
     font-size: var(--table-header-font-size);
     font-weight: var(--font-weight-semibold);
-    letter-spacing: 0.02em;
+    letter-spacing: var(--table-header-spacing);
     white-space: nowrap;
     border-bottom: 1px solid var(--table-border-color);
     /* 允许 grid 子项收缩 + ellipsis 生效 */
@@ -46,7 +47,7 @@
 
 .row {
     position: relative;
-    min-height: 46px;
+    min-height: var(--table-row-min-height);
     border-bottom: 1px solid var(--table-border-color);
     cursor: pointer;
     transition: background-color var(--motion-fast);
@@ -72,8 +73,8 @@
     position: absolute;
     left: 0;
     top: 50%;
-    width: 3px;
-    height: 20px;
+    width: var(--table-indicator-width);
+    height: var(--table-indicator-height);
     transform: translateY(-50%);
     border-radius: 0 var(--radius-full) var(--radius-full) 0;
     background: var(--brand);

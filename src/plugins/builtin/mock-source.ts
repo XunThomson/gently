@@ -1,3 +1,4 @@
+import {appConfig} from '../../config/app.config';
 import {RECOMMENDED, SONG_POOL} from '../../mock/base.data.mock';
 import {makeTrack} from '../../mock/track.mock';
 import {buildChartData} from '../../utils/chart';
@@ -23,7 +24,7 @@ export const MOCK_SOURCE_INFO: PluginInfo = {
 };
 
 /** 模拟网络延迟，保证 UI 的加载态与真实数据源一致 */
-const LATENCY_MS = 160;
+const LATENCY_MS = appConfig.latency.sourceMs;
 const delay = (ms = LATENCY_MS) => new Promise<void>((r) => setTimeout(r, ms));
 
 const indexPath = (title: string) => SONG_POOL.findIndex((row) => row[0] === title);
@@ -55,7 +56,7 @@ export const mockMusicSource: MusicSourcePlugin = {
                 row[1].toLowerCase().includes(kw) ||
                 row[2].toLowerCase().includes(kw),
             )
-            .slice(0, 20)
+            .slice(0, appConfig.list.searchLimit)
             .map(({i}) => makeTrack(i, MOCK_SOURCE_INFO.id));
     },
 

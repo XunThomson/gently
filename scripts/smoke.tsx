@@ -182,6 +182,34 @@ async function main(): Promise<void> {
     const presetVars = buildCssVars(ocean, 'light');
     check('theme: 预设会改变注入的 --brand', presetVars['--brand'] === ocean.palette.brand);
 
+    /* 密度类预设：可以覆盖组件度量（行高 / 间距 / 侧边栏宽度） */
+    const compact = resolveTheme(themeConfig, 'compact');
+    const cozy = resolveTheme(themeConfig, 'cozy');
+    check(
+        'theme: 紧凑预设压缩表格行高',
+        compact.components.dataTable.rowMinHeight < themeConfig.components.dataTable.rowMinHeight,
+    );
+    check(
+        'theme: 紧凑预设压缩外壳高度',
+        compact.components.titleBar.height < themeConfig.components.titleBar.height &&
+            compact.components.playerBar.height < themeConfig.components.playerBar.height,
+    );
+    check(
+        'theme: 宽适预设放宽侧边栏与留白',
+        cozy.components.sidebar.width > themeConfig.components.sidebar.width &&
+            cozy.components.view.paddingY > themeConfig.components.view.paddingY,
+    );
+    check(
+        'theme: 密度预设未声明的字段仍继承',
+        compact.components.titleBar.logoFontSize === themeConfig.components.titleBar.logoFontSize &&
+            compact.palette.success === themeConfig.palette.success,
+    );
+    check(
+        'theme: 密度预设同样注入 CSS 变量',
+        buildCssVars(compact, 'light')['--table-row-min-height'] ===
+            `${compact.components.dataTable.rowMinHeight}px`,
+    );
+
     /* ---------------- 插件（数据源） ---------------- */
     const sources = listMusicSources();
     check('plugins: 内置源已注册', sources.length > 0);

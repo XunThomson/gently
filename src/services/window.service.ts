@@ -5,6 +5,8 @@
  * 只有在 Tauri 宿主里才会真正调用原生窗口 API（动态导入，避免无谓的体积）。
  */
 
+import {appConfig} from '../config/app.config';
+
 export const isTauri = (): boolean =>
     typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -30,11 +32,10 @@ export const windowService = {
     /** 悬浮小窗：置顶 + 缩小尺寸 */
     setCompact: (value: boolean) =>
         run(async (w) => {
+            const {LogicalSize} = await import('@tauri-apps/api/window');
+            const {compact, normal} = appConfig.window;
+            const size = value ? compact : normal;
             await w.setAlwaysOnTop(value);
-            await w.setSize(
-                value
-                    ? new (await import('@tauri-apps/api/window')).LogicalSize(420, 320)
-                    : new (await import('@tauri-apps/api/window')).LogicalSize(1180, 760),
-            );
+            await w.setSize(new LogicalSize(size.width, size.height));
         }),
 };

@@ -2,8 +2,9 @@ import {useEffect, useRef, useState, type KeyboardEvent} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
 import {useClickOutside} from '../../../hooks/useClickOutside';
+import {appConfig} from '../../../config/app.config';
 import {useActions, usePlayerState, useSelect} from '../../../store';
-import {themeConfig} from '../../../theme';
+import {useTheme} from '../../../theme';
 import type {RepeatMode} from '../../../types';
 import {fmt} from '../../../utils/helpers';
 import {
@@ -60,8 +61,9 @@ export function PlayerBar() {
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [panel]);
 
+    const {config} = useTheme();
     const {current, playing, elapsed, duration, repeat, volume} = player;
-    const progressSkin = themeConfig.components.playerBar.progressThumbSkin;
+    const progressSkin = config.components.playerBar.progressThumbSkin;
 
     const repeatLabel =
         repeat === 'one'
@@ -77,8 +79,9 @@ export function PlayerBar() {
     const togglePanel = (kind: PanelKind) => setPanel((prev) => (prev === kind ? null : kind));
 
     const handleVolumeKey = (e: KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'ArrowUp') setVolume(volume + 0.05);
-        else if (e.key === 'ArrowDown') setVolume(volume - 0.05);
+        const step = appConfig.player.volumeStep;
+        if (e.key === 'ArrowUp') setVolume(volume + step);
+        else if (e.key === 'ArrowDown') setVolume(volume - step);
     };
 
     return (

@@ -26,7 +26,7 @@
 }
 
 .row:hover {
-    background: var(--bg-hover);
+    background: var(--chart-hover-bg);
 }
 
 .rank {
@@ -39,15 +39,15 @@
 }
 
 .row:nth-child(1) .rank {
-    color: var(--danger);
+    color: var(--chart-rank-first);
 }
 
 .row:nth-child(2) .rank {
-    color: var(--warning);
+    color: var(--chart-rank-second);
 }
 
 .row:nth-child(3) .rank {
-    color: var(--success);
+    color: var(--chart-rank-third);
 }
 
 .cover {
@@ -57,7 +57,7 @@
     width: var(--chart-cover-width);
     height: var(--chart-cover-width);
     flex-shrink: 0;
-    border-radius: var(--radius-md);
+    border-radius: var(--chart-cover-radius);
     overflow: hidden;
     color: var(--brand-contrast);
     font-size: var(--font-size-sm);
@@ -140,7 +140,7 @@
 /* ---------- 播放中 ---------- */
 
 .playing {
-    background: var(--brand-soft);
+    background: var(--chart-playing-bg);
 }
 
 .playing .title,

@@ -1,9 +1,10 @@
 import {useCallback, useRef, useState, type KeyboardEvent, type PointerEvent} from 'react';
 import {useTranslation} from 'react-i18next';
+import {appConfig} from '../../../config/app.config';
 import {fmt} from '../../../utils/helpers';
 import styles from './SeekBar.module.css';
 
-const SEEK_STEP = 5;
+const SEEK_STEP = appConfig.player.seekStepSec;
 
 export interface SeekBarProps {
     elapsed: number;

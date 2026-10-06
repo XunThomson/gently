@@ -1,12 +1,11 @@
 import {useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Page} from '../../components/ui/page';
+import {appConfig} from '../../config/app.config';
 import {catalogService} from '../../services';
 import {useActions, useSelect} from '../../store';
 import type {Track} from '../../types';
 import {TrackGrid} from './components/TrackGrid';
-
-const RECOMMEND_LIMIT = 12;
 
 /** 热门推荐：只负责推荐，搜索结果已经独立为 /search 视图。 */
 export default function HotView() {
@@ -23,7 +22,7 @@ export default function HotView() {
         setLoading(true);
 
         catalogService
-            .fetchRecommend(RECOMMEND_LIMIT)
+            .fetchRecommend(appConfig.list.recommendLimit)
             .then((result) => {
                 if (!cancelled) setTracks(result);
             })

@@ -4,7 +4,7 @@ import {useNavigate} from 'react-router';
 import {useActions, useSelect} from '../../../store';
 import {catalogService, isTauri, windowService} from '../../../services';
 import {HOT_SEARCH_WORDS} from '../../../mock/search.mock';
-import {themeConfig} from '../../../theme';
+import {useTheme} from '../../../theme';
 import {SearchBox, type SearchSuggestion} from '../../ui/search-box';
 import {Logo} from './Logo';
 import {Toolbar} from './Toolbar';
@@ -28,7 +28,8 @@ export function TitleBar() {
     const scheme = useSelect((s) => s.ui.scheme);
 
     const [compact, setCompact] = useState(false);
-    const searchBox = themeConfig.components.searchBox;
+    const {config} = useTheme();
+    const searchBox = config.components.searchBox;
 
     /* 灯泡：明暗背景一键切换（主题市场只负责配色预设，互不重叠） */
     const toggleScheme = useCallback(() => {

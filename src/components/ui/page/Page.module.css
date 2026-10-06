@@ -13,7 +13,7 @@
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
-    gap: var(--space-4);
+    gap: var(--view-header-gap);
     flex-wrap: wrap;
 }
 
@@ -24,13 +24,13 @@
 .title {
     font-size: var(--view-title-size);
     font-weight: var(--view-title-weight);
-    letter-spacing: -0.02em;
+    letter-spacing: var(--view-title-spacing);
     color: var(--text-primary);
 }
 
 .subtitle {
     margin-top: var(--space-1);
-    font-size: var(--font-size-sm);
+    font-size: var(--view-subtitle-size);
     color: var(--text-tertiary);
 }
 

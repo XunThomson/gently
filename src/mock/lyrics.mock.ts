@@ -1,3 +1,4 @@
+import {appConfig} from '../config/app.config';
 import type {LyricLine, Track} from '../types';
 import {hashStr, mulberry32} from '../utils/helpers';
 
@@ -58,25 +59,24 @@ function pick(pool: string[], rand: () => number, count: number): string[] {
 
 export function makeLyrics(track: Track): LyricLine[] {
     const rand = mulberry32(hashStr(`${track.title}|${track.artist}|lyrics`));
+    const {verseLines, verseRepeatLines, outroLines, leadInSec, leadOutSec} = appConfig.lyrics;
 
     const lines: string[] = [
         INTRO,
-        ...pick(VERSES, rand, 6),
+        ...pick(VERSES, rand, verseLines),
         ...CHORUS,
-        ...pick(VERSES, rand, 4),
+        ...pick(VERSES, rand, verseRepeatLines),
         ...BRIDGE,
         ...CHORUS,
-        ...pick(VERSES, rand, 2),
+        ...pick(VERSES, rand, outroLines),
         OUTRO,
     ];
 
     const total = Math.max(90, track.durationSec);
-    const startAt = 5;
-    const endBefore = 6;
-    const step = (total - startAt - endBefore) / lines.length;
+    const step = (total - leadInSec - leadOutSec) / lines.length;
 
     return lines.map((text, index) => ({
-        time: Math.round(startAt + index * step),
+        time: Math.round(leadInSec + index * step),
         text,
     }));
 }

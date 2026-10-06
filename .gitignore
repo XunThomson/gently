@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# 体积较大的本地测试素材（见 src/assets/README.md）
+src/assets/bgc.mp4
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -106,13 +106,13 @@
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: var(--space-1);
+    gap: var(--table-action-gap);
 }
 
 .action {
-    padding: 4px 8px;
+    padding: var(--table-action-padding-y) var(--table-action-padding-x);
     border: 0;
-    border-radius: var(--radius-sm);
+    border-radius: var(--table-action-radius);
     background: none;
     font-family: inherit;
     font-size: var(--font-size-xs);

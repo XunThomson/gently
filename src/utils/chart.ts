@@ -1,5 +1,5 @@
 import { SONG_POOL } from '../mock/base.data.mock.ts';
-import { TOTAL_PER_CHART } from '../constants';
+import { appConfig } from '../config/app.config';
 import { hashStr, mulberry32 } from './helpers';
 import type { ChartType, SongRow } from '../types';
 
@@ -14,7 +14,7 @@ export function buildChartData(chart: ChartType, key: string): SongRow[] {
 
     const baseHeat = 88 + (hashStr(key) % 12);
 
-    return arr.slice(0, TOTAL_PER_CHART).map((s, i) => {
+    return arr.slice(0, appConfig.list.chartSize).map((s, i) => {
         const noise = Math.floor(rand() * 4);
         const heat = Math.max(50, Math.round(baseHeat - i * 1.8 - noise));
         return { title: s[0], artist: s[1], album: s[2], dur: s[3], heat };

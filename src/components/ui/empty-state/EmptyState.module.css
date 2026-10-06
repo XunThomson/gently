@@ -4,23 +4,23 @@
     align-items: center;
     justify-content: center;
     gap: var(--space-1);
-    padding: var(--space-10) var(--space-5);
+    padding: var(--empty-padding-y) var(--empty-padding-x);
     text-align: center;
     color: var(--text-tertiary);
 }
 
 .icon {
-    color: var(--border-strong);
-    margin-bottom: var(--space-2);
+    color: var(--empty-icon-color);
+    margin-bottom: var(--empty-icon-gap);
 }
 
 .title {
-    font-size: var(--font-size-sm);
+    font-size: var(--empty-title-font-size);
     font-weight: var(--font-weight-semibold);
     color: var(--text-secondary);
 }
 
 .hint {
-    font-size: var(--font-size-xs);
+    font-size: var(--empty-hint-font-size);
     color: var(--text-tertiary);
 }

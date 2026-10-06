@@ -36,6 +36,8 @@ export interface SchemeTokens {
     elevated: string;
     /** 动态背景开启时外壳使用的半透明表面 */
     surfaceTranslucent: string;
+    /** 动态背景之上的遮罩（跟随明暗方案，保证文字可读） */
+    videoScrim: string;
     hover: string;
     active: string;
     textPrimary: string;
@@ -156,8 +158,19 @@ export interface ComponentTokens {
         hoverBg: string;
         activeTextColor: string;
         activeBg: string;
+        /** 选中项字重 */
+        activeWeight: number;
         sectionTitleFontSize: number;
         sectionTitleColor: string;
+        /** 分组之间的间距 */
+        groupGap: number;
+        countFontSize: number;
+        /** 选中项左侧指示条 */
+        indicatorWidth: number;
+        indicatorHeight: number;
+        /** 歌单行悬浮操作按钮尺寸 */
+        rowActionSize: number;
+        emptyFontSize: number;
     };
     playerBar: {
         height: number;
@@ -165,6 +178,11 @@ export interface ComponentTokens {
         coverSize: number;
         coverRadius: string;
         controlSize: number;
+        titleFontSize: number;
+        metaFontSize: number;
+        chipFontSize: number;
+        iconButtonSize: number;
+        volumeWidth: number;
         /** 默认进度条高度（默认不显示焦点） */
         progressHeight: number;
         /** 悬浮 / 拖拽时进度条高度（bilibili 式放大） */
@@ -175,8 +193,78 @@ export interface ComponentTokens {
         progressTrackColor: string;
         progressFillColor: string;
         progressGlowColor: string;
-        /** 播放列表 / 功能抽屉最大高度 */
-        panelMaxHeight: number;
+    };
+    /** 播放条上方的抽屉（播放列表 / 更多功能） */
+    panel: {
+        width: number;
+        maxHeight: number;
+        padding: number;
+        radius: string;
+        itemPaddingX: number;
+        itemPaddingY: number;
+        itemRadius: string;
+        indexWidth: number;
+        chipPaddingX: number;
+        chipPaddingY: number;
+    };
+    button: {
+        radius: string;
+        iconGap: number;
+        heightSm: number;
+        heightMd: number;
+        paddingXSm: number;
+        paddingXMd: number;
+        fontSizeSm: number;
+        fontSizeMd: number;
+    };
+    lyrics: {
+        fontSize: number;
+        activeFontSize: number;
+        lineGap: number;
+        paddingX: number;
+        paddingY: number;
+        inactiveColor: string;
+        hoverColor: string;
+        activeColor: string;
+        activeWeight: number;
+    };
+    emptyState: {
+        paddingX: number;
+        paddingY: number;
+        iconGap: number;
+        iconColor: string;
+        titleFontSize: number;
+        hintFontSize: number;
+    };
+    radioGroup: {
+        gap: number;
+        fontSize: number;
+        underlineHeight: number;
+        underlineOffset: number;
+        underlineShortWidth: string;
+        color: string;
+        hoverColor: string;
+        activeColor: string;
+    };
+    /** 榜单顶部今日推荐卡 */
+    hero: {
+        paddingX: number;
+        paddingY: number;
+        coverSize: number;
+        coverRadius: string;
+        discSize: number;
+        discDotSize: number;
+        titleFontSize: number;
+        tagFontSize: number;
+        glowColor: string;
+    };
+    datePicker: {
+        /** 月历单元格尺寸（日历格宽度与高度） */
+        cellSize: number;
+        panelPadding: number;
+        /** 月 / 年胶囊高度 */
+        chipHeight: number;
+        chipPaddingX: number;
     };
     /** 动态背景（视频） */
     background: {
@@ -184,10 +272,15 @@ export interface ComponentTokens {
         opacity: number;
         blurPx: number;
         scrim: string;
+        /** 外壳玻璃化的背景模糊半径 */
+        surfaceBlurPx: number;
     };
     view: {
         titleFontSize: number;
         titleFontWeight: number;
+        titleSpacing: string;
+        subtitleFontSize: number;
+        headerGap: number;
         paddingX: number;
         paddingY: number;
         gap: number;
@@ -203,12 +296,20 @@ export interface ComponentTokens {
         fontSize: number;
         headerFontSize: number;
         headerColor: string;
+        headerSpacing: string;
         cellPaddingX: number;
         cellPaddingY: number;
+        rowMinHeight: number;
         radius: string;
         rowHoverBg: string;
         borderColor: string;
         emptyPaddingY: number;
+        indicatorWidth: number;
+        indicatorHeight: number;
+        actionGap: number;
+        actionPaddingX: number;
+        actionPaddingY: number;
+        actionRadius: string;
     };
     card: {
         radius: string;
@@ -217,15 +318,26 @@ export interface ComponentTokens {
         coverRatio: number;
         titleFontSize: number;
         metaFontSize: number;
+        initialFontSize: number;
+        playSize: number;
+        playInset: number;
+        /** 悬浮上移距离，如 -3px */
+        hoverLift: string;
     };
     chart: {
         rankColumnWidth: number;
         coverColumnWidth: number;
+        coverRadius: string;
         heatColumnWidth: number;
         durationColumnWidth: number;
         rowPaddingY: number;
         rowPaddingX: number;
         heatBarHeight: number;
+        hoverBg: string;
+        playingBg: string;
+        rankFirstColor: string;
+        rankSecondColor: string;
+        rankThirdColor: string;
     };
 }
 
@@ -244,8 +356,16 @@ export interface ThemeConfig {
 }
 
 /**
+ * 组件度量的局部覆盖：每个组件组只声明要改的字段。
+ * 允许主题市场预设调整密度 / 布局，而不只是配色。
+ */
+export type ComponentOverrides = {
+    [K in keyof ComponentTokens]?: Partial<ComponentTokens[K]>;
+};
+
+/**
  * 主题市场预设（`src/config/theme/presets.json`）。
- * 只覆盖品牌色与可选的配色板字段，其余元数据继承主题配置。
+ * 可覆盖品牌色、配色板与组件度量；未声明的字段继承主题配置。
  */
 export interface ThemePreset {
     id: string;
@@ -259,6 +379,8 @@ export interface ThemePreset {
         light?: Partial<SchemeTokens>;
         dark?: Partial<SchemeTokens>;
     };
+    /** 可选：覆盖组件度量（间距 / 行高 / 尺寸），实现「密度」类主题 */
+    components?: ComponentOverrides;
 }
 
 /** CSS 变量字典：--name → value */

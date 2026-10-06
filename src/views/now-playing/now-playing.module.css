@@ -107,6 +107,7 @@
     height: min(64vh, 580px);
     padding: var(--space-5);
     background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-xl);
 }

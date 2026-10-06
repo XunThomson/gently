@@ -31,21 +31,26 @@ types/ utils/                ← 横切：领域模型与纯函数
 
 ## 2. 主题与样式元数据
 
-**唯一来源**：`src/config/theme/theme.config.json`（基础上）+ `src/config/theme/presets.json`（主题市场预设）
+**三个配置文件的唯一分工**（索引见 `src/config/README.md`）：
+
+| 文件 | 内容 | 生效时机 |
+|---|---|---|
+| `src/config/theme/theme.config.json` | 全部**样式元数据**：palette / scheme / typography / radius / spacing / shadow / motion / zIndex + 18 个组件组度量 | 运行时（注入 CSS 变量） |
+| `src/config/theme/presets.json` | 主题市场预设：可覆盖 palette / scheme / **components**（密度与布局） | 运行时（切换预设立即生效） |
+| `src/config/app.config.ts` | **行为与规模**：窗口、播放器步长、列表条数、下载引擎、mock 规模与延迟 | 构建期 |
 
 ```
-theme.config.json          presets.json
-   ├── palette                ├── palette（品牌色覆盖）
-   ├── scheme.light|dark      ├── scheme.light|dark（可选覆盖）
-   ├── typography             └── swatches（市场预览色块）
-   ├── radius / spacing
-   ├── shadow / motion
-   ├── zIndex
-   └── components         组件度量：titleBar / searchBox / toolbar / sidebar /
-                          playerBar / view / section / dataTable / card / chart
-        ↓  resolveTheme(config, presetId)      ← 预设叠加（只覆盖显式声明的字段）
+theme.config.json          presets.json                app.config.ts
+   ├── palette                ├── palette（覆盖）           ├── window
+   ├── scheme.light|dark      ├── scheme（覆盖）            ├── player（步长/阈值）
+   ├── typography             ├── components（密度覆盖）    ├── list（条数上限）
+   ├── radius / spacing       └── swatches（预览色块）      ├── download / lyrics
+   ├── shadow / motion                                     ├── mock（数据规模）
+   ├── zIndex                                              └── latency
+   └── components（18 组）
+        ↓  resolveTheme(config, presetId)      ← 按组浅合并，未声明字段继承
         ↓  buildCssVars(config, scheme)
-   CSS 变量（--title-bar-height、--search-box-radius、--table-row-hover-bg …）
+   CSS 变量（--table-row-min-height、--lyrics-active-font-size、--player-progress-thumb-size …）
         ↓  ThemeProvider / applyInitialTheme()
    <html style="--…"> + data-theme + data-preset + color-scheme
 ```
@@ -53,9 +58,10 @@ theme.config.json          presets.json
 规则：
 
 - CSS Module 只写 `var(--token)`，**不写字面量颜色/尺寸**。
-- 需要新的可见样式 → 先在 `theme.config.json` 加字段，再在 `tokens.ts` 映射，再消费。
-- 组件 token 支持 `{text.primary}` / `{brand.soft}` 形式的语义引用，由 `resolveTokenRef` 解析。
+- 需要新的可见样式 → 先在 `theme.config.json` 加字段，再在 `tokens.ts` 映射，再消费（步骤见 `src/config/README.md`）。
+- 组件 token 支持 `{text.primary}` / `{brand.soft}` / `{status.danger}` / `{scrim}` 形式的语义引用，由 `resolveTokenRef` 解析。
 - 深浅色不写 `@media (prefers-color-scheme)`，由 provider 换 scheme 并重写变量。
+- **外壳读取解析后的主题**（`useTheme().config`），因此密度预设能改变标题栏 / 侧边栏 / 播放条尺寸。
 
 ### 两个入口，职责不重叠
 

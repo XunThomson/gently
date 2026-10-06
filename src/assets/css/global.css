@@ -56,14 +56,16 @@ body {
 }
 
 /* ----- 外壳表面层 -----
-   默认使用不透明表面；开启动态背景时切换为半透明，
-   组件只需消费 --surface-chrome，无需感知背景是否开启。 */
+   默认使用不透明表面；开启动态背景时切换为半透明 + 背景模糊（玻璃化），
+   组件只需消费 --surface-chrome / --surface-blur，无需感知背景是否开启。 */
 :root {
     --surface-chrome: var(--bg-surface);
+    --surface-blur: none;
 }
 
 html[data-video-bg='on'] {
     --surface-chrome: var(--bg-surface-translucent);
+    --surface-blur: blur(var(--bg-surface-blur)) saturate(140%);
 }
 
 /* ----- 排版 ----- */

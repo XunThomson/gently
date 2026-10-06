@@ -24,7 +24,8 @@
       "surfaceAlt": "#f3f4f6",
       "subtle": "#f7f8fa",
       "elevated": "#ffffff",
-      "surfaceTranslucent": "rgba(255, 255, 255, 0.72)",
+      "surfaceTranslucent": "rgba(255, 255, 255, 0.82)",
+      "videoScrim": "rgba(244, 246, 250, 0.55)",
       "hover": "rgba(0, 0, 0, 0.04)",
       "active": "rgba(0, 0, 0, 0.08)",
       "textPrimary": "#1a1a1a",
@@ -43,7 +44,8 @@
       "surfaceAlt": "#2a2a2a",
       "subtle": "#141414",
       "elevated": "#2a2a2a",
-      "surfaceTranslucent": "rgba(24, 24, 27, 0.68)",
+      "surfaceTranslucent": "rgba(20, 20, 24, 0.74)",
+      "videoScrim": "rgba(8, 10, 14, 0.52)",
       "hover": "rgba(255, 255, 255, 0.06)",
       "active": "rgba(255, 255, 255, 0.10)",
       "textPrimary": "#ffffff",
@@ -177,8 +179,15 @@
       "hoverBg": "{bg.hover}",
       "activeTextColor": "{brand}",
       "activeBg": "{brand.soft}",
+      "activeWeight": 500,
       "sectionTitleFontSize": 12,
-      "sectionTitleColor": "{text.tertiary}"
+      "sectionTitleColor": "{text.tertiary}",
+      "groupGap": 16,
+      "countFontSize": 12,
+      "indicatorWidth": 3,
+      "indicatorHeight": 16,
+      "rowActionSize": 24,
+      "emptyFontSize": 12
     },
 
     "playerBar": {
@@ -187,26 +196,109 @@
       "coverSize": 48,
       "coverRadius": "12px",
       "controlSize": 38,
+      "titleFontSize": 14,
+      "metaFontSize": 12,
+      "chipFontSize": 10,
+      "iconButtonSize": 32,
+      "volumeWidth": 84,
       "progressHeight": 3,
       "progressHoverHeight": 7,
       "progressThumbSize": 12,
       "progressThumbSkin": "glow",
       "progressTrackColor": "{border.subtle}",
       "progressFillColor": "{brand}",
-      "progressGlowColor": "{brand.soft}",
-      "panelMaxHeight": 340
+      "progressGlowColor": "{brand.soft}"
+    },
+
+    "panel": {
+      "width": 340,
+      "maxHeight": 340,
+      "padding": 16,
+      "radius": "14px",
+      "itemPaddingX": 8,
+      "itemPaddingY": 8,
+      "itemRadius": "6px",
+      "indexWidth": 20,
+      "chipPaddingX": 12,
+      "chipPaddingY": 5
+    },
+
+    "button": {
+      "radius": "10px",
+      "iconGap": 8,
+      "heightSm": 30,
+      "heightMd": 36,
+      "paddingXSm": 12,
+      "paddingXMd": 16,
+      "fontSizeSm": 12,
+      "fontSizeMd": 14
+    },
+
+    "lyrics": {
+      "fontSize": 15,
+      "activeFontSize": 17,
+      "lineGap": 14,
+      "paddingX": 20,
+      "paddingY": 40,
+      "inactiveColor": "{text.tertiary}",
+      "hoverColor": "{text.secondary}",
+      "activeColor": "{brand}",
+      "activeWeight": 600
+    },
+
+    "emptyState": {
+      "paddingX": 20,
+      "paddingY": 40,
+      "iconGap": 8,
+      "iconColor": "{border.strong}",
+      "titleFontSize": 14,
+      "hintFontSize": 12
+    },
+
+    "radioGroup": {
+      "gap": 24,
+      "fontSize": 16,
+      "underlineHeight": 2,
+      "underlineOffset": 4,
+      "underlineShortWidth": "50%",
+      "color": "{text.secondary}",
+      "hoverColor": "{text.primary}",
+      "activeColor": "{brand}"
+    },
+
+    "hero": {
+      "paddingX": 30,
+      "paddingY": 26,
+      "coverSize": 150,
+      "coverRadius": "18px",
+      "discSize": 56,
+      "discDotSize": 12,
+      "titleFontSize": 26,
+      "tagFontSize": 11.5,
+      "glowColor": "{brand.soft}"
+    },
+
+    "datePicker": {
+      "cellSize": 32,
+      "panelPadding": 8,
+      "chipHeight": 30,
+      "chipPaddingX": 8
     },
 
     "background": {
       "enabled": true,
       "opacity": 0.55,
       "blurPx": 0,
-      "scrim": "rgba(8, 10, 14, 0.42)"
+      "scrim": "{scrim}",
+      "surfaceBlurPx": 22
     },
 
     "view": {
       "titleFontSize": 26,
       "titleFontWeight": 700,
+      "titleSpacing": "-0.02em",
+      "subtitleFontSize": 13,
+      "headerGap": 16,
       "paddingX": 28,
       "paddingY": 24,
       "gap": 20,
@@ -224,12 +316,20 @@
       "fontSize": 13.5,
       "headerFontSize": 12,
       "headerColor": "{text.tertiary}",
+      "headerSpacing": "0.02em",
       "cellPaddingX": 18,
       "cellPaddingY": 11,
+      "rowMinHeight": 46,
       "radius": "14px",
       "rowHoverBg": "{bg.hover}",
       "borderColor": "{border.subtle}",
-      "emptyPaddingY": 48
+      "emptyPaddingY": 48,
+      "indicatorWidth": 3,
+      "indicatorHeight": 20,
+      "actionGap": 4,
+      "actionPaddingX": 8,
+      "actionPaddingY": 4,
+      "actionRadius": "6px"
     },
 
     "card": {
@@ -238,17 +338,27 @@
       "minWidth": 168,
       "coverRatio": 1,
       "titleFontSize": 14,
-      "metaFontSize": 12.5
+      "metaFontSize": 12.5,
+      "initialFontSize": 26,
+      "playSize": 34,
+      "playInset": 9,
+      "hoverLift": "-3px"
     },
 
     "chart": {
       "rankColumnWidth": 34,
       "coverColumnWidth": 44,
+      "coverRadius": "10px",
       "heatColumnWidth": 110,
       "durationColumnWidth": 52,
       "rowPaddingY": 11,
       "rowPaddingX": 18,
-      "heatBarHeight": 4
+      "heatBarHeight": 4,
+      "hoverBg": "{bg.hover}",
+      "playingBg": "{brand.soft}",
+      "rankFirstColor": "{status.danger}",
+      "rankSecondColor": "{status.warning}",
+      "rankThirdColor": "{status.success}"
     }
   }
 }

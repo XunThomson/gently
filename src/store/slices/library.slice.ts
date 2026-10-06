@@ -1,3 +1,4 @@
+import {appConfig} from '../../config/app.config';
 import {libraryService} from '../../services';
 import type {LibraryActions, LibraryState, StoreCtx} from '../types';
 
@@ -28,14 +29,14 @@ export function createLibrarySlice(ctx: StoreCtx) {
             patch({query});
         },
 
-        /** 播放即写入最近播放：按 id 去重后置顶，最多保留 100 条 */
+        /** 播放即写入最近播放：按 id 去重后置顶，条数上限由 appConfig 控制 */
         recordPlay(track) {
             const {recent} = ctx.getState().library;
             const prev = recent.find((r) => r.id === track.id);
             const next = [
                 {...track, playedAt: Date.now(), playCount: (prev?.playCount ?? 0) + 1},
                 ...recent.filter((r) => r.id !== track.id),
-            ].slice(0, 100);
+            ].slice(0, appConfig.list.recentLimit);
             patch({recent: next});
         },
 

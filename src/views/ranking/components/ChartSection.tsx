@@ -3,7 +3,7 @@ import {useTranslation} from 'react-i18next';
 import {Button} from '../../../components/ui/button';
 import {IconChevronDown} from '../../../components/ui/icon';
 import {SectionHeader} from '../../../components/ui/section-header';
-import {DEFAULT_VISIBLE} from '../../../constants';
+import {appConfig} from '../../../config/app.config';
 import {useActions, useRankingState, useSelect} from '../../../store';
 import {formatRange, toDateKey} from '../../../utils/date';
 import {hashStr, matchesQuery} from '../../../utils/helpers';
@@ -15,6 +15,7 @@ import styles from './ChartSection.module.css';
 
 const CHART_TYPES: ChartType[] = ['hot', 'new', 'rise', 'origin'];
 const PERIODS: Period[] = ['day', 'week', 'month', 'year'];
+const DEFAULT_VISIBLE = appConfig.list.chartVisible;
 
 /**
  * 榜单区块：查询条件（榜单类型 / 周期 / 时间）与列表。

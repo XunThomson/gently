@@ -139,7 +139,6 @@ export interface RankingActions {
     setChart: (chart: ChartType) => Promise<void>;
     setPeriod: (period: Period) => Promise<void>;
     setDate: (date: DateSelection) => Promise<void>;
-    setWeekStart: (weekStart: DateSelection) => Promise<void>;
     toggleExpanded: () => void;
     setQuery: (query: string) => void;
     /** 按当前查询条件拉取榜单 */

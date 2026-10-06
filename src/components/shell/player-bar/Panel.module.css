@@ -5,13 +5,13 @@
     right: var(--player-bar-padding-x);
     bottom: 100%;
     z-index: var(--z-dropdown);
-    width: 340px;
-    max-height: var(--player-panel-max-height);
+    width: var(--panel-width);
+    max-height: var(--panel-max-height);
     overflow-y: auto;
-    padding: var(--space-4);
+    padding: var(--panel-padding);
     background: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
+    border-radius: var(--panel-radius);
     box-shadow: var(--shadow-panel);
     animation: panelIn var(--motion-fast);
 }
@@ -70,9 +70,9 @@
     align-items: center;
     gap: var(--space-3);
     width: 100%;
-    padding: var(--space-2) var(--space-2);
+    padding: var(--panel-item-padding-y) var(--panel-item-padding-x);
     border: 0;
-    border-radius: var(--radius-sm);
+    border-radius: var(--panel-item-radius);
     background: none;
     font-family: inherit;
     text-align: left;
@@ -90,7 +90,7 @@
 
 .index {
     flex: none;
-    width: 20px;
+    width: var(--panel-index-width);
     font-size: var(--font-size-xs);
     color: var(--text-tertiary);
     font-variant-numeric: tabular-nums;
@@ -176,7 +176,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
-    padding: 5px 12px;
+    padding: var(--panel-chip-padding-y) var(--panel-chip-padding-x);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-full);
     background: var(--bg-surface);

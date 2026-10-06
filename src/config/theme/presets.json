@@ -90,6 +90,53 @@
         "light": { "app": "#f4f4f5", "surface": "#ffffff", "surfaceAlt": "#e9e9ec", "subtle": "#fafafa" },
         "dark": { "app": "#0a0a0b", "surface": "#17171a", "surfaceAlt": "#232327", "subtle": "#121215" }
       }
+    },
+    {
+      "id": "compact",
+      "name": "紧凑",
+      "description": "压缩行高与间距，一屏看到更多内容",
+      "author": "Gently",
+      "swatches": ["#6b4eff", "#1b1b1f", "#f2f2f5"],
+      "palette": {
+        "brand": "#6b4eff",
+        "brandHover": "#5c3fe8",
+        "brandSoft": "rgba(107, 78, 255, 0.10)",
+        "brandContrast": "#ffffff"
+      },
+      "components": {
+        "titleBar": { "height": 54, "paddingX": 14 },
+        "sidebar": { "width": 208, "itemHeight": 34, "itemGap": 8, "fontSize": 13, "groupGap": 12 },
+        "playerBar": { "height": 72, "coverSize": 42, "iconButtonSize": 28 },
+        "view": { "paddingY": 16, "paddingX": 20, "gap": 14, "titleFontSize": 22, "headerGap": 12 },
+        "section": { "marginBottom": 22 },
+        "dataTable": { "rowMinHeight": 38, "cellPaddingY": 8, "fontSize": 13 },
+        "card": { "gap": 14, "minWidth": 148 },
+        "chart": { "rowPaddingY": 8, "coverColumnWidth": 38, "heatColumnWidth": 96 },
+        "panel": { "width": 320, "itemPaddingY": 6 }
+      }
+    },
+    {
+      "id": "cozy",
+      "name": "宽适",
+      "description": "放宽留白与行高，长时间浏览更放松",
+      "author": "Gently",
+      "swatches": ["#0ea5e9", "#10202b", "#eef7fb"],
+      "palette": {
+        "brand": "#0ea5e9",
+        "brandHover": "#0284c7",
+        "brandSoft": "rgba(14, 165, 233, 0.12)",
+        "brandContrast": "#ffffff"
+      },
+      "components": {
+        "sidebar": { "width": 260, "itemHeight": 42, "itemGap": 12, "fontSize": 14, "groupGap": 20 },
+        "playerBar": { "height": 92, "coverSize": 56, "controlSize": 42 },
+        "view": { "paddingY": 32, "paddingX": 36, "gap": 26, "titleFontSize": 30 },
+        "section": { "marginBottom": 40 },
+        "dataTable": { "rowMinHeight": 54, "cellPaddingY": 14 },
+        "card": { "gap": 26, "minWidth": 184 },
+        "chart": { "rowPaddingY": 14, "coverColumnWidth": 50 },
+        "panel": { "width": 380, "maxHeight": 400, "itemPaddingY": 10 }
+      }
     }
   ]
 }

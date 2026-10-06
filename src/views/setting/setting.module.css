@@ -5,6 +5,7 @@
     padding: var(--space-5);
     margin-bottom: var(--space-4);
     background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
 }

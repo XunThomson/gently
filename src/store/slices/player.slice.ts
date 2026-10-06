@@ -1,3 +1,4 @@
+import {appConfig} from '../../config/app.config';
 import {audioEngine, catalogService, libraryService} from '../../services';
 import type {NowPlaying, Track} from '../../types';
 import type {PlayerActions, PlayerState, StoreCtx} from '../types';
@@ -12,7 +13,7 @@ export function createPlayerSlice(ctx: StoreCtx) {
         queue: [],
         index: -1,
         repeat: 'off',
-        volume: 0.8,
+        volume: appConfig.player.defaultVolume,
         elapsed: 0,
         duration: 0,
         lyrics: [],
@@ -122,8 +123,8 @@ export function createPlayerSlice(ctx: StoreCtx) {
         prev() {
             const {elapsed, current} = ctx.getState().player;
             if (!current) return;
-            // 播放超过 3 秒时先回到开头
-            if (elapsed > 3) {
+            // 播放超过阈值时先回到开头
+            if (elapsed > appConfig.player.restartThresholdSec) {
                 actions.seek(0);
                 return;
             }

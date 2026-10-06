@@ -5,6 +5,9 @@ import type {RankingActions, RankingState, StoreCtx} from '../types';
 /**
  * 榜单切片：查询条件 + 榜单数据。
  * 条件变化后由 `load()` 统一从曲库门面拉取。
+ *
+ * 周榜按产品约定只展示「本周」，因此 `weekStart` 固定为初始化时的本周一，
+ * 不提供修改入口（对应的 action 未实现，避免留下无人调用的 API）。
  */
 export function createRankingSlice(ctx: StoreCtx) {
     const state: RankingState = {
@@ -56,10 +59,6 @@ export function createRankingSlice(ctx: StoreCtx) {
         },
         setDate(date) {
             patch({date, expanded: false});
-            return load();
-        },
-        setWeekStart(weekStart) {
-            patch({weekStart, expanded: false});
             return load();
         },
         toggleExpanded() {

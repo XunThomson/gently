@@ -5,6 +5,7 @@
     flex-shrink: 0;
     height: var(--player-bar-height);
     background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
     border-top: 1px solid var(--border-subtle);
 }
 
@@ -66,7 +67,7 @@
     background: none;
     color: var(--text-primary);
     font-family: inherit;
-    font-size: var(--font-size-sm);
+    font-size: var(--player-title-font-size);
     font-weight: var(--font-weight-semibold);
     letter-spacing: -0.01em;
     text-align: left;
@@ -93,7 +94,7 @@
 }
 
 .artist {
-    font-size: var(--font-size-xs);
+    font-size: var(--player-meta-font-size);
     color: var(--text-tertiary);
     white-space: nowrap;
     overflow: hidden;
@@ -112,7 +113,7 @@
     border-radius: var(--radius-full);
     background: var(--bg-surface-alt);
     color: var(--text-tertiary);
-    font-size: 10px;
+    font-size: var(--player-chip-font-size);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
@@ -219,8 +220,8 @@
 }
 
 .iconBtn {
-    width: 32px;
-    height: 32px;
+    width: var(--player-icon-button-size);
+    height: var(--player-icon-button-size);
     display: grid;
     place-items: center;
     flex: none;
@@ -253,7 +254,7 @@
 }
 
 .volumeRange {
-    width: 84px;
+    width: var(--player-volume-width);
     accent-color: var(--brand);
     cursor: pointer;
 }

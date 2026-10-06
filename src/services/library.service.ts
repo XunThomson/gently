@@ -1,6 +1,7 @@
 import {DOWNLOAD_TASKS, INSTALLED_PLUGINS, LOCAL_TRACKS, RECENT_TRACKS} from '../mock/library.mock';
 import {FAVORITE_TRACKS, PLAYLISTS} from '../mock/collection.mock';
 import {makeLyrics} from '../mock/lyrics.mock';
+import {appConfig} from '../config/app.config';
 import type {DownloadTask, LocalTrack, LyricLine, Playlist, PluginInfo, RecentTrack, Track} from '../types';
 
 /**
@@ -10,7 +11,8 @@ import type {DownloadTask, LocalTrack, LyricLine, Playlist, PluginInfo, RecentTr
  * 只需替换本文件的实现，UI 与 store 无需改动。
  */
 
-const delay = (ms = 120) => new Promise<void>((r) => setTimeout(r, ms));
+const delay = (ms: number = appConfig.latency.libraryMs) =>
+    new Promise<void>((r) => setTimeout(r, ms));
 
 export const libraryService = {
     async loadLocal(): Promise<LocalTrack[]> {
@@ -39,7 +41,7 @@ export const libraryService = {
     },
 
     async loadLyrics(track: Track): Promise<LyricLine[]> {
-        await delay(80);
+        await delay(appConfig.latency.lyricsMs);
         return makeLyrics(track);
     },
 };

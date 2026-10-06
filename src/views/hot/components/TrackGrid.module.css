@@ -23,7 +23,7 @@
     position: relative;
     display: grid;
     place-items: center;
-    aspect-ratio: 1;
+    aspect-ratio: var(--card-cover-ratio);
     margin-bottom: var(--space-3);
     border-radius: var(--card-radius);
     overflow: hidden;
@@ -33,24 +33,24 @@
 }
 
 .initial {
-    font-size: 26px;
+    font-size: var(--card-initial-size);
     font-weight: var(--font-weight-bold);
     opacity: 0.92;
 }
 
 .card:hover .cover {
-    transform: translateY(-3px);
+    transform: translateY(var(--card-hover-lift));
     box-shadow: var(--shadow-lg);
 }
 
 .play {
     position: absolute;
-    right: 9px;
-    bottom: 9px;
+    right: var(--card-play-inset);
+    bottom: var(--card-play-inset);
     display: grid;
     place-items: center;
-    width: 34px;
-    height: 34px;
+    width: var(--card-play-size);
+    height: var(--card-play-size);
     border-radius: var(--radius-full);
     background: var(--bg-elevated);
     color: var(--brand);

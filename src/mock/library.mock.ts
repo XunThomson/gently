@@ -2,24 +2,33 @@ import type {DownloadTask, LocalTrack, PluginInfo, RecentTrack} from '../types';
 import {makeTrack} from './track.mock';
 import {SONG_POOL} from './base.data.mock';
 import {MOCK_SOURCE_INFO} from '../plugins/builtin/mock-source';
+import {appConfig} from '../config/app.config';
 import {formatSizeMb} from '../utils/helpers';
 
 /* ============================== 本地音乐 ============================== */
 
-export const LOCAL_TRACKS: LocalTrack[] = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({
-    ...makeTrack(i, 'local'),
-    path: `D:/Music/${SONG_POOL[i][1]} - ${SONG_POOL[i][0]}.flac`,
-    sizeText: `${(8 + (i % 5) * 1.7).toFixed(1)} MB`,
-    addedAt: Date.now() - i * 86400000,
-}));
+const LOCAL_INDEXES = [0, 1, 2, 3, 4, 5, 6, 7];
+
+export const LOCAL_TRACKS: LocalTrack[] = LOCAL_INDEXES.slice(0, appConfig.mock.localTracks).map(
+    (i) => ({
+        ...makeTrack(i, 'local'),
+        path: `D:/Music/${SONG_POOL[i][1]} - ${SONG_POOL[i][0]}.flac`,
+        sizeText: `${(8 + (i % 5) * 1.7).toFixed(1)} MB`,
+        addedAt: Date.now() - i * 86400000,
+    }),
+);
 
 /* ============================== 最近播放 ============================== */
 
-export const RECENT_TRACKS: RecentTrack[] = [3, 0, 7, 2, 9, 5].map((i, order) => ({
-    ...makeTrack(i, 'mock'),
-    playedAt: Date.now() - order * 3600_000,
-    playCount: 6 - order,
-}));
+const RECENT_INDEXES = [3, 0, 7, 2, 9, 5];
+
+export const RECENT_TRACKS: RecentTrack[] = RECENT_INDEXES.slice(0, appConfig.mock.recentTracks).map(
+    (i, order) => ({
+        ...makeTrack(i, 'mock'),
+        playedAt: Date.now() - order * 3600_000,
+        playCount: 6 - order,
+    }),
+);
 
 /* ============================== 下载任务 ============================== */
 
@@ -40,7 +49,10 @@ const DOWNLOAD_SEEDS: DownloadSeed[] = [
     {index: 5, status: 'done', progress: 1, totalMb: 3.62},
 ];
 
-export const DOWNLOAD_TASKS: DownloadTask[] = DOWNLOAD_SEEDS.map((seed) => ({
+export const DOWNLOAD_TASKS: DownloadTask[] = DOWNLOAD_SEEDS.slice(
+    0,
+    appConfig.mock.downloadTasks,
+).map((seed) => ({
     id: `dl:${seed.index}`,
     track: makeTrack(seed.index, 'mock'),
     status: seed.status,

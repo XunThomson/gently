@@ -1,4 +1,5 @@
 import {useEffect} from 'react';
+import {appConfig} from '../config/app.config';
 import {useActions, useSelect} from '../store';
 
 /**
@@ -13,7 +14,7 @@ export function usePlayerEngine(): void {
 
     useEffect(() => {
         if (!playing || playable) return;
-        const id = window.setInterval(tick, 1000);
+        const id = window.setInterval(tick, appConfig.player.fallbackTickMs);
         return () => window.clearInterval(id);
     }, [playing, playable, tick]);
 }

@@ -10,15 +10,16 @@ import {usePlayerEngine} from "./hooks/usePlayerEngine";
 import {useAudioEngine} from "./hooks/useAudioEngine";
 import {useDownloadEngine} from "./hooks/useDownloadEngine";
 import {useActions} from "./store";
-import {themeConfig} from "./theme";
+import {useTheme} from "./theme";
 import './App.css';
 
 /**
  * 应用外壳：动态背景 / 标题栏 / 侧边导航 + 路由内容 / 播放条。
- * 布局尺寸全部来自 theme.config.json，不在此硬编码。
+ * 布局尺寸取自「主题配置 + 主题市场预设」解析后的结果，因此预设可以改变密度。
  */
 export default function App() {
-    const {titleBar, sidebar, playerBar} = themeConfig.components;
+    const {config} = useTheme();
+    const {titleBar, sidebar, playerBar} = config.components;
     const {load: loadCollection} = useActions().collection;
 
     useAudioEngine();
