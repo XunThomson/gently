@@ -1,0 +1,139 @@
+.section {
+    margin-bottom: 32px;
+}
+
+.sectionHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.sectionHead h2 {
+    font-size: 17px;
+    font-weight: 680;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    flex-wrap: wrap;
+}
+
+.sub {
+    font-size: 12.5px;
+    color: var(--text-3);
+    font-weight: 400;
+    letter-spacing: 0;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));
+    gap: 20px 18px;
+}
+
+.card {
+    cursor: pointer;
+}
+
+.cover {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 13px;
+    margin-bottom: 11px;
+    display: grid;
+    place-items: center;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 26px;
+    font-weight: 700;
+    overflow: hidden;
+    box-shadow: 0 8px 18px -12px rgba(16, 20, 28, 0.5);
+    transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.25, 1), box-shadow 0.25s;
+}
+
+.cover::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 50%);
+}
+
+.card:hover .cover {
+    transform: translateY(-3px);
+    box-shadow: 0 16px 26px -14px rgba(16, 20, 28, 0.55);
+}
+
+.play {
+    position: absolute;
+    right: 9px;
+    bottom: 9px;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.94);
+    color: #1a1c22;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.22s, transform 0.22s, background 0.18s;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+    z-index: 2;
+}
+
+.card:hover .play {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.play:hover {
+    background: #fff;
+    transform: scale(1.06);
+}
+
+.title {
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 3px;
+}
+
+.artist {
+    font-size: 12px;
+    color: var(--text-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.empty {
+    padding: 64px 20px;
+    text-align: center;
+    color: var(--text-3);
+    grid-column: 1 / -1;
+}
+
+.empty h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-2);
+    margin-bottom: 5px;
+}
+
+.empty p {
+    font-size: 12.5px;
+}
+
+@media (max-width: 640px) {
+    .sectionHead {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

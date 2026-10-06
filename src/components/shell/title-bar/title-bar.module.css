@@ -1,0 +1,90 @@
+/* 标题栏：品牌 + 搜索 + 工具栏 */
+
+.titleBar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    width: 100%;
+    height: var(--title-bar-height);
+    padding: 0 var(--title-bar-padding-x);
+    box-sizing: border-box;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-subtle);
+    /* 允许拖动窗口（Tauri 无边框窗口常用） */
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: none;
+    color: var(--logo-color);
+    font-size: var(--logo-font-size);
+    font-weight: var(--logo-font-weight);
+    letter-spacing: -0.02em;
+}
+
+.logoMark {
+    display: grid;
+    place-items: center;
+    width: 1.5em;
+    height: 1.5em;
+    border-radius: var(--radius-md);
+    background: var(--brand);
+    color: var(--brand-contrast);
+    font-size: 0.66em;
+    font-weight: var(--font-weight-bold);
+}
+
+.logoText {
+    white-space: nowrap;
+}
+
+.search {
+    display: flex;
+    justify-content: center;
+    flex: 1;
+    min-width: 0;
+}
+
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--toolbar-gap);
+    flex: none;
+}
+
+.toolbarButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--toolbar-button-size);
+    height: var(--toolbar-button-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--toolbar-radius);
+    background: transparent;
+    color: var(--toolbar-icon-color);
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.toolbarButton:hover {
+    background: var(--toolbar-hover-bg);
+    color: var(--toolbar-hover-color);
+}
+
+.toolbarButton[aria-pressed='true'] {
+    background: var(--brand-soft);
+    color: var(--brand);
+}
+
+.toolbarDivider {
+    width: 1px;
+    height: 16px;
+    margin: 0 var(--space-2);
+    background: var(--toolbar-divider-color);
+    flex: none;
+}

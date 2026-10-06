@@ -1,0 +1,172 @@
+{
+  "app": {
+    "title": "Gently"
+  },
+  "nav": {
+    "ranking": "Rankings",
+    "hot": "Featured",
+    "download": "Downloads",
+    "local": "Local Music",
+    "plugin": "Plugins",
+    "recent": "Recently Played",
+    "setting": "Settings"
+  },
+  "common": {
+    "play": "Play",
+    "pause": "Pause",
+    "prev": "Previous",
+    "next": "Next",
+    "search": "Search",
+    "delete": "Delete",
+    "update": "Update",
+    "uninstall": "Uninstall",
+    "enable": "Enable",
+    "disable": "Disable",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "loading": "Loading…",
+    "collapse": "Collapse"
+  },
+  "search": {
+    "placeholder": "Search songs / artists / albums",
+    "submit": "Search",
+    "history": "History",
+    "hot": "Trending",
+    "suggestion": "Suggestions",
+    "clearHistory": "Clear",
+    "searching": "Searching…",
+    "noResult": "No results for “{{keyword}}”",
+    "clearInput": "Clear input",
+    "deleteHistory": "Remove history item: {{value}}"
+  },
+  "toolbar": {
+    "theme": "Appearance",
+    "settings": "Settings",
+    "pip": "Picture in picture",
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "close": "Close"
+  },
+  "sidebar": {
+    "playlists": "My playlists",
+    "favorites": "Favorites",
+    "noPlaylists": "No playlists yet"
+  },
+  "player": {
+    "notPlaying": "Nothing playing",
+    "pickSong": "Pick a song to start",
+    "repeatOff": "Play in order",
+    "repeatAll": "Repeat all",
+    "repeatOne": "Repeat one",
+    "volume": "Volume"
+  },
+  "column": {
+    "title": "Title",
+    "artist": "Artist",
+    "album": "Album",
+    "duration": "Duration",
+    "status": "Status",
+    "progress": "Progress",
+    "source": "Source",
+    "size": "Size",
+    "playedAt": "Played",
+    "playCount": "Plays",
+    "version": "Version",
+    "author": "Author",
+    "description": "Description",
+    "actions": "Actions"
+  },
+  "page": {
+    "ranking": {
+      "title": "Rankings",
+      "subtitle": "Live popularity",
+      "top": "Top {{count}} · {{total}} songs",
+      "total": "{{count}} songs",
+      "all": "All {{count}} songs shown",
+      "showAll": "Show remaining {{count}}",
+      "emptyTitle": "No matching songs",
+      "emptyHint": "Try another keyword",
+      "heroTag": "Today's pick",
+      "heroPlay": "Play now",
+      "heat": "Heat {{value}}%",
+      "chart": {
+        "hot": "Hot",
+        "new": "New",
+        "rise": "Rising",
+        "origin": "Original"
+      },
+      "period": {
+        "day": "Daily",
+        "week": "Weekly",
+        "month": "Monthly",
+        "year": "Yearly"
+      },
+      "thisWeek": "This week"
+    },
+    "hot": {
+      "title": "Featured",
+      "recommendSub": "Based on recent listening",
+      "searchResult": "Results for “{{keyword}}”",
+      "emptyTitle": "No matching songs",
+      "emptyHint": "Try another keyword"
+    },
+    "download": {
+      "title": "Downloads",
+      "downloading": "Downloading",
+      "downloaded": "Downloaded",
+      "clearFinished": "Clear finished",
+      "pause": "Pause",
+      "resume": "Resume",
+      "status": {
+        "pending": "Pending",
+        "downloading": "Downloading",
+        "paused": "Paused",
+        "done": "Done",
+        "error": "Failed"
+      },
+      "empty": "No download tasks"
+    },
+    "local": {
+      "title": "Local Music",
+      "subtitle": "{{count}} songs",
+      "revealInDir": "Reveal in folder",
+      "remove": "Remove",
+      "empty": "No local music yet"
+    },
+    "plugin": {
+      "title": "Plugins",
+      "subtitle": "Music sources are plugins — {{count}} installed",
+      "builtinTag": "Built-in",
+      "thirdPartyTag": "Third-party",
+      "empty": "No plugins installed"
+    },
+    "recent": {
+      "title": "Recently Played",
+      "subtitle": "{{count}} songs",
+      "clear": "Clear history",
+      "empty": "Nothing played yet",
+      "justNow": "Just now",
+      "minutesAgo": "{{count}} min ago",
+      "hoursAgo": "{{count}} h ago",
+      "daysAgo": "{{count}} d ago"
+    },
+    "setting": {
+      "title": "Settings",
+      "subtitle": "Appearance, language and data source",
+      "appearance": "Appearance",
+      "themeMode": "Theme mode",
+      "themeLight": "Light",
+      "themeDark": "Dark",
+      "themeSystem": "System",
+      "language": "Language",
+      "dataSource": "Data source",
+      "activeSource": "Active source",
+      "about": "About",
+      "version": "Version {{version}}"
+    }
+  },
+  "language": {
+    "zh": "中文",
+    "en": "English"
+  }
+}

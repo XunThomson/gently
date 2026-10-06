@@ -1,0 +1,84 @@
+import {useEffect, useMemo} from 'react';
+import {useTranslation} from 'react-i18next';
+import {Page} from '../../components/ui/page';
+import {DataTable, TextCell, type ColumnDef} from '../../components/ui/data-table';
+import {SearchBox} from '../../components/ui/search-box';
+import {
+    actionsColumn,
+    albumColumn,
+    artistColumn,
+    durationColumn,
+    indexColumn,
+    titleColumn,
+} from '../../config/table.config';
+import {useActions, useLibraryState} from '../../store';
+import {fileService} from '../../services';
+import type {LocalTrack} from '../../types';
+import {matchesQuery} from '../../utils/helpers';
+
+export default function LocalView() {
+    const {t} = useTranslation();
+    const {local, query, loaded} = useLibraryState();
+    const {load, setQuery, removeLocal} = useActions().library;
+    const {play} = useActions().player;
+
+    useEffect(() => {
+        void load();
+    }, [load]);
+
+    const rows = useMemo(
+        () => local.filter((track) => matchesQuery(track.title, track.artist, track.album, query)),
+        [local, query],
+    );
+
+    const columns: ColumnDef<LocalTrack>[] = [
+        indexColumn<LocalTrack>(),
+        titleColumn<LocalTrack>(t),
+        artistColumn<LocalTrack>(t),
+        albumColumn<LocalTrack>(t),
+        durationColumn<LocalTrack>(t),
+        {
+            key: 'sizeText',
+            title: t('column.size'),
+            width: '96px',
+            align: 'center',
+            render: (value) => <TextCell tone="muted">{String(value)}</TextCell>,
+        },
+        actionsColumn<LocalTrack>(t, (track) => [
+            {key: 'play', label: t('common.play'), tone: 'primary', onClick: () => play(track, rows)},
+            {
+                key: 'reveal',
+                label: t('page.local.revealInDir'),
+                onClick: () => void fileService.revealInDir(track.path),
+            },
+            {key: 'remove', label: t('page.local.remove'), tone: 'danger', onClick: () => removeLocal(track.id)},
+        ]),
+    ];
+
+    return (
+        <Page
+            title={t('page.local.title')}
+            subtitle={t('page.local.subtitle', {count: local.length})}
+            toolbar={
+                <SearchBox
+                    value={query}
+                    onChange={setQuery}
+                    onSearch={setQuery}
+                    historyKey={null}
+                    placeholder={t('search.placeholder')}
+                    submitText={t('common.search')}
+                />
+            }
+        >
+            <DataTable
+                columns={columns}
+                dataSource={rows}
+                rowKey="id"
+                loading={!loaded}
+                loadingText={t('common.loading')}
+                emptyText={loaded ? t('page.local.empty') : t('common.loading')}
+                onRowClick={(track) => play(track, rows)}
+            />
+        </Page>
+    );
+}

@@ -1,0 +1,352 @@
+/* ==================== search-box.module.css ==================== */
+
+/* ---------------- 根容器 ---------------- */
+
+.sbRoot {
+    --sb-height: 44px;
+    --sb-radius: 10px;
+    --sb-bg: #fff;
+    --sb-border: #e3e6eb;
+    --sb-border-focus: #2b6cff;
+    --sb-text: #1c1f23;
+    --sb-text-sub: #8a9099;
+    --sb-hover: #f4f6f9;
+    --sb-active: #eef3ff;
+    --sb-primary: #2b6cff;
+    --sb-shadow: 0 8px 28px rgba(20, 25, 40, 0.12);
+    --sb-z: 1000;
+
+    position: relative;
+    width: 100%;
+    font-size: 14px;
+    color: var(--sb-text);
+}
+
+/* ---------------- 输入区 ---------------- */
+
+.sbField {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: var(--sb-height);
+    padding: 0 6px 0 12px;
+    background: var(--sb-bg);
+    border: 1px solid var(--sb-border);
+    border-radius: var(--sb-radius);
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.sbRoot.isOpen .sbField {
+    border-color: var(--sb-border-focus);
+    box-shadow: 0 0 0 3px rgba(43, 108, 255, 0.12);
+}
+
+.sbFieldIcon {
+    display: flex;
+    color: var(--sb-text-sub);
+    flex: none;
+}
+
+.sbInput {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: inherit;
+    color: inherit;
+}
+
+.sbInput::placeholder {
+    color: var(--sb-text-sub);
+}
+
+.sbClear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: #d6dae0;
+    color: #fff;
+    cursor: pointer;
+    flex: none;
+    transition: background 0.15s;
+}
+
+.sbClear:hover {
+    background: #b9bec6;
+}
+
+.sbSubmit {
+    flex: none;
+    height: calc(var(--sb-height) - 10px);
+    padding: 0 18px;
+    border: none;
+    border-radius: calc(var(--sb-radius) - 3px);
+    background: var(--sb-primary);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.sbSubmit:hover {
+    opacity: 0.88;
+}
+
+/* ---------------- 面板 ---------------- */
+
+.sbMask {
+    display: none;
+}
+
+.sbPanel {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: var(--sb-z);
+    max-height: 380px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 6px;
+    background: var(--sb-bg);
+    border: 1px solid var(--sb-border);
+    border-radius: 12px;
+    box-shadow: var(--sb-shadow);
+    animation: sbFade 0.14s ease;
+}
+
+@keyframes sbFade {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------------- 分组 ---------------- */
+
+.sbGroup + .sbGroup {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid #f0f2f5;
+}
+
+.sbGroupHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px 4px;
+}
+
+.sbGroupTitle {
+    font-size: 12px;
+    color: var(--sb-text-sub);
+}
+
+.sbGroupAction {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 12px;
+    color: var(--sb-primary);
+    cursor: pointer;
+}
+
+/* ---------------- 选项行 ---------------- */
+
+.sbOption {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.sbOption.isActive {
+    background: var(--sb-active);
+}
+
+.sbOptionIcon {
+    display: flex;
+    color: var(--sb-text-sub);
+    flex: none;
+}
+
+.sbOptionLabel {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sbOptionDesc {
+    flex: none;
+    font-size: 12px;
+    color: var(--sb-text-sub);
+}
+
+.sbOptionDel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--sb-text-sub);
+    cursor: pointer;
+    flex: none;
+    opacity: 0;
+    transition: opacity 0.12s, background 0.12s;
+}
+
+.sbOption:hover .sbOptionDel,
+.sbOption.isActive .sbOptionDel {
+    opacity: 1;
+}
+
+.sbOptionDel:hover {
+    background: #e8eaee;
+    color: #5a616b;
+}
+
+/* ---------------- 热门标签 ---------------- */
+
+.sbTags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 4px 10px 10px;
+}
+
+.sbTag {
+    padding: 5px 12px;
+    border: none;
+    border-radius: 999px;
+    background: var(--sb-hover);
+    color: var(--sb-text);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+
+.sbTag:hover,
+.sbTag.isActive {
+    background: var(--sb-primary);
+    color: #fff;
+}
+
+/* ---------------- 状态 ---------------- */
+
+.sbStatus,
+.sbEmpty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 20px 12px;
+    color: var(--sb-text-sub);
+    font-size: 13px;
+}
+
+.sbEmpty em {
+    font-style: normal;
+    color: var(--sb-text);
+    font-weight: 500;
+}
+
+.sbSpinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #dfe3e8;
+    border-top-color: var(--sb-primary);
+    border-radius: 50%;
+    animation: sbSpin 0.7s linear infinite;
+}
+
+@keyframes sbSpin {
+    to { transform: rotate(360deg); }
+}
+
+.sbHl {
+    background: transparent;
+    color: var(--sb-primary);
+    font-weight: 600;
+}
+
+/* ---------------- 滚动条 ---------------- */
+
+.sbPanel::-webkit-scrollbar {
+    width: 6px;
+}
+.sbPanel::-webkit-scrollbar-thumb {
+    background: #d9dde3;
+    border-radius: 3px;
+}
+
+/* ---------------- 移动端：底部抽屉 ---------------- */
+
+@media (max-width: 640px) {
+    .sbMask {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: calc(var(--sb-z) - 1);
+        background: rgba(0, 0, 0, 0.35);
+        animation: sbFade 0.14s ease;
+    }
+
+    .sbPanel {
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        max-height: 70vh;
+        border-radius: 16px 16px 0 0;
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+        animation: sbSlideUp 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    @keyframes sbSlideUp {
+        from { transform: translateY(100%); }
+        to   { transform: translateY(0); }
+    }
+}
+
+/* ---------------- 深色模式 ---------------- */
+
+@media (prefers-color-scheme: dark) {
+    .sbRoot {
+        --sb-bg: #1e2126;
+        --sb-border: #33383f;
+        --sb-text: #e8eaed;
+        --sb-text-sub: #8b9199;
+        --sb-hover: #2a2e34;
+        --sb-active: #232d3f;
+        --sb-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    }
+
+    .sbGroup + .sbGroup {
+        border-top-color: #2a2e34;
+    }
+
+    .sbOptionDel:hover {
+        background: #33383f;
+        color: #c3c8cf;
+    }
+
+    .sbClear {
+        background: #4a5058;
+    }
+}

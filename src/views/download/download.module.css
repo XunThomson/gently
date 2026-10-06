@@ -1,0 +1,14 @@
+/* 下载管理视图局部样式 */
+
+.list {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+}
+
+.toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--space-1);
+}

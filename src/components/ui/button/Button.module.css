@@ -1,0 +1,74 @@
+.button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    font-family: inherit;
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color var(--motion-fast), color var(--motion-fast),
+        border-color var(--motion-fast);
+}
+
+.button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ---------- 尺寸 ---------- */
+
+.sm {
+    height: 30px;
+    padding: 0 var(--space-3);
+    font-size: var(--font-size-xs);
+}
+
+.md {
+    height: 36px;
+    padding: 0 var(--space-4);
+    font-size: var(--font-size-sm);
+}
+
+/* ---------- 变体 ---------- */
+
+.default {
+    background: var(--bg-surface);
+    border-color: var(--border-default);
+    color: var(--text-primary);
+}
+
+.default:hover:not(:disabled) {
+    border-color: var(--border-strong);
+}
+
+.primary {
+    background: var(--brand);
+    color: var(--brand-contrast);
+}
+
+.primary:hover:not(:disabled) {
+    background: var(--brand-hover);
+}
+
+.ghost {
+    background: transparent;
+    color: var(--text-secondary);
+}
+
+.ghost:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.danger {
+    background: transparent;
+    border-color: var(--border-default);
+    color: var(--danger);
+}
+
+.danger:hover:not(:disabled) {
+    border-color: var(--danger);
+}

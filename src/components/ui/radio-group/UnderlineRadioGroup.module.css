@@ -1,0 +1,77 @@
+.root {
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    user-select: none;
+}
+
+.item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    min-width: 0;
+}
+
+/* 隐藏原生 radio，仅作为状态标记 */
+.input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.label {
+    position: relative;
+    font-size: var(--font-size-base);
+    color: var(--text-secondary);
+    transition: color var(--motion-base);
+    white-space: nowrap;
+}
+
+/* 上下两条下划线，初始隐藏 */
+.label::before,
+.label::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    opacity: 0;
+    border-radius: var(--radius-sm);
+    background: var(--brand);
+    transition: opacity var(--motion-base);
+}
+
+/* 上半条：细，占满整个宽度 */
+.label::before {
+    bottom: 0;
+    width: 100%;
+    height: 2px;
+}
+
+/* 下半条：短，右对齐偏移 */
+.label::after {
+    bottom: -4px;
+    width: 50%;
+    height: 2px;
+}
+
+.label:hover {
+    color: var(--text-primary);
+}
+
+.input:checked + .label {
+    color: var(--brand);
+    font-weight: var(--font-weight-medium);
+}
+
+.input:checked + .label::before,
+.input:checked + .label::after {
+    opacity: 1;
+}
+
+.input:focus-visible + .label {
+    outline: 2px solid var(--brand);
+    outline-offset: 4px;
+    border-radius: var(--radius-sm);
+}

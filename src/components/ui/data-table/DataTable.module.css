@@ -1,0 +1,75 @@
+.container {
+    width: 100%;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--table-radius);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--table-font-size);
+    overflow-x: auto;
+}
+
+.table {
+    display: flex;
+    flex-direction: column;
+    /* 容器足够宽时铺满；内容过长时由外层 overflow-x 滚动 */
+    min-width: 100%;
+    width: max-content;
+}
+
+.headerRow,
+.row {
+    display: grid;
+    grid-template-columns: var(--grid-template);
+    align-items: center;
+}
+
+.headerCell {
+    color: var(--table-header-color);
+    font-size: var(--table-header-font-size);
+    font-weight: var(--font-weight-medium);
+    padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
+    white-space: nowrap;
+    border-bottom: 1px solid var(--table-border-color);
+    /* 允许 grid 子项收缩 + ellipsis 生效 */
+    min-width: 0;
+}
+
+.bodyCell {
+    padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.row {
+    transition: background-color var(--motion-fast);
+    cursor: pointer;
+}
+
+.row:hover {
+    background-color: var(--table-row-hover-bg);
+}
+
+.row.active {
+    background-color: var(--brand-soft);
+}
+
+.stateRow {
+    padding: var(--table-empty-padding-y) var(--table-cell-padding-x);
+    text-align: center;
+    color: var(--text-tertiary);
+}
+
+.left {
+    text-align: left;
+}
+
+.center {
+    text-align: center;
+}
+
+.right {
+    text-align: right;
+}

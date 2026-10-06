@@ -1,0 +1,84 @@
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
+    gap: var(--card-gap);
+}
+
+.card {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.cover {
+    position: relative;
+    display: grid;
+    place-items: center;
+    aspect-ratio: 1;
+    margin-bottom: var(--space-3);
+    border-radius: var(--card-radius);
+    overflow: hidden;
+    color: var(--brand-contrast);
+    box-shadow: var(--shadow-sm);
+    transition: transform var(--motion-base), box-shadow var(--motion-base);
+}
+
+.initial {
+    font-size: 26px;
+    font-weight: var(--font-weight-bold);
+    opacity: 0.92;
+}
+
+.card:hover .cover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg);
+}
+
+.play {
+    position: absolute;
+    right: 9px;
+    bottom: 9px;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-full);
+    background: var(--bg-elevated);
+    color: var(--brand);
+    opacity: 0;
+    transform: translateY(6px);
+    box-shadow: var(--shadow-md);
+    transition: opacity var(--motion-base), transform var(--motion-base);
+}
+
+.card:hover .play,
+.card:focus-visible .play {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.title {
+    display: block;
+    font-size: var(--card-title-size);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 3px;
+}
+
+.artist {
+    display: block;
+    font-size: var(--card-meta-size);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

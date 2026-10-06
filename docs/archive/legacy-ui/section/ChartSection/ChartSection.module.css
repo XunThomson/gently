@@ -1,0 +1,77 @@
+.section {
+    margin-bottom: 32px;
+}
+
+.sectionHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.sectionHead h2 {
+    font-size: 17px;
+    font-weight: 680;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    flex-wrap: wrap;
+}
+
+.sub {
+    font-size: 12.5px;
+    color: var(--text-3);
+    font-weight: 400;
+    letter-spacing: 0;
+}
+
+.chartCard {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.chartFoot {
+    border-top: 1px solid #f2f3f6;
+}
+
+.loadMore {
+    width: 100%;
+    height: 48px;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 550;
+    color: var(--text-2);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    transition: background 0.18s, color 0.18s;
+}
+
+.loadMore:hover {
+    background: #fafafd;
+    color: var(--accent);
+}
+
+.loadMore svg {
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.loadMore.expanded svg {
+    transform: rotate(180deg);
+}
+
+@media (max-width: 640px) {
+    .sectionHead {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

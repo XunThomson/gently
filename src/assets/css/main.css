@@ -1,0 +1,16 @@
+/* ==========================================================================
+   样式入口
+   加载顺序：
+     1. layer 声明
+     2. 项目设计系统（base 重置 -> 原子层）
+     3. Tailwind（带 `tw` 前缀，仅用于「视觉稳定、不会被主题动态定制」的组件）
+   设计 token 由 ThemeProvider 注入，见 src/config/theme/theme.config.json
+   ========================================================================== */
+
+@layer theme, base, components, utilities;
+
+@import './global.css';
+@import './utilities.css';
+
+@import "tailwindcss/theme.css" prefix(tw);
+@import "tailwindcss/utilities.css" prefix(tw);

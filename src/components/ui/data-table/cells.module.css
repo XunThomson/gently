@@ -1,0 +1,138 @@
+/* 单元格渲染器样式（全部由主题 token 驱动） */
+
+.default {
+    color: var(--text-primary);
+}
+
+.muted {
+    color: var(--text-secondary);
+}
+
+.accent {
+    color: var(--brand);
+}
+
+.success {
+    color: var(--success);
+}
+
+.warning {
+    color: var(--warning);
+}
+
+.danger {
+    color: var(--danger);
+}
+
+/* ---------- 徽标 ---------- */
+
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    background: var(--bg-surface-alt);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.badge_default {
+    background: var(--bg-surface-alt);
+    color: var(--text-secondary);
+}
+
+.badge_muted {
+    background: var(--bg-surface-alt);
+    color: var(--text-tertiary);
+}
+
+.badge_accent {
+    background: var(--brand-soft);
+    color: var(--brand);
+}
+
+.badge_success {
+    background: var(--brand-soft);
+    color: var(--success);
+}
+
+.badge_warning {
+    background: var(--brand-soft);
+    color: var(--warning);
+}
+
+.badge_danger {
+    background: var(--brand-soft);
+    color: var(--danger);
+}
+
+/* ---------- 进度 ---------- */
+
+.progress {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.progressBar {
+    flex: 1;
+    min-width: 48px;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--bg-surface-alt);
+    overflow: hidden;
+}
+
+.progressBar i {
+    display: block;
+    height: 100%;
+    border-radius: var(--radius-full);
+    background: var(--brand);
+    transition: width var(--motion-base);
+}
+
+.progressLabel {
+    flex: none;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 行内操作 ---------- */
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.action {
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color var(--motion-fast);
+}
+
+.action:hover:not(:disabled) {
+    color: var(--text-primary);
+}
+
+.action:disabled {
+    color: var(--text-tertiary);
+    cursor: not-allowed;
+}
+
+.action_primary {
+    color: var(--brand);
+}
+
+.action_primary:hover:not(:disabled) {
+    color: var(--brand-hover);
+}
+
+.action_danger {
+    color: var(--danger);
+}

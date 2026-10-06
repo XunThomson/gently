@@ -1,0 +1,228 @@
+.list {
+    display: flex;
+    flex-direction: column;
+}
+
+.row {
+    position: relative;
+    display: grid;
+    grid-template-columns:
+        var(--chart-rank-width)
+        var(--chart-cover-width)
+        1fr
+        150px
+        var(--chart-heat-width)
+        var(--chart-duration-width);
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--chart-row-padding-y) var(--chart-row-padding-x);
+    border-bottom: 1px solid var(--border-subtle);
+    cursor: pointer;
+    transition: background-color var(--motion-fast);
+}
+
+.row:last-child {
+    border-bottom: none;
+}
+
+.row:hover {
+    background: var(--bg-hover);
+}
+
+.rank {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-tertiary);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+
+.row:nth-child(1) .rank {
+    color: var(--danger);
+}
+
+.row:nth-child(2) .rank {
+    color: var(--warning);
+}
+
+.row:nth-child(3) .rank {
+    color: var(--success);
+}
+
+.cover {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: var(--chart-cover-width);
+    height: var(--chart-cover-width);
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    color: var(--brand-contrast);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-bold);
+}
+
+.cover::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 55%);
+}
+
+.meta {
+    min-width: 0;
+}
+
+.title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.artist {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.album {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.heat {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.heatBar {
+    flex: 1;
+    height: var(--chart-heat-bar-height);
+    border-radius: var(--radius-full);
+    background: var(--bg-surface-alt);
+    overflow: hidden;
+}
+
+.heatBar i {
+    display: block;
+    height: 100%;
+    border-radius: var(--radius-full);
+    background: linear-gradient(90deg, var(--brand-hover), var(--brand));
+}
+
+.heatNum {
+    width: 22px;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.duration {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 播放中 ---------- */
+
+.playing {
+    background: var(--brand-soft);
+}
+
+.playing .title,
+.playing .rank {
+    color: var(--brand);
+}
+
+.playing .cover::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: color-mix(in srgb, var(--brand) 42%, transparent);
+}
+
+.playingBars {
+    position: absolute;
+    z-index: 2;
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 14px;
+}
+
+.playingBars i {
+    width: 3px;
+    border-radius: var(--radius-full);
+    background: var(--brand-contrast);
+    animation: bar 0.9s ease-in-out infinite;
+}
+
+.playingBars i:nth-child(1) {
+    height: 60%;
+}
+
+.playingBars i:nth-child(2) {
+    height: 100%;
+    animation-delay: 0.25s;
+}
+
+.playingBars i:nth-child(3) {
+    height: 45%;
+    animation-delay: 0.5s;
+}
+
+@keyframes bar {
+    0%,
+    100% {
+        transform: scaleY(0.45);
+    }
+    50% {
+        transform: scaleY(1);
+    }
+}
+
+/* ---------- 响应式 ---------- */
+
+@media (max-width: 1080px) {
+    .row {
+        grid-template-columns:
+            var(--chart-rank-width)
+            var(--chart-cover-width)
+            1fr
+            var(--chart-heat-width)
+            var(--chart-duration-width);
+    }
+
+    .album {
+        display: none;
+    }
+}
+
+@media (max-width: 880px) {
+    .row {
+        grid-template-columns:
+            var(--chart-rank-width)
+            var(--chart-cover-width)
+            1fr
+            var(--chart-duration-width);
+    }
+
+    .heat {
+        display: none;
+    }
+}

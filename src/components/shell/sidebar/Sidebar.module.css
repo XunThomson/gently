@@ -1,0 +1,98 @@
+/* 侧边导航：尺寸 / 颜色全部来自 theme.config.json 的 sidebar 段 */
+
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    width: var(--sidebar-width);
+    height: 100%;
+    padding: var(--sidebar-padding);
+    box-sizing: border-box;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border-subtle);
+    overflow-y: auto;
+}
+
+.menu {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    gap: var(--sidebar-item-gap);
+    height: var(--sidebar-item-height);
+    padding: 0 var(--sidebar-item-padding-x);
+    box-sizing: border-box;
+    border-radius: var(--sidebar-item-radius);
+    color: var(--sidebar-text-color);
+    font-size: var(--sidebar-font-size);
+    text-decoration: none;
+    user-select: none;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.item:hover {
+    background: var(--sidebar-hover-bg);
+    color: var(--sidebar-hover-text-color);
+    text-decoration: none;
+}
+
+.itemActive,
+.itemActive:hover {
+    background: var(--sidebar-active-bg);
+    color: var(--sidebar-active-text-color);
+    font-weight: var(--font-weight-medium);
+}
+
+.itemIcon {
+    display: flex;
+    flex: none;
+    font-size: var(--sidebar-icon-size);
+}
+
+.itemLabel {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.group {
+    margin-top: var(--space-3);
+}
+
+.groupTitle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: var(--space-2) var(--sidebar-item-padding-x);
+    border: 0;
+    background: none;
+    color: var(--sidebar-section-title-color);
+    font-family: inherit;
+    font-size: var(--sidebar-section-title-size);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    transition: color var(--motion-fast);
+}
+
+.groupTitle:hover {
+    color: var(--sidebar-hover-text-color);
+}
+
+.empty {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--sidebar-item-padding-x) var(--space-2);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+}

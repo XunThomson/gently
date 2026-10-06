@@ -1,0 +1,316 @@
+/* ==================== search-box.module.css ==================== */
+/* 全部尺寸 / 颜色 / 动效均来自全局设计令牌（由主题系统注入到 <html>），此处不声明任何令牌。 */
+
+/* ---------------- 根容器 ---------------- */
+
+.sbRoot {
+    position: relative;
+    width: 100%;
+    max-width: var(--search-box-max-width);
+    min-width: var(--search-box-min-width);
+    font-size: var(--search-box-font-size);
+    color: var(--text-primary);
+}
+
+/* ---------------- 输入区 ---------------- */
+
+.sbField {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: var(--search-box-height);
+    padding: 0 6px 0 12px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--search-box-radius);
+    transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+}
+
+.sbRoot.isOpen .sbField {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.sbFieldIcon {
+    display: flex;
+    color: var(--search-box-icon-color);
+    flex: none;
+}
+
+.sbInput {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: inherit;
+    color: inherit;
+}
+
+.sbInput::placeholder {
+    color: var(--search-box-placeholder);
+}
+
+.sbClear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-full);
+    background: var(--bg-active);
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex: none;
+    transition: background var(--motion-fast), color var(--motion-fast);
+}
+
+.sbClear:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.sbSubmit {
+    flex: none;
+    height: calc(var(--search-box-height) - 10px);
+    padding: 0 18px;
+    border: none;
+    border-radius: calc(var(--search-box-radius) - 3px);
+    background: var(--brand);
+    color: var(--search-box-submit-color);
+    font-size: var(--search-box-font-size);
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity var(--motion-fast);
+}
+
+.sbSubmit:hover {
+    opacity: 0.88;
+}
+
+/* ---------------- 面板 ---------------- */
+
+.sbMask {
+    display: none;
+}
+
+.sbPanel {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: var(--z-dropdown);
+    max-height: var(--search-box-panel-max-height);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 6px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel);
+    animation: sbFade var(--motion-fast) ease;
+}
+
+@keyframes sbFade {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------------- 分组 ---------------- */
+
+.sbGroup + .sbGroup {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border-subtle);
+}
+
+.sbGroupHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px 4px;
+}
+
+.sbGroupTitle {
+    font-size: 12px;
+    color: var(--text-tertiary);
+}
+
+.sbGroupAction {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 12px;
+    color: var(--brand);
+    cursor: pointer;
+}
+
+/* ---------------- 选项行 ---------------- */
+
+.sbOption {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 10px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background var(--motion-fast);
+}
+
+.sbOption.isActive {
+    background: var(--bg-active);
+}
+
+.sbOptionIcon {
+    display: flex;
+    color: var(--search-box-icon-color);
+    flex: none;
+}
+
+.sbOptionLabel {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sbOptionDesc {
+    flex: none;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.sbOptionDel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    flex: none;
+    opacity: 0;
+    transition: opacity var(--motion-fast), background var(--motion-fast);
+}
+
+.sbOption:hover .sbOptionDel,
+.sbOption.isActive .sbOptionDel {
+    opacity: 1;
+}
+
+.sbOptionDel:hover {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+}
+
+/* ---------------- 热门标签 ---------------- */
+
+.sbTags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 4px 10px 10px;
+}
+
+.sbTag {
+    padding: 5px 12px;
+    border: none;
+    border-radius: var(--radius-full);
+    background: var(--bg-surface-alt);
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background var(--motion-fast), color var(--motion-fast);
+}
+
+.sbTag:hover,
+.sbTag.isActive {
+    background: var(--brand);
+    color: var(--brand-contrast);
+}
+
+/* ---------------- 状态 ---------------- */
+
+.sbStatus,
+.sbEmpty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 20px 12px;
+    color: var(--text-tertiary);
+    font-size: 13px;
+}
+
+.sbEmpty em {
+    font-style: normal;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.sbSpinner {
+    width: var(--search-box-icon-size);
+    height: var(--search-box-icon-size);
+    border: 2px solid var(--border-subtle);
+    border-top-color: var(--brand);
+    border-radius: var(--radius-full);
+    animation: sbSpin 0.7s linear infinite;
+}
+
+@keyframes sbSpin {
+    to { transform: rotate(360deg); }
+}
+
+.sbHl {
+    background: transparent;
+    color: var(--brand);
+    font-weight: 600;
+}
+
+/* ---------------- 滚动条 ---------------- */
+
+.sbPanel::-webkit-scrollbar {
+    width: 6px;
+}
+.sbPanel::-webkit-scrollbar-thumb {
+    background: var(--border-default);
+    border-radius: 3px;
+}
+
+/* ---------------- 移动端：底部抽屉 ---------------- */
+
+@media (max-width: 640px) {
+    .sbMask {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: calc(var(--z-dropdown) - 1);
+        background: rgba(0, 0, 0, 0.35);
+        animation: sbFade var(--motion-fast) ease;
+    }
+
+    .sbPanel {
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        max-height: 70vh;
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+        animation: sbSlideUp 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    @keyframes sbSlideUp {
+        from { transform: translateY(100%); }
+        to   { transform: translateY(0); }
+    }
+}

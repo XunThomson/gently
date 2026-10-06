@@ -1,0 +1,78 @@
+/* DataTable.module.css */
+.container {
+    width: 100%;
+    background: rgba(20, 20, 20, 0.7);
+    backdrop-filter: blur(12px);
+    border-radius: 8px;
+    padding: 8px 0;
+    color: #e0e0e0;
+    font-family: inherit;
+    font-size: 14px;
+    overflow-x: auto;
+}
+
+.table {
+    display: flex;
+    flex-direction: column;
+    /* 保证容器足够宽时铺满；内容过长时由外层 overflow-x 滚动 */
+    min-width: 100%;
+    width: max-content;
+}
+
+.headerRow,
+.row {
+    display: grid;
+    grid-template-columns: var(--grid-template);
+    align-items: center;
+}
+
+.headerCell {
+    color: #d4b972;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 12px 16px;
+    white-space: nowrap;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    min-width: 0; /* 关键：允许 grid 子项收缩 + ellipsis 生效 */
+}
+
+.bodyCell {
+    padding: 12px 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.row {
+    transition: background-color 0.2s ease;
+    cursor: pointer;
+}
+
+.row:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+/* 空态占满整行 */
+.emptyRow {
+    padding: 24px 16px;
+    text-align: center;
+    color: #888;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.left { text-align: left; }
+.center { text-align: center; }
+.right { text-align: right; }
+
+.actionBtn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    font-size: 14px;
+    margin-right: 16px;
+}
+.actionBtn:last-child { margin-right: 0; }
+.btnDanger { color: #e06c75; }
+.btnPrimary { color: #98c379; }

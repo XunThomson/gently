@@ -1,0 +1,172 @@
+{
+  "app": {
+    "title": "Gently"
+  },
+  "nav": {
+    "ranking": "排行榜",
+    "hot": "热门推荐",
+    "download": "下载管理",
+    "local": "本地音乐",
+    "plugin": "插件管理",
+    "recent": "最近播放",
+    "setting": "设置"
+  },
+  "common": {
+    "play": "播放",
+    "pause": "暂停",
+    "prev": "上一首",
+    "next": "下一首",
+    "search": "搜索",
+    "delete": "删除",
+    "update": "更新",
+    "uninstall": "卸载",
+    "enable": "启用",
+    "disable": "禁用",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "loading": "加载中…",
+    "collapse": "收起"
+  },
+  "search": {
+    "placeholder": "搜索歌曲 / 歌手 / 专辑",
+    "submit": "搜索",
+    "history": "搜索历史",
+    "hot": "热门搜索",
+    "suggestion": "搜索建议",
+    "clearHistory": "清空",
+    "searching": "正在搜索…",
+    "noResult": "没有找到与「{{keyword}}」相关的结果",
+    "clearInput": "清空输入",
+    "deleteHistory": "删除历史记录：{{value}}"
+  },
+  "toolbar": {
+    "theme": "主题外观",
+    "settings": "设置",
+    "pip": "画中画",
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "close": "关闭"
+  },
+  "sidebar": {
+    "playlists": "我的歌单",
+    "favorites": "我的收藏",
+    "noPlaylists": "还没有歌单"
+  },
+  "player": {
+    "notPlaying": "未在播放",
+    "pickSong": "选择一首歌曲开始",
+    "repeatOff": "顺序播放",
+    "repeatAll": "列表循环",
+    "repeatOne": "单曲循环",
+    "volume": "音量"
+  },
+  "column": {
+    "title": "标题",
+    "artist": "歌手",
+    "album": "专辑",
+    "duration": "时长",
+    "status": "状态",
+    "progress": "进度",
+    "source": "来源",
+    "size": "大小",
+    "playedAt": "播放时间",
+    "playCount": "次数",
+    "version": "版本",
+    "author": "作者",
+    "description": "说明",
+    "actions": "操作"
+  },
+  "page": {
+    "ranking": {
+      "title": "排行榜",
+      "subtitle": "实时热度",
+      "top": "Top {{count}} · 共 {{total}} 首",
+      "total": "共 {{count}} 首",
+      "all": "已展示全部 {{count}} 首",
+      "showAll": "查看剩余 {{count}} 首",
+      "emptyTitle": "没有找到匹配的歌曲",
+      "emptyHint": "换个关键词试试",
+      "heroTag": "今日推荐",
+      "heroPlay": "立即播放",
+      "heat": "热度 {{value}}%",
+      "chart": {
+        "hot": "热歌榜",
+        "new": "新歌榜",
+        "rise": "飙升榜",
+        "origin": "原创榜"
+      },
+      "period": {
+        "day": "日榜",
+        "week": "周榜",
+        "month": "月榜",
+        "year": "年榜"
+      },
+      "thisWeek": "本周"
+    },
+    "hot": {
+      "title": "热门推荐",
+      "recommendSub": "基于最近收听",
+      "searchResult": "「{{keyword}}」的搜索结果",
+      "emptyTitle": "没有找到匹配的歌曲",
+      "emptyHint": "试试其他关键词"
+    },
+    "download": {
+      "title": "下载管理",
+      "downloading": "下载中",
+      "downloaded": "已下载",
+      "clearFinished": "清理已完成",
+      "pause": "暂停",
+      "resume": "继续",
+      "status": {
+        "pending": "等待中",
+        "downloading": "下载中",
+        "paused": "已暂停",
+        "done": "已完成",
+        "error": "失败"
+      },
+      "empty": "暂无下载任务"
+    },
+    "local": {
+      "title": "本地音乐",
+      "subtitle": "共 {{count}} 首",
+      "revealInDir": "在文件夹中显示",
+      "remove": "移除",
+      "empty": "还没有本地音乐"
+    },
+    "plugin": {
+      "title": "插件管理",
+      "subtitle": "音乐源以插件形式接入，共 {{count}} 个",
+      "builtinTag": "内置",
+      "thirdPartyTag": "第三方",
+      "empty": "还没有安装任何插件"
+    },
+    "recent": {
+      "title": "最近播放",
+      "subtitle": "共 {{count}} 首",
+      "clear": "清空记录",
+      "empty": "还没有播放记录",
+      "justNow": "刚刚",
+      "minutesAgo": "{{count}} 分钟前",
+      "hoursAgo": "{{count}} 小时前",
+      "daysAgo": "{{count}} 天前"
+    },
+    "setting": {
+      "title": "设置",
+      "subtitle": "外观、语言与数据源",
+      "appearance": "外观",
+      "themeMode": "主题模式",
+      "themeLight": "浅色",
+      "themeDark": "深色",
+      "themeSystem": "跟随系统",
+      "language": "语言",
+      "dataSource": "数据源",
+      "activeSource": "当前音源",
+      "about": "关于",
+      "version": "版本 {{version}}"
+    }
+  },
+  "language": {
+    "zh": "中文",
+    "en": "English"
+  }
+}
