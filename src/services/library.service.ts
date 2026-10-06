@@ -1,4 +1,4 @@
-import {DOWNLOAD_TASKS, INSTALLED_PLUGINS, LOCAL_TRACKS, RECENT_TRACKS} from '../mock/library.mock';
+import {DOWNLOAD_TASKS, getInstalledPlugins, LOCAL_TRACKS, RECENT_TRACKS} from '../mock/library.mock';
 import {FAVORITE_TRACKS, PLAYLISTS} from '../mock/collection.mock';
 import {makeLyrics} from '../mock/lyrics.mock';
 import {appConfig} from '../config/app.config';
@@ -37,7 +37,7 @@ export const libraryService = {
 
     async loadPlugins(): Promise<PluginInfo[]> {
         await delay();
-        return INSTALLED_PLUGINS;
+        return getInstalledPlugins();
     },
 
     async loadLyrics(track: Track): Promise<LyricLine[]> {

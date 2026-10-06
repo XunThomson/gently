@@ -21,15 +21,17 @@ export default function App() {
     const {config} = useTheme();
     const {titleBar, sidebar, playerBar} = config.components;
     const {load: loadCollection} = useActions().collection;
+    const {load: loadPlugins} = useActions().plugin;
 
     useAudioEngine();
     usePlayerEngine();
     useDownloadEngine();
 
-    /* 收藏与歌单是全局数据（侧边栏常驻），启动时加载一次 */
+    /* 收藏/歌单与音源列表都是全局数据（侧边栏、音源筛选常驻），启动时各加载一次 */
     useEffect(() => {
         void loadCollection();
-    }, [loadCollection]);
+        void loadPlugins();
+    }, [loadCollection, loadPlugins]);
 
     return (
         <div className="app">

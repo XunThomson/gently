@@ -249,6 +249,29 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--lyrics-hover-color': t(c.lyrics.hoverColor),
         '--lyrics-active-color': t(c.lyrics.activeColor),
         '--lyrics-active-weight': String(c.lyrics.activeWeight),
+        '--lyrics-active-bg': t(c.lyrics.activeBg),
+        '--lyrics-guide-color': t(c.lyrics.guideColor),
+        '--lyrics-guide-width': px(c.lyrics.guideWidth),
+        '--lyrics-inactive-opacity': String(c.lyrics.inactiveOpacity),
+        '--lyrics-line-padding-x': px(c.lyrics.linePaddingX),
+        '--lyrics-line-padding-y': px(c.lyrics.linePaddingY),
+
+        /* ---------- 组件：菜单 / 抽屉列表 ---------- */
+        '--menu-width': px(c.menu.width),
+        '--menu-max-height': px(c.menu.maxHeight),
+        '--menu-padding': px(c.menu.padding),
+        '--menu-radius': c.menu.radius,
+        '--menu-item-padding-x': px(c.menu.itemPaddingX),
+        '--menu-item-padding-y': px(c.menu.itemPaddingY),
+        '--menu-item-radius': c.menu.itemRadius,
+        '--menu-font-size': px(c.menu.fontSize),
+
+        /* ---------- 组件：音源筛选 ---------- */
+        '--source-filter-height': px(c.sourceFilter.height),
+        '--source-filter-gap': px(c.sourceFilter.gap),
+        '--source-filter-tab-padding-x': px(c.sourceFilter.tabPaddingX),
+        '--source-filter-font-size': px(c.sourceFilter.fontSize),
+        '--source-filter-drawer-width': px(c.sourceFilter.drawerWidth),
 
         /* ---------- 组件：空态 ---------- */
         '--empty-padding-x': px(c.emptyState.paddingX),

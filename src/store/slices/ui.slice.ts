@@ -4,18 +4,24 @@ import type {PersistedUi} from '../persist';
 import type {UiActions, UiState, StoreCtx} from '../types';
 
 /**
- * UI 切片：主题模式 / 主题市场预设 / 侧边栏折叠 / 全局搜索词。
- * 主题的实际配色解析由 ThemeProvider 完成，这里只保存用户选择（并持久化）。
+ * UI 切片：主题、侧边栏折叠、全局搜索词、音源展示偏好。
+ * 主题与音源偏好的实际解析由 ThemeProvider / 视图完成，这里只保存用户选择（并持久化）。
  */
 export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
     const validPreset = themePresets.some((preset) => preset.id === persisted.themePresetId);
+    const mode = persisted.themeMode ?? themeConfig.mode;
 
     const state: UiState = {
-        themeMode: persisted.themeMode ?? themeConfig.mode,
+        themeMode: mode,
         themePresetId: validPreset ? (persisted.themePresetId as string) : DEFAULT_PRESET_ID,
-        scheme: (persisted.themeMode ?? themeConfig.mode) === 'dark' ? 'dark' : 'light',
+        scheme: mode === 'dark' ? 'dark' : 'light',
         collapsedGroups: [],
         searchQuery: '',
+        sourceDisplay: persisted.sourceDisplay ?? 'aggregate',
+        sourceFilterStyle: persisted.sourceFilterStyle ?? 'tabs',
+        sourceFilter: 'all',
+        preferredSource: persisted.preferredSource ?? null,
+        preferredQuality: persisted.preferredQuality ?? 'high',
     };
 
     const patch = (partial: Partial<UiState>) => {
@@ -23,8 +29,8 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
     };
 
     const actions: UiActions = {
-        setThemeMode(mode) {
-            patch({themeMode: mode});
+        setThemeMode(themeMode) {
+            patch({themeMode});
         },
         setThemePreset(themePresetId) {
             patch({themePresetId});
@@ -46,6 +52,23 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         },
         setSearchQuery(searchQuery) {
             patch({searchQuery});
+        },
+        setSourceDisplay(sourceDisplay) {
+            patch({sourceDisplay});
+        },
+        setSourceFilterStyle(sourceFilterStyle) {
+            patch({sourceFilterStyle});
+        },
+        setSourceFilter(sourceFilter) {
+            patch({sourceFilter});
+        },
+        setPreferredSource(preferredSource) {
+            patch({preferredSource});
+        },
+        setPreferredQuality(preferredQuality) {
+            patch({preferredQuality});
+            // 音质偏好变化后立即重新解析当前曲目
+            ctx.getActions().player.reloadSource();
         },
     };
 

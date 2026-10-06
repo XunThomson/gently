@@ -243,7 +243,32 @@
       "inactiveColor": "{text.tertiary}",
       "hoverColor": "{text.secondary}",
       "activeColor": "{brand}",
-      "activeWeight": 600
+      "activeWeight": 600,
+      "activeBg": "{brand.soft}",
+      "guideColor": "{border.default}",
+      "guideWidth": 1,
+      "inactiveOpacity": 0.55,
+      "linePaddingX": 12,
+      "linePaddingY": 6
+    },
+
+    "menu": {
+      "width": 232,
+      "maxHeight": 300,
+      "padding": 6,
+      "radius": "12px",
+      "itemPaddingX": 10,
+      "itemPaddingY": 8,
+      "itemRadius": "8px",
+      "fontSize": 13
+    },
+
+    "sourceFilter": {
+      "height": 32,
+      "gap": 6,
+      "tabPaddingX": 14,
+      "fontSize": 13,
+      "drawerWidth": 260
     },
 
     "emptyState": {

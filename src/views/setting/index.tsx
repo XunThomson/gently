@@ -6,13 +6,19 @@ import {UnderlineRadioGroup} from '../../components/ui/radio-group';
 import {BadgeCell, TextCell} from '../../components/ui/data-table';
 import {SUPPORTED_LANGS} from '../../i18n';
 import {getActiveMusicSource} from '../../plugins';
+import {catalogService} from '../../services';
+import {useActions, usePluginState, useSelect} from '../../store';
 import {getThemePreset, useTheme} from '../../theme';
 import type {ThemeMode} from '../../theme';
+import type {SourceDisplayMode, SourceFilterStyle, TrackQuality} from '../../types';
+import {QUALITIES_DESC, qualityLabelKey} from '../../utils/quality';
 import styles from './setting.module.css';
 
 const THEME_MODES: ThemeMode[] = ['light', 'dark', 'system'];
+const DISPLAY_MODES: SourceDisplayMode[] = ['aggregate', 'perSource'];
+const FILTER_STYLES: SourceFilterStyle[] = ['tabs', 'drawer'];
 
-/** 设置视图：外观（明暗模式 / 主题市场 / 语言）与数据源信息。 */
+/** 设置视图：外观（明暗 / 主题市场 / 语言）、音源与音质、数据源与版本。 */
 export default function SettingView() {
     const {t, i18n} = useTranslation();
     const navigate = useNavigate();
@@ -20,6 +26,19 @@ export default function SettingView() {
     const source = getActiveMusicSource().info;
     const preset = getThemePreset(presetId);
     const appVersion = __APP_VERSION__;
+
+    const display = useSelect((s) => s.ui.sourceDisplay);
+    const filterStyle = useSelect((s) => s.ui.sourceFilterStyle);
+    const preferredSource = useSelect((s) => s.ui.preferredSource);
+    const preferredQuality = useSelect((s) => s.ui.preferredQuality);
+    const {setSourceDisplay, setSourceFilterStyle, setPreferredSource, setPreferredQuality} =
+        useActions().ui;
+    const pluginList = usePluginState().list;
+
+    /* 可选的优先音源：只列出已启用且已实现的音源 */
+    const activeSources = catalogService
+        .listActiveSources()
+        .filter((item) => pluginList.some((plugin) => plugin.id === item.id && plugin.enabled));
 
     const currentLang = (i18n.resolvedLanguage ?? 'zh').slice(0, 2);
 
@@ -65,6 +84,71 @@ export default function SettingView() {
                 </div>
             </section>
 
+            {/* ---------- 音源与音质 ---------- */}
+            <section className={styles.card}>
+                <h2 className={styles.cardTitle}>{t('page.setting.sourceSection')}</h2>
+
+                <div className={styles.field}>
+                    <span className={styles.label}>{t('page.setting.sourceDisplay')}</span>
+                    <UnderlineRadioGroup
+                        name="source-display"
+                        value={display}
+                        onChange={setSourceDisplay}
+                        options={DISPLAY_MODES.map((value) => ({
+                            value,
+                            label: t(
+                                value === 'aggregate'
+                                    ? 'page.setting.sourceDisplayAggregate'
+                                    : 'page.setting.sourceDisplayPerSource',
+                            ),
+                        }))}
+                    />
+                </div>
+
+                <div className={styles.field}>
+                    <span className={styles.label}>{t('page.setting.sourceFilterStyle')}</span>
+                    <UnderlineRadioGroup
+                        name="source-filter-style"
+                        value={filterStyle}
+                        onChange={setSourceFilterStyle}
+                        options={FILTER_STYLES.map((value) => ({
+                            value,
+                            label: t(
+                                value === 'tabs'
+                                    ? 'page.setting.sourceFilterTabs'
+                                    : 'page.setting.sourceFilterDrawer',
+                            ),
+                        }))}
+                    />
+                </div>
+
+                <div className={styles.field}>
+                    <span className={styles.label}>{t('page.setting.preferredSource')}</span>
+                    <UnderlineRadioGroup
+                        name="preferred-source"
+                        value={preferredSource ?? 'auto'}
+                        onChange={(value) => setPreferredSource(value === 'auto' ? null : value)}
+                        options={[
+                            {value: 'auto', label: t('source.auto')},
+                            ...activeSources.map((item) => ({value: item.id, label: item.name})),
+                        ]}
+                    />
+                </div>
+
+                <div className={styles.field}>
+                    <span className={styles.label}>{t('page.setting.preferredQuality')}</span>
+                    <UnderlineRadioGroup
+                        name="preferred-quality"
+                        value={preferredQuality}
+                        onChange={(value) => setPreferredQuality(value as TrackQuality)}
+                        options={QUALITIES_DESC.map((value) => ({
+                            value,
+                            label: t(qualityLabelKey(value)),
+                        }))}
+                    />
+                </div>
+            </section>
+
             <section className={styles.card}>
                 <h2 className={styles.cardTitle}>{t('page.setting.dataSource')}</h2>
 
@@ -73,6 +157,9 @@ export default function SettingView() {
                     <span className={styles.value}>
                         <TextCell>{source.name}</TextCell>{' '}
                         <BadgeCell tone="accent">v{source.version}</BadgeCell>
+                        <TextCell tone="muted">
+                            {t('source.count', {count: activeSources.length})}
+                        </TextCell>
                     </span>
                 </div>
             </section>

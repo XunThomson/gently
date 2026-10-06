@@ -1,0 +1,132 @@
+/* 播放条内的选择器（音源 / 音质）：触发器 + 下拉菜单 */
+
+.picker {
+    position: relative;
+    display: inline-flex;
+}
+
+.trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: 26px;
+    max-width: 150px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--player-chip-font-size);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color var(--motion-fast), color var(--motion-fast),
+        background-color var(--motion-fast);
+}
+
+.trigger:hover {
+    border-color: var(--brand);
+    color: var(--brand);
+    background: var(--brand-soft);
+}
+
+.triggerIcon {
+    color: var(--text-tertiary);
+}
+
+.triggerValue {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ---------- 菜单 ---------- */
+
+.menu {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + var(--space-2));
+    z-index: var(--z-dropdown);
+    width: var(--menu-width);
+    max-height: var(--menu-max-height);
+    overflow-y: auto;
+    padding: var(--menu-padding);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--menu-radius);
+    box-shadow: var(--shadow-panel);
+    animation: pickerMenuIn var(--motion-fast);
+}
+
+@keyframes pickerMenuIn {
+    from {
+        opacity: 0;
+        transform: translateY(var(--space-1));
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.menuHead {
+    padding: var(--menu-item-padding-y) var(--menu-item-padding-x) var(--space-1);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+}
+
+.hint {
+    padding: 0 var(--menu-item-padding-x) var(--space-2);
+    color: var(--brand);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-normal);
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--menu-item-padding-y) var(--menu-item-padding-x);
+    border: 0;
+    border-radius: var(--menu-item-radius);
+    background: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--menu-font-size);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.item:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.item:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.itemActive,
+.itemActive:hover:not(:disabled) {
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-weight: var(--font-weight-medium);
+}
+
+.itemName {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.itemBadge {
+    flex: none;
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    background: var(--bg-surface-alt);
+    color: var(--text-tertiary);
+    font-size: var(--player-chip-font-size);
+}

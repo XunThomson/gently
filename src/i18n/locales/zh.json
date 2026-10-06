@@ -65,6 +65,24 @@
     "newPlaylist": "新建歌单",
     "trackCount": "{{count}} 首"
   },
+  "quality": {
+    "label": "音质",
+    "standard": "标准",
+    "high": "高品",
+    "lossless": "无损",
+    "hires": "Hi-Res"
+  },
+  "source": {
+    "label": "音源",
+    "auto": "自动选择",
+    "all": "全部音源",
+    "count": "{{count}} 个音源",
+    "unavailable": "不可用",
+    "switchTo": "切换到「{{name}}」",
+    "fallback": "当前音源不可用，已自动切换",
+    "resolving": "正在匹配音源…",
+    "none": "该歌曲在所有已启用音源中均不可播放"
+  },
   "player": {
     "notPlaying": "未在播放",
     "pickSong": "选择一首歌曲开始",
@@ -76,7 +94,13 @@
     "queue": "播放列表",
     "actions": "更多功能",
     "queueEmpty": "播放列表为空",
-    "nowPlayingTag": "正在播放"
+    "nowPlayingTag": "正在播放",
+    "queueClear": "清空队列",
+    "queueUpNext": "接下来播放",
+    "queuePlayed": "已播放",
+    "queueRemove": "从队列移除",
+    "queueMoveUp": "上移",
+    "queueMoveDown": "下移"
   },
   "column": {
     "title": "标题",
@@ -215,6 +239,15 @@
       "language": "语言",
       "dataSource": "数据源",
       "activeSource": "当前音源",
+      "sourceSection": "音源与音质",
+      "sourceDisplay": "列表展示方式",
+      "sourceDisplayAggregate": "聚合（同一首歌只显示一条）",
+      "sourceDisplayPerSource": "分源（按音源分别展示）",
+      "sourceFilterStyle": "音源筛选样式",
+      "sourceFilterTabs": "横向标签",
+      "sourceFilterDrawer": "列表抽屉",
+      "preferredSource": "优先音源",
+      "preferredQuality": "优先音质",
       "about": "关于",
       "version": "版本 {{version}}"
     }

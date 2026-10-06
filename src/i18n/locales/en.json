@@ -65,6 +65,24 @@
     "newPlaylist": "New playlist",
     "trackCount": "{{count}} songs"
   },
+  "quality": {
+    "label": "Quality",
+    "standard": "Standard",
+    "high": "High",
+    "lossless": "Lossless",
+    "hires": "Hi-Res"
+  },
+  "source": {
+    "label": "Source",
+    "auto": "Automatic",
+    "all": "All sources",
+    "count": "{{count}} sources",
+    "unavailable": "Unavailable",
+    "switchTo": "Switch to “{{name}}”",
+    "fallback": "Current source failed — switched automatically",
+    "resolving": "Matching sources…",
+    "none": "Not playable on any enabled source"
+  },
   "player": {
     "notPlaying": "Nothing playing",
     "pickSong": "Pick a song to start",
@@ -76,7 +94,13 @@
     "queue": "Play queue",
     "actions": "More actions",
     "queueEmpty": "The queue is empty",
-    "nowPlayingTag": "Now playing"
+    "nowPlayingTag": "Now playing",
+    "queueClear": "Clear queue",
+    "queueUpNext": "Up next",
+    "queuePlayed": "Played",
+    "queueRemove": "Remove from queue",
+    "queueMoveUp": "Move up",
+    "queueMoveDown": "Move down"
   },
   "column": {
     "title": "Title",
@@ -215,6 +239,15 @@
       "language": "Language",
       "dataSource": "Data source",
       "activeSource": "Active source",
+      "sourceSection": "Sources & quality",
+      "sourceDisplay": "List mode",
+      "sourceDisplayAggregate": "Merged (one row per song)",
+      "sourceDisplayPerSource": "Per source",
+      "sourceFilterStyle": "Filter style",
+      "sourceFilterTabs": "Horizontal tabs",
+      "sourceFilterDrawer": "Drawer",
+      "preferredSource": "Preferred source",
+      "preferredQuality": "Preferred quality",
       "about": "About",
       "version": "Version {{version}}"
     }

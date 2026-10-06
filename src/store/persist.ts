@@ -1,7 +1,8 @@
 import type {ThemeMode} from '../theme/types';
+import type {SourceDisplayMode, SourceFilterStyle, TrackQuality} from '../types';
 
 /**
- * UI 偏好持久化（主题模式 / 主题市场预设）。
+ * UI 偏好持久化（主题 + 音源展示方式）。
  * 非浏览器环境（冒烟测试 / SSR）下为安全空操作。
  */
 
@@ -10,6 +11,10 @@ const STORAGE_KEY = 'gently:ui';
 export interface PersistedUi {
     themeMode?: ThemeMode;
     themePresetId?: string;
+    sourceDisplay?: SourceDisplayMode;
+    sourceFilterStyle?: SourceFilterStyle;
+    preferredSource?: string | null;
+    preferredQuality?: TrackQuality;
 }
 
 export function readPersistedUi(): PersistedUi {

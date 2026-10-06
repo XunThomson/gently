@@ -10,9 +10,9 @@ import {Logo} from './Logo';
 import {Toolbar} from './Toolbar';
 import styles from './title-bar.module.css';
 
-/** 联想：走曲库门面（实际数据源由插件决定） */
+/** 联想：走曲库门面（只查当前生效音源，保证输入响应速度） */
 async function fetchSuggestions(keyword: string): Promise<SearchSuggestion[]> {
-    const tracks = await catalogService.search(keyword);
+    const tracks = await catalogService.searchIn(keyword);
     return tracks.map((track) => ({value: track.title, desc: track.artist}));
 }
 

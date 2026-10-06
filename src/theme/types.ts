@@ -227,6 +227,34 @@ export interface ComponentTokens {
         hoverColor: string;
         activeColor: string;
         activeWeight: number;
+        /** 当前行背景（药丸高亮） */
+        activeBg: string;
+        /** 当前行上下虚线引导线 */
+        guideColor: string;
+        guideWidth: number;
+        /** 非当前行透明度 */
+        inactiveOpacity: number;
+        linePaddingX: number;
+        linePaddingY: number;
+    };
+    /** 下拉菜单 / 抽屉列表（音源、音质、筛选抽屉共用） */
+    menu: {
+        width: number;
+        maxHeight: number;
+        padding: number;
+        radius: string;
+        itemPaddingX: number;
+        itemPaddingY: number;
+        itemRadius: string;
+        fontSize: number;
+    };
+    /** 页面音源筛选（tabs / 抽屉） */
+    sourceFilter: {
+        height: number;
+        gap: number;
+        tabPaddingX: number;
+        fontSize: number;
+        drawerWidth: number;
     };
     emptyState: {
         paddingX: number;

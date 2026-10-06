@@ -11,19 +11,29 @@
     padding: var(--lyrics-padding-y) var(--lyrics-padding-x);
     scrollbar-width: none;
     -ms-overflow-style: none;
+    /* 上下渐隐：暗示列表在视口外继续延伸，当前行即“你在这里” */
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
+    mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
 }
 
 .root::-webkit-scrollbar {
     display: none;
 }
 
+/*
+ * 行 = 整行宽度的块级按钮（align-self: stretch 让虚线导引横跨整行）。
+ * border-top / border-bottom 在非激活行用透明色占位，激活时只改颜色，
+ * 避免虚线出现 / 消失时整列歌词跳动。
+ */
 .line {
+    align-self: stretch;
     flex-shrink: 0;
     width: 100%;
-    border: none;
+    padding: var(--lyrics-line-padding-y) var(--lyrics-line-padding-x);
+    border-top: var(--lyrics-guide-width) dashed transparent;
+    border-bottom: var(--lyrics-guide-width) dashed transparent;
+    border-radius: var(--radius-lg);
     background: transparent;
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-sm);
     font-family: inherit;
     font-size: var(--lyrics-font-size);
     font-weight: var(--font-weight-normal);
@@ -31,17 +41,34 @@
     text-align: center;
     color: var(--lyrics-inactive-color);
     cursor: pointer;
-    transition: color var(--motion-fast), font-size var(--motion-fast);
+    transition:
+        color var(--motion-fast),
+        opacity var(--motion-fast),
+        font-size var(--motion-fast),
+        background-color var(--motion-fast),
+        border-color var(--motion-fast),
+        transform var(--motion-fast);
+}
+
+/* 非激活行整体压暗；悬浮时恢复满不透明度并提亮文字 */
+.line:not([data-active='true']) {
+    opacity: var(--lyrics-inactive-opacity);
 }
 
 .line:hover {
+    opacity: 1;
     color: var(--lyrics-hover-color);
 }
 
+/* 当前行：品牌色 + 放大字号字重 + 药丸底色 + 上下虚线圈出 */
 .line[data-active='true'] {
     color: var(--lyrics-active-color);
     font-size: var(--lyrics-active-font-size);
     font-weight: var(--lyrics-active-weight);
+    background-color: var(--lyrics-active-bg);
+    border-top-color: var(--lyrics-guide-color);
+    border-bottom-color: var(--lyrics-guide-color);
+    transform: scale(1.02);
 }
 
 .empty {

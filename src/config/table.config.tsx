@@ -54,6 +54,17 @@ export const sourceColumn = <T extends Track>(t: TFunction): ColumnDef<T> => ({
     render: (value) => <BadgeCell tone="accent">{String(value)}</BadgeCell>,
 });
 
+/**
+ * 音源聚合列：聚合展示时同一首歌有多个音源候选，
+ * 这里显示候选数量，播放时按顺序自动尝试。
+ */
+export const sourceCountColumn = <T extends Track>(t: TFunction): ColumnDef<T> => ({
+    key: 'sourceCount',
+    title: t('column.source'),
+    width: '128px',
+    render: (value) => <BadgeCell tone="accent">{t('source.count', {count: Number(value ?? 1)})}</BadgeCell>,
+});
+
 export const progressColumn = <T,>(t: TFunction): ColumnDef<T> => ({
     key: 'sizeText',
     title: t('column.progress'),

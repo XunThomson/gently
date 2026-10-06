@@ -20,8 +20,10 @@ import {
     IconVolume,
 } from '../../ui/icon';
 import {ActionsPanel} from './ActionsPanel';
+import {QualityPicker} from './QualityPicker';
 import {QueuePanel} from './QueuePanel';
 import {SeekBar} from './SeekBar';
+import {SourcePicker} from './SourcePicker';
 import styles from './PlayerBar.module.css';
 
 const NEXT_REPEAT: Record<RepeatMode, RepeatMode> = {off: 'all', all: 'one', one: 'off'};
@@ -124,7 +126,6 @@ export function PlayerBar() {
                             {current && (
                                 <span className={styles.chips}>
                                     <span className={styles.chip}>{current.duration}</span>
-                                    <span className={styles.chip}>{current.source}</span>
                                 </span>
                             )}
                         </div>
@@ -183,8 +184,11 @@ export function PlayerBar() {
                     </span>
                 </div>
 
-                {/* ---------- 右：模式 / 抽屉 / 音量 ---------- */}
+                {/* ---------- 右：音源 / 音质 / 模式 / 抽屉 / 音量 ---------- */}
                 <div className={styles.right}>
+                    <SourcePicker/>
+                    <QualityPicker/>
+
                     <button
                         type="button"
                         className={styles.iconBtn}

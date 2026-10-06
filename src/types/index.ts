@@ -110,6 +110,46 @@ export interface Playlist {
     tracks: Track[];
 }
 
+/* ============================== 音源与音质 ============================== */
+
+/** 音质档位（由低到高） */
+export type TrackQuality = 'standard' | 'high' | 'lossless' | 'hires';
+
+/** 同一首歌在某个音源下的候选 */
+export interface TrackCandidate {
+    /** 音源（plugin）id */
+    source: string;
+    /** 该音源下的具体曲目：专辑/时长等元数据可能略有差异 */
+    track: Track;
+    /** 该音源支持的音质档位（由高到低） */
+    qualities: TrackQuality[];
+}
+
+/**
+ * 聚合后的逻辑歌曲：一首歌 + 多个音源候选。
+ *
+ * 视图默认按「歌」展示（避免同一首歌出现多个条目），
+ * 播放时在候选中挑可用音源，失败自动切换。
+ */
+export interface GroupedTrack extends Track {
+    candidates: TrackCandidate[];
+    /** 候选音源数量 */
+    sourceCount: number;
+}
+
+/** 音源展示方式：聚合 / 分源 */
+export type SourceDisplayMode = 'aggregate' | 'perSource';
+
+/** 页面音源筛选交互样式 */
+export type SourceFilterStyle = 'tabs' | 'drawer';
+
+/** 音源解析结果 */
+export interface ResolvedSource {
+    url: string;
+    source: string;
+    quality: TrackQuality;
+}
+
 /* ============================== 歌词 ============================== */
 
 export interface LyricLine {

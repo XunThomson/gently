@@ -1,5 +1,6 @@
 import {useTranslation} from 'react-i18next';
 import {Page} from '../../components/ui/page';
+import {SourceFilter} from '../../components/ui/source-filter';
 import {useActions, useRankingState} from '../../store';
 import {formatRange, toDateKey} from '../../utils/date';
 import {hashStr} from '../../utils/helpers';
@@ -29,6 +30,7 @@ export default function RankingView() {
         <Page
             title={t('page.ranking.title')}
             subtitle={`${formatRange(period, date, weekStart)} · ${t('page.ranking.subtitle')}`}
+            toolbar={<SourceFilter/>}
         >
             <HeroCard song={hero} onPlay={playHero}/>
             <ChartSection/>

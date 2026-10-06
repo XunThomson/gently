@@ -28,12 +28,14 @@ export function ChartSection() {
     const currentKey = useSelect((s) =>
         s.player.current ? `${s.player.current.title}|${s.player.current.artist}` : null,
     );
+    /* 音源筛选变化后需要重新拉取榜单 */
+    const sourceFilter = useSelect((s) => s.ui.sourceFilter);
     const {setChart, setPeriod, setDate, toggleExpanded, load} = useActions().ranking;
     const {playOrToggle} = useActions().player;
 
     useEffect(() => {
         void load();
-    }, [load]);
+    }, [load, sourceFilter]);
 
     const {chart, period, date, weekStart, expanded, query, rows, loading} = ranking;
 

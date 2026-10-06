@@ -1,7 +1,7 @@
 import type {DownloadTask, LocalTrack, PluginInfo, RecentTrack} from '../types';
 import {makeTrack} from './track.mock';
 import {SONG_POOL} from './base.data.mock';
-import {MOCK_SOURCE_INFO} from '../plugins/builtin/mock-source';
+import {listMusicSourceInfos} from '../plugins/registry';
 import {appConfig} from '../config/app.config';
 import {formatSizeMb} from '../utils/helpers';
 
@@ -64,34 +64,14 @@ export const DOWNLOAD_TASKS: DownloadTask[] = DOWNLOAD_SEEDS.slice(
 
 /* ============================== 已安装插件 ============================== */
 
-export const INSTALLED_PLUGINS: PluginInfo[] = [
-    MOCK_SOURCE_INFO,
-    {
-        id: 'bilibili',
-        name: 'Bilibili 音源',
-        version: '0.8.3',
-        author: 'gently-community',
-        description: '从 B 站视频提取音频，支持无损与合集解析。',
-        builtin: false,
-        enabled: true,
-        homepage: 'https://github.com/gently-plugins/bilibili',
-    },
-    {
-        id: 'netease',
-        name: '网易云音源',
-        version: '1.2.0',
-        author: 'gently-community',
-        description: '网易云音乐搜索、歌单与榜单。',
-        builtin: false,
-        enabled: false,
-        homepage: 'https://github.com/gently-plugins/netease',
-    },
+/** 只有元数据、尚未实现的插件占位（用于展示插件市场） */
+const PLUGIN_PLACEHOLDERS: PluginInfo[] = [
     {
         id: 'qqmusic',
         name: 'QQ 音乐音源',
         version: '0.5.1',
         author: 'gently-community',
-        description: 'QQ 音乐搜索与歌单解析。',
+        description: 'QQ 音乐搜索与歌单解析（尚未实现）。',
         builtin: false,
         enabled: false,
     },
@@ -100,8 +80,16 @@ export const INSTALLED_PLUGINS: PluginInfo[] = [
         name: '酷狗音源',
         version: '0.3.0',
         author: 'third-party',
-        description: '酷狗音乐搜索。',
+        description: '酷狗音乐搜索（尚未实现）。',
         builtin: false,
         enabled: false,
     },
 ];
+
+/**
+ * 已安装插件列表：真实注册的音源（enabled 取自注册表）+ 未实现占位。
+ * 用函数而非模块级常量，避免与插件注册的模块求值顺序耦合。
+ */
+export function getInstalledPlugins(): PluginInfo[] {
+    return [...listMusicSourceInfos(), ...PLUGIN_PLACEHOLDERS];
+}

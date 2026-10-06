@@ -5,9 +5,11 @@
     right: var(--player-bar-padding-x);
     bottom: 100%;
     z-index: var(--z-dropdown);
+    display: flex;
+    flex-direction: column;
     width: var(--panel-width);
     max-height: var(--panel-max-height);
-    overflow-y: auto;
+    overflow: hidden;
     padding: var(--panel-padding);
     background: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
@@ -56,6 +58,31 @@
 
 /* ---------- 队列 ---------- */
 
+/* 三段式队列：列表内部滚动，头部固定 */
+.listScroll {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.groupLabel {
+    margin: 0;
+    padding: 0 var(--panel-item-padding-x);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-tertiary);
+    letter-spacing: 0.04em;
+}
+
 .list {
     display: flex;
     flex-direction: column;
@@ -65,11 +92,29 @@
     list-style: none;
 }
 
+/* 行容器：点击区 + 行操作并排，hover 时一起高亮 */
+.listItem {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    border-radius: var(--panel-item-radius);
+    transition: background-color var(--motion-fast);
+}
+
+.listItem:hover {
+    background: var(--bg-hover);
+}
+
+.listItemActive {
+    background: var(--brand-soft);
+}
+
 .item {
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     padding: var(--panel-item-padding-y) var(--panel-item-padding-x);
     border: 0;
     border-radius: var(--panel-item-radius);
@@ -77,15 +122,30 @@
     font-family: inherit;
     text-align: left;
     cursor: pointer;
-    transition: background-color var(--motion-fast);
 }
 
 .item:hover {
     background: var(--bg-hover);
 }
 
+.item:focus-visible {
+    outline: 1px solid var(--brand);
+    outline-offset: -1px;
+}
+
 .itemActive {
     background: var(--brand-soft);
+}
+
+/* 已播放：整体压低对比度 */
+.itemPlayed .itemTitle,
+.itemPlayed .itemArtist,
+.itemPlayed .index {
+    color: var(--text-tertiary);
+}
+
+.itemPlayed {
+    opacity: 0.7;
 }
 
 .index {
@@ -142,6 +202,102 @@
     font-size: var(--font-size-xs);
     color: var(--text-tertiary);
     font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 队列行操作（悬浮 / 键盘聚焦时显示） ---------- */
+
+.rowActions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: none;
+    padding-right: var(--space-2);
+    opacity: 0;
+    transition: opacity var(--motion-fast);
+}
+
+.listItem:hover .rowActions,
+.listItem:focus-within .rowActions {
+    opacity: 1;
+}
+
+.actionButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--menu-font-size);
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color var(--motion-fast), border-color var(--motion-fast);
+}
+
+.actionButton:hover:not(:disabled) {
+    color: var(--brand);
+    border-color: var(--border-default);
+}
+
+.actionButton:focus-visible {
+    opacity: 1;
+    outline: 1px solid var(--brand);
+    outline-offset: 1px;
+}
+
+.actionButton:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.iconUp {
+    transform: rotate(180deg);
+}
+
+/* ---------- 抽屉头部工具 ---------- */
+
+.headTools {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-left: auto;
+}
+
+.headAction {
+    padding: 0;
+    border: 0;
+    background: none;
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color var(--motion-fast);
+}
+
+.headAction:hover:not(:disabled) {
+    color: var(--brand);
+}
+
+.headAction:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.headIcon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color var(--motion-fast);
+}
+
+.headIcon:hover {
+    color: var(--text-primary);
 }
 
 /* ---------- 功能 ---------- */

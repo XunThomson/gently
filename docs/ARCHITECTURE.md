@@ -121,23 +121,59 @@ persist.ts                       themeMode + themePresetId 落 localStorage
 - 行操作 → 播放 / 收藏（随收藏状态切换文案）/ 下载（可选）/ 视图特有的额外操作；
 - `useCurrentTrackId()` 用于给正在播放的行加高亮（`DataTable.activeRowKey`）。
 
-## 4. 数据源插件（音乐源）
+## 4. 数据源插件（音乐源）与多音源
 
 ```
-plugins/types.ts        MusicSourcePlugin：info + fetchChart / fetchRecommend / search / resolveUrl
-plugins/registry.ts     注册、查询、当前启用源
-plugins/builtin/        mock-source.ts（内置示例源）
-plugins/index.ts        副作用注册内置插件
+plugins/types.ts        MusicSourcePlugin：info + qualities + fetchChart / fetchRecommend /
+                        search / resolveUrl(track, quality) → ResolvedSource | null
+plugins/registry.ts     注册、启用状态（唯一来源）、音源元数据、按 id 取插件
+plugins/builtin/
+  source-factory.ts     用内置数据造一个「行为真实」的模拟源（可设不可播比例 / 延迟）
+  mock-source.ts        内置示例源：始终可播，作为自动回退兜底
+  alternate-sources.ts  Bilibili（约 1/4 不可播）、网易云（约 1/3 不可播）
+plugins/index.ts        副作用注册全部内置插件
 ```
 
-- 任何数据源实现 `MusicSourcePlugin`，调用 `registerMusicSource` 即可接入；UI 无需改动。
-- `services/catalog.service.ts` 是唯一调用方，并做榜单结果缓存。
-- `PluginInfo`（元数据）与实现分离：插件管理页只消费元数据。
+### 要解决的问题
+
+同一首歌在多个音源下都有条目。如果直接平铺展示：**同一个内容出现多次**；
+而如果随便挑一个源播放：**该源的这一首可能播不了**。
+
+### 解决方式：聚合展示 + 播放期回退 + 可选分源
 
 ```
-view → store.ranking.load() → services.catalogService.fetchChart()
-     → plugins.getActiveMusicSource().fetchChart() → (mock | 真实源)
+              ┌── 聚合（aggregate，默认）
+视图数据 ─────┤   groupTracks(所有启用源的结果)
+              │     → 一首歌一条（GroupedTrack），多音源进入 candidates
+              └── 分源（perSource）
+                 只请求选中的音源，返回原始条目
+                          ↑
+        页面音源筛选 SourceFilter（tabs / drawer，样式在设置里选）
 ```
+
+```
+点击播放 → player.start(track)
+  candidates = track.candidates（聚合结果）或 [单候选]
+  按「优先音源」排序 → 依次 catalogService.resolveUrl(candidate.track, 期望音质, candidate.source)
+     ├── 返回 ResolvedSource → 可播放：写入 audioUrl / activeSource / quality
+     └── 返回 null（该源此曲不可播）→ 记入 failedSources，继续下一个候选
+  全部失败 → 退回模拟时钟（进度照常推进，UI 不卡死）
+```
+
+- 音质：`utils/quality.pickQuality(源支持的档位, 期望档位)` —— 期望档位不可用时**按源能力降级**，
+  实际在播档位显示在播放条上。
+- 手动切换：播放条的音源选择器可指定某个候选源（只试该源），失败的源在列表里标记「不可用」。
+- 启用/停用：插件管理页的开关会写入注册表，**注册表才是「哪些源参与聚合与回退」的唯一来源**。
+
+### UI 入口
+
+| 位置 | 作用 |
+|---|---|
+| 播放条「音源」选择器 | 当前在播音源 + 自动回退提示 + 手动切换（含不可用标记） |
+| 播放条「音质」选择器 | 当前在播档位 + 选择优先档位（不支持的档位置灰） |
+| 页面音源筛选 `SourceFilter` | 排行榜 / 热门推荐 / 搜索结果：「全部音源」或指定源 |
+| 设置 → 音源与音质 | 列表展示方式（聚合 / 分源）、筛选样式（横向标签 / 列表抽屉）、优先音源、优先音质 |
+
 
 ## 5. 组件分层
 

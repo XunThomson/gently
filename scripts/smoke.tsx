@@ -19,12 +19,16 @@ import {getActiveMusicSource, listMusicSources} from '../src/plugins';
 import {catalogService, fileService, libraryService} from '../src/services';
 import zh from '../src/i18n/locales/zh.json';
 import en from '../src/i18n/locales/en.json';
+import {filterGroupsBySource, groupTracks} from '../src/utils/track';
+import {pickQuality} from '../src/utils/quality';
 
 import {TitleBar} from '../src/components/shell/title-bar';
 import {Sidebar} from '../src/components/shell/sidebar';
 import {PlayerBar} from '../src/components/shell/player-bar';
 import {QueuePanel} from '../src/components/shell/player-bar/QueuePanel';
 import {ActionsPanel} from '../src/components/shell/player-bar/ActionsPanel';
+import {SourcePicker} from '../src/components/shell/player-bar/SourcePicker';
+import {QualityPicker} from '../src/components/shell/player-bar/QualityPicker';
 import {buildMenuRoutes, appRoutes} from '../src/router/meta';
 
 import RankingView from '../src/views/ranking';
@@ -77,6 +81,8 @@ const DYNAMIC_PREFIXES = [
     'page.download.status.',
     'page.setting.theme',
     'language.',
+    // utils/quality.ts 的 qualityLabelKey() 按档位拼接
+    'quality.',
 ];
 
 function flattenKeys(obj: Record<string, unknown>, prefix = ''): string[] {
@@ -219,9 +225,54 @@ async function main(): Promise<void> {
     check('plugins: fetchChart 返回榜单行', chart.length > 0);
     check('plugins: 榜单缓存命中', (await catalogService.fetchChart({chart: 'hot', period: 'day', date: {year: 2025, month: 1, day: 1}, dateKey: 'day-2025-01-01'})) === chart);
 
-    const found = await catalogService.search('晚风');
+    const found = await catalogService.searchIn('晚风');
     check('plugins: search 命中曲目', found.length > 0 && found[0].title.includes('晚风'));
-    check('plugins: 空关键词返回空', (await catalogService.search('   ')).length === 0);
+    check('plugins: 空关键词返回空', (await catalogService.searchIn('   ')).length === 0);
+
+    /* ---------------- 多音源聚合 / 音质 / 回退 ---------------- */
+    const activeSources = catalogService.listActiveSources();
+    check('source: 至少注册 3 个可用音源', activeSources.length >= 3);
+
+    const recommend = await catalogService.fetchRecommendAll(12);
+    check('source: 聚合推荐有结果', recommend.length > 0);
+    check(
+        'source: 聚合结果带音源候选',
+        recommend.every((group) => group.candidates.length === group.sourceCount && group.sourceCount >= 1),
+    );
+
+    const sample = recommend[0];
+    const twin = {...sample, id: 'twin', source: 'bilibili'};
+    const merged = groupTracks([{...sample, id: 'origin'}, twin], () => ['high', 'standard']);
+    check('source: 同一首歌跨源合并为一条', merged.length === 1);
+    check('source: 合并后保留两个候选', merged[0].sourceCount === 2);
+    check('source: 聚合条目 id 稳定可复现', merged[0].id.startsWith('song:'));
+
+    check(
+        'source: 按音源筛选收敛候选',
+        filterGroupsBySource(merged, 'bilibili')[0]?.candidates.length === 1,
+    );
+    check('source: 筛选到没有该音源的源则整条隐藏', filterGroupsBySource(merged, 'ghost').length === 0);
+
+    catalogService.setSourceEnabled('netease', false);
+    check(
+        'source: 停用后不再参与聚合',
+        !catalogService.listActiveSources().some((source) => source.id === 'netease'),
+    );
+    catalogService.setSourceEnabled('netease', true);
+
+    check('quality: 期望档位超出源能力时降级', pickQuality(['high', 'standard'], 'hires') === 'high');
+    check('quality: 期望档位可用时取该档', pickQuality(['hires', 'lossless', 'high'], 'high') === 'high');
+    check('quality: 源不支持任何档位返回 null', pickQuality([], 'high') === null);
+
+    const baseTrack = (await catalogService.fetchRecommendFrom(3))[0];
+    check(
+        'quality: 解析结果带上实际音源与音质',
+        (await catalogService.resolveUrl(baseTrack, 'high', 'mock'))?.source === 'mock',
+    );
+    check(
+        'source: 未注册音源解析返回 null',
+        (await catalogService.resolveUrl(baseTrack, 'high', 'ghost')) === null,
+    );
 
     /* ---------------- 本地数据门面 ---------------- */
     const local = await libraryService.loadLocal();
@@ -306,14 +357,11 @@ async function main(): Promise<void> {
     check('store: stop 清空歌词与进度', s().player.lyrics.length === 0 && s().player.elapsed === 0);
 
     /* 音源链路：数据源解析地址 → store 标记可播放 → 音频引擎回写进度 */
-    const resolvedUrl = await catalogService.resolveUrl(s().library.local[0]);
-    check(
-        'plugins: 示例源提供可播放地址（内置测试音频）',
-        typeof resolvedUrl === 'string' && resolvedUrl.length > 0,
-    );
+    const resolvedUrl = await catalogService.resolveUrl(baseTrack, 'high', 'mock');
+    check('plugins: 示例源提供可播放地址（内置测试音频）', !!resolvedUrl?.url);
 
-    actions.player.play(s().library.local[0], s().library.local);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    actions.player.play(baseTrack, [baseTrack]);
+    await new Promise((resolve) => setTimeout(resolve, 400));
     check('store: 播放后标记可播放并写入音频地址', s().player.playable && !!s().player.audioUrl);
 
     actions.player.setProgress(42, 200);
@@ -330,6 +378,57 @@ async function main(): Promise<void> {
 
     actions.player.seek(10);
     check('store: seek 同步更新进度', s().player.elapsed === 10);
+
+    /* ---------------- 音源回退（播放器行为） ---------------- */
+    /* 首个候选不可用（未注册源）时应自动切到下一个可用源 */
+    const ghostTrack = {...baseTrack, id: 'ghost:1', source: 'ghost'};
+    const groupedWithGhost = {
+        ...baseTrack,
+        id: 'song:fallback-probe',
+        candidates: [
+            {source: 'ghost', track: ghostTrack, qualities: ['standard' as const]},
+            {source: 'mock', track: baseTrack, qualities: ['high' as const, 'standard' as const]},
+        ],
+        sourceCount: 2,
+    };
+    actions.player.play(groupedWithGhost, [groupedWithGhost]);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    check(
+        'source: 首个候选不可用时自动回退到可用音源',
+        s().player.activeSource === 'mock' && s().player.playable,
+    );
+    check('source: 失败的音源被记录', s().player.failedSources.includes('ghost'));
+
+    actions.player.switchSource('mock');
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    check('source: 可手动切换音源', s().player.activeSource === 'mock' && s().player.playable);
+
+    /* ---------------- 播放列表（队列）控制 ---------------- */
+    const q3 = s().library.local.slice(0, 4);
+    actions.player.play(q3[0], [...q3]);
+    check('queue: 队列与当前索引就绪', s().player.queue.length === 4 && s().player.index === 0);
+
+    actions.player.moveInQueue(q3[2].id, -1);
+    check(
+        'queue: 上移与相邻条目交换',
+        s().player.queue[1].id === q3[2].id && s().player.queue[2].id === q3[1].id,
+    );
+
+    actions.player.moveInQueue(q3[3].id, 1);
+    check('queue: 末位下移越界不动', s().player.queue[3].id === q3[3].id);
+
+    actions.player.removeFromQueue(q3[1].id);
+    check('queue: 可移除队列条目', !s().player.queue.some((track) => track.id === q3[1].id));
+
+    const queueLen = s().player.queue.length;
+    actions.player.removeFromQueue(q3[0].id);
+    check('queue: 当前曲目不可移除', s().player.queue.length === queueLen);
+
+    actions.player.clearQueue();
+    check(
+        'queue: 清空后仅保留当前曲目',
+        s().player.queue.length === 1 && s().player.queue[0].id === q3[0].id,
+    );
 
     /* UI 切片 */
     actions.ui.setThemeMode('dark');
@@ -486,6 +585,8 @@ async function main(): Promise<void> {
     /* 播放条的两块抽屉 + 独立搜索视图 */
     render('QueuePanel', <QueuePanel onClose={() => undefined}/>);
     render('ActionsPanel', <ActionsPanel onClose={() => undefined}/>);
+    render('SourcePicker（有候选音源）', <SourcePicker/>);
+    render('QualityPicker（有候选音源）', <QualityPicker/>);
     render('SearchView（无关键词）', <SearchView/>, '/search');
     render('SearchView（带关键词）', <SearchView/>, '/search?q=晚风');
 

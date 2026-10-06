@@ -30,15 +30,20 @@ export function createRankingSlice(ctx: StoreCtx) {
 
     const load = async () => {
         const {chart, period, date, weekStart} = ctx.getState().ranking;
+        const {sourceFilter} = ctx.getState().ui;
         const dateKey = toDateKey(period, date, weekStart);
-        const requestKey = `${chart}|${period}|${dateKey}`;
+        const requestKey = `${chart}|${period}|${dateKey}|${sourceFilter}`;
 
         if (inflight === requestKey) return;
         inflight = requestKey;
 
         patch({loading: true});
         try {
-            const rows = await catalogService.fetchChart({chart, period, date, dateKey});
+            // 榜单按音源提供：选中某个音源时只看它的榜，'all' 时用优先级最高的音源
+            const rows = await catalogService.fetchChart(
+                {chart, period, date, dateKey},
+                sourceFilter === 'all' ? undefined : sourceFilter,
+            );
             patch({rows, loading: false});
         } catch (err) {
             console.error('[ranking] 榜单加载失败', err);

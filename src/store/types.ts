@@ -12,7 +12,11 @@ import type {
     RecentTrack,
     RepeatMode,
     SongRow,
+    SourceDisplayMode,
+    SourceFilterStyle,
     Track,
+    TrackCandidate,
+    TrackQuality,
 } from '../types';
 
 /* ============================== 切片 State ============================== */
@@ -27,12 +31,22 @@ export interface UiState {
     collapsedGroups: string[];
     /** 顶栏全局搜索关键词（空串代表未搜索） */
     searchQuery: string;
+    /** 音源展示方式：聚合 / 分源 */
+    sourceDisplay: SourceDisplayMode;
+    /** 页面音源筛选的交互样式 */
+    sourceFilterStyle: SourceFilterStyle;
+    /** 当前页面选中的音源；'all' 表示全部 */
+    sourceFilter: string;
+    /** 优先音源；null 表示自动（按注册顺序） */
+    preferredSource: string | null;
+    /** 优先音质 */
+    preferredQuality: TrackQuality;
 }
 
 export interface PlayerState {
     current: NowPlaying | null;
     playing: boolean;
-    /** 播放队列（不含 current 本身） */
+    /** 播放队列（含当前曲目，index 指向当前） */
     queue: Track[];
     index: number;
     repeat: RepeatMode;
@@ -48,6 +62,16 @@ export interface PlayerState {
     audioUrl: string | null;
     /** 是否存在真实音源：false 时退回模拟时钟 */
     playable: boolean;
+    /** 当前曲目的音源候选（按尝试顺序） */
+    candidates: TrackCandidate[];
+    /** 实际在播的音源 id */
+    activeSource: string | null;
+    /** 实际在播的音质 */
+    quality: TrackQuality | null;
+    /** 已尝试且失败的音源 id（UI 用于标记不可用） */
+    failedSources: string[];
+    /** 是否正在解析音源 */
+    resolving: boolean;
 }
 
 export interface RankingState {
@@ -109,6 +133,11 @@ export interface UiActions {
     toggleGroup: (key: string) => void;
     isGroupCollapsed: (key: string) => boolean;
     setSearchQuery: (query: string) => void;
+    setSourceDisplay: (mode: SourceDisplayMode) => void;
+    setSourceFilterStyle: (style: SourceFilterStyle) => void;
+    setSourceFilter: (sourceId: string) => void;
+    setPreferredSource: (sourceId: string | null) => void;
+    setPreferredQuality: (quality: TrackQuality) => void;
 }
 
 export interface PlayerActions {
@@ -132,6 +161,17 @@ export interface PlayerActions {
     markUnplayable: () => void;
     seek: (seconds: number) => void;
     stop: () => void;
+    /** 手动切换当前曲目的音源 */
+    switchSource: (sourceId: string) => void;
+    /** 音质偏好变化后重新解析当前曲目 */
+    reloadSource: () => void;
+    /* ---- 队列控制 ---- */
+    /** 从队列移除（当前曲目不可移除） */
+    removeFromQueue: (trackId: string) => void;
+    /** 在队列中上移 / 下移 */
+    moveInQueue: (trackId: string, offset: -1 | 1) => void;
+    /** 清空队列（保留当前曲目） */
+    clearQueue: () => void;
 }
 
 export interface RankingActions {

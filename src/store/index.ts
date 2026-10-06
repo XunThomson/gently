@@ -58,14 +58,29 @@ rootActions = {
     collection: collection.actions,
 };
 
-/* 主题偏好持久化：只在真正变化时写入，避免每秒进度更新触发 localStorage 写 */
-let lastPersistedKey = `${ui.state.themeMode}|${ui.state.themePresetId}`;
+/* 偏好持久化：只在真正变化时写入，避免每秒进度更新触发 localStorage 写 */
+let lastPersistedKey = '';
 store.subscribe(() => {
-    const {themeMode, themePresetId} = store.getState().ui;
-    const key = `${themeMode}|${themePresetId}`;
+    const {themeMode, themePresetId, sourceDisplay, sourceFilterStyle, preferredSource, preferredQuality} =
+        store.getState().ui;
+    const key = [
+        themeMode,
+        themePresetId,
+        sourceDisplay,
+        sourceFilterStyle,
+        preferredSource ?? '',
+        preferredQuality,
+    ].join('|');
     if (key === lastPersistedKey) return;
     lastPersistedKey = key;
-    writePersistedUi({themeMode, themePresetId});
+    writePersistedUi({
+        themeMode,
+        themePresetId,
+        sourceDisplay,
+        sourceFilterStyle,
+        preferredSource,
+        preferredQuality,
+    });
 });
 
 export {store, shallowEqual};

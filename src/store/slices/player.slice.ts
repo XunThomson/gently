@@ -1,11 +1,26 @@
 import {appConfig} from '../../config/app.config';
 import {audioEngine, catalogService, libraryService} from '../../services';
-import type {NowPlaying, Track} from '../../types';
+import type {GroupedTrack, NowPlaying, Track, TrackCandidate} from '../../types';
 import type {PlayerActions, PlayerState, StoreCtx} from '../types';
 
 let playSeq = 0;
 
-/** 播放条切片：当前曲目、队列、播放进度、歌词、音源 */
+/** 音源候选：聚合结果自带 candidates，普通曲目退化为单候选 */
+function candidatesOf(track: Track): TrackCandidate[] {
+    const grouped = track as Partial<GroupedTrack>;
+    if (Array.isArray(grouped.candidates) && grouped.candidates.length > 0) {
+        return grouped.candidates;
+    }
+    return [
+        {
+            source: track.source,
+            track,
+            qualities: [...catalogService.sourceQualities(track.source)],
+        },
+    ];
+}
+
+/** 播放条切片：当前曲目、队列、进度、歌词、音源与音质 */
 export function createPlayerSlice(ctx: StoreCtx) {
     const state: PlayerState = {
         current: null,
@@ -19,6 +34,11 @@ export function createPlayerSlice(ctx: StoreCtx) {
         lyrics: [],
         audioUrl: null,
         playable: false,
+        candidates: [],
+        activeSource: null,
+        quality: null,
+        failedSources: [],
+        resolving: false,
     };
 
     const patch = (partial: Partial<PlayerState>) => {
@@ -36,22 +56,70 @@ export function createPlayerSlice(ctx: StoreCtx) {
         }
     };
 
-    /** 向数据源解析播放地址；失败或无地址时退回模拟时钟 */
-    const resolveSource = async (track: Track, playId: number) => {
-        try {
-            const url = await catalogService.resolveUrl(track);
+    /**
+     * 按候选顺序解析音源：首个能播的就用它，失败的记为不可用并继续下一个。
+     * 这样「某个音源的某首歌播不了」不会卡住播放，用户仍能听到其它源的同一首歌。
+     */
+    const resolveWithFallback = async (
+        candidates: TrackCandidate[],
+        playId: number,
+        keepElapsed = false,
+    ) => {
+        const {preferredQuality, preferredSource} = ctx.getState().ui;
+        const ordered = preferredSource
+            ? [...candidates].sort((a, b) => {
+                const ai = a.source === preferredSource ? -1 : 0;
+                const bi = b.source === preferredSource ? -1 : 0;
+                return ai - bi;
+            })
+            : candidates;
+
+        patch({resolving: true, failedSources: [], candidates: ordered});
+
+        const failed: string[] = [];
+        const resumeAt = keepElapsed ? ctx.getState().player.elapsed : 0;
+
+        for (const candidate of ordered) {
+            const resolved = await catalogService.resolveUrl(
+                candidate.track,
+                preferredQuality,
+                candidate.source,
+            );
+
+            // 解析期间切歌则整体放弃
             if (ctx.getState().player.current?.playId !== playId) return;
-            patch({audioUrl: url, playable: Boolean(url)});
-        } catch (err) {
-            console.warn('[player] 音源解析失败', err);
-            if (ctx.getState().player.current?.playId === playId) {
-                patch({audioUrl: null, playable: false});
+
+            if (resolved) {
+                patch({
+                    audioUrl: resolved.url,
+                    playable: true,
+                    activeSource: resolved.source,
+                    quality: resolved.quality,
+                    failedSources: failed,
+                    resolving: false,
+                });
+                if (resumeAt > 0) actions.seek(resumeAt);
+                return;
             }
+
+            failed.push(candidate.source);
+            patch({failedSources: [...failed]});
         }
+
+        // 全部候选都不可播：退回模拟时钟，界面照常推进
+        patch({
+            audioUrl: null,
+            playable: false,
+            activeSource: null,
+            quality: null,
+            resolving: false,
+        });
     };
 
     const start = (track: Track, index: number, queue: Track[]) => {
         const current: NowPlaying = {...track, playId: ++playSeq};
+        const candidates = candidatesOf(track);
+
         patch({
             current,
             queue,
@@ -62,9 +130,15 @@ export function createPlayerSlice(ctx: StoreCtx) {
             lyrics: [],
             audioUrl: null,
             playable: false,
+            candidates,
+            activeSource: null,
+            quality: null,
+            failedSources: [],
+            resolving: true,
         });
+
         void loadLyrics(track, current.playId);
-        void resolveSource(track, current.playId);
+        void resolveWithFallback(candidates, current.playId);
         ctx.getActions().library.recordPlay(track);
     };
 
@@ -150,7 +224,8 @@ export function createPlayerSlice(ctx: StoreCtx) {
         },
 
         setProgress(elapsed, duration) {
-            const patchDuration = duration > 0 && Math.abs(duration - ctx.getState().player.duration) > 0.5;
+            const patchDuration =
+                duration > 0 && Math.abs(duration - ctx.getState().player.duration) > 0.5;
             patch(patchDuration ? {elapsed, duration} : {elapsed});
         },
 
@@ -176,7 +251,71 @@ export function createPlayerSlice(ctx: StoreCtx) {
                 lyrics: [],
                 audioUrl: null,
                 playable: false,
+                candidates: [],
+                activeSource: null,
+                quality: null,
+                failedSources: [],
+                resolving: false,
             });
+        },
+
+        switchSource(sourceId) {
+            const {current, candidates} = ctx.getState().player;
+            if (!current) return;
+
+            const only = candidates.filter((candidate) => candidate.source === sourceId);
+            if (only.length === 0) return;
+
+            // 手动切换：只试指定的源，失败则保留当前播放状态并标记不可用
+            void resolveWithFallback(only, current.playId, true).then(() => {
+                if (ctx.getState().player.activeSource === null) {
+                    patch({failedSources: [sourceId], resolving: false});
+                }
+            });
+        },
+
+        reloadSource() {
+            const {current, candidates} = ctx.getState().player;
+            if (!current || candidates.length === 0) return;
+            void resolveWithFallback(candidates, current.playId, true);
+        },
+
+        removeFromQueue(trackId) {
+            const {queue, index, current} = ctx.getState().player;
+            if (current?.id === trackId) return; // 当前曲目不可移除
+
+            const at = queue.findIndex((track) => track.id === trackId);
+            if (at < 0) return;
+
+            patch({
+                queue: queue.filter((_, i) => i !== at),
+                index: at < index ? index - 1 : index,
+            });
+        },
+
+        moveInQueue(trackId, offset) {
+            const {queue, index} = ctx.getState().player;
+            const at = queue.findIndex((track) => track.id === trackId);
+            const to = at + offset;
+            if (at < 0 || to < 0 || to >= queue.length) return;
+
+            const next = [...queue];
+            [next[at], next[to]] = [next[to], next[at]];
+
+            let nextIndex = index;
+            if (index === at) nextIndex = to;
+            else if (index === to) nextIndex = at;
+
+            patch({queue: next, index: nextIndex});
+        },
+
+        clearQueue() {
+            const {queue, index} = ctx.getState().player;
+            if (index < 0 || !queue[index]) {
+                patch({queue: []});
+                return;
+            }
+            patch({queue: [queue[index]], index: 0});
         },
     };
 
