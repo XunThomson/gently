@@ -19,6 +19,7 @@ class AudioEngine {
     private el: HTMLAudioElement | null = null;
     private handlers: AudioHandlers = {};
     private volume = 1;
+    private blobUrl: string | null = null;
 
     setHandlers(handlers: AudioHandlers): void {
         this.handlers = handlers;
@@ -55,14 +56,47 @@ class AudioEngine {
         this.handlers.onError?.(err ? `code ${err.code}` : 'unknown media error');
     };
 
+    /**
+     * 非常规扩展名（如 `.m4s`）在部分宿主下会以 `application/octet-stream` 下发，
+     * 导致 `<audio>` 拒绝解码。此时抓取为 Blob 并强制 `audio/mp4`。
+     */
+    private async resolveSrc(url: string): Promise<string> {
+        if (!/\.m4s(\?|#|$)/i.test(url)) return url;
+        if (this.blobUrl && this.el?.dataset.blobSrc === url) return this.blobUrl;
+
+        try {
+            const response = await fetch(url);
+            if (!response.ok) return url;
+
+            const blob = await response.blob();
+            this.releaseBlob();
+            this.blobUrl = URL.createObjectURL(new Blob([blob], {type: 'audio/mp4'}));
+            if (this.el) this.el.dataset.blobSrc = url;
+            return this.blobUrl;
+        } catch {
+            return url;
+        }
+    }
+
+    private releaseBlob() {
+        if (!this.blobUrl) return;
+        URL.revokeObjectURL(this.blobUrl);
+        this.blobUrl = null;
+    }
+
     /** 切换音源；URL 相同时不重新加载，避免打断连续播放 */
-    load(url: string): void {
+    async load(url: string): Promise<void> {
         const el = this.ensure();
         if (!el) return;
         if (el.dataset.src === url) return;
 
         el.dataset.src = url;
-        el.src = url;
+        const src = await this.resolveSrc(url);
+
+        // 等待期间可能已经切歌
+        if (el.dataset.src !== url) return;
+
+        el.src = src;
         this.safeSetVolume(el);
         el.load();
     }
