@@ -17,8 +17,9 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 await build({
     configFile: false,
     logLevel: 'error',
-    // 与 vite.config.ts 保持一致的全局常量
+    // 与 vite.config.ts 保持一致的全局常量与资源类型
     define: {__APP_VERSION__: JSON.stringify(pkg.version)},
+    assetsInclude: ['**/*.m4s'],
     // 把依赖一并打包，避免 node 直接 require 纯 ESM 包
     ssr: {noExternal: true, target: 'node'},
     build: {

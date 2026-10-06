@@ -24,6 +24,7 @@
       "surfaceAlt": "#f3f4f6",
       "subtle": "#f7f8fa",
       "elevated": "#ffffff",
+      "surfaceTranslucent": "rgba(255, 255, 255, 0.72)",
       "hover": "rgba(0, 0, 0, 0.04)",
       "active": "rgba(0, 0, 0, 0.08)",
       "textPrimary": "#1a1a1a",
@@ -42,6 +43,7 @@
       "surfaceAlt": "#2a2a2a",
       "subtle": "#141414",
       "elevated": "#2a2a2a",
+      "surfaceTranslucent": "rgba(24, 24, 27, 0.68)",
       "hover": "rgba(255, 255, 255, 0.06)",
       "active": "rgba(255, 255, 255, 0.10)",
       "textPrimary": "#ffffff",
@@ -180,13 +182,26 @@
     },
 
     "playerBar": {
-      "height": 80,
+      "height": 84,
       "paddingX": 20,
       "coverSize": 48,
       "coverRadius": "12px",
       "controlSize": 38,
-      "progressWidth": 460,
-      "progressHeight": 4
+      "progressHeight": 3,
+      "progressHoverHeight": 7,
+      "progressThumbSize": 12,
+      "progressThumbSkin": "glow",
+      "progressTrackColor": "{border.subtle}",
+      "progressFillColor": "{brand}",
+      "progressGlowColor": "{brand.soft}",
+      "panelMaxHeight": 340
+    },
+
+    "background": {
+      "enabled": true,
+      "opacity": 0.55,
+      "blurPx": 0,
+      "scrim": "rgba(8, 10, 14, 0.42)"
     },
 
     "view": {

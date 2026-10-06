@@ -15,6 +15,9 @@ export default defineConfig(async () => ({
         __APP_VERSION__: JSON.stringify(pkg.version),
     },
 
+    // .m4s 不在 Vite 默认资源类型里，需要显式声明为静态资源
+    assetsInclude: ['**/*.m4s'],
+
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
     //
     // 1. prevent Vite from obscuring rust errors

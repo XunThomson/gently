@@ -7,10 +7,10 @@
     height: 100%;
     padding: var(--sidebar-padding);
     box-sizing: border-box;
-    background: var(--bg-surface);
     border-right: 1px solid var(--border-subtle);
     overflow-y: auto;
     overflow-x: hidden;
+    background: var(--surface-chrome);
 }
 
 .menu {

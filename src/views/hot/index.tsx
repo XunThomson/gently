@@ -8,13 +8,9 @@ import {TrackGrid} from './components/TrackGrid';
 
 const RECOMMEND_LIMIT = 12;
 
-/**
- * 热门推荐。
- * 顶栏有关键词时展示搜索结果，否则展示数据源推荐；两者共用同一份网格。
- */
+/** 热门推荐：只负责推荐，搜索结果已经独立为 /search 视图。 */
 export default function HotView() {
     const {t} = useTranslation();
-    const query = useSelect((s) => s.ui.searchQuery);
     const currentId = useSelect((s) => s.player.current?.id ?? null);
     const playing = useSelect((s) => s.player.playing);
     const {playOrToggle} = useActions().player;
@@ -26,16 +22,13 @@ export default function HotView() {
         let cancelled = false;
         setLoading(true);
 
-        const request = query.trim()
-            ? catalogService.search(query.trim())
-            : catalogService.fetchRecommend(RECOMMEND_LIMIT);
-
-        request
+        catalogService
+            .fetchRecommend(RECOMMEND_LIMIT)
             .then((result) => {
                 if (!cancelled) setTracks(result);
             })
             .catch((err) => {
-                console.error('[hot] 数据加载失败', err);
+                console.error('[hot] 推荐加载失败', err);
                 if (!cancelled) setTracks([]);
             })
             .finally(() => {
@@ -45,13 +38,10 @@ export default function HotView() {
         return () => {
             cancelled = true;
         };
-    }, [query]);
+    }, []);
 
     return (
-        <Page
-            title={t('page.hot.title')}
-            subtitle={query.trim() ? t('page.hot.searchResult', {keyword: query.trim()}) : t('page.hot.recommendSub')}
-        >
+        <Page title={t('page.hot.title')} subtitle={t('page.hot.recommendSub')}>
             <TrackGrid
                 tracks={tracks}
                 loading={loading}

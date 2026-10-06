@@ -1,4 +1,6 @@
 export {catalogService} from './catalog.service';
 export {libraryService} from './library.service';
+export {audioEngine} from './audio.service';
+export type {AudioHandlers} from './audio.service';
 export {fileService} from './file.service';
 export {windowService, isTauri} from './window.service';

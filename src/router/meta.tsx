@@ -95,6 +95,10 @@ export const appRoutes: AppRoute[] = [
         lazy: () => import('../views/favorites'),
     },
     {
+        path: 'search',
+        lazy: () => import('../views/search'),
+    },
+    {
         path: 'playlist/:id',
         lazy: () => import('../views/playlist'),
     },

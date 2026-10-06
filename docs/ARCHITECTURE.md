@@ -67,6 +67,20 @@ theme.config.json          presets.json
 `ui.themeMode` 与 `ui.themePresetId` 通过 `store/persist.ts` 落到 localStorage，
 `applyInitialTheme()` 在 React 挂载前读取并注入，避免首屏闪烁。
 
+### 动态背景与「玻璃化」外壳
+
+`components/background` 把 `src/assets/bgc.mp4` 以 `object-fit: cover` 铺满整个视图，
+并挂载时在 `<html>` 上打 `data-video-bg="on"`。外壳组件统一消费 `--surface-chrome`：
+
+```css
+:root { --surface-chrome: var(--bg-surface); }              /* 默认不透明 */
+html[data-video-bg='on'] { --surface-chrome: var(--bg-surface-translucent); }
+```
+
+因此「是否开启动态背景」只是 token 切换，组件无需条件分支。
+透明度 / 模糊 / 遮罩由 `components.background`（opacity / blurPx / scrim）配置，
+并在 `prefers-reduced-motion: reduce` 下自动关闭视频。
+
 ## 3. 集中式状态
 
 `src/store/`，零依赖，基于 React 18+ 的 `useSyncExternalStore`。
@@ -126,10 +140,13 @@ components/
   layout/   SplitLayout（泛型分割）+ TMBLayout / LMRLayout + axis 描述符
   ui/       page / data-table(+cells) / search-box / radio-group / button
             / empty-state / section-header / lyrics / icon
-  shell/    title-bar（Logo + SearchBox + Toolbar）/ sidebar / player-bar
+  shell/    background（动态背景）/
+            title-bar（Logo + SearchBox + Toolbar）/
+            sidebar /
+            player-bar（SeekBar + 播放列表抽屉 + 功能抽屉）
 views/
   <page>/index.tsx            页面
-  <page>/components/*         该页面私有组件（如 ranking 的 HeroCard / ChartSection）
+  <page>/components/*         该页面私有组件（如 ranking 的 HeroCard / ChartSection / DatePicker）
   download/{downloading,downloaded}/index.tsx   子路由页面
 ```
 
@@ -144,11 +161,44 @@ views/
 | `/ranking` `/hot` `/download/*` `/local` `/plugin` `/recent` | 主菜单页面 | 侧边栏主菜单（由路由 meta 派生） |
 | `/favorites` | 我的收藏 | 侧边栏「我的收藏」 |
 | `/playlist/:id` | 歌单详情 | 侧边栏歌单项 |
-| `/now-playing` | 歌曲详情（含歌词） | 播放条封面 / 曲名 |
+| `/search?q=` | 搜索结果 | 顶栏搜索提交（URL 即状态，可分享 / 刷新） |
+| `/now-playing` | 歌词页（封面 + 歌词） | 播放条封面 / 曲名 |
 | `/theme` | 主题市场 | 工具栏调色板按钮、设置页 |
 | `/setting` | 设置 | **仅**工具栏齿轮（侧边栏不再重复提供） |
 
 `hideInMenu: true` 的路由不会进入主菜单；冒烟测试对此有断言守护。
+
+### 播放条结构（bottom）
+
+```
+┌─ SeekBar（贴顶边，bilibili 式：默认无焦点，悬浮放大并显示焦点；皮肤由
+│   playerBar.progressThumbSkin = default | glow | ring 决定）───────────────┐
+│  封面  标题 / 歌手·专辑 / 时长·来源   ♡ │ ⏮ ⏯ ⏭  elapsed/duration │ 循环 队列 功能 音量 │
+└──────────────────────────────────────────────────────────────────────────┘
+        ↑ 队列 / 功能抽屉从播放条上方展开（bottom: 100%）
+```
+
+- **歌曲信息**（封面 / 标题 / 歌手 / 专辑 / 时长 / 来源）随播放在播放条展示；
+  歌词页因此只保留「封面 + 歌词」。
+- **播放列表抽屉**展示当前曲目与队列，点击即切换（`player.queue` 状态）。
+- **功能抽屉**收敛功能性操作：收藏 / 下载 / 加入歌单 / 打开歌词页。
+
+### 音频播放链路
+
+```
+view → store.player.play(track)
+     → 歌词：services.libraryService.loadLyrics(track)
+     → 音源：services.catalogService.resolveUrl(track) → plugins（内置示例源返回
+              src/assets/yihuik苡慧 - 致你.m4s，仅用于验证播放链路）
+     → hooks/useAudioEngine：把 store 状态接到 services/audio.service.ts 的 <audio>
+     → <audio> timeupdate → store.player.setProgress(elapsed, duration)
+     → <audio> ended → store.player.next()
+     → 音源不可用（播放失败 / 无地址）→ store.player.markUnplayable()
+       → hooks/usePlayerEngine 接管，用模拟时钟推进进度
+```
+
+`player.playable` 是唯一开关：有真实音源时进度由音频引擎回写，没有时用回退时钟，
+UI 无需关心差别。
 
 ## 6. i18n
 

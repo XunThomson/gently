@@ -11,7 +11,6 @@ import {rankedTracks, type RankedTrack} from '../../../utils/track';
 import type {ChartType, Period} from '../../../types';
 import {ChartList} from './ChartList';
 import {DatePicker} from './DatePicker';
-import {WeekChips} from './WeekChips';
 import styles from './ChartSection.module.css';
 
 const CHART_TYPES: ChartType[] = ['hot', 'new', 'rise', 'origin'];
@@ -28,7 +27,7 @@ export function ChartSection() {
     const currentKey = useSelect((s) =>
         s.player.current ? `${s.player.current.title}|${s.player.current.artist}` : null,
     );
-    const {setChart, setPeriod, setDate, setWeekStart, toggleExpanded, load} = useActions().ranking;
+    const {setChart, setPeriod, setDate, toggleExpanded, load} = useActions().ranking;
     const {playOrToggle} = useActions().player;
 
     useEffect(() => {
@@ -102,7 +101,11 @@ export function ChartSection() {
                     <div className={styles.divider}/>
 
                     {period === 'week' ? (
-                        <WeekChips weekStart={weekStart} onChange={setWeekStart}/>
+                        /* 周榜只需要「本周」这一个信息，不需要上一周列表 */
+                        <span className={styles.weekChip}>
+                            {t('page.ranking.thisWeek')}
+                            <em>{rangeText}</em>
+                        </span>
                     ) : (
                         <DatePicker period={period} date={date} onChange={setDate}/>
                     )}

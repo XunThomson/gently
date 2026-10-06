@@ -40,10 +40,14 @@ export interface PlayerState {
     volume: number;
     /** 已播放秒数 */
     elapsed: number;
-    /** 当前曲目总秒数 */
+    /** 当前曲目总秒数（优先取音频元数据） */
     duration: number;
     /** 当前曲目歌词（随播放切换异步加载） */
     lyrics: LyricLine[];
+    /** 由数据源解析出的可播放地址 */
+    audioUrl: string | null;
+    /** 是否存在真实音源：false 时退回模拟时钟 */
+    playable: boolean;
 }
 
 export interface RankingState {
@@ -120,8 +124,12 @@ export interface PlayerActions {
     prev: () => void;
     setRepeat: (mode: RepeatMode) => void;
     setVolume: (volume: number) => void;
-    /** 播放进度 +1s，由播放引擎驱动 */
+    /** 播放进度 +1s，由播放引擎驱动（无真实音源时的回退时钟） */
     tick: () => void;
+    /** 由音频引擎回写真实进度与时长 */
+    setProgress: (elapsed: number, duration: number) => void;
+    /** 音源不可用：退回模拟时钟 */
+    markUnplayable: () => void;
     seek: (seconds: number) => void;
     stop: () => void;
 }

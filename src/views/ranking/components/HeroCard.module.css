@@ -5,7 +5,7 @@
     gap: var(--space-6);
     padding: var(--space-6) var(--space-8);
     margin-bottom: var(--section-margin-bottom);
-    background: var(--bg-surface);
+    background: var(--surface-chrome);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-xl);
     overflow: hidden;

@@ -1,10 +1,10 @@
-import {libraryService} from '../../services';
+import {audioEngine, catalogService, libraryService} from '../../services';
 import type {NowPlaying, Track} from '../../types';
 import type {PlayerActions, PlayerState, StoreCtx} from '../types';
 
 let playSeq = 0;
 
-/** 播放条切片：当前曲目、队列、播放进度、歌词 */
+/** 播放条切片：当前曲目、队列、播放进度、歌词、音源 */
 export function createPlayerSlice(ctx: StoreCtx) {
     const state: PlayerState = {
         current: null,
@@ -16,6 +16,8 @@ export function createPlayerSlice(ctx: StoreCtx) {
         elapsed: 0,
         duration: 0,
         lyrics: [],
+        audioUrl: null,
+        playable: false,
     };
 
     const patch = (partial: Partial<PlayerState>) => {
@@ -33,6 +35,20 @@ export function createPlayerSlice(ctx: StoreCtx) {
         }
     };
 
+    /** 向数据源解析播放地址；失败或无地址时退回模拟时钟 */
+    const resolveSource = async (track: Track, playId: number) => {
+        try {
+            const url = await catalogService.resolveUrl(track);
+            if (ctx.getState().player.current?.playId !== playId) return;
+            patch({audioUrl: url, playable: Boolean(url)});
+        } catch (err) {
+            console.warn('[player] 音源解析失败', err);
+            if (ctx.getState().player.current?.playId === playId) {
+                patch({audioUrl: null, playable: false});
+            }
+        }
+    };
+
     const start = (track: Track, index: number, queue: Track[]) => {
         const current: NowPlaying = {...track, playId: ++playSeq};
         patch({
@@ -43,8 +59,11 @@ export function createPlayerSlice(ctx: StoreCtx) {
             elapsed: 0,
             duration: track.durationSec,
             lyrics: [],
+            audioUrl: null,
+            playable: false,
         });
         void loadLyrics(track, current.playId);
+        void resolveSource(track, current.playId);
         ctx.getActions().library.recordPlay(track);
     };
 
@@ -105,10 +124,10 @@ export function createPlayerSlice(ctx: StoreCtx) {
             if (!current) return;
             // 播放超过 3 秒时先回到开头
             if (elapsed > 3) {
-                patch({elapsed: 0});
+                actions.seek(0);
                 return;
             }
-            if (!moveTo(-1)) patch({elapsed: 0});
+            if (!moveTo(-1)) actions.seek(0);
         },
 
         setRepeat(repeat) {
@@ -129,9 +148,21 @@ export function createPlayerSlice(ctx: StoreCtx) {
             patch({elapsed: elapsed + 1});
         },
 
+        setProgress(elapsed, duration) {
+            const patchDuration = duration > 0 && Math.abs(duration - ctx.getState().player.duration) > 0.5;
+            patch(patchDuration ? {elapsed, duration} : {elapsed});
+        },
+
+        markUnplayable() {
+            patch({audioUrl: null, playable: false});
+        },
+
         seek(seconds) {
             const {duration} = ctx.getState().player;
-            patch({elapsed: Math.min(Math.max(0, seconds), duration)});
+            const next = Math.min(Math.max(0, seconds), duration || Number.MAX_SAFE_INTEGER);
+            patch({elapsed: next});
+            // 命令同时下发给音频引擎，保持 UI 与声音一致
+            audioEngine.seek(next);
         },
 
         stop() {
@@ -142,6 +173,8 @@ export function createPlayerSlice(ctx: StoreCtx) {
                 duration: 0,
                 index: -1,
                 lyrics: [],
+                audioUrl: null,
+                playable: false,
             });
         },
     };

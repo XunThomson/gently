@@ -24,8 +24,9 @@ export function hashStr(str: string): number {
 }
 
 export function fmt(sec: number): string {
-    const m = Math.floor(sec / 60);
-    const s = String(sec % 60).padStart(2, '0');
+    const total = Math.max(0, Math.floor(sec));
+    const m = Math.floor(total / 60);
+    const s = String(total % 60).padStart(2, '0');
     return `${m}:${s}`;
 }
 

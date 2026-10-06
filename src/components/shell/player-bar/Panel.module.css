@@ -1,0 +1,209 @@
+/* 播放列表 / 功能抽屉：贴在播放条上方 */
+
+.panel {
+    position: absolute;
+    right: var(--player-bar-padding-x);
+    bottom: 100%;
+    z-index: var(--z-dropdown);
+    width: 340px;
+    max-height: var(--player-panel-max-height);
+    overflow-y: auto;
+    padding: var(--space-4);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel);
+    animation: panelIn var(--motion-fast);
+}
+
+@keyframes panelIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+}
+
+.title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+
+.count {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+}
+
+.empty {
+    padding: var(--space-6) 0;
+    text-align: center;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+/* ---------- 队列 ---------- */
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    padding: var(--space-2) var(--space-2);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--motion-fast);
+}
+
+.item:hover {
+    background: var(--bg-hover);
+}
+
+.itemActive {
+    background: var(--brand-soft);
+}
+
+.index {
+    flex: none;
+    width: 20px;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.itemMain {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+
+.itemTitle {
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.itemActive .itemTitle {
+    color: var(--brand);
+    font-weight: var(--font-weight-medium);
+}
+
+.itemArtist {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tag {
+    flex: none;
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    background: var(--brand);
+    color: var(--brand-contrast);
+    font-size: 10px;
+}
+
+.duration {
+    flex: none;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 功能 ---------- */
+
+.actions {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border-subtle);
+}
+
+.sectionLabel {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.chips {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 5px 12px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-full);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    transition: border-color var(--motion-fast), color var(--motion-fast),
+        background-color var(--motion-fast);
+}
+
+.chip:hover:not(:disabled) {
+    border-color: var(--brand);
+    color: var(--brand);
+    background: var(--brand-soft);
+}
+
+.chip:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.chipNew {
+    border-style: dashed;
+}
+
+.toast {
+    font-size: var(--font-size-xs);
+    color: var(--brand);
+}

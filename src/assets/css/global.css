@@ -55,6 +55,17 @@ body {
     height: 100vh;
 }
 
+/* ----- 外壳表面层 -----
+   默认使用不透明表面；开启动态背景时切换为半透明，
+   组件只需消费 --surface-chrome，无需感知背景是否开启。 */
+:root {
+    --surface-chrome: var(--bg-surface);
+}
+
+html[data-video-bg='on'] {
+    --surface-chrome: var(--bg-surface-translucent);
+}
+
 /* ----- 排版 ----- */
 h1,
 h2,

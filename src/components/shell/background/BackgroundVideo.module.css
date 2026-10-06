@@ -1,0 +1,24 @@
+.layer {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.video {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    /* 铺满整个视图 */
+    object-fit: cover;
+    opacity: var(--video-opacity, var(--bg-video-opacity));
+    filter: blur(var(--video-blur, var(--bg-video-blur)));
+    transition: opacity var(--motion-slow);
+}
+
+.scrim {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-video-scrim);
+}

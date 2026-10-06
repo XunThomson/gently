@@ -34,6 +34,8 @@ export interface SchemeTokens {
     surfaceAlt: string;
     subtle: string;
     elevated: string;
+    /** 动态背景开启时外壳使用的半透明表面 */
+    surfaceTranslucent: string;
     hover: string;
     active: string;
     textPrimary: string;
@@ -163,8 +165,25 @@ export interface ComponentTokens {
         coverSize: number;
         coverRadius: string;
         controlSize: number;
-        progressWidth: number;
+        /** 默认进度条高度（默认不显示焦点） */
         progressHeight: number;
+        /** 悬浮 / 拖拽时进度条高度（bilibili 式放大） */
+        progressHoverHeight: number;
+        progressThumbSize: number;
+        /** 焦点皮肤：default | glow | ring */
+        progressThumbSkin: string;
+        progressTrackColor: string;
+        progressFillColor: string;
+        progressGlowColor: string;
+        /** 播放列表 / 功能抽屉最大高度 */
+        panelMaxHeight: number;
+    };
+    /** 动态背景（视频） */
+    background: {
+        enabled: boolean;
+        opacity: number;
+        blurPx: number;
+        scrim: string;
     };
     view: {
         titleFontSize: number;

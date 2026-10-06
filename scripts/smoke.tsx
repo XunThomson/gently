@@ -23,6 +23,8 @@ import en from '../src/i18n/locales/en.json';
 import {TitleBar} from '../src/components/shell/title-bar';
 import {Sidebar} from '../src/components/shell/sidebar';
 import {PlayerBar} from '../src/components/shell/player-bar';
+import {QueuePanel} from '../src/components/shell/player-bar/QueuePanel';
+import {ActionsPanel} from '../src/components/shell/player-bar/ActionsPanel';
 import {buildMenuRoutes, appRoutes} from '../src/router/meta';
 
 import RankingView from '../src/views/ranking';
@@ -38,6 +40,7 @@ import ThemeView from '../src/views/theme';
 import FavoritesView from '../src/views/favorites';
 import PlaylistView from '../src/views/playlist';
 import NowPlayingView from '../src/views/now-playing';
+import SearchView from '../src/views/search';
 
 const failures: string[] = [];
 const notes: string[] = [];
@@ -51,10 +54,10 @@ function check(name: string, condition: boolean, detail = ''): void {
     }
 }
 
-function render(name: string, node: ReactNode): void {
+function render(name: string, node: ReactNode, initialPath?: string): void {
     try {
         const html = renderToString(
-            <MemoryRouter>
+            <MemoryRouter initialEntries={initialPath ? [initialPath] : undefined}>
                 <ThemeProvider>{node}</ThemeProvider>
             </MemoryRouter>,
         );
@@ -236,6 +239,32 @@ async function main(): Promise<void> {
     actions.player.stop();
     check('store: stop 清空歌词与进度', s().player.lyrics.length === 0 && s().player.elapsed === 0);
 
+    /* 音源链路：数据源解析地址 → store 标记可播放 → 音频引擎回写进度 */
+    const resolvedUrl = await catalogService.resolveUrl(s().library.local[0]);
+    check(
+        'plugins: 示例源提供可播放地址（内置测试音频）',
+        typeof resolvedUrl === 'string' && resolvedUrl.length > 0,
+    );
+
+    actions.player.play(s().library.local[0], s().library.local);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    check('store: 播放后标记可播放并写入音频地址', s().player.playable && !!s().player.audioUrl);
+
+    actions.player.setProgress(42, 200);
+    check(
+        'store: 音频引擎回写进度与时长',
+        s().player.elapsed === 42 && s().player.duration === 200,
+    );
+
+    actions.player.markUnplayable();
+    check(
+        'store: 音源不可用时退回模拟时钟',
+        !s().player.playable && s().player.audioUrl === null,
+    );
+
+    actions.player.seek(10);
+    check('store: seek 同步更新进度', s().player.elapsed === 10);
+
     /* UI 切片 */
     actions.ui.setThemeMode('dark');
     check('store: 主题模式写入', s().ui.themeMode === 'dark');
@@ -387,6 +416,12 @@ async function main(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 220));
     render('NowPlayingView（含歌词）', <NowPlayingView/>);
     check('页面：歌曲详情渲染时歌词已就绪', s().player.lyrics.length > 0);
+
+    /* 播放条的两块抽屉 + 独立搜索视图 */
+    render('QueuePanel', <QueuePanel onClose={() => undefined}/>);
+    render('ActionsPanel', <ActionsPanel onClose={() => undefined}/>);
+    render('SearchView（无关键词）', <SearchView/>, '/search');
+    render('SearchView（带关键词）', <SearchView/>, '/search?q=晚风');
 
     /* 主题市场：切换预设写入 ui 切片，ThemeProvider 会据此重算 CSS 变量 */
     actions.ui.setThemePreset('sakura');

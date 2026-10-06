@@ -1,0 +1,104 @@
+/* bilibili 式顶边进度条：默认无焦点，悬浮 / 聚焦 / 拖拽时放大并显示焦点 */
+
+.root {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    height: var(--player-progress-hover-height);
+    cursor: pointer;
+    touch-action: none;
+}
+
+/* 预留的透明命中区，保证细进度条也容易点到 */
+.root::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(var(--player-progress-hover-height) * -1);
+    height: calc(var(--player-progress-hover-height) * 3);
+}
+
+.track {
+    position: relative;
+    width: 100%;
+    height: var(--player-progress-height);
+    background: var(--player-progress-track);
+    transition: height var(--motion-fast);
+}
+
+.fill {
+    display: block;
+    height: 100%;
+    background: var(--player-progress-fill);
+}
+
+/* 悬浮 / 键盘聚焦 / 拖拽：进度条放大 */
+.root:hover .track,
+.root:focus-visible .track,
+.dragging .track {
+    height: var(--player-progress-hover-height);
+}
+
+/* ---------- 焦点（默认隐藏） ---------- */
+
+.thumb {
+    position: absolute;
+    top: 50%;
+    width: var(--player-progress-thumb-size);
+    height: var(--player-progress-thumb-size);
+    margin-left: calc(var(--player-progress-thumb-size) / -2);
+    border-radius: var(--radius-full);
+    background: var(--player-progress-fill);
+    transform: translateY(-50%) scale(0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--motion-fast), transform var(--motion-fast);
+}
+
+.root:hover .thumb,
+.root:focus-visible .thumb,
+.dragging .thumb {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+}
+
+/* 皮肤 1：默认（实心点 + 描边） */
+.root[data-skin='default'] .thumb {
+    border: 2px solid var(--bg-surface);
+}
+
+/* 皮肤 2：发光（默认皮肤） */
+.root[data-skin='glow'] .thumb {
+    border: 2px solid var(--bg-surface);
+    box-shadow: 0 0 0 4px var(--player-progress-glow), 0 0 14px var(--player-progress-glow);
+}
+
+/* 皮肤 3：圆环 */
+.root[data-skin='ring'] .thumb {
+    background: var(--bg-surface);
+    border: 3px solid var(--player-progress-fill);
+    box-shadow: 0 0 0 2px var(--player-progress-glow);
+}
+
+/* ---------- 时间预览 ---------- */
+
+.preview {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    padding: 2px 7px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-md);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    transform: translateX(-50%);
+    pointer-events: none;
+}

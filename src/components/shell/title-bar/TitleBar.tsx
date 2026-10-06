@@ -59,7 +59,8 @@ export function TitleBar() {
                     onChange={setSearchQuery}
                     onSearch={(keyword) => {
                         setSearchQuery(keyword);
-                        navigate('/hot');
+                        // 搜索结果独立成页，URL 可直接分享 / 刷新
+                        navigate(`/search?q=${encodeURIComponent(keyword)}`);
                     }}
                 />
             </div>

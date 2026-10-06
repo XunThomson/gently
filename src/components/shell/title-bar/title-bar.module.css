@@ -8,7 +8,7 @@
     height: var(--title-bar-height);
     padding: 0 var(--title-bar-padding-x);
     box-sizing: border-box;
-    background: var(--bg-surface);
+    background: var(--surface-chrome);
     border-bottom: 1px solid var(--border-subtle);
     /* 允许拖动窗口（Tauri 无边框窗口常用） */
     -webkit-user-select: none;

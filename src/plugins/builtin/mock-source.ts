@@ -4,6 +4,13 @@ import {buildChartData} from '../../utils/chart';
 import type {PluginInfo, Track} from '../../types';
 import type {ChartQuery, MusicSourcePlugin} from '../types';
 
+/**
+ * 内置测试音频（项目自带的测试文件）。
+ * 仅用于验证「播放 / 暂停 / 进度 / 音量」整条链路；
+ * 接入真实音乐源插件后，由插件返回真实可播放地址。
+ */
+import testAudioUrl from '../../assets/yihuik苡慧 - 致你.m4s';
+
 /** 内置示例源的插件元数据（插件列表以这里为准） */
 export const MOCK_SOURCE_INFO: PluginInfo = {
     id: 'mock',
@@ -52,8 +59,8 @@ export const mockMusicSource: MusicSourcePlugin = {
             .map(({i}) => makeTrack(i, MOCK_SOURCE_INFO.id));
     },
 
-    /** 纯 UI 阶段没有真实播放地址 */
+    /** 纯 UI 阶段没有真实播放地址：统一下发内置测试音频 */
     async resolveUrl(): Promise<string | null> {
-        return null;
+        return testAudioUrl;
     },
 };

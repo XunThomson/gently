@@ -1,11 +1,15 @@
-import {useCallback, useRef, useState, type KeyboardEvent, type PointerEvent} from 'react';
+import {useEffect, useRef, useState, type KeyboardEvent} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
+import {useClickOutside} from '../../../hooks/useClickOutside';
 import {useActions, usePlayerState, useSelect} from '../../../store';
+import {themeConfig} from '../../../theme';
 import type {RepeatMode} from '../../../types';
 import {fmt} from '../../../utils/helpers';
 import {
     IconHeart,
+    IconList,
+    IconMore,
     IconNext,
     IconPause,
     IconPlay,
@@ -14,19 +18,21 @@ import {
     IconRepeatOne,
     IconVolume,
 } from '../../ui/icon';
+import {ActionsPanel} from './ActionsPanel';
+import {QueuePanel} from './QueuePanel';
+import {SeekBar} from './SeekBar';
 import styles from './PlayerBar.module.css';
 
 const NEXT_REPEAT: Record<RepeatMode, RepeatMode> = {off: 'all', all: 'one', one: 'off'};
-const SEEK_STEP = 5;
+
+type PanelKind = 'queue' | 'actions';
 
 /**
- * 底部播放条：纯展示 + 派发命令，播放状态全部来自集中式 store。
+ * 底部播放条。
  *
- * 交互约定（与列表保持一致）：
- * - 列表里点当前曲目 = 播放/暂停切换；
- * - 播放条主按钮只负责播放/暂停，未在播放时禁用；
- * - 进度条支持点击与拖拽，并支持 ←/→ 微调；
- * - 封面 / 曲名点击进入歌曲详情（歌词页）。
+ * - 进度条贴在播放条顶边（bilibili 式，默认无焦点，悬浮才显示）；
+ * - 歌曲信息（标题 / 歌手 / 专辑 / 时长 / 来源）随播放在此展示；
+ * - 功能性操作收敛到「功能抽屉」，播放队列收敛到「播放列表抽屉」。
  */
 export function PlayerBar() {
     const {t} = useTranslation();
@@ -40,45 +46,22 @@ export function PlayerBar() {
             s.collection.favorites.some((track) => track.id === s.player.current?.id),
     );
 
+    const [panel, setPanel] = useState<PanelKind | null>(null);
+    const rootRef = useRef<HTMLDivElement>(null);
+
+    useClickOutside(rootRef, () => setPanel(null), panel !== null);
+
+    useEffect(() => {
+        if (!panel) return;
+        const onKeyDown = (e: globalThis.KeyboardEvent) => {
+            if (e.key === 'Escape') setPanel(null);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [panel]);
+
     const {current, playing, elapsed, duration, repeat, volume} = player;
-
-    const barRef = useRef<HTMLDivElement>(null);
-    const [dragRatio, setDragRatio] = useState<number | null>(null);
-
-    const ratioFromClientX = useCallback((clientX: number): number => {
-        const rect = barRef.current?.getBoundingClientRect();
-        if (!rect || rect.width === 0) return 0;
-        return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    }, []);
-
-    const handlePointerDown = (e: PointerEvent<HTMLDivElement>) => {
-        if (duration <= 0) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        setDragRatio(ratioFromClientX(e.clientX));
-    };
-
-    const handlePointerMove = (e: PointerEvent<HTMLDivElement>) => {
-        if (dragRatio === null) return;
-        setDragRatio(ratioFromClientX(e.clientX));
-    };
-
-    const handlePointerUp = (e: PointerEvent<HTMLDivElement>) => {
-        if (dragRatio === null) return;
-        seek(Math.round(dragRatio * duration));
-        setDragRatio(null);
-        e.currentTarget.releasePointerCapture?.(e.pointerId);
-    };
-
-    const handleSeekKey = (e: KeyboardEvent<HTMLDivElement>) => {
-        if (duration <= 0) return;
-        if (e.key === 'ArrowLeft') {
-            e.preventDefault();
-            seek(elapsed - SEEK_STEP);
-        } else if (e.key === 'ArrowRight') {
-            e.preventDefault();
-            seek(elapsed + SEEK_STEP);
-        }
-    };
+    const progressSkin = themeConfig.components.playerBar.progressThumbSkin;
 
     const repeatLabel =
         repeat === 'one'
@@ -87,57 +70,78 @@ export function PlayerBar() {
                 ? t('player.repeatAll')
                 : t('player.repeatOff');
 
-    const shownElapsed = dragRatio === null ? elapsed : Math.round(dragRatio * duration);
-    const shownPercent = duration > 0 ? ((dragRatio ?? elapsed / duration) * 100) : 0;
-
     const openDetail = () => {
         if (current) navigate('/now-playing');
     };
 
-    return (
-        <div className={styles.player}>
-            <div className={styles.left}>
-                <button
-                    type="button"
-                    className={styles.cover}
-                    style={current ? {background: current.gradient} : undefined}
-                    title={current ? t('player.openDetail') : undefined}
-                    aria-label={current ? t('player.openDetail') : undefined}
-                    disabled={!current}
-                    onClick={openDetail}
-                >
-                    {current ? current.title.slice(0, 1) : '♪'}
-                </button>
+    const togglePanel = (kind: PanelKind) => setPanel((prev) => (prev === kind ? null : kind));
 
-                <div className={styles.info}>
+    const handleVolumeKey = (e: KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'ArrowUp') setVolume(volume + 0.05);
+        else if (e.key === 'ArrowDown') setVolume(volume - 0.05);
+    };
+
+    return (
+        <div className={styles.player} ref={rootRef}>
+            {/* 顶边进度条 */}
+            <SeekBar elapsed={elapsed} duration={duration} skin={progressSkin} onSeek={seek}/>
+
+            {panel === 'queue' && <QueuePanel onClose={() => setPanel(null)}/>}
+            {panel === 'actions' && <ActionsPanel onClose={() => setPanel(null)}/>}
+
+            <div className={styles.row}>
+                {/* ---------- 左：歌曲信息 ---------- */}
+                <div className={styles.left}>
                     <button
                         type="button"
-                        className={styles.title}
+                        className={styles.cover}
+                        style={current ? {background: current.gradient} : undefined}
+                        title={current ? t('player.openDetail') : undefined}
+                        aria-label={current ? t('player.openDetail') : undefined}
                         disabled={!current}
                         onClick={openDetail}
                     >
-                        {current ? current.title : t('player.notPlaying')}
+                        {current ? current.title.slice(0, 1) : '♪'}
                     </button>
-                    <div className={styles.artist}>
-                        {current ? `${current.artist} · ${current.album}` : t('player.pickSong')}
+
+                    <div className={styles.info}>
+                        <button
+                            type="button"
+                            className={styles.title}
+                            disabled={!current}
+                            onClick={openDetail}
+                        >
+                            {current ? current.title : t('player.notPlaying')}
+                        </button>
+
+                        <div className={styles.meta}>
+                            <span className={styles.artist}>
+                                {current ? `${current.artist} · ${current.album}` : t('player.pickSong')}
+                            </span>
+                            {current && (
+                                <span className={styles.chips}>
+                                    <span className={styles.chip}>{current.duration}</span>
+                                    <span className={styles.chip}>{current.source}</span>
+                                </span>
+                            )}
+                        </div>
                     </div>
+
+                    <button
+                        type="button"
+                        className={styles.favorite}
+                        aria-label={isFavorite ? t('common.unfavorite') : t('common.favorite')}
+                        aria-pressed={isFavorite}
+                        title={isFavorite ? t('common.unfavorite') : t('common.favorite')}
+                        disabled={!current}
+                        onClick={() => current && toggleFavorite(current)}
+                    >
+                        <IconHeart size={16} fill={isFavorite ? 'currentColor' : 'none'}/>
+                    </button>
                 </div>
 
-                <button
-                    type="button"
-                    className={styles.favorite}
-                    aria-label={isFavorite ? t('common.unfavorite') : t('common.favorite')}
-                    aria-pressed={isFavorite}
-                    title={isFavorite ? t('common.unfavorite') : t('common.favorite')}
-                    disabled={!current}
-                    onClick={() => current && toggleFavorite(current)}
-                >
-                    <IconHeart size={16} fill={isFavorite ? 'currentColor' : 'none'}/>
-                </button>
-            </div>
-
-            <div className={styles.center}>
-                <div className={styles.controls}>
+                {/* ---------- 中：传输控制 ---------- */}
+                <div className={styles.center}>
                     <button
                         type="button"
                         className={styles.ctrl}
@@ -170,55 +174,60 @@ export function PlayerBar() {
                     >
                         <IconNext size={17}/>
                     </button>
+
+                    <span className={styles.time}>
+                        {fmt(elapsed)} / {duration > 0 ? fmt(duration) : '0:00'}
+                    </span>
                 </div>
 
-                <div className={styles.progress}>
-                    <span className={styles.time}>{fmt(shownElapsed)}</span>
-                    <div
-                        ref={barRef}
-                        className={`${styles.bar}${dragRatio !== null ? ` ${styles.dragging}` : ''}`}
-                        role="slider"
-                        tabIndex={0}
-                        aria-label={t('column.progress')}
-                        aria-valuemin={0}
-                        aria-valuemax={duration}
-                        aria-valuenow={shownElapsed}
-                        onPointerDown={handlePointerDown}
-                        onPointerMove={handlePointerMove}
-                        onPointerUp={handlePointerUp}
-                        onPointerCancel={handlePointerUp}
-                        onKeyDown={handleSeekKey}
+                {/* ---------- 右：模式 / 抽屉 / 音量 ---------- */}
+                <div className={styles.right}>
+                    <button
+                        type="button"
+                        className={styles.iconBtn}
+                        title={repeatLabel}
+                        aria-label={repeatLabel}
+                        aria-pressed={repeat !== 'off'}
+                        onClick={() => setRepeat(NEXT_REPEAT[repeat])}
                     >
-                        <i style={{width: `${shownPercent}%`}}/>
-                        <span className={styles.thumb} style={{left: `${shownPercent}%`}}/>
+                        {repeat === 'one' ? <IconRepeatOne size={15}/> : <IconRepeat size={15}/>}
+                    </button>
+
+                    <button
+                        type="button"
+                        className={styles.iconBtn}
+                        title={t('player.queue')}
+                        aria-label={t('player.queue')}
+                        aria-pressed={panel === 'queue'}
+                        onClick={() => togglePanel('queue')}
+                    >
+                        <IconList size={16}/>
+                    </button>
+
+                    <button
+                        type="button"
+                        className={styles.iconBtn}
+                        title={t('player.actions')}
+                        aria-label={t('player.actions')}
+                        aria-pressed={panel === 'actions'}
+                        onClick={() => togglePanel('actions')}
+                    >
+                        <IconMore size={16}/>
+                    </button>
+
+                    <div className={styles.volume}>
+                        <IconVolume size={15}/>
+                        <input
+                            type="range"
+                            className={styles.volumeRange}
+                            min={0}
+                            max={100}
+                            value={Math.round(volume * 100)}
+                            aria-label={t('player.volume')}
+                            onChange={(e) => setVolume(Number(e.target.value) / 100)}
+                            onKeyDown={handleVolumeKey}
+                        />
                     </div>
-                    <span className={styles.time}>{duration > 0 ? fmt(duration) : '0:00'}</span>
-                </div>
-            </div>
-
-            <div className={styles.right}>
-                <button
-                    type="button"
-                    className={styles.iconBtn}
-                    title={repeatLabel}
-                    aria-label={repeatLabel}
-                    aria-pressed={repeat !== 'off'}
-                    onClick={() => setRepeat(NEXT_REPEAT[repeat])}
-                >
-                    {repeat === 'one' ? <IconRepeatOne size={15}/> : <IconRepeat size={15}/>}
-                </button>
-
-                <div className={styles.volume}>
-                    <IconVolume size={15}/>
-                    <input
-                        type="range"
-                        className={styles.volumeRange}
-                        min={0}
-                        max={100}
-                        value={Math.round(volume * 100)}
-                        aria-label={t('player.volume')}
-                        onChange={(e) => setVolume(Number(e.target.value) / 100)}
-                    />
                 </div>
             </div>
         </div>

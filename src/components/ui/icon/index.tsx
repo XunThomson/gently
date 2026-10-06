@@ -76,6 +76,24 @@ export const IconClock = (p: IconProps) => (
     </Svg>
 );
 
+/** 播放列表 */
+export const IconList = (p: IconProps) => (
+    <Svg {...p}>
+        <path d="M4 7h10M4 12h10M4 17h7"/>
+        <path d="M18 10v7.5"/>
+        <circle cx="16.4" cy="18" r="1.8"/>
+    </Svg>
+);
+
+/** 更多功能 */
+export const IconMore = (p: IconProps) => (
+    <Svg strokeWidth={2} {...p}>
+        <circle cx="5" cy="12" r="1.4" fill="currentColor"/>
+        <circle cx="12" cy="12" r="1.4" fill="currentColor"/>
+        <circle cx="19" cy="12" r="1.4" fill="currentColor"/>
+    </Svg>
+);
+
 export const IconGear = (p: IconProps) => (
     <Svg {...p}>
         <circle cx="12" cy="12" r="3"/>

@@ -98,6 +98,27 @@
     flex-shrink: 0;
 }
 
+/* 周榜：只展示「本周」这一条信息 */
+.weekChip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 6px 14px;
+    border: 1px solid var(--brand);
+    border-radius: var(--radius-full);
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+}
+
+.weekChip em {
+    font-style: normal;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
 .hint {
     padding-top: var(--space-2);
     font-size: var(--font-size-xs);
@@ -110,7 +131,7 @@
 /* ---------- 列表卡片 ---------- */
 
 .card {
-    background: var(--bg-surface);
+    background: var(--surface-chrome);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
     overflow: hidden;

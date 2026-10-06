@@ -68,6 +68,7 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--bg-surface-alt': s.surfaceAlt,
         '--bg-subtle': s.subtle,
         '--bg-elevated': s.elevated,
+        '--bg-surface-translucent': s.surfaceTranslucent,
         '--bg-hover': s.hover,
         '--bg-active': s.active,
         '--text-primary': s.textPrimary,
@@ -196,8 +197,18 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--player-cover-size': px(c.playerBar.coverSize),
         '--player-cover-radius': c.playerBar.coverRadius,
         '--player-control-size': px(c.playerBar.controlSize),
-        '--player-progress-width': px(c.playerBar.progressWidth),
         '--player-progress-height': px(c.playerBar.progressHeight),
+        '--player-progress-hover-height': px(c.playerBar.progressHoverHeight),
+        '--player-progress-thumb-size': px(c.playerBar.progressThumbSize),
+        '--player-progress-track': t(c.playerBar.progressTrackColor),
+        '--player-progress-fill': t(c.playerBar.progressFillColor),
+        '--player-progress-glow': t(c.playerBar.progressGlowColor),
+        '--player-panel-max-height': px(c.playerBar.panelMaxHeight),
+
+        /* ---------- 组件：动态背景 ---------- */
+        '--bg-video-opacity': String(c.background.opacity),
+        '--bg-video-blur': px(c.background.blurPx),
+        '--bg-video-scrim': c.background.scrim,
 
         /* ---------- 组件：页面容器 ---------- */
         '--view-title-size': px(c.view.titleFontSize),

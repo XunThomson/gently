@@ -72,7 +72,11 @@
     "repeatAll": "Repeat all",
     "repeatOne": "Repeat one",
     "volume": "Volume",
-    "openDetail": "Open song details"
+    "openDetail": "Open song details",
+    "queue": "Play queue",
+    "actions": "More actions",
+    "queueEmpty": "The queue is empty",
+    "nowPlayingTag": "Now playing"
   },
   "column": {
     "title": "Title",
@@ -100,6 +104,7 @@
       "showAll": "Show remaining {{count}}",
       "emptyTitle": "No matching songs",
       "emptyHint": "Try another keyword",
+      "today": "Today",
       "heroTag": "Today's pick",
       "heroPlay": "Play now",
       "heat": "Heat {{value}}%",
@@ -120,7 +125,6 @@
     "hot": {
       "title": "Featured",
       "recommendSub": "Based on recent listening",
-      "searchResult": "Results for “{{keyword}}”",
       "emptyTitle": "No matching songs",
       "emptyHint": "Try another keyword"
     },
@@ -175,6 +179,12 @@
       "title": "Favorites",
       "subtitle": "{{count}} songs",
       "empty": "No favorites yet"
+    },
+    "search": {
+      "title": "Search results",
+      "subtitle": "{{count}} songs for “{{keyword}}”",
+      "hint": "Type a keyword to start searching",
+      "empty": "No matching songs"
     },
     "playlist": {
       "title": "Playlist",

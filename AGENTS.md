@@ -34,6 +34,8 @@
 6. **业务列表的列定义**放 `src/config/table.config.tsx`，视图只做组合。
 7. **列表行操作 / 行点击**统一走 `src/hooks/useTrackActions.ts`（点当前曲目 = 播放暂停，点其他 = 切歌）。
 8. **两个主题入口职责不可合并**：灯泡 = 明暗背景，调色板 = 主题市场；设置只在右上角提供，不进侧边栏。
+9. **歌曲信息只在播放条展示**：歌词页（`/now-playing`）只保留封面 + 歌词；收藏 / 下载 / 加入歌单等功能性操作放播放条的「功能抽屉」。
+10. **进度条是播放条顶边的 SeekBar**：默认不显示焦点，悬浮 / 拖拽才显示；焦点皮肤由 `playerBar.progressThumbSkin` 配置。
 
 ## 4. 每类操作的完成标准
 
@@ -50,7 +52,7 @@
 
 ```bash
 pnpm typecheck   # tsc --noEmit（只读）
-pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染（99 项）
+pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染（112 项）
 pnpm dev         # 开发
 pnpm build       # tsc && vite build
 pnpm tauri dev   # 桌面端

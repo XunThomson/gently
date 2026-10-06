@@ -1,6 +1,6 @@
 .container {
     width: 100%;
-    background: var(--bg-surface);
+    background: var(--surface-chrome);
     border: 1px solid var(--border-subtle);
     border-radius: var(--table-radius);
     color: var(--text-primary);
@@ -29,7 +29,7 @@
     position: sticky;
     top: 0;
     z-index: 1;
-    background: var(--bg-surface);
+    background: var(--surface-chrome);
 }
 
 .headerCell {
