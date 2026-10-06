@@ -115,9 +115,47 @@ function checkI18n(): void {
     check('i18n: 无未被引用的死键', dead.length === 0, `死键 ${dead.join(', ')}`);
 }
 
+/* ---------------- CSS token 检查 ---------------- */
+
+/** 收集 src 下所有 CSS 文件内容 */
+function readCssText(dir = 'src', acc: string[] = []): string {
+    for (const entry of readdirSync(dir, {withFileTypes: true})) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) readCssText(full, acc);
+        else if (entry.name.endsWith('.css')) acc.push(readFileSync(full, 'utf8'));
+    }
+    return acc.join('\n');
+}
+
+/**
+ * 所有 `var(--token)` 引用的 token 都必须有定义：
+ * 定义来源 = 主题注入的 CSS 变量 ∪ 任何 CSS 里 `--x:` 的本地定义 ∪ 内联样式注入的局部变量白名单。
+ */
+const INLINE_STYLE_VARS = ['--grid-template'];
+
+function checkCssTokens(): void {
+    const css = readCssText();
+
+    const defined = new Set<string>([
+        ...Object.keys(buildCssVars(themeConfig, 'light')),
+        ...Object.keys(buildCssVars(themeConfig, 'dark')),
+        ...INLINE_STYLE_VARS,
+    ]);
+    for (const match of css.matchAll(/(--[a-zA-Z0-9-]+)\s*:/g)) defined.add(match[1]);
+
+    const used = new Set<string>();
+    for (const match of css.matchAll(/var\(\s*(--[a-zA-Z0-9-]+)/g)) used.add(match[1]);
+
+    const missing = [...used].filter((name) => !defined.has(name));
+    check('css: 引用的 token 全部有定义', missing.length === 0, `未定义 ${missing.join(', ')}`);
+}
+
 async function main(): Promise<void> {
     /* ---------------- i18n ---------------- */
     checkI18n();
+
+    /* ---------------- CSS token ---------------- */
+    checkCssTokens();
 
     /* ---------------- 主题 ---------------- */
     const light = buildCssVars(themeConfig, 'light');    const dark = buildCssVars(themeConfig, 'dark');

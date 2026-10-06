@@ -52,7 +52,7 @@
 
 ```bash
 pnpm typecheck   # tsc --noEmit（只读）
-pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染（112 项）
+pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染 + i18n/CSS token 守卫（113 项）
 pnpm dev         # 开发
 pnpm build       # tsc && vite build
 pnpm tauri dev   # 桌面端
