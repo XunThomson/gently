@@ -53,5 +53,8 @@ tldr: 第二轮 UI 优化完成：主题市场与明暗切换分离、收藏/歌
 
 ## 风险
 
+- **没有真实音频**：mock 数据源未提供播放地址（`resolveUrl` 返回 null），
+  因此播放条的播放/暂停/进度/音量只驱动状态与界面，不会出声。
+  接入真实音源插件后，只需在播放引擎中消费 `resolveUrl` 的结果即可补齐。
 - 视觉正确性仍依赖人工确认（环境无法截图）；主题预设的对比度未做自动化校验。
-- `themeMode` / `themePresetId` 目前只存在 localStorage，未接入 Tauri 配置文件。
+- `themeMode` / `themePresetId` 与收藏歌单目前只存在内存 / localStorage，未接入 Tauri 配置文件。
