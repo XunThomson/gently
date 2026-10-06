@@ -1,0 +1,95 @@
+{
+  "$comment": "主题市场预设。每个预设只覆盖 palette（品牌色）与可选的 scheme 颜色，其余样式元数据继承 theme.config.json。",
+  "presets": [
+    {
+      "id": "violet",
+      "name": "暮光紫",
+      "description": "默认主题，冷静的紫色品牌色",
+      "author": "Gently",
+      "swatches": ["#6b4eff", "#121212", "#f0f0f0"],
+      "palette": {
+        "brand": "#6b4eff",
+        "brandHover": "#5c3fe8",
+        "brandSoft": "rgba(107, 78, 255, 0.10)",
+        "brandContrast": "#ffffff"
+      }
+    },
+    {
+      "id": "ocean",
+      "name": "深海蓝",
+      "description": "低饱和蓝色，长时间浏览更耐看",
+      "author": "Gently",
+      "swatches": ["#2563eb", "#0f172a", "#eef2f7"],
+      "palette": {
+        "brand": "#2563eb",
+        "brandHover": "#1d4ed8",
+        "brandSoft": "rgba(37, 99, 235, 0.12)",
+        "brandContrast": "#ffffff"
+      },
+      "scheme": {
+        "light": { "app": "#eef2f7", "surface": "#ffffff", "surfaceAlt": "#e8eef6", "subtle": "#f4f7fb" },
+        "dark": { "app": "#0f172a", "surface": "#172033", "surfaceAlt": "#1e2a40", "subtle": "#121b2e" }
+      }
+    },
+    {
+      "id": "lime",
+      "name": "青柠",
+      "description": "清爽绿色，适合白天使用",
+      "author": "Gently",
+      "swatches": ["#16a34a", "#0d1a12", "#eef7f1"],
+      "palette": {
+        "brand": "#16a34a",
+        "brandHover": "#15803d",
+        "brandSoft": "rgba(22, 163, 74, 0.12)",
+        "brandContrast": "#ffffff"
+      }
+    },
+    {
+      "id": "sakura",
+      "name": "樱花",
+      "description": "柔和粉色，轻快的视觉氛围",
+      "author": "Gently",
+      "swatches": ["#ec4899", "#1f1420", "#fdf2f8"],
+      "palette": {
+        "brand": "#ec4899",
+        "brandHover": "#db2777",
+        "brandSoft": "rgba(236, 72, 153, 0.12)",
+        "brandContrast": "#ffffff"
+      },
+      "scheme": {
+        "light": { "app": "#fdf2f8" },
+        "dark": { "app": "#1f1420", "surface": "#2a1d2a", "surfaceAlt": "#352435" }
+      }
+    },
+    {
+      "id": "sunset",
+      "name": "暖阳",
+      "description": "温暖橙色，傍晚场景更舒适",
+      "author": "Gently",
+      "swatches": ["#f97316", "#1c1410", "#fff7ed"],
+      "palette": {
+        "brand": "#f97316",
+        "brandHover": "#ea580c",
+        "brandSoft": "rgba(249, 115, 22, 0.12)",
+        "brandContrast": "#ffffff"
+      }
+    },
+    {
+      "id": "graphite",
+      "name": "石墨",
+      "description": "全中性灰，几乎不抢内容注意力",
+      "author": "Gently",
+      "swatches": ["#52525b", "#0a0a0b", "#f4f4f5"],
+      "palette": {
+        "brand": "#52525b",
+        "brandHover": "#3f3f46",
+        "brandSoft": "rgba(82, 82, 91, 0.12)",
+        "brandContrast": "#ffffff"
+      },
+      "scheme": {
+        "light": { "app": "#f4f4f5", "surface": "#ffffff", "surfaceAlt": "#e9e9ec", "subtle": "#fafafa" },
+        "dark": { "app": "#0a0a0b", "surface": "#17171a", "surfaceAlt": "#232327", "subtle": "#121215" }
+      }
+    }
+  ]
+}

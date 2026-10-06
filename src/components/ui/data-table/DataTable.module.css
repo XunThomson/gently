@@ -6,13 +6,14 @@
     color: var(--text-primary);
     font-family: inherit;
     font-size: var(--table-font-size);
-    overflow-x: auto;
+    /* 不做滚动容器：交给外层页面区域滚动，表头才能吸顶 */
+    overflow: visible;
 }
 
 .table {
     display: flex;
     flex-direction: column;
-    /* 容器足够宽时铺满；内容过长时由外层 overflow-x 滚动 */
+    /* 容器足够宽时铺满；内容过长时由外层滚动 */
     min-width: 100%;
     width: max-content;
 }
@@ -24,15 +25,58 @@
     align-items: center;
 }
 
+.headerRow {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg-surface);
+}
+
 .headerCell {
+    padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
     color: var(--table-header-color);
     font-size: var(--table-header-font-size);
-    font-weight: var(--font-weight-medium);
-    padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.02em;
     white-space: nowrap;
     border-bottom: 1px solid var(--table-border-color);
     /* 允许 grid 子项收缩 + ellipsis 生效 */
     min-width: 0;
+}
+
+.row {
+    position: relative;
+    min-height: 46px;
+    border-bottom: 1px solid var(--table-border-color);
+    cursor: pointer;
+    transition: background-color var(--motion-fast);
+}
+
+.row:last-child {
+    border-bottom: none;
+    border-bottom-left-radius: var(--table-radius);
+    border-bottom-right-radius: var(--table-radius);
+}
+
+.row:hover {
+    background: var(--table-row-hover-bg);
+}
+
+/* 播放中的行：左侧品牌色指示条 */
+.row.active {
+    background: var(--brand-soft);
+}
+
+.row.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 3px;
+    height: 20px;
+    transform: translateY(-50%);
+    border-radius: 0 var(--radius-full) var(--radius-full) 0;
+    background: var(--brand);
 }
 
 .bodyCell {
@@ -41,19 +85,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
-}
-
-.row {
-    transition: background-color var(--motion-fast);
-    cursor: pointer;
-}
-
-.row:hover {
-    background-color: var(--table-row-hover-bg);
-}
-
-.row.active {
-    background-color: var(--brand-soft);
 }
 
 .stateRow {

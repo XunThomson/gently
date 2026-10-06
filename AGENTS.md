@@ -26,12 +26,14 @@
 
 ## 3. 硬约束（改代码前必读）
 
-1. **样式元数据唯一来源**是 `theme.config.json`。新增可见样式先加 token，再在 CSS Module 里 `var(--token)`。
+1. **样式元数据唯一来源**是 `theme.config.json`（主题市场预设见 `presets.json`）。新增可见样式先加 token，再在 CSS Module 里 `var(--token)`。
 2. **禁止在组件里硬编码**颜色、尺寸、圆角、时长；文案一律走 `src/i18n/locales/*.json`。
 3. **Tailwind 仅用于「视觉稳定且不需要主题动态定制」的组件**，且必须带 `tw:` 前缀。其余用 CSS Module + token。
 4. **组件化**：一个文件一个职责；视图私有组件放 `views/<page>/components/`，通用组件放 `components/ui/`。
 5. **数据源只通过 `services/` 访问**；`views` / `store` 不得直接依赖具体 plugin 实现。
 6. **业务列表的列定义**放 `src/config/table.config.tsx`，视图只做组合。
+7. **列表行操作 / 行点击**统一走 `src/hooks/useTrackActions.ts`（点当前曲目 = 播放暂停，点其他 = 切歌）。
+8. **两个主题入口职责不可合并**：灯泡 = 明暗背景，调色板 = 主题市场；设置只在右上角提供，不进侧边栏。
 
 ## 4. 每类操作的完成标准
 
@@ -48,7 +50,7 @@
 
 ```bash
 pnpm typecheck   # tsc --noEmit（只读）
-pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染（55 项）
+pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染（99 项）
 pnpm dev         # 开发
 pnpm build       # tsc && vite build
 pnpm tauri dev   # 桌面端

@@ -31,22 +31,23 @@ types/ utils/                ← 横切：领域模型与纯函数
 
 ## 2. 主题与样式元数据
 
-**唯一来源**：`src/config/theme/theme.config.json`
+**唯一来源**：`src/config/theme/theme.config.json`（基础上）+ `src/config/theme/presets.json`（主题市场预设）
 
 ```
-theme.config.json
-   ├── palette            品牌色 / 状态色
-   ├── scheme.light|dark  语义色板（背景、文字、边框…）
-   ├── typography         字体族 / 字号 / 行高 / 字重
-   ├── radius / spacing   圆角 / 间距刻度
-   ├── shadow / motion    阴影 / 动效
-   ├── zIndex             层级
+theme.config.json          presets.json
+   ├── palette                ├── palette（品牌色覆盖）
+   ├── scheme.light|dark      ├── scheme.light|dark（可选覆盖）
+   ├── typography             └── swatches（市场预览色块）
+   ├── radius / spacing
+   ├── shadow / motion
+   ├── zIndex
    └── components         组件度量：titleBar / searchBox / toolbar / sidebar /
                           playerBar / view / section / dataTable / card / chart
+        ↓  resolveTheme(config, presetId)      ← 预设叠加（只覆盖显式声明的字段）
         ↓  buildCssVars(config, scheme)
    CSS 变量（--title-bar-height、--search-box-radius、--table-row-hover-bg …）
         ↓  ThemeProvider / applyInitialTheme()
-   <html style="--…"> + data-theme + color-scheme
+   <html style="--…"> + data-theme + data-preset + color-scheme
 ```
 
 规则：
@@ -56,19 +57,31 @@ theme.config.json
 - 组件 token 支持 `{text.primary}` / `{brand.soft}` 形式的语义引用，由 `resolveTokenRef` 解析。
 - 深浅色不写 `@media (prefers-color-scheme)`，由 provider 换 scheme 并重写变量。
 
+### 两个入口，职责不重叠
+
+| 入口 | 图标 | 作用 | 状态 |
+|---|---|---|---|
+| 明暗背景 | 灯泡 | light ⇄ dark 一键切换 | `ui.themeMode` |
+| 主题市场 | 调色板 → `/theme` | 选择配色预设（品牌色 + 可选配色板） | `ui.themePresetId` |
+
+`ui.themeMode` 与 `ui.themePresetId` 通过 `store/persist.ts` 落到 localStorage，
+`applyInitialTheme()` 在 React 挂载前读取并注入，避免首屏闪烁。
+
 ## 3. 集中式状态
 
 `src/store/`，零依赖，基于 React 18+ 的 `useSyncExternalStore`。
 
 ```
 createStore<T>()                 顶层浅合并 + 浅比较通知
-slices/ui.slice.ts               themeMode / scheme / collapsedGroups / searchQuery
-slices/player.slice.ts           current / queue / playing / elapsed / duration / repeat / volume
+slices/ui.slice.ts               themeMode / themePresetId / scheme / collapsedGroups / searchQuery
+slices/player.slice.ts           current / queue / playing / elapsed / duration / repeat / volume / lyrics
 slices/ranking.slice.ts          chart / period / date / weekStart / expanded / rows / loading
-slices/download.slice.ts         tasks / loaded
+slices/download.slice.ts         tasks / loaded（含 add 入队）
 slices/plugin.slice.ts           list / loaded
 slices/library.slice.ts          local / recent / query / loaded
+slices/collection.slice.ts       favorites / playlists / loaded
 index.ts                         组合 store、导出 useActions / useSelect / useXxxState
+persist.ts                       themeMode + themePresetId 落 localStorage
 ```
 
 约定：
@@ -76,9 +89,17 @@ index.ts                         组合 store、导出 useActions / useSelect / 
 - **切片只通过 `ctx.getActions()` 交互**，不互相 import。
 - 组件用 selector 订阅最小切片；`actions` 对象引用恒定，无需订阅。
 - 派生数据在 selector 或 `utils` 中计算；state 只存事实。
-- 播放进度这类高频变更只让订阅它的组件（`PlayerBar`）重渲染；
-  其他组件订阅派生字符串（如 `"title|artist"`）而非整个 `player` 切片。
-- 副作用（定时器 / 原生窗口）隔离在 `src/hooks` 与 `src/services`。
+- 播放进度这类高频变更只让订阅它的组件（`PlayerBar` / 歌曲详情）重渲染；
+  其他组件订阅派生字符串（如 `"title|artist"`、`current?.id`）而非整个 `player` 切片。
+- 副作用（定时器 / 原生窗口 / 文件系统）隔离在 `src/hooks` 与 `src/services`。
+
+### 列表交互的统一约定
+
+`src/hooks/useTrackActions.ts` 是所有曲目列表的行操作与行点击的唯一来源：
+
+- 行点击 → `player.playOrToggle(track, queue)`：**点当前曲目 = 播放/暂停，点其他曲目 = 切歌**；
+- 行操作 → 播放 / 收藏（随收藏状态切换文案）/ 下载（可选）/ 视图特有的额外操作；
+- `useCurrentTrackId()` 用于给正在播放的行加高亮（`DataTable.activeRowKey`）。
 
 ## 4. 数据源插件（音乐源）
 
@@ -104,7 +125,7 @@ view → store.ranking.load() → services.catalogService.fetchChart()
 components/
   layout/   SplitLayout（泛型分割）+ TMBLayout / LMRLayout + axis 描述符
   ui/       page / data-table(+cells) / search-box / radio-group / button
-            / empty-state / section-header / icon
+            / empty-state / section-header / lyrics / icon
   shell/    title-bar（Logo + SearchBox + Toolbar）/ sidebar / player-bar
 views/
   <page>/index.tsx            页面
@@ -115,6 +136,19 @@ views/
 - 通用组件不含业务数据，数据与文案由调用方注入。
 - 列表列定义集中在 `src/config/table.config.tsx`，视图只做组合。
 - 视图统一用 `<Page>` 提供标题 / 副标题 / 工具条，保证间距规格一致。
+
+### 路由与入口
+
+| 路径 | 视图 | 入口 |
+|---|---|---|
+| `/ranking` `/hot` `/download/*` `/local` `/plugin` `/recent` | 主菜单页面 | 侧边栏主菜单（由路由 meta 派生） |
+| `/favorites` | 我的收藏 | 侧边栏「我的收藏」 |
+| `/playlist/:id` | 歌单详情 | 侧边栏歌单项 |
+| `/now-playing` | 歌曲详情（含歌词） | 播放条封面 / 曲名 |
+| `/theme` | 主题市场 | 工具栏调色板按钮、设置页 |
+| `/setting` | 设置 | **仅**工具栏齿轮（侧边栏不再重复提供） |
+
+`hideInMenu: true` 的路由不会进入主菜单；冒烟测试对此有断言守护。
 
 ## 6. i18n
 

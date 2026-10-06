@@ -4,12 +4,14 @@ import {Page} from '../../components/ui/page';
 import {Button} from '../../components/ui/button';
 import {DataTable, TextCell, type ColumnDef} from '../../components/ui/data-table';
 import {
+    actionsColumn,
     albumColumn,
     artistColumn,
     durationColumn,
     indexColumn,
     titleColumn,
 } from '../../config/table.config';
+import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../hooks/useTrackActions';
 import {useActions, useLibraryState} from '../../store';
 import type {RecentTrack} from '../../types';
 import {formatRelative} from '../../utils/date';
@@ -18,16 +20,15 @@ export default function RecentView() {
     const {t} = useTranslation();
     const {recent, loaded} = useLibraryState();
     const {load, clearRecent} = useActions().library;
-    const {play} = useActions().player;
+    const buildActions = useTrackActions();
+    const playRow = usePlayRow();
+    const currentId = useCurrentTrackId();
 
     useEffect(() => {
         void load();
     }, [load]);
 
-    const rows = useMemo(
-        () => [...recent].sort((a, b) => b.playedAt - a.playedAt),
-        [recent],
-    );
+    const rows = useMemo(() => [...recent].sort((a, b) => b.playedAt - a.playedAt), [recent]);
 
     const playedAtText = (ts: number): string => {
         const {unit, count} = formatRelative(ts);
@@ -56,6 +57,7 @@ export default function RecentView() {
             align: 'center',
             render: (value) => <TextCell tone="muted">{String(value)}</TextCell>,
         },
+        actionsColumn<RecentTrack>(t, (track) => buildActions(track, {queue: rows, withDownload: true})),
     ];
 
     return (
@@ -63,7 +65,12 @@ export default function RecentView() {
             title={t('page.recent.title')}
             subtitle={t('page.recent.subtitle', {count: recent.length})}
             toolbar={
-                <Button size="sm" variant="ghost" disabled={recent.length === 0} onClick={clearRecent}>
+                <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={recent.length === 0}
+                    onClick={clearRecent}
+                >
                     {t('page.recent.clear')}
                 </Button>
             }
@@ -75,7 +82,8 @@ export default function RecentView() {
                 loading={!loaded}
                 loadingText={t('common.loading')}
                 emptyText={loaded ? t('page.recent.empty') : t('common.loading')}
-                onRowClick={(track) => play(track, rows)}
+                onRowClick={(track) => playRow(track, rows)}
+                activeRowKey={currentId ?? undefined}
             />
         </Page>
     );

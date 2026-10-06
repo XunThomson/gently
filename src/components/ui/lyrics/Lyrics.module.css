@@ -1,0 +1,57 @@
+/* 歌词列表：纵向滚动，隐藏滚动条；上下留白让首行 / 末行也能滚到中线 */
+
+.root {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    padding: var(--space-10) var(--space-5);
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.root::-webkit-scrollbar {
+    display: none;
+}
+
+.line {
+    flex-shrink: 0;
+    width: 100%;
+    border: none;
+    background: transparent;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-normal);
+    line-height: var(--line-height-relaxed);
+    text-align: center;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: color var(--motion-fast), font-size var(--motion-fast);
+}
+
+.line:hover {
+    color: var(--text-secondary);
+}
+
+.line[data-active='true'] {
+    color: var(--brand);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+}
+
+.empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: var(--space-10) var(--space-5);
+    text-align: center;
+    font-size: var(--font-size-sm);
+    color: var(--text-tertiary);
+}

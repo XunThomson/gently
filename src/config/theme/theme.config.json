@@ -78,11 +78,11 @@
 
   "radius": {
     "none": "0",
-    "sm": "4px",
-    "md": "8px",
-    "lg": "12px",
-    "xl": "16px",
-    "2xl": "20px",
+    "sm": "6px",
+    "md": "10px",
+    "lg": "14px",
+    "xl": "18px",
+    "2xl": "24px",
     "full": "9999px"
   },
 
@@ -100,12 +100,12 @@
   },
 
   "shadow": {
-    "xs": "0 1px 2px rgba(0, 0, 0, 0.05)",
-    "sm": "0 1px 3px rgba(0, 0, 0, 0.10)",
-    "md": "0 4px 6px -1px rgba(0, 0, 0, 0.10)",
-    "lg": "0 10px 15px -3px rgba(0, 0, 0, 0.10)",
-    "xl": "0 20px 25px -5px rgba(0, 0, 0, 0.12)",
-    "panel": "0 16px 34px -16px rgba(16, 20, 28, 0.24), 0 2px 6px rgba(16, 20, 28, 0.06)"
+    "xs": "0 1px 2px rgba(16, 20, 28, 0.04)",
+    "sm": "0 1px 3px rgba(16, 20, 28, 0.06), 0 1px 2px rgba(16, 20, 28, 0.04)",
+    "md": "0 4px 12px -4px rgba(16, 20, 28, 0.10), 0 2px 4px -2px rgba(16, 20, 28, 0.06)",
+    "lg": "0 16px 32px -16px rgba(16, 20, 28, 0.18), 0 4px 10px -6px rgba(16, 20, 28, 0.08)",
+    "xl": "0 28px 56px -24px rgba(16, 20, 28, 0.24), 0 8px 18px -12px rgba(16, 20, 28, 0.10)",
+    "panel": "0 20px 44px -20px rgba(16, 20, 28, 0.22), 0 2px 8px -4px rgba(16, 20, 28, 0.08)"
   },
 
   "motion": {
@@ -133,10 +133,10 @@
     },
 
     "searchBox": {
-      "height": 36,
-      "maxWidth": 560,
-      "minWidth": 220,
-      "radius": "10px",
+      "height": 38,
+      "maxWidth": 520,
+      "minWidth": 200,
+      "radius": "12px",
       "fontSize": 14,
       "placeholderColor": "{text.tertiary}",
       "iconSize": 16,
@@ -151,8 +151,8 @@
     "toolbar": {
       "buttonSize": 32,
       "iconSize": 18,
-      "gap": 4,
-      "paddingX": 10,
+      "gap": 2,
+      "paddingX": 8,
       "paddingY": 6,
       "radius": "10px",
       "iconColor": "{text.secondary}",
@@ -162,68 +162,68 @@
     },
 
     "sidebar": {
-      "width": 200,
-      "padding": 8,
-      "itemHeight": 40,
-      "itemGap": 12,
-      "itemPaddingX": 16,
-      "itemRadius": "8px",
-      "fontSize": 14,
+      "width": 232,
+      "padding": 12,
+      "itemHeight": 38,
+      "itemGap": 10,
+      "itemPaddingX": 12,
+      "itemRadius": "10px",
+      "fontSize": 13.5,
       "iconSize": 16,
       "textColor": "{text.secondary}",
       "hoverTextColor": "{text.primary}",
       "hoverBg": "{bg.hover}",
       "activeTextColor": "{brand}",
       "activeBg": "{brand.soft}",
-      "sectionTitleFontSize": 13,
+      "sectionTitleFontSize": 12,
       "sectionTitleColor": "{text.tertiary}"
     },
 
     "playerBar": {
-      "height": 76,
-      "paddingX": 22,
-      "coverSize": 46,
-      "coverRadius": "10px",
-      "controlSize": 36,
-      "progressWidth": 340,
+      "height": 80,
+      "paddingX": 20,
+      "coverSize": 48,
+      "coverRadius": "12px",
+      "controlSize": 38,
+      "progressWidth": 460,
       "progressHeight": 4
     },
 
     "view": {
-      "titleFontSize": 24,
+      "titleFontSize": 26,
       "titleFontWeight": 700,
-      "paddingX": 24,
-      "paddingY": 20,
-      "gap": 16,
-      "maxWidth": 1360
+      "paddingX": 28,
+      "paddingY": 24,
+      "gap": 20,
+      "maxWidth": 1440
     },
 
     "section": {
-      "titleFontSize": 17,
-      "subtitleFontSize": 12.5,
+      "titleFontSize": 18,
+      "subtitleFontSize": 13,
       "gap": 16,
       "marginBottom": 32
     },
 
     "dataTable": {
-      "fontSize": 14,
-      "headerFontSize": 13,
-      "headerColor": "{text.secondary}",
-      "cellPaddingX": 16,
-      "cellPaddingY": 12,
-      "radius": "10px",
+      "fontSize": 13.5,
+      "headerFontSize": 12,
+      "headerColor": "{text.tertiary}",
+      "cellPaddingX": 18,
+      "cellPaddingY": 11,
+      "radius": "14px",
       "rowHoverBg": "{bg.hover}",
       "borderColor": "{border.subtle}",
-      "emptyPaddingY": 40
+      "emptyPaddingY": 48
     },
 
     "card": {
-      "radius": "14px",
-      "gap": 18,
-      "minWidth": 152,
+      "radius": "16px",
+      "gap": 20,
+      "minWidth": 168,
       "coverRatio": 1,
-      "titleFontSize": 13.5,
-      "metaFontSize": 12
+      "titleFontSize": 14,
+      "metaFontSize": 12.5
     },
 
     "chart": {
@@ -231,7 +231,7 @@
       "coverColumnWidth": 44,
       "heatColumnWidth": 110,
       "durationColumnWidth": 52,
-      "rowPaddingY": 9,
+      "rowPaddingY": 11,
       "rowPaddingX": 18,
       "heatBarHeight": 4
     }

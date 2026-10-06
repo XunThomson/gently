@@ -29,7 +29,7 @@ export function ChartSection() {
         s.player.current ? `${s.player.current.title}|${s.player.current.artist}` : null,
     );
     const {setChart, setPeriod, setDate, setWeekStart, toggleExpanded, load} = useActions().ranking;
-    const {play} = useActions().player;
+    const {playOrToggle} = useActions().player;
 
     useEffect(() => {
         void load();
@@ -61,7 +61,7 @@ export function ChartSection() {
                 ? t('page.ranking.all', {count: total})
                 : t('page.ranking.top', {count: DEFAULT_VISIBLE, total});
 
-    const handleSelect = (track: RankedTrack) => play(track, tracks);
+    const handleSelect = (track: RankedTrack) => playOrToggle(track, tracks);
 
     return (
         <section className={styles.section}>

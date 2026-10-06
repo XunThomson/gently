@@ -1,4 +1,6 @@
 import {createStore, shallowEqual, useStore, type StoreApi} from './createStore';
+import {readPersistedUi, writePersistedUi} from './persist';
+import {createCollectionSlice} from './slices/collection.slice';
 import {createDownloadSlice} from './slices/download.slice';
 import {createLibrarySlice} from './slices/library.slice';
 import {createPlayerSlice} from './slices/player.slice';
@@ -13,7 +15,8 @@ import type {RootActions, RootState, StoreCtx} from './types';
  * 设计约定：
  * - 每个 domain 一个切片（state + actions），切片之间只通过 ctx.getActions() 交互；
  * - 组件只通过下面的 selector hooks 订阅自己关心的数据，避免无效重渲染；
- * - 需要衍生数据时在 selector 中计算，或放到 services 层，state 只存事实。
+ * - 需要衍生数据时在 selector 中计算，或放到 services 层，state 只存事实；
+ * - 需要跨启动保留的偏好（主题模式 / 主题预设）由 persist 层落 localStorage。
  */
 
 let store!: StoreApi<RootState>;
@@ -25,12 +28,15 @@ const ctx: StoreCtx = {
     getActions: () => rootActions,
 };
 
-const ui = createUiSlice(ctx);
+const persisted = readPersistedUi();
+
+const ui = createUiSlice(ctx, persisted);
 const player = createPlayerSlice(ctx);
 const ranking = createRankingSlice(ctx);
 const download = createDownloadSlice(ctx);
 const plugin = createPluginSlice(ctx);
 const library = createLibrarySlice(ctx);
+const collection = createCollectionSlice(ctx);
 
 store = createStore<RootState>({
     ui: ui.state,
@@ -39,6 +45,7 @@ store = createStore<RootState>({
     download: download.state,
     plugin: plugin.state,
     library: library.state,
+    collection: collection.state,
 });
 
 rootActions = {
@@ -48,7 +55,18 @@ rootActions = {
     download: download.actions,
     plugin: plugin.actions,
     library: library.actions,
+    collection: collection.actions,
 };
+
+/* 主题偏好持久化：只在真正变化时写入，避免每秒进度更新触发 localStorage 写 */
+let lastPersistedKey = `${ui.state.themeMode}|${ui.state.themePresetId}`;
+store.subscribe(() => {
+    const {themeMode, themePresetId} = store.getState().ui;
+    const key = `${themeMode}|${themePresetId}`;
+    if (key === lastPersistedKey) return;
+    lastPersistedKey = key;
+    writePersistedUi({themeMode, themePresetId});
+});
 
 export {store, shallowEqual};
 
@@ -69,5 +87,6 @@ export const useRankingState = () => useStore(store, (s) => s.ranking);
 export const useDownloadState = () => useStore(store, (s) => s.download);
 export const usePluginState = () => useStore(store, (s) => s.plugin);
 export const useLibraryState = () => useStore(store, (s) => s.library);
+export const useCollectionState = () => useStore(store, (s) => s.collection);
 
 export type {RootState, RootActions} from './types';

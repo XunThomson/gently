@@ -27,13 +27,15 @@
 /* ---------- 徽标 ---------- */
 
 .badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
     padding: 2px 8px;
     border-radius: var(--radius-full);
     font-size: var(--font-size-xs);
+    line-height: 1.6;
+    white-space: nowrap;
     background: var(--bg-surface-alt);
     color: var(--text-secondary);
-    white-space: nowrap;
 }
 
 .badge_default {
@@ -94,7 +96,7 @@
 .progressLabel {
     flex: none;
     font-size: var(--font-size-xs);
-    color: var(--text-secondary);
+    color: var(--text-tertiary);
     font-variant-numeric: tabular-nums;
 }
 
@@ -103,25 +105,31 @@
 .actions {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
+    justify-content: flex-end;
+    gap: var(--space-1);
 }
 
 .action {
-    padding: 0;
+    padding: 4px 8px;
     border: 0;
+    border-radius: var(--radius-sm);
     background: none;
-    font-size: var(--font-size-sm);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
+    white-space: nowrap;
     cursor: pointer;
-    transition: color var(--motion-fast);
+    transition: background-color var(--motion-fast), color var(--motion-fast);
 }
 
 .action:hover:not(:disabled) {
+    background: var(--bg-active);
     color: var(--text-primary);
 }
 
 .action:disabled {
     color: var(--text-tertiary);
+    opacity: 0.6;
     cursor: not-allowed;
 }
 
@@ -130,9 +138,15 @@
 }
 
 .action_primary:hover:not(:disabled) {
-    color: var(--brand-hover);
+    background: var(--brand-soft);
+    color: var(--brand);
 }
 
 .action_danger {
+    color: var(--danger);
+}
+
+.action_danger:hover:not(:disabled) {
+    background: var(--bg-active);
     color: var(--danger);
 }

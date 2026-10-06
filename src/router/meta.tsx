@@ -1,5 +1,14 @@
 import type {AppRoute, MenuRoute} from './routes.types'
-import {IconClock, IconDownload, IconFire, IconFolder, IconGear, IconPuzzle, IconTrophy} from '../components/ui/icon'
+import {
+    IconClock,
+    IconDownload,
+    IconFire,
+    IconFolder,
+    IconGear,
+    IconPalette,
+    IconPuzzle,
+    IconTrophy,
+} from '../components/ui/icon'
 
 /**
  * 把路由树摊平成菜单列表（会自动忽略 hideInMenu / 无 labelKey 的节点）
@@ -37,7 +46,10 @@ function joinPath(parent: string, child: string): string {
 
 /**
  * 应用路由表。
- * 菜单顺序 / 文案 / 图标统一由 meta 派生，保证路由与导航单一数据源。
+ *
+ * - 侧边栏主菜单 = 有 labelKey 且未 hideInMenu 的路由；
+ * - 「收藏 / 歌单 / 歌曲详情」由侧边栏与播放条主动跳转，不进主菜单；
+ * - 「设置」只在右上角工具栏提供入口（避免与侧边栏重复）。
  */
 export const appRoutes: AppRoute[] = [
     {
@@ -76,9 +88,28 @@ export const appRoutes: AppRoute[] = [
         lazy: () => import('../views/recent'),
         meta: {labelKey: 'nav.recent', icon: <IconClock/>, order: 6},
     },
+
+    /* ---------- 不在主菜单中，由外壳入口跳转 ---------- */
+    {
+        path: 'favorites',
+        lazy: () => import('../views/favorites'),
+    },
+    {
+        path: 'playlist/:id',
+        lazy: () => import('../views/playlist'),
+    },
+    {
+        path: 'now-playing',
+        lazy: () => import('../views/now-playing'),
+    },
+    {
+        path: 'theme',
+        lazy: () => import('../views/theme'),
+        meta: {labelKey: 'nav.theme', icon: <IconPalette/>, hideInMenu: true},
+    },
     {
         path: 'setting',
         lazy: () => import('../views/setting'),
-        meta: {labelKey: 'nav.setting', icon: <IconGear/>, order: 7},
+        meta: {labelKey: 'nav.setting', icon: <IconGear/>, hideInMenu: true},
     },
 ]

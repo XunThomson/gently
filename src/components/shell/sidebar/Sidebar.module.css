@@ -1,9 +1,8 @@
-/* 侧边导航：尺寸 / 颜色全部来自 theme.config.json 的 sidebar 段 */
+/* 侧边导航：尺寸 / 颜色全部来自 theme.config.json 的 sidebar 段与主题 token */
 
 .sidebar {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
     width: var(--sidebar-width);
     height: 100%;
     padding: var(--sidebar-padding);
@@ -11,18 +10,20 @@
     background: var(--bg-surface);
     border-right: 1px solid var(--border-subtle);
     overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .menu {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: 2px;
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
 .item {
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--sidebar-item-gap);
@@ -50,10 +51,22 @@
     font-weight: var(--font-weight-medium);
 }
 
+/* 选中态左侧指示条 */
+.itemActive::before {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 50%;
+    width: 3px;
+    height: 16px;
+    transform: translateY(-50%);
+    border-radius: var(--radius-full);
+    background: var(--brand);
+}
+
 .itemIcon {
     display: flex;
     flex: none;
-    font-size: var(--sidebar-icon-size);
 }
 
 .itemLabel {
@@ -64,15 +77,33 @@
     text-overflow: ellipsis;
 }
 
+.count {
+    flex: none;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 分组 ---------- */
+
 .group {
-    margin-top: var(--space-3);
+    margin-top: var(--space-4);
+}
+
+.groupHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-1);
+    padding-right: var(--space-1);
 }
 
 .groupTitle {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    width: 100%;
+    gap: var(--space-1);
+    flex: 1;
+    min-width: 0;
     padding: var(--space-2) var(--sidebar-item-padding-x);
     border: 0;
     background: none;
@@ -86,6 +117,103 @@
 
 .groupTitle:hover {
     color: var(--sidebar-hover-text-color);
+}
+
+.groupAction {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    flex: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.groupAction:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+/* ---------- 新建歌单 ---------- */
+
+.createRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2) var(--space-1) var(--sidebar-item-padding-x);
+}
+
+.createInput {
+    flex: 1;
+    min-width: 0;
+    height: 30px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    outline: none;
+}
+
+.createInput:focus {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.createSubmit {
+    flex: none;
+    height: 30px;
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--brand);
+    color: var(--brand-contrast);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+}
+
+/* ---------- 歌单行（含悬浮删除） ---------- */
+
+.playlistRow {
+    position: relative;
+}
+
+.rowAction {
+    position: absolute;
+    right: var(--space-2);
+    top: 50%;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    transform: translateY(-50%);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-tertiary);
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity var(--motion-fast), color var(--motion-fast);
+}
+
+.playlistRow:hover .rowAction {
+    opacity: 1;
+}
+
+.rowAction:hover {
+    color: var(--danger);
+}
+
+/* 悬浮时隐藏数量，避免与操作按钮重叠 */
+.playlistRow:hover .count {
+    opacity: 0;
 }
 
 .empty {

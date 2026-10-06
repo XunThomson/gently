@@ -9,7 +9,8 @@
     "local": "Local Music",
     "plugin": "Plugins",
     "recent": "Recently Played",
-    "setting": "Settings"
+    "setting": "Settings",
+    "theme": "Theme Market"
   },
   "common": {
     "play": "Play",
@@ -25,7 +26,15 @@
     "enabled": "Enabled",
     "disabled": "Disabled",
     "loading": "Loading…",
-    "collapse": "Collapse"
+    "collapse": "Collapse",
+    "back": "Back",
+    "favorite": "Favorite",
+    "unfavorite": "Remove from favorites",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "create": "Create",
+    "save": "Save",
+    "download": "Download"
   },
   "search": {
     "placeholder": "Search songs / artists / albums",
@@ -40,7 +49,9 @@
     "deleteHistory": "Remove history item: {{value}}"
   },
   "toolbar": {
-    "theme": "Appearance",
+    "themeMarket": "Theme market",
+    "switchToLight": "Switch to light background",
+    "switchToDark": "Switch to dark background",
     "settings": "Settings",
     "pip": "Picture in picture",
     "minimize": "Minimize",
@@ -50,7 +61,9 @@
   "sidebar": {
     "playlists": "My playlists",
     "favorites": "Favorites",
-    "noPlaylists": "No playlists yet"
+    "noPlaylists": "No playlists yet",
+    "newPlaylist": "New playlist",
+    "trackCount": "{{count}} songs"
   },
   "player": {
     "notPlaying": "Nothing playing",
@@ -58,7 +71,8 @@
     "repeatOff": "Play in order",
     "repeatAll": "Repeat all",
     "repeatOne": "Repeat one",
-    "volume": "Volume"
+    "volume": "Volume",
+    "openDetail": "Open song details"
   },
   "column": {
     "title": "Title",
@@ -150,10 +164,40 @@
       "hoursAgo": "{{count}} h ago",
       "daysAgo": "{{count}} d ago"
     },
+    "theme": {
+      "title": "Theme Market",
+      "subtitle": "Pick a palette — applied instantly",
+      "apply": "Apply",
+      "applied": "In use",
+      "by": "By {{name}}"
+    },
+    "favorites": {
+      "title": "Favorites",
+      "subtitle": "{{count}} songs",
+      "empty": "No favorites yet"
+    },
+    "playlist": {
+      "title": "Playlist",
+      "subtitle": "{{count}} songs",
+      "empty": "This playlist is empty",
+      "create": "New playlist",
+      "rename": "Rename",
+      "delete": "Delete playlist",
+      "namePlaceholder": "Playlist name",
+      "addToPlaylist": "Add to playlist",
+      "removeFromPlaylist": "Remove from playlist",
+      "notFound": "Playlist not found"
+    },
+    "nowPlaying": {
+      "lyrics": "Lyrics",
+      "noLyrics": "No lyrics",
+      "addedToPlaylist": "Added to “{{name}}”"
+    },
     "setting": {
       "title": "Settings",
       "subtitle": "Appearance, language and data source",
       "appearance": "Appearance",
+      "openThemeMarket": "Open theme market",
       "themeMode": "Theme mode",
       "themeLight": "Light",
       "themeDark": "Dark",

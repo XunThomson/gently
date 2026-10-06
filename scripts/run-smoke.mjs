@@ -5,17 +5,20 @@
  *
  * 用法：pnpm smoke
  */
-import {mkdtempSync} from 'node:fs';
+import {mkdtempSync, readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {build} from 'vite';
 
 const outDir = mkdtempSync(path.join(tmpdir(), 'gently-smoke-'));
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 await build({
     configFile: false,
     logLevel: 'error',
+    // 与 vite.config.ts 保持一致的全局常量
+    define: {__APP_VERSION__: JSON.stringify(pkg.version)},
     // 把依赖一并打包，避免 node 直接 require 纯 ESM 包
     ssr: {noExternal: true, target: 'node'},
     build: {

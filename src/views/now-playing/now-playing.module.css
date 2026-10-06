@@ -1,0 +1,208 @@
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    width: 100%;
+    max-width: var(--view-max-width);
+    margin: 0 auto;
+    padding: var(--view-padding-y) var(--view-padding-x) var(--space-8);
+    box-sizing: border-box;
+}
+
+.back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    align-self: flex-start;
+    padding: var(--space-1) var(--space-2);
+    margin-left: calc(var(--space-2) * -1);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.back:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.layout {
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+    gap: var(--space-8);
+    align-items: start;
+}
+
+/* ---------- 左侧详情 ---------- */
+
+.detail {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.cover {
+    position: relative;
+    display: grid;
+    place-items: center;
+    aspect-ratio: 1;
+    width: 100%;
+    margin-bottom: var(--space-5);
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+}
+
+.coverInitial {
+    font-size: 72px;
+    font-weight: var(--font-weight-bold);
+    color: var(--brand-contrast);
+    opacity: 0.92;
+}
+
+.coverPlay {
+    position: absolute;
+    right: var(--space-4);
+    bottom: var(--space-4);
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: var(--bg-elevated);
+    color: var(--brand);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+    transition: transform var(--motion-fast);
+}
+
+.coverPlay:hover {
+    transform: scale(1.06);
+}
+
+.title {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: -0.02em;
+    margin-bottom: var(--space-1);
+}
+
+.sub {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    margin-bottom: var(--space-4);
+}
+
+.metaList {
+    display: flex;
+    gap: var(--space-6);
+    margin-bottom: var(--space-5);
+}
+
+.metaList dt {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    margin-bottom: 2px;
+}
+
+.metaList dd {
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.actions {
+    display: flex;
+    gap: var(--space-2);
+    margin-bottom: var(--space-6);
+    flex-wrap: wrap;
+}
+
+/* ---------- 加入歌单 ---------- */
+
+.playlists {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.playlistsLabel {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.chips {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 5px 12px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-full);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    transition: border-color var(--motion-fast), color var(--motion-fast),
+        background-color var(--motion-fast);
+}
+
+.chip:hover {
+    border-color: var(--brand);
+    color: var(--brand);
+    background: var(--brand-soft);
+}
+
+.chipNew {
+    border-style: dashed;
+}
+
+.toast {
+    font-size: var(--font-size-xs);
+    color: var(--brand);
+}
+
+/* ---------- 右侧歌词 ---------- */
+
+.lyricsPanel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    min-width: 0;
+    /* 固定高度：歌词需要确定的可滚动区域才能把当前行滚到中间 */
+    height: min(62vh, 560px);
+    padding: var(--space-5);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+}
+
+.lyricsTitle {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+}
+
+@media (max-width: 900px) {
+    .layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-6);
+    }
+
+    .cover {
+        max-width: 320px;
+    }
+}

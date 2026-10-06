@@ -98,3 +98,20 @@ export interface RecentTrack extends Track {
     /** 播放次数 */
     playCount: number;
 }
+
+/* ============================== 收藏 / 歌单 ============================== */
+
+export interface Playlist {
+    id: string;
+    name: string;
+    createdAt: number;
+    tracks: Track[];
+}
+
+/* ============================== 歌词 ============================== */
+
+export interface LyricLine {
+    /** 该行开始时间（秒） */
+    time: number;
+    text: string;
+}

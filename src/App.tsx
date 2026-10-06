@@ -1,10 +1,12 @@
+import {useEffect} from "react";
+import {Outlet} from "react-router";
 import {LMRLayout, TMBLayout} from "./components/layout";
 import {TitleBar} from "./components/shell/title-bar";
 import {Sidebar} from "./components/shell/sidebar";
 import {PlayerBar} from "./components/shell/player-bar";
-import {Outlet} from "react-router";
 import {appRoutes, buildMenuRoutes} from "./router/meta.tsx";
 import {usePlayerEngine} from "./hooks/usePlayerEngine";
+import {useActions} from "./store";
 import {themeConfig} from "./theme";
 import './App.css';
 
@@ -14,8 +16,14 @@ import './App.css';
  */
 export default function App() {
     const {titleBar, sidebar, playerBar} = themeConfig.components;
+    const {load: loadCollection} = useActions().collection;
 
     usePlayerEngine();
+
+    /* 收藏与歌单是全局数据（侧边栏常驻），启动时加载一次 */
+    useEffect(() => {
+        void loadCollection();
+    }, [loadCollection]);
 
     return (
         <div className="app">

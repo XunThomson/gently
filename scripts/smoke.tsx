@@ -12,6 +12,7 @@ import type {ReactNode} from 'react';
 
 import '../src/i18n';
 import {ThemeProvider} from '../src/theme';
+import {resolveTheme, themePresets} from '../src/theme';
 import {store, useActions} from '../src/store';
 import {buildCssVars, themeConfig} from '../src/theme/tokens';
 import {getActiveMusicSource, listMusicSources} from '../src/plugins';
@@ -33,6 +34,10 @@ import LocalView from '../src/views/local';
 import PluginView from '../src/views/plugin';
 import RecentView from '../src/views/recent';
 import SettingView from '../src/views/setting';
+import ThemeView from '../src/views/theme';
+import FavoritesView from '../src/views/favorites';
+import PlaylistView from '../src/views/playlist';
+import NowPlayingView from '../src/views/now-playing';
 
 const failures: string[] = [];
 const notes: string[] = [];
@@ -120,6 +125,22 @@ async function main(): Promise<void> {
     check('theme: 搜索框高度由配置驱动', light['--search-box-height'] === `${themeConfig.components.searchBox.height}px`);
     check('theme: 间距 token 已生成', light['--space-4'] === '16px');
 
+    /* ---------------- 主题市场预设 ---------------- */
+    check('theme: 主题市场至少提供 2 套预设', themePresets.length >= 2);
+    check('theme: 每套预设都有预览色块', themePresets.every((p) => p.swatches.length >= 3));
+
+    const ocean = resolveTheme(themeConfig, 'ocean');
+    check('theme: 预设覆盖品牌色', ocean.palette.brand !== themeConfig.palette.brand);
+    check('theme: 预设可覆盖配色板', ocean.scheme.light.app !== themeConfig.scheme.light.app);
+    check(
+        'theme: 未声明的字段继承主题配置',
+        ocean.components.dataTable.cellPaddingY === themeConfig.components.dataTable.cellPaddingY,
+    );
+    check('theme: 未知预设回落默认主题', resolveTheme(themeConfig, 'nope').palette.brand === themeConfig.palette.brand);
+
+    const presetVars = buildCssVars(ocean, 'light');
+    check('theme: 预设会改变注入的 --brand', presetVars['--brand'] === ocean.palette.brand);
+
     /* ---------------- 插件（数据源） ---------------- */
     const sources = listMusicSources();
     check('plugins: 内置源已注册', sources.length > 0);
@@ -195,6 +216,26 @@ async function main(): Promise<void> {
     actions.player.toggle();
     check('store: toggle 暂停', s().player.playing === false);
 
+    /* 列表点击语义：当前曲目 = 播放/暂停，其他曲目 = 切歌 */
+    actions.player.play(queue[0], queue);
+    check('store: 播放队列首曲目', s().player.current?.id === queue[0].id && s().player.playing);
+    actions.player.playOrToggle(queue[0], queue);
+    check('store: 点当前曲目切换为暂停', !s().player.playing && s().player.current?.id === queue[0].id);
+    actions.player.playOrToggle(queue[0], queue);
+    check('store: 再点当前曲目恢复播放', s().player.playing);
+    actions.player.playOrToggle(queue[2], queue);
+    check('store: 点其他曲目切歌播放', s().player.current?.id === queue[2].id && s().player.playing);
+
+    /* 歌词：随播放异步加载，切歌后不串词 */
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    check('store: 播放后异步加载歌词', s().player.lyrics.length > 0);
+    check(
+        'store: 歌词时间轴严格递增',
+        s().player.lyrics.every((line, i, all) => i === 0 || line.time > all[i - 1].time),
+    );
+    actions.player.stop();
+    check('store: stop 清空歌词与进度', s().player.lyrics.length === 0 && s().player.elapsed === 0);
+
     /* UI 切片 */
     actions.ui.setThemeMode('dark');
     check('store: 主题模式写入', s().ui.themeMode === 'dark');
@@ -229,6 +270,24 @@ async function main(): Promise<void> {
     actions.download.clearFinished();
     check('store: 清理已完成', s().download.tasks.every((t) => t.status !== 'done') && doneCount > 0);
 
+    /* 从列表加入下载队列 */
+    const dlTrack = s().library.local[3];
+    const tasksBefore = s().download.tasks.length;
+    actions.download.add(dlTrack);
+    check('store: 加入下载队列', s().download.tasks.some((t) => t.track.id === dlTrack.id));
+    actions.download.add(dlTrack);
+    check('store: 重复加入下载队列不产生重复项', s().download.tasks.length === tasksBefore + 1);
+
+    const addedTask = s().download.tasks.find((t) => t.track.id === dlTrack.id)!;
+    check('store: 新下载任务状态为等待中', addedTask.status === 'pending');
+    actions.download.resume(addedTask.id);
+    check(
+        'store: 等待中任务可直接开始',
+        s().download.tasks.find((t) => t.id === addedTask.id)?.status === 'downloading',
+    );
+    actions.download.remove(addedTask.id);
+    check('store: 可移除下载任务', !s().download.tasks.some((t) => t.id === addedTask.id));
+
     /* 插件切片 */
     await actions.plugin.load();
     check('store: 插件列表已加载', s().plugin.list.length > 0);
@@ -241,6 +300,48 @@ async function main(): Promise<void> {
     actions.plugin.remove(target.id);
     check('store: 内置插件不可卸载', s().plugin.list.some((p) => p.builtin));
     check('store: 第三方插件可卸载', !s().plugin.list.some((p) => p.id === target.id));
+
+    /* 收藏 / 歌单 */
+    await actions.collection.load();
+    check(
+        'collection: 初始收藏与歌单已加载',
+        s().collection.loaded && s().collection.favorites.length > 0 && s().collection.playlists.length > 0,
+    );
+
+    const favTrack = s().library.local[1];
+    const favBefore = actions.collection.isFavorite(favTrack.id);
+    actions.collection.toggleFavorite(favTrack);
+    check('collection: 收藏状态可切换', actions.collection.isFavorite(favTrack.id) !== favBefore);
+    actions.collection.toggleFavorite(favTrack);
+    check('collection: 可恢复原收藏状态', actions.collection.isFavorite(favTrack.id) === favBefore);
+
+    const created = actions.collection.createPlaylist('  单测歌单  ');
+    check(
+        'collection: 新建歌单并去除首尾空格',
+        s().collection.playlists[0]?.id === created.id && created.name === '单测歌单' && created.tracks.length === 0,
+    );
+    check('collection: 新建歌单名称为空时回落默认名', actions.collection.createPlaylist('   ').name.length > 0);
+
+    actions.collection.addToPlaylist(created.id, favTrack);
+    check('collection: 加入歌单', s().collection.playlists.find((p) => p.id === created.id)?.tracks.length === 1);
+    actions.collection.addToPlaylist(created.id, favTrack);
+    check('collection: 重复加入不产生重复项', s().collection.playlists.find((p) => p.id === created.id)?.tracks.length === 1);
+    actions.collection.removeFromPlaylist(created.id, favTrack.id);
+    check('collection: 移出歌单', s().collection.playlists.find((p) => p.id === created.id)?.tracks.length === 0);
+
+    actions.collection.renamePlaylist(created.id, '改名后');
+    check('collection: 重命名歌单', s().collection.playlists.find((p) => p.id === created.id)?.name === '改名后');
+    actions.collection.renamePlaylist(created.id, '   ');
+    check('collection: 空名称不覆盖原名称', s().collection.playlists.find((p) => p.id === created.id)?.name === '改名后');
+
+    actions.collection.removePlaylist(created.id);
+    check('collection: 删除歌单', !s().collection.playlists.some((p) => p.id === created.id));
+
+    /* 导航：设置只保留右上角入口 */
+    const menuPaths = buildMenuRoutes(appRoutes).map((item) => item.path);
+    check('nav: 侧边栏不再包含 /setting（避免与右上角重复）', !menuPaths.includes('/setting'));
+    check('nav: 主题市场不在侧边栏主菜单', !menuPaths.includes('/theme'));
+    check('nav: 主菜单为 6 项', menuPaths.length === 6);
 
     /* ---------------- 组件渲染 ---------------- */
     render('TitleBar', <TitleBar/>);
@@ -255,6 +356,21 @@ async function main(): Promise<void> {
     render('PluginView', <PluginView/>);
     render('RecentView', <RecentView/>);
     render('SettingView', <SettingView/>);
+    render('ThemeView', <ThemeView/>);
+    render('FavoritesView', <FavoritesView/>);
+    render('PlaylistView', <PlaylistView/>);
+
+    /* 歌曲详情：先恢复播放，确保歌词面板也有内容可渲染 */
+    actions.player.play(s().library.local[2], s().library.local);
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    render('NowPlayingView（含歌词）', <NowPlayingView/>);
+    check('页面：歌曲详情渲染时歌词已就绪', s().player.lyrics.length > 0);
+
+    /* 主题市场：切换预设写入 ui 切片，ThemeProvider 会据此重算 CSS 变量 */
+    actions.ui.setThemePreset('sakura');
+    check('store: 主题市场预设写入 ui 切片', s().ui.themePresetId === 'sakura');
+    actions.ui.setThemePreset(themePresets[0].id);
+    check('store: 预设可切回默认', s().ui.themePresetId === themePresets[0].id);
 
     console.log(notes.join('\n'));
     if (failures.length > 0) {

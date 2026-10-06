@@ -1,9 +1,10 @@
+import {libraryService} from '../../services';
 import type {NowPlaying, Track} from '../../types';
 import type {PlayerActions, PlayerState, StoreCtx} from '../types';
 
 let playSeq = 0;
 
-/** 播放条切片：当前曲目、队列、播放进度 */
+/** 播放条切片：当前曲目、队列、播放进度、歌词 */
 export function createPlayerSlice(ctx: StoreCtx) {
     const state: PlayerState = {
         current: null,
@@ -14,10 +15,22 @@ export function createPlayerSlice(ctx: StoreCtx) {
         volume: 0.8,
         elapsed: 0,
         duration: 0,
+        lyrics: [],
     };
 
     const patch = (partial: Partial<PlayerState>) => {
         ctx.setState({player: {...ctx.getState().player, ...partial}});
+    };
+
+    /** 异步加载歌词；切歌后丢弃过期结果 */
+    const loadLyrics = async (track: Track, playId: number) => {
+        try {
+            const lyrics = await libraryService.loadLyrics(track);
+            if (ctx.getState().player.current?.playId === playId) patch({lyrics});
+        } catch (err) {
+            console.warn('[player] 歌词加载失败', err);
+            if (ctx.getState().player.current?.playId === playId) patch({lyrics: []});
+        }
     };
 
     const start = (track: Track, index: number, queue: Track[]) => {
@@ -29,7 +42,9 @@ export function createPlayerSlice(ctx: StoreCtx) {
             playing: true,
             elapsed: 0,
             duration: track.durationSec,
+            lyrics: [],
         });
+        void loadLyrics(track, current.playId);
         ctx.getActions().library.recordPlay(track);
     };
 
@@ -57,6 +72,16 @@ export function createPlayerSlice(ctx: StoreCtx) {
             const list = queue ?? ctx.getState().player.queue;
             const index = list.findIndex((t) => t.id === track.id);
             start(track, index, list);
+        },
+
+        /** 列表点击：当前曲目 → 播放/暂停；其他曲目 → 切歌 */
+        playOrToggle(track, queue) {
+            const {current, playing} = ctx.getState().player;
+            if (current && current.id === track.id) {
+                patch({playing: !playing});
+                return;
+            }
+            actions.play(track, queue);
         },
 
         toggle() {
@@ -110,7 +135,14 @@ export function createPlayerSlice(ctx: StoreCtx) {
         },
 
         stop() {
-            patch({current: null, playing: false, elapsed: 0, duration: 0, index: -1});
+            patch({
+                current: null,
+                playing: false,
+                elapsed: 0,
+                duration: 0,
+                index: -1,
+                lyrics: [],
+            });
         },
     };
 

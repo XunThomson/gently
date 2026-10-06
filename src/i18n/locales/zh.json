@@ -9,7 +9,8 @@
     "local": "本地音乐",
     "plugin": "插件管理",
     "recent": "最近播放",
-    "setting": "设置"
+    "setting": "设置",
+    "theme": "主题市场"
   },
   "common": {
     "play": "播放",
@@ -25,7 +26,15 @@
     "enabled": "已启用",
     "disabled": "已禁用",
     "loading": "加载中…",
-    "collapse": "收起"
+    "collapse": "收起",
+    "back": "返回",
+    "favorite": "收藏",
+    "unfavorite": "取消收藏",
+    "confirm": "确定",
+    "cancel": "取消",
+    "create": "创建",
+    "save": "保存",
+    "download": "下载"
   },
   "search": {
     "placeholder": "搜索歌曲 / 歌手 / 专辑",
@@ -40,7 +49,9 @@
     "deleteHistory": "删除历史记录：{{value}}"
   },
   "toolbar": {
-    "theme": "主题外观",
+    "themeMarket": "主题市场",
+    "switchToLight": "切换到浅色背景",
+    "switchToDark": "切换到深色背景",
     "settings": "设置",
     "pip": "画中画",
     "minimize": "最小化",
@@ -50,7 +61,9 @@
   "sidebar": {
     "playlists": "我的歌单",
     "favorites": "我的收藏",
-    "noPlaylists": "还没有歌单"
+    "noPlaylists": "还没有歌单",
+    "newPlaylist": "新建歌单",
+    "trackCount": "{{count}} 首"
   },
   "player": {
     "notPlaying": "未在播放",
@@ -58,7 +71,8 @@
     "repeatOff": "顺序播放",
     "repeatAll": "列表循环",
     "repeatOne": "单曲循环",
-    "volume": "音量"
+    "volume": "音量",
+    "openDetail": "打开歌曲详情"
   },
   "column": {
     "title": "标题",
@@ -150,10 +164,40 @@
       "hoursAgo": "{{count}} 小时前",
       "daysAgo": "{{count}} 天前"
     },
+    "theme": {
+      "title": "主题市场",
+      "subtitle": "挑选一套配色，立即生效",
+      "apply": "应用",
+      "applied": "使用中",
+      "by": "作者：{{name}}"
+    },
+    "favorites": {
+      "title": "我的收藏",
+      "subtitle": "共 {{count}} 首",
+      "empty": "还没有收藏的歌曲"
+    },
+    "playlist": {
+      "title": "歌单",
+      "subtitle": "共 {{count}} 首",
+      "empty": "这个歌单还是空的",
+      "create": "新建歌单",
+      "rename": "重命名",
+      "delete": "删除歌单",
+      "namePlaceholder": "歌单名称",
+      "addToPlaylist": "加入歌单",
+      "removeFromPlaylist": "移出歌单",
+      "notFound": "歌单不存在"
+    },
+    "nowPlaying": {
+      "lyrics": "歌词",
+      "noLyrics": "暂无歌词",
+      "addedToPlaylist": "已加入「{{name}}」"
+    },
     "setting": {
       "title": "设置",
       "subtitle": "外观、语言与数据源",
       "appearance": "外观",
+      "openThemeMarket": "打开主题市场",
       "themeMode": "主题模式",
       "themeLight": "浅色",
       "themeDark": "深色",

@@ -2,6 +2,7 @@ import {useEffect, useMemo} from 'react';
 import {useTranslation} from 'react-i18next';
 import {BadgeCell, DataTable, TextCell, type ColumnDef} from '../../../components/ui/data-table';
 import {actionsColumn, indexColumn} from '../../../config/table.config';
+import {usePlayRow, useTrackActions} from '../../../hooks/useTrackActions';
 import {useActions, useDownloadState} from '../../../store';
 import type {DownloadTask} from '../../../types';
 import {ClearFinishedButton} from '../components/ClearFinishedButton';
@@ -11,7 +12,8 @@ export default function DownloadedView() {
     const {t} = useTranslation();
     const {tasks, loaded} = useDownloadState();
     const {load, remove} = useActions().download;
-    const {play} = useActions().player;
+    const buildActions = useTrackActions();
+    const playRow = usePlayRow();
 
     useEffect(() => {
         void load();
@@ -60,9 +62,19 @@ export default function DownloadedView() {
             width: '112px',
             render: (_value, record) => <BadgeCell tone="accent">{record.track.source}</BadgeCell>,
         },
-        actionsColumn<DownloadTask>(t, (task) => [
-            {key: 'remove', label: t('common.delete'), tone: 'danger', onClick: () => remove(task.id)},
-        ]),
+        actionsColumn<DownloadTask>(t, (task) =>
+            buildActions(task.track, {
+                queue: tracks,
+                extra: [
+                    {
+                        key: 'remove',
+                        label: t('common.delete'),
+                        tone: 'danger',
+                        onClick: () => remove(task.id),
+                    },
+                ],
+            }),
+        ),
     ];
 
     return (
@@ -78,7 +90,7 @@ export default function DownloadedView() {
                 loading={!loaded}
                 loadingText={t('common.loading')}
                 emptyText={loaded ? t('page.download.empty') : t('common.loading')}
-                onRowClick={(task) => play(task.track, tracks)}
+                onRowClick={(task) => playRow(task.track, tracks)}
             />
         </div>
     );

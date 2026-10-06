@@ -15,6 +15,10 @@
     cursor: pointer;
 }
 
+.cardActive .title {
+    color: var(--brand);
+}
+
 .cover {
     position: relative;
     display: grid;
@@ -57,7 +61,8 @@
 }
 
 .card:hover .play,
-.card:focus-visible .play {
+.card:focus-visible .play,
+.playVisible {
     opacity: 1;
     transform: translateY(0);
 }

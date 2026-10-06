@@ -15,7 +15,9 @@ const RECOMMEND_LIMIT = 12;
 export default function HotView() {
     const {t} = useTranslation();
     const query = useSelect((s) => s.ui.searchQuery);
-    const {play} = useActions().player;
+    const currentId = useSelect((s) => s.player.current?.id ?? null);
+    const playing = useSelect((s) => s.player.playing);
+    const {playOrToggle} = useActions().player;
 
     const [tracks, setTracks] = useState<Track[]>([]);
     const [loading, setLoading] = useState(true);
@@ -50,7 +52,13 @@ export default function HotView() {
             title={t('page.hot.title')}
             subtitle={query.trim() ? t('page.hot.searchResult', {keyword: query.trim()}) : t('page.hot.recommendSub')}
         >
-            <TrackGrid tracks={tracks} loading={loading} onSelect={(track) => play(track, tracks)}/>
+            <TrackGrid
+                tracks={tracks}
+                loading={loading}
+                currentId={currentId}
+                playing={playing}
+                onSelect={(track) => playOrToggle(track, tracks)}
+            />
         </Page>
     );
 }

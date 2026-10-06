@@ -224,5 +224,23 @@ export interface ThemeConfig {
     components: ComponentTokens;
 }
 
+/**
+ * 主题市场预设（`src/config/theme/presets.json`）。
+ * 只覆盖品牌色与可选的配色板字段，其余元数据继承主题配置。
+ */
+export interface ThemePreset {
+    id: string;
+    name: string;
+    description: string;
+    author: string;
+    /** 预览色块 */
+    swatches: string[];
+    palette: Partial<ThemePalette>;
+    scheme?: {
+        light?: Partial<SchemeTokens>;
+        dark?: Partial<SchemeTokens>;
+    };
+}
+
 /** CSS 变量字典：--name → value */
 export type CssVarMap = Record<string, string>;

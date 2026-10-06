@@ -97,6 +97,20 @@ export const IconChevronRight = (p: IconProps) => (
     </Svg>
 );
 
+export const IconChevronLeft = (p: IconProps) => (
+    <Svg strokeWidth={2} {...p}>
+        <path d="m15 18-6-6 6-6"/>
+    </Svg>
+);
+
+/** 灯泡：明暗背景开关 */
+export const IconBulb = (p: IconProps) => (
+    <Svg {...p}>
+        <path d="M12 3a5.6 5.6 0 0 0-3.3 10.13c.45.34.72.87.72 1.43V17h5.16v-2.44c0-.56.27-1.09.72-1.43A5.6 5.6 0 0 0 12 3Z"/>
+        <path d="M9.6 20h4.8"/>
+    </Svg>
+);
+
 export const IconSearch = (p: IconProps) => (
     <Svg strokeWidth={2} {...p}>
         <circle cx="11" cy="11" r="7"/>

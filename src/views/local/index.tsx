@@ -11,6 +11,7 @@ import {
     indexColumn,
     titleColumn,
 } from '../../config/table.config';
+import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../hooks/useTrackActions';
 import {useActions, useLibraryState} from '../../store';
 import {fileService} from '../../services';
 import type {LocalTrack} from '../../types';
@@ -20,7 +21,9 @@ export default function LocalView() {
     const {t} = useTranslation();
     const {local, query, loaded} = useLibraryState();
     const {load, setQuery, removeLocal} = useActions().library;
-    const {play} = useActions().player;
+    const buildActions = useTrackActions();
+    const playRow = usePlayRow();
+    const currentId = useCurrentTrackId();
 
     useEffect(() => {
         void load();
@@ -44,15 +47,24 @@ export default function LocalView() {
             align: 'center',
             render: (value) => <TextCell tone="muted">{String(value)}</TextCell>,
         },
-        actionsColumn<LocalTrack>(t, (track) => [
-            {key: 'play', label: t('common.play'), tone: 'primary', onClick: () => play(track, rows)},
-            {
-                key: 'reveal',
-                label: t('page.local.revealInDir'),
-                onClick: () => void fileService.revealInDir(track.path),
-            },
-            {key: 'remove', label: t('page.local.remove'), tone: 'danger', onClick: () => removeLocal(track.id)},
-        ]),
+        actionsColumn<LocalTrack>(t, (track) =>
+            buildActions(track, {
+                queue: rows,
+                extra: [
+                    {
+                        key: 'reveal',
+                        label: t('page.local.revealInDir'),
+                        onClick: () => void fileService.revealInDir(track.path),
+                    },
+                    {
+                        key: 'remove',
+                        label: t('page.local.remove'),
+                        tone: 'danger',
+                        onClick: () => removeLocal(track.id),
+                    },
+                ],
+            }),
+        ),
     ];
 
     return (
@@ -77,7 +89,8 @@ export default function LocalView() {
                 loading={!loaded}
                 loadingText={t('common.loading')}
                 emptyText={loaded ? t('page.local.empty') : t('common.loading')}
-                onRowClick={(track) => play(track, rows)}
+                onRowClick={(track) => playRow(track, rows)}
+                activeRowKey={currentId ?? undefined}
             />
         </Page>
     );

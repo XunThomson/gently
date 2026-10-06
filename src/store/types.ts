@@ -4,8 +4,10 @@ import type {
     DateSelection,
     DownloadTask,
     LocalTrack,
+    LyricLine,
     NowPlaying,
     Period,
+    Playlist,
     PluginInfo,
     RecentTrack,
     RepeatMode,
@@ -17,6 +19,8 @@ import type {
 
 export interface UiState {
     themeMode: ThemeMode;
+    /** 主题市场当前预设 id */
+    themePresetId: string;
     /** 由 ThemeProvider 写入的实际配色方案 */
     scheme: ColorScheme;
     /** 侧边栏中已折叠的分组 */
@@ -38,6 +42,8 @@ export interface PlayerState {
     elapsed: number;
     /** 当前曲目总秒数 */
     duration: number;
+    /** 当前曲目歌词（随播放切换异步加载） */
+    lyrics: LyricLine[];
 }
 
 export interface RankingState {
@@ -73,6 +79,13 @@ export interface LibraryState {
     loaded: boolean;
 }
 
+/** 收藏与歌单 */
+export interface CollectionState {
+    favorites: Track[];
+    playlists: Playlist[];
+    loaded: boolean;
+}
+
 export interface RootState {
     ui: UiState;
     player: PlayerState;
@@ -80,12 +93,14 @@ export interface RootState {
     download: DownloadState;
     plugin: PluginState;
     library: LibraryState;
+    collection: CollectionState;
 }
 
 /* ============================== 切片 Actions ============================== */
 
 export interface UiActions {
     setThemeMode: (mode: ThemeMode) => void;
+    setThemePreset: (presetId: string) => void;
     setScheme: (scheme: ColorScheme) => void;
     toggleGroup: (key: string) => void;
     isGroupCollapsed: (key: string) => boolean;
@@ -95,6 +110,11 @@ export interface UiActions {
 export interface PlayerActions {
     /** 播放指定曲目；传入 queue 则整体替换播放队列 */
     play: (track: Track, queue?: Track[]) => void;
+    /**
+     * 列表行的标准点击行为：
+     * 点的是当前曲目 → 播放 / 暂停切换；否则切歌播放。
+     */
+    playOrToggle: (track: Track, queue?: Track[]) => void;
     toggle: () => void;
     next: () => void;
     prev: () => void;
@@ -120,6 +140,8 @@ export interface RankingActions {
 
 export interface DownloadActions {
     load: () => Promise<void>;
+    /** 加入下载队列（当前为 mock：直接生成一个等待中的任务） */
+    add: (track: Track) => void;
     /** 从队列移除（已下载的为删除文件记录） */
     remove: (id: string) => void;
     pause: (id: string) => void;
@@ -144,6 +166,18 @@ export interface LibraryActions {
     removeLocal: (id: string) => void;
 }
 
+export interface CollectionActions {
+    load: () => Promise<void>;
+    isFavorite: (trackId: string) => boolean;
+    toggleFavorite: (track: Track) => void;
+    /** 新建歌单，返回创建结果，便于调用方立即使用 */
+    createPlaylist: (name: string) => Playlist;
+    renamePlaylist: (id: string, name: string) => void;
+    removePlaylist: (id: string) => void;
+    addToPlaylist: (playlistId: string, track: Track) => void;
+    removeFromPlaylist: (playlistId: string, trackId: string) => void;
+}
+
 export interface RootActions {
     ui: UiActions;
     player: PlayerActions;
@@ -151,6 +185,7 @@ export interface RootActions {
     download: DownloadActions;
     plugin: PluginActions;
     library: LibraryActions;
+    collection: CollectionActions;
 }
 
 /** 切片工厂上下文 */

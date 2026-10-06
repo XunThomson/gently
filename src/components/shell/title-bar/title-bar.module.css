@@ -81,6 +81,16 @@
     color: var(--brand);
 }
 
+/* 灯泡：亮色背景下点亮（暖色），深色背景下熄灭 */
+.toolbarButton.bulbOn,
+.toolbarButton.bulbOn:hover {
+    color: var(--warning);
+}
+
+.toolbarButton.bulbOff {
+    color: var(--text-tertiary);
+}
+
 .toolbarDivider {
     width: 1px;
     height: 16px;

@@ -25,15 +25,15 @@ export function TitleBar() {
     const navigate = useNavigate();
     const {setSearchQuery, setThemeMode} = useActions().ui;
     const searchQuery = useSelect((s) => s.ui.searchQuery);
-    const themeMode = useSelect((s) => s.ui.themeMode);
+    const scheme = useSelect((s) => s.ui.scheme);
 
     const [compact, setCompact] = useState(false);
     const searchBox = themeConfig.components.searchBox;
 
-    const cycleTheme = useCallback(() => {
-        const next = themeMode === 'light' ? 'dark' : themeMode === 'dark' ? 'system' : 'light';
-        setThemeMode(next);
-    }, [themeMode, setThemeMode]);
+    /* 灯泡：明暗背景一键切换（主题市场只负责配色预设，互不重叠） */
+    const toggleScheme = useCallback(() => {
+        setThemeMode(scheme === 'dark' ? 'light' : 'dark');
+    }, [scheme, setThemeMode]);
 
     const toggleCompact = useCallback(() => {
         setCompact((prev) => {
@@ -65,8 +65,10 @@ export function TitleBar() {
             </div>
 
             <Toolbar
+                scheme={scheme}
                 compact={compact}
-                onAppearanceClick={cycleTheme}
+                onSchemeToggle={toggleScheme}
+                onThemeMarketClick={() => navigate('/theme')}
                 onSettingsClick={() => navigate('/setting')}
                 onCompactClick={toggleCompact}
                 onMinimizeClick={() => void windowService.minimize()}
