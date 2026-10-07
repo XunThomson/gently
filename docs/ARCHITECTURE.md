@@ -1,6 +1,6 @@
 ---
 status: active
-last_verified: 2026-02-14
+last_verified: 2026-10-07
 owner: gently
 scope: 架构骨架、数据流、扩展点
 token_budget: 2400
@@ -280,17 +280,11 @@ recommend / confirm / skin / page.<页面>`。
 已接入：删除歌单（侧边栏 / 歌单页）、卸载音源插件、清空播放列表、清空播放记录、
 清理已完成下载、移除本地音乐、移除下载任务、删除皮肤。
 
-## 9. 后端接口契约
+## 9. 接口契约
 
-只定义规范，不含实现：`src/api/types.ts`（传输原语）+ `src/api/contract.ts`（8 个域的能力接口），
-规范正文见 `docs/contracts/backend-api.md`。
-
-```
-ApiResult<T>（不抛异常） / 游标分页 Page<T> / 幂等写（Idempotency-Key）
-GentlyApi = { auth, catalog, library, recommend, playback, plugin, download, skin }
-```
-
-接入时只替换 `src/services/**` 内部的调用，UI 与 store 不变（映射表见规范文档第 8 节）。
+> ⚠️ 本节内容已并入 **§11 本机核心契约**。原先的 HTTP 契约（`src/api/types.ts` +
+> `src/api/contract.ts` + `docs/contracts/backend-api.md`，含 `auth` 域、Idempotency-Key、
+> 游标分页）随「不提供服务器」的产品定位整体作废，已归档在 `docs/archive/`。
 
 ## 10. 主题皮肤（复杂定制）
 
@@ -314,9 +308,10 @@ GentlyApi = { auth, catalog, library, recommend, playback, plugin, download, ski
 React（UI / store / services）
    │  invoke(command) / listen(event)      ← 无 HTTP、无端口、无 CORS、无 JWT
 Rust 本机核心（规划中）
-   ├─ 插件宿主（内嵌 QuickJS + 清单权限白名单）
-   ├─ 曲库聚合与缓存（跨源去重、候选排序、播放回退）
-   ├─ 本地库 / 播放史 / 收藏 / 歌单（SQLite）
+   ├─ 插件宿主（内嵌 QuickJS + 权限白名单）与订阅索引缓存
+   ├─ 曲库聚合（流式搜索、跨源去重、候选排序、播放回退）与缓存
+   ├─ 本地流代理（仅回环、一次性 token、Range 与请求头注入、SSRF 防护）
+   ├─ 本地库 / 播放史 / 收藏 / 歌单（SQLite + FTS5）
    ├─ 下载管理（本地文件系统）
    ├─ 皮肤仓库（惰性 JSON 文档）
    └─ 第三方凭据（OS keyring，按插件隔离）
@@ -324,7 +319,7 @@ Rust 本机核心（规划中）
 
 契约两处，且只有两处：
 
-1. `docs/contracts/local-core-api.md`——规范正文：约 45 条命令 + 4 类事件、错误码表、
+1. `docs/contracts/local-core-api.md`——规范正文：约 57 条命令 + 8 类事件、错误码表、
    多音源策略、插件与皮肤模型、本机存储布局、安全与信任模型；
 2. `src/api/index.ts`——上述契约的前端类型（只有类型，无实现）。
 
@@ -337,6 +332,25 @@ Rust 本机核心（规划中）
 3. **社区资源是不可信代码**：插件安装走 `plugin.preview` → 用户显式同意 → `plugin.import`；
    不执行安装脚本；插件 JS 只在 QuickJS 沙箱内运行，网络限于清单 `hosts`；
    第三方凭据只进 OS keyring，日志与 SQLite 不出现明文。
+
+**插件 ABI**：主形态是**单文件 `.js` + 文件头注释元数据**（前 60 行解析 `@name`/`@id`/`@version`/
+`@hosts`/`@credentials` 等），目录包（`plugin.json` + `entry`）降为需要多文件/资源时的高级形态；
+ABI 为 9 个顶层函数——`search` / `getMediaSource` 必选，`getTrackInfo` / `getAlbumInfo` /
+`getPlaylistInfo` / `getLyric` / `getTopLists` / `getTopList` / `getRecommend` 可选。
+**能力探测**：函数不存在即对应命令返回 `common.not_implemented`（UI 隐藏入口），不视为错误。
+前端 `src/plugins/**` 只是浏览器 mock 兜底的最小接口，**不是 ABI**。
+
+**订阅分发**：订阅 = 一个 `repository.json`（与 Legado 社区书源仓库规范同构：`name`/`version`/
+`updatedAt`/`url` + `sources[]`，字段只增不改），命令 `plugin.subscriptions.list/add/remove/refresh`
++ `plugin.catalog.list`，`ImportSource{kind:'catalog'}` 实现一键安装——**分发不依赖我方服务器**。
+安装仍需 `plugin.preview`：一键安装 + 一个权限摘要确认框（沙箱与同意流程的摩擦不能大到让社区绕开）。
+
+**媒体传输**：必须由核心提供**本地流代理**，因为 WebView 的 `<audio>` 无法设置 `Referer` /
+`User-Agent` / `Cookie`（真实音源大量需要），且拖动进度需要 `Range`，本地文件也读不到任意路径。
+代理**仅绑定回环地址**、地址带**一次性 token**、转发 `Range`/`206` 并注入源声明的请求头；
+`playback.resolve` 的 `streamUrl` 指向代理，`originUrl`/`headers` 只用于排障；对指向内网/回环/
+链路本地地址的媒体地址返回 `media.blocked_address`（SSRF 防护）。本地文件播放走这条通道，
+替换前端现有的 Blob / `audio/mp4` hack。
 
 相对 HTTP 形态**删掉**的东西：鉴权/JWT、限流、CORS、幂等键、游标分页的跨请求语义、
 OpenAPI-over-HTTP 代码生成、Postgres/Redis/BullMQ/Docker。**新增**的必需能力：

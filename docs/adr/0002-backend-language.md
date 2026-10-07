@@ -63,14 +63,15 @@ ADR-0001 的其余部分（分层、契约优先、降级原则、可测试性�
 
 ## 语言无关资产（不重做）
 
-- **41 条接口清单**（`id / method / path / tag / auth / idempotent`）：直接作为 Rust 路由与
-  utoipa 注解的对照表，`test` 里「遍历清单断言无 404 / 鉴权 / 501 / 幂等」的测试思路照搬；
-- **统一信封、错误码 → 状态码映射、游标分页、`Idempotency-Key` 语义、401/501 语义**：原样保留；
-- **前端替换点**：客户端只认 HTTP + OpenAPI，`src/services/**` 不受实现语言影响；
-- **`docs/contracts/backend-api.md`**：规范正文不变。
+- **命令/事件清单**（约 57 条命令 + 8 类事件，`docs/contracts/local-core-api.md` v0.2）：
+  直接作为 Rust 命令层与 `specta` 注解的对照表；「遍历清单断言无缺失 / 鉴权边界 / 未实现语义」
+  的测试思路照搬（HTTP 状态码换成 `CoreError` 错误码）；
+- **统一信封与错误码映射、分页语义**：保留（信封为 `{ok, data|error, traceId}`，无 HTTP 状态码）；
+- **前端替换点**：客户端只认命令/事件契约，`src/services/**` 不受实现语言影响；
+- **皮肤文档格式与令牌白名单规则、插件清单的 permissions/hosts/credentials 设计**：原样保留。
 
-需要重做：`server/**` 全部代码（路由、鉴权、限流、实时、插件宿主、123 项测试），
-以及把 zod 契约移植到 Rust 结构体并重新生成 TS 类型。
+需要重做：`server/**` 全部代码（已归档在 `docs/archive/server-ts/`），
+以及把 zod 契约移植到 Rust 结构体并用 `specta` 反向生成 TS 类型。
 
 ## 迁移清单（每步可验证，避免大爆炸重写）
 

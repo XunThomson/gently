@@ -4,7 +4,7 @@ last_verified: 2026-10-07
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 950
-tldr: 第八轮：产品定位澄清为「桌面端、无服务器」——取消 HTTP 后端形态，TS 骨架与旧 HTTP 契约归档，契约重写为本机核心命令/事件清单（约 45 命令 + 4 类事件），新增 ADR-0003 并修订 ADR-0002 的传输层；typecheck / smoke(172) 全绿。
+tldr: 第九轮：契约修订到 **v0.2**——插件 ABI 补齐（4 → 9 函数）、新增媒体传输本地流代理、订阅与 `repository.json` 分发、搜索改流式；`src/api/index.ts` 已同步，typecheck / smoke(172) 仍全绿。
 ---
 
 # STATE
@@ -14,7 +14,7 @@ tldr: 第八轮：产品定位澄清为「桌面端、无服务器」——取�
 按澄清后的产品定位重整后端形态与契约：不提供服务器、不需要账户服务、桌面端无 web 端、
 社区资源（插件/皮肤）靠用户自行 clone / 下载 / 分享后**通用导入**。
 
-## 已完成（第八轮）
+## 已完成（第八轮、第九轮）
 
 ### 1. 定位与决策
 - 三条约束：**不提供服务器**（无账号、无市场后端、无遥测）；将来同步歌单是**用户自己的第三方账号**
@@ -25,7 +25,7 @@ tldr: 第八轮：产品定位澄清为「桌面端、无服务器」——取�
   社区仓库由用户自行 clone 后指向目录，**应用不内建 git 客户端**（不要求用户装 git）。
 
 ### 2. 契约重写（`docs/contracts/local-core-api.md` + `src/api/index.ts`）
-- **约 45 条命令**（system / catalog / library / recommend / playback / plugin / download / skin）
+- **约 45 条命令**（v0.1 口径，v0.2 修订见本节第 4 小节）
   + 4 类事件（下载进度、插件健康、导入进度、扫描进度）替代原 41 条 HTTP 端点与 WebSocket；
 - 统一信封 `{ok, data|error, traceId}` + 本机错误码表（新增 `plugin.permission_denied`、
   `skin.token_rejected`、`download.disk_full`、`source.auth_expired` 等）；
@@ -46,18 +46,43 @@ tldr: 第八轮：产品定位澄清为「桌面端、无服务器」——取�
 - 同步摘除 `pnpm-workspace.yaml` 的 server 子包、清理 `.gitignore`；锁文件已无 `@gently/server` 残留；
 - 清理了 10 个未随任务退出的历史 server 进程（它们以 `server/` 为工作目录，阻塞了目录归档）。
 
+### 4. 契约 v0.2 修订（对照主流源数据软件）
+
+对照 **Legado 的 Tauri 社区书源仓库规范**（`repository.json` + 单文件书源 + cli-testing）与
+**MusicFree 插件协议**（单文件 + 头部注释元数据 + 顶层函数）做了评估，结论是 v0.1 有三处硬伤，
+据此把契约修订到 **v0.2**（`docs/contracts/local-core-api.md`，`src/api/index.ts` 同步）：
+
+- **插件 ABI 补齐**：4 → **9 个函数**（`search` / `getMediaSource` 必选，其余 7 个可选）。
+  v0.1 的 ABI 支撑不了 `catalog.album` / `playlist` / `lyrics` 等命令，那些命令本会永远无法实现；
+  函数缺失时对应命令返回 `common.not_implemented` 并隐藏 UI 入口。
+- **媒体传输**：新增**本地流代理**。WebView 的 `<audio>` 不能设 `Referer` / `UA` / `Cookie`，
+  且需要 Range；`playback.resolve` 改为返回 `ResolvedMedia`（`streamUrl` 指向仅回环的一次性 token 代理，
+  `originUrl` / `headers` 只用于排障），代理做头部注入、Range/206 透传、`no-store`，
+  并阻断内网/回环/链路本地地址（`media.blocked_address`）；本地文件同通道。
+- **订阅分发**：新增 `repository.json` 订阅索引（与 Legado 社区仓库规范同构、字段只增不改）
+  + `plugin.subscriptions.*` / `plugin.catalog.list` + `ImportSource{kind:'catalog'}` 一键安装；
+  插件主形态改为**单文件 `.js` + 头部注释元数据**，目录包降为高级形态；分发仍不依赖我方服务器。
+- **流式搜索**：`catalog.search` 立即返回 `{searchId}`，结果经 `catalog.search.partial` 逐源到达，
+  `catalog.search.done` 给跨源合并结果，新增 `catalog.searchCancel`——一个慢源不再拖死整页，
+  合并仍在核心完成；`catalog.charts` 由 `catalog.topLists` / `catalog.topList` 取代
+  （真实源是任意分类树，排行榜页待改为按源渲染）。
+
+规模：**约 57 条命令 + 8 类事件**；新增错误码 `plugin.invalid_source` / `subscription.fetch_failed` /
+`subscription.invalid_index` / `media.proxy_failed` / `media.blocked_address`。并明确
+**前端 `src/plugins/**` 不是插件 ABI**（只是 mock 兜底的最小接口）。
+
 ## 验证
 
 | 验证 | 命令 | 结果 |
 |---|---|---|
-| 类型检查 | `pnpm typecheck` | 通过（契约重写后 0 错误） |
-| 冒烟测试 | `pnpm smoke` | 172/172 通过 |
+| 类型检查 | `pnpm typecheck` | 通过（契约 v0.1 → v0.2 重写后均为 0 错误） |
+| 冒烟测试 | `pnpm smoke` | 172/172 通过（v0.2 类型同步后复测） |
 | 残留引用 | 搜 `@gently/server` / `server/src` | 0（配置、锁文件、文档均已清理） |
 | 消费方影响 | 全仓搜 `src/api` 导入 | 0——契约是纯类型，UI/store/services 未被波及 |
 
 ## 下一步
 
-计划与退出标准见 **`docs/ROADMAP.md`**（M0 骨架与契约 → M1 插件宿主 → M2 播放链路 →
+计划与退出标准见 **`docs/ROADMAP.md`**（M0 骨架与契约 → M1 插件宿主与分发 → M2 播放链路 →
 M3 本机库与持久化 → M4 推荐与皮肤 → M5 收口交付）。要点：
 
 | 项 | 结论 |
@@ -66,16 +91,22 @@ M3 本机库与持久化 → M4 推荐与皮肤 → M5 收口交付）。要点�
 | 存储 | rusqlite（bundled）+ 单写线程 + WAL + FTS5 + `user_version` 迁移（`docs/adr/0004-local-storage.md`） |
 | 职责边界 | **前端只做 UI 与渲染；数据处理与算法（含推荐打分）归 core**；同一算法只允许一份实现 |
 | 首个插件 | demo 插件（移植现有 mock 源）+ 故意越权的测试插件 |
+| 插件形态 | **单文件 JS（头部注释元数据）为主，目录包为高级形式**；分发靠订阅 `repository.json` |
+| 媒体传输 | **核心内建仅回环流代理**（Range + 头部注入 + SSRF 防护）；本地文件走同一通道 |
 
 顺序与退出标准：
 
-1. **M0 骨架与契约**：Cargo workspace、信封/错误码/tracing、`system.*` 真实现、其余命令返回
-   `common.not_implemented`；`specta` 生成绑定 + `check-commands` 文档↔注册表一致性守卫；
-2. **M1 插件宿主**（最大不确定项）：QuickJS 沙箱 + 清单校验 + `hosts` 白名单 + 四种导入来源
-   + `preview`/同意/`import` + keyring 凭据；
-3. **M2 播放链路**：catalog 聚合去重排序 + `playback.resolve` 回退链，前端 catalog/audio 切命令层；
-4. **M3 本机库与持久化**（可与 M1/M2 并行）：SQLite 表与迁移、收藏/歌单/历史、本地扫描 + FTS5、
-   下载任务与事件；
+1. **M0 骨架与契约**：Cargo workspace、信封/错误码（含 `plugin.invalid_source`/`subscription.*`/
+   `media.*`）/tracing、`system.*` 真实现、其余 **57 条命令**注册骨架返回 `common.not_implemented`；
+   `specta` 生成绑定 + `check-commands` 文档↔注册表一致性守卫；
+2. **M1 插件宿主与分发**（最大不确定项）：**单文件 JS + 头部元数据解析**（目录包为高级形态）、
+   9 函数 ABI 与能力探测、QuickJS 沙箱 + `hosts` 白名单、六种导入来源 + `preview`/同意/`import`、
+   keyring 凭据、**订阅 `repository.json` 索引 + `plugin.catalog.list` + 一键安装**、作者自测 CLI；
+3. **M2 播放链路**：**流式搜索**（`searchId` + 事件 + 分源视图）+ 按源分类树渲染排行榜、
+   catalog 聚合去重排序 + `playback.resolve` 回退链、**本地流代理（Range/头部注入/SSRF 防护）**、
+   前端 catalog/audio 切命令层；
+4. **M3 本机库与持久化**（可与 M1/M2 并行）：SQLite 表与迁移（含 `subscriptions`）、
+   收藏/歌单/历史、本地扫描 + FTS5、下载任务与事件、**本地文件播放改走同一流代理**（删 Blob/`audio/mp4` hack）；
 5. **M4 推荐与皮肤**：推荐画像与打分**迁入 `core/recommend`**（同夹具对比后删除 TS 实现，
    mock 改预置数据）；皮肤令牌白名单校验与导入导出；
 6. **M5 收口**：诊断页、错误码→zh/en 文案、`pnpm verify` 一条命令、`pnpm tauri build` 实测出包。
@@ -87,4 +118,8 @@ M3 本机库与持久化 → M4 推荐与皮肤 → M5 收口交付）。要点�
 - **无遥测**：线上问题只能靠本地诊断页与用户主动提供的日志；
 - 皮肤令牌键名白名单目前只有契约，尚无实现；推荐算法的 Rust 迁移需防行为漂移（见 ROADMAP §6）；
 - **单实例假设**：SQLite 单写线程 + 内存缓存要求单实例，M0 需引入单实例守卫；
+- **生态冷启动**：零插件则播放器不可用——靠单文件格式降门槛 + 订阅一键装 + 随仓库提供至少
+  1 个真实可用源（demo 不够）+ 作者自测 CLI 缓解；
+- **恶意媒体地址 SSRF**：插件可借本地流代理访问本机/内网——代理层阻断内网/回环/链路本地地址
+  （`media.blocked_address`）；
 - 视觉 / 交互正确性仍依赖人工走查（环境无法截图）。

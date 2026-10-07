@@ -1,5 +1,5 @@
 /**
- * 本机核心能力契约（**只有类型，没有实现**）。
+ * 本机核心能力契约（**只有类型，没有实现**）v0.2。
  *
  * 形态：`gently` 是桌面端软件，**不提供任何服务器**。因此这里没有 HTTP、
  * 没有鉴权、没有幂等键、没有限流——契约就是 Rust 本机核心对外暴露的
@@ -7,32 +7,29 @@
  *
  * 约定：
  * - 命令**永不抛异常**：一律返回 `CoreResult<T>`（失败也是 `ok: false`）；
- * - 领域模型复用 `src/types`，皮肤复用 `src/theme` 的 `ThemeSkin`，不另起一套；
- * - 接入时只替换 `src/services/**` 内部实现：把 mock 换成 `invoke(command, params)`，
- *   UI 与 store 不动。
+ * - 领域模型复用 `src/types`，皮肤复用 `src/theme` 的 `ThemeSkin`；
+ * - 接入时只替换 `src/services/**`：把 mock 换成 `invoke(command, params)`，UI 与 store 不动；
+ * - `src/plugins/**` 是浏览器 mock 兜底用的最小接口，**不是插件 ABI**（ABI 见契约 §5）。
  *
- * 未来的单一来源：Rust 核心落地后用 `tauri-specta`/`specta` 从 Rust 结构体生成这些
- * 类型，本文件随之退化为生成产物；在此之前它是权威定义。
+ * 未来的单一来源：Rust 核心落地后用 `specta`/`tauri-specta` 从 Rust 结构体生成这些类型，
+ * 本文件随之退化为生成产物；在此之前它是权威定义。
  */
 
 import type {ThemeSkin} from '../theme';
 import type {
     Album,
-    ChartType,
     CuratedPlaylist,
-    DateSelection,
     DownloadStatus,
     DownloadTask,
     GroupedTrack,
     LocalTrack,
     LyricLine,
-    Period,
     Playlist,
     PluginInfo,
     RecentTrack,
     RecommendationBundle,
     RecommendedTrack,
-    ResolvedSource,
+    Track,
     TrackQuality,
 } from '../types';
 
@@ -47,15 +44,20 @@ export const CORE_ERROR_CODES = {
     unsupportedPlatform: 'common.unsupported_platform',
     notImplemented: 'common.not_implemented',
     internal: 'common.internal',
+    pluginInvalidSource: 'plugin.invalid_source',
     pluginInvalidManifest: 'plugin.invalid_manifest',
     pluginDuplicateId: 'plugin.duplicate_id',
     pluginImportFailed: 'plugin.import_failed',
     pluginPermissionDenied: 'plugin.permission_denied',
     pluginCredentialMissing: 'plugin.credential_missing',
     pluginRuntimeError: 'plugin.runtime_error',
+    subscriptionFetchFailed: 'subscription.fetch_failed',
+    subscriptionInvalidIndex: 'subscription.invalid_index',
     sourceUpstreamFailed: 'source.upstream_failed',
     sourceAuthExpired: 'source.auth_expired',
     playbackNoSource: 'playback.no_source',
+    mediaProxyFailed: 'media.proxy_failed',
+    mediaBlockedAddress: 'media.blocked_address',
     libraryIoError: 'library.io_error',
     libraryScanFailed: 'library.scan_failed',
     downloadDiskFull: 'download.disk_full',
@@ -104,27 +106,32 @@ export interface TrackRef {
     sourceTrackId: string;
 }
 
-/** 排名变化为可选：并非所有上游都提供上期数据 */
-export interface ChartEntry {
-    rank: number;
-    track: GroupedTrack;
-    heat: number;
-    delta?: number;
-}
-
-export interface ChartResult {
-    chart: ChartType;
-    period: Period;
-    date: string;
-    entries: ChartEntry[];
-}
-
 export interface Lyrics {
     format: 'lrc' | 'plain';
     content: string;
     translated?: string;
     /** 核心已解析时直接下发，省去前端解析 */
     lines?: LyricLine[];
+}
+
+/** 源的榜单/分类：**分类树由源自定义**，不是固定枚举 */
+export interface TopListItem {
+    id: string;
+    title: string;
+    cover?: string;
+    description?: string;
+}
+
+export interface TopListGroup {
+    title: string;
+    items: TopListItem[];
+}
+
+export interface TopListPage {
+    items: Track[];
+    hasMore: boolean;
+    /** 下一页页码（源自定义语义） */
+    nextPage?: number;
 }
 
 /* ============================== 插件 ============================== */
@@ -139,7 +146,15 @@ export interface PluginCredentialField {
     secret: boolean;
 }
 
-/** `plugin.json` 的线上表示（清单字段与 Rust 侧结构体一一对应） */
+/** 插件来源（用于审计与更新判断） */
+export type PluginOrigin =
+    | {kind: 'file'; path: string}
+    | {kind: 'dir'; path: string}
+    | {kind: 'archive'; path: string}
+    | {kind: 'url'; url: string}
+    | {kind: 'catalog'; subscriptionId: string; fileName: string};
+
+/** 插件元数据：单文件来自头部注释，目录包来自 plugin.json */
 export interface PluginManifest {
     id: string;
     name: string;
@@ -147,43 +162,137 @@ export interface PluginManifest {
     author: string;
     description: string;
     homepage?: string;
-    /** 入口 JS，相对插件目录 */
-    entry: string;
-    /** 运行时：当前只有内嵌 QuickJS */
-    runtime: 'js';
     /** 支持的音质档位，由高到低 */
     qualities: TrackQuality[];
     permissions: PluginPermission[];
-    /** 网络白名单：只允许访问这些域名（HTTPS） */
+    /** 网络白名单：只允许访问这些域名（仅 HTTPS） */
     hosts: string[];
     credentials: PluginCredentialField[];
     minCoreVersion?: string;
+    tags: string[];
+    /** 该插件实际实现了哪些函数（能力探测结果，UI 据此隐藏入口） */
+    capabilities: PluginCapability[];
+}
+
+export type PluginCapability =
+    | 'search'
+    | 'getMediaSource'
+    | 'getTrackInfo'
+    | 'getAlbumInfo'
+    | 'getPlaylistInfo'
+    | 'getLyric'
+    | 'getTopLists'
+    | 'getTopList'
+    | 'getRecommend';
+
+/** 已安装插件的完整信息 */
+export interface PluginSummary extends PluginInfo {
+    manifest: PluginManifest;
+    healthy?: boolean;
+    origin: PluginOrigin;
+    /** 来自哪个订阅（手动导入时为 undefined） */
+    subscriptionId?: string;
+    /** 导入时记录的校验和，用于更新前后比对 */
+    sha256?: string;
 }
 
 /**
  * 通用导入来源（插件与皮肤同构）。
- * 「社区分享」= 用户自行 git clone 后给目录、手动下载的压缩包、直链，或粘贴的清单文本。
+ * 「社区分享」= 单文件 / 目录包 / 压缩包 / URL / 粘贴文本 / 订阅内一键安装。
  */
 export type ImportSource =
+    | {kind: 'file'; path: string}
     | {kind: 'dir'; path: string}
     | {kind: 'archive'; path: string}
     | {kind: 'url'; url: string}
-    | {kind: 'paste'; manifest: string};
+    | {kind: 'paste'; content: string}
+    | {kind: 'catalog'; subscriptionId: string; fileName: string};
 
 export interface PluginImportPreview {
     manifest: PluginManifest;
     permissions: PluginPermission[];
     credentials: PluginCredentialField[];
-    /** 非致命问题：缺少可选字段、版本过低、同 id 已存在等 */
+    /** 非致命问题：缺字段、版本过低、同 id 已存在、来自陌生仓库等 */
     warnings: string[];
     /** 同 id 插件是否已安装（安装即覆盖） */
     replacesExisting: boolean;
+    /** 从 URL/压缩包/订阅导入时的校验和 */
+    sha256?: string;
 }
 
 export interface PluginCredentialStatus {
     key: string;
     /** 只回「是否已配置」，**永不返回值** */
     present: boolean;
+}
+
+/* ---- 订阅与社区仓库索引（与 Legado 社区仓库规范同构，字段只增不改） ---- */
+
+export interface SubscriptionSourceEntry {
+    name: string;
+    fileName: string;
+    downloadUrl: string;
+    version: string;
+    author: string;
+    url: string;
+    group: string;
+    logo: string;
+    description: string;
+    tags: string[];
+    enabled: boolean;
+    fileSize: number;
+    updatedAt: string;
+    /** 可选：有则安装后校验 */
+    sha256?: string;
+    /** 可选：便于安装前展示网络范围 */
+    hosts?: string[];
+    qualities?: TrackQuality[];
+}
+
+export interface SubscriptionIndex {
+    name: string;
+    version: string;
+    updatedAt: string;
+    url?: string;
+    sources: SubscriptionSourceEntry[];
+}
+
+export interface Subscription {
+    id: string;
+    name: string;
+    url: string;
+    /** 最近一次成功刷新的时间；从未成功为 undefined */
+    updatedAt?: string;
+    count: number;
+    /** 最近一次刷新失败的说明（有值时 UI 提示，但保留旧索引可用） */
+    error?: string;
+}
+
+/** 订阅内的可安装条目（含本地安装状态） */
+export interface CatalogEntry extends SubscriptionSourceEntry {
+    subscriptionId: string;
+    subscriptionName: string;
+    installed: boolean;
+    updateAvailable: boolean;
+}
+
+/* ============================== 媒体 ============================== */
+
+/**
+ * 解析结果。**必须经核心代理播放**：
+ * WebView 的 `<audio>` 无法设置 Referer/UA/Cookie，也不便处理 CORS，因此 `streamUrl`
+ * 指向核心的本地流代理（仅回环、一次性 token、支持 Range）；`originUrl` 仅供展示排障。
+ */
+export interface ResolvedMedia {
+    source: string;
+    /** 实际下发档位，可能低于期望 */
+    quality: TrackQuality;
+    /** 核心代理地址：http://127.0.0.1:<port>/m/<一次性 token> */
+    streamUrl: string;
+    originUrl: string;
+    headers?: Record<string, string>;
+    mimeType?: string;
+    expiresInSec: number;
 }
 
 /* ============================== 契约 ============================== */
@@ -201,6 +310,7 @@ export interface SystemApi {
         data: string;
         cache: string;
         plugins: string;
+        subscriptions: string;
         skins: string;
         downloads: string;
         logs: string;
@@ -210,16 +320,22 @@ export interface SystemApi {
 }
 
 export interface CatalogApi {
-    /** 跨源聚合检索：核心负责去重与候选排序，`candidates` 顺序即优先级 */
-    search(query: {keyword: string; sources?: string[]; minQuality?: TrackQuality} & PageQuery)
-        : Promise<CoreResult<Page<GroupedTrack>>>;
-    charts(input: {chart: ChartType; period: Period; date?: DateSelection; sources?: string[]; limit?: number})
-        : Promise<CoreResult<ChartResult>>;
+    /**
+     * **流式搜索**：立即返回 searchId，结果经 `catalog.search.partial` 逐源到达，
+     * `catalog.search.done` 给出跨源合并后的最终列表。合并只在核心完成。
+     */
+    search(input: {keyword: string; sources?: string[]; limit?: number}): Promise<CoreResult<{searchId: string}>>;
+    /** 取消 fan-out（慢源不该拖住用户） */
+    searchCancel(input: {searchId: string}): Promise<CoreResult<void>>;
     track(input: {ref: string}): Promise<CoreResult<GroupedTrack | null>>;
-    album(input: {id: string}): Promise<CoreResult<Album | null>>;
-    curated(input: {id: string}): Promise<CoreResult<CuratedPlaylist | null>>;
+    album(input: {source: string; id: string}): Promise<CoreResult<Album | null>>;
+    playlist(input: {source: string; id: string}): Promise<CoreResult<CuratedPlaylist | null>>;
+    /** 源的榜单/分类树（分类由源自定义） */
+    topLists(input: {source: string}): Promise<CoreResult<TopListGroup[]>>;
+    topList(input: {source: string; id: string; page?: number}): Promise<CoreResult<TopListPage>>;
+    recommend(input: {source: string}): Promise<CoreResult<Track[]>>;
     /** 无歌词返回 `data: null`，不是错误 */
-    lyrics(input: {ref: string; source?: string; withTranslation?: boolean}): Promise<CoreResult<Lyrics | null>>;
+    lyrics(input: {ref: string; withTranslation?: boolean}): Promise<CoreResult<Lyrics | null>>;
 }
 
 export interface LibraryApi {
@@ -240,7 +356,8 @@ export interface LibraryApi {
     };
     local: {
         /** 扫描本地目录；进度通过 `library.scan.progress` 事件推送 */
-        scan(input: {dirs: string[]; recursive?: boolean}): Promise<CoreResult<{added: number; updated: number; removed: number}>>;
+        scan(input: {dirs: string[]; recursive?: boolean})
+            : Promise<CoreResult<{added: number; updated: number; removed: number}>>;
         list(query?: PageQuery): Promise<CoreResult<Page<LocalTrack>>>;
         remove(input: {id: string; deleteFile?: boolean}): Promise<CoreResult<void>>;
     };
@@ -260,22 +377,22 @@ export interface RecommendApi {
 export interface PlaybackApi {
     /** 按插件优先级依次回退；全部失败返回 `data: null`，前端退回模拟时钟 */
     resolve(input: {ref: TrackRef; quality: TrackQuality; preferredSources?: string[]})
-        : Promise<CoreResult<ResolvedSource | null>>;
+        : Promise<CoreResult<ResolvedMedia | null>>;
     report(input: {ref: TrackRef; source: string; quality: TrackQuality; playedSec: number; completed: boolean})
         : Promise<CoreResult<void>>;
 }
 
 export interface PluginApi {
-    list(): Promise<CoreResult<PluginInfo[]>>;
+    list(): Promise<CoreResult<PluginSummary[]>>;
     /** 安装前展示清单、权限与凭据需求，由用户显式同意 */
     preview(input: {from: ImportSource}): Promise<CoreResult<PluginImportPreview>>;
     /** `consent: true` 表示用户已确认权限；核心只在此时落盘 */
-    import(input: {from: ImportSource; consent: true}): Promise<CoreResult<PluginInfo>>;
+    import(input: {from: ImportSource; consent: true}): Promise<CoreResult<PluginSummary>>;
     remove(input: {id: string; deleteFiles?: boolean}): Promise<CoreResult<void>>;
-    setEnabled(input: {id: string; enabled: boolean}): Promise<CoreResult<PluginInfo>>;
+    setEnabled(input: {id: string; enabled: boolean}): Promise<CoreResult<PluginSummary>>;
     /** 数值越小越优先；决定 `playback.resolve` 的回退顺序 */
     setPriority(input: {id: string; priority: number}): Promise<CoreResult<void>>;
-    /** 仅对「URL / 压缩包」导入的插件有效：本地目录由用户自行更新 */
+    /** 与来源比对版本/校验和；**不自动更新**，本地目录导入的需要用户自己更新文件 */
     checkUpdate(input: {id: string}): Promise<CoreResult<{current: string; latest: string} | null>>;
     reload(input: {id: string}): Promise<CoreResult<void>>;
     config: {
@@ -289,6 +406,19 @@ export interface PluginApi {
         set(input: {id: string; key: string; value: string}): Promise<CoreResult<void>>;
         clear(input: {id: string; key?: string}): Promise<CoreResult<void>>;
         status(input: {id: string}): Promise<CoreResult<PluginCredentialStatus[]>>;
+    };
+    /** 订阅源：指向社区仓库的 `repository.json`（不依赖我们的服务器） */
+    subscriptions: {
+        list(): Promise<CoreResult<Subscription[]>>;
+        add(input: {url: string; name?: string}): Promise<CoreResult<Subscription>>;
+        remove(input: {id: string}): Promise<CoreResult<void>>;
+        /** 重新拉取索引并本地缓存；失败保留旧索引并返回 subscription.fetch_failed */
+        refresh(input: {id: string}): Promise<CoreResult<Subscription>>;
+    };
+    /** 订阅内可安装条目（浏览器页用） */
+    catalog: {
+        list(input?: {subscriptionId?: string; query?: string; tags?: string[]})
+            : Promise<CoreResult<CatalogEntry[]>>;
     };
 }
 
@@ -329,6 +459,15 @@ export interface LocalCore {
 
 /** 核心 → 前端推送（替代原 WebSocket 实时通道） */
 export interface CoreEventMap {
+    /** 逐源到达的搜索结果（原始、未合并），用于流式 UI 与分源视图 */
+    'catalog.search.partial': {searchId: string; source: string; tracks: Track[]; failed?: CoreError};
+    /** 搜索收敛：跨源合并后的候选列表 */
+    'catalog.search.done': {
+        searchId: string;
+        items: GroupedTrack[];
+        sources: string[];
+        failedSources: string[];
+    };
     'download.progress': DownloadTask;
     'download.done': DownloadTask;
     'download.error': DownloadTask;
