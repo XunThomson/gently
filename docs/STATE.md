@@ -99,6 +99,18 @@ tldr: 第十一轮：M0 完成（Rust 核心骨架 + 前端桥接与诊断页，
 - 测试抓到的真 bug：`RemoveParams` 漏 `rename_all = "camelCase"`，前端 `deleteFiles: false`
   被静默忽略导致误删文件——已修并加了对应断言。
 
+### 7. M1b：插件运行时与沙箱（第十三轮，已完成）
+
+- **专用线程 + 同步执行模型**：每插件一个线程持有自己的 QuickJS；宿主 `fetch` 阻塞，
+  插件写 `async function` 也能用（宿主手动排空微任务队列，不需 async 运行时）。
+- **沙箱**：只有 bootstrap 显式安装的 `fetch` / `console` / `storage` / `credentials.get`；
+  `fetch` 仅 HTTPS 且限 `@hosts`；bootstrap 后删除全部 `__host*` 入口（有测试断言）。
+- **限制**：内存 64 MiB、栈 1 MiB、单次调用 8s（中断处理器，死循环被及时掐断）、
+  响应 4 MiB 上限、重定向每跳重新过白名单。
+- **能力探测**：运行时识别 `function` / `const =>` / `globalThis.x =` 三种写法并写回清单
+  （安装期静态扫描认不出箭头函数）；新增 `plugin.reload`（已实现命令 10 条）。
+- OS keyring 仍为内存实现（`keyring` crate 未缓存），M1c 接入。
+
 ## 验证
 
 | 验证 | 命令 | 结果 |
@@ -106,7 +118,7 @@ tldr: 第十一轮：M0 完成（Rust 核心骨架 + 前端桥接与诊断页，
 | 类型检查 | `pnpm typecheck` | 通过（契约 v0.1 → v0.2 重写后均为 0 错误） |
 | 冒烟测试 | `pnpm smoke` | **176/176 通过**（原 172 + 桥接层 4 条断言；v0.2 类型同步后复测） |
 | 前端接入 | 设置页「本机核心」诊断卡片 + `core.bridge.ts` | 浏览器显示「浏览器模式」并退回 mock；桌面端显示核心版本/平台/数据库状态/统计/数据目录（一键打开） |
-| 核心单测 | `cargo test -p gently-core` | **45/45 通过**（信封、26 错误码、57 命令均被路由、目录白名单、迁移幂等、FTS5、清单解析 8 项、`plugin.preview` 8 项、**插件安装/卸载/状态 7 项**） |
+| 核心单测 | `cargo test -p gently-core` | **60/60 通过**（信封、26 错误码、57 命令均被路由、目录白名单、迁移幂等、FTS5、清单解析 8 项、`plugin.preview` 8 项、**插件安装/卸载/状态 7 项**） |
 | 契约守卫 | `pnpm check:contract` | 文档 ↔ Rust 三处一致（57 命令 / 8 事件 / 26 错误码） |
 | Rust 构建 | `cargo build -p gently` | 通过（1m03s，复用既有依赖缓存；产物固定在 `src-tauri/target`） |
 | 启动实测 | `cargo run -p gently` | 迁移 0001 应用、WAL 生效、库落在 `%APPDATA%\com.xun.gently\gently.db` |

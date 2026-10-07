@@ -243,6 +243,40 @@ fn remove_deletes_db_row_and_files_by_default() {
 }
 
 #[test]
+fn reload_detects_capabilities_from_the_runtime_not_the_static_scan() {
+    let (ctx, dir) = temp_ctx("reload");
+
+    // 用箭头函数声明：安装期的静态预扫描（找 `function <name>(`）看不到它
+    let source = r#"
+// @id arrow-source
+// @name 箭头函数写法
+// @version 1.0.0
+// @author someone
+const search = async (keyword) => [{id: 'arrow-source:1', title: keyword}];
+const getLyric = async (id) => ({format: 'plain', content: '…'});
+"#;
+    let installed = import_paste(&ctx, source, true);
+    assert_eq!(installed["data"]["plugin"]["manifest"]["capabilities"], json!([]), "静态扫描应看不到箭头函数");
+
+    let reloaded = call(&ctx, "plugin.reload", json!({ "id": "arrow-source" }));
+    assert_eq!(reloaded["ok"], json!(true), "{reloaded}");
+    let capabilities = reloaded["data"]["manifest"]["capabilities"].as_array().unwrap();
+    assert!(capabilities.contains(&json!("search")), "{capabilities:?}");
+    assert!(capabilities.contains(&json!("getLyric")), "{capabilities:?}");
+
+    // 探测结果写回清单快照：重新 list 也能看到
+    let list = call(&ctx, "plugin.list", json!({}));
+    let capabilities = list["data"][0]["manifest"]["capabilities"].as_array().unwrap();
+    assert!(capabilities.contains(&json!("search")), "{capabilities:?}");
+
+    // 未安装的 id → 明确报不存在
+    let missing = call(&ctx, "plugin.reload", json!({ "id": "nope" }));
+    assert_eq!(missing["error"]["code"], ErrorCode::NotFound.as_str());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn degraded_database_blocks_install_instead_of_pretending() {
     let dir = std::env::temp_dir().join(format!("gently-install-nodb-{}", std::process::id()));
     let paths = AppPaths::resolve(&dir);

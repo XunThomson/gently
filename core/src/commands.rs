@@ -26,7 +26,10 @@ use crate::contract::{
 };
 use crate::events::{EventSink, NullEventSink};
 use crate::paths::AppPaths;
-use crate::plugin::{parse_manifest_json, parse_source, InstallSource, InstalledPlugin, MAX_SOURCE_BYTES};
+use crate::plugin::{
+    parse_manifest_json, parse_source, BlockingHttp, HostLimits, HttpLimits, InstallSource,
+    InstalledPlugin, MemoryCredentialStore, PluginHost, MAX_SOURCE_BYTES,
+};
 use crate::store::Store;
 
 /// 处理器运行时上下文（由 `src-tauri` 在启动时构造一次）。
@@ -35,18 +38,27 @@ pub struct CoreContext {
     /// 数据库不可用时为 `None`：应用仍要能启动（诊断页会显示原因）。
     pub store: Option<Store>,
     pub store_error: Option<String>,
-    /// 插件运行时名：M0 为 `none`，M1 接入 QuickJS 后为 `quickjs`。
+    /// 插件运行时名：M1b 起为 `quickjs`。
     pub plugin_runtime: &'static str,
+    /// 插件沙箱宿主（默认出网实现 + 内存凭据；M1c 换成 OS keyring）
+    pub plugins: Arc<PluginHost>,
     pub events: Arc<dyn EventSink>,
 }
 
 impl CoreContext {
     pub fn new(paths: AppPaths) -> Self {
+        let plugins = Arc::new(PluginHost::new(
+            paths.clone(),
+            Arc::new(BlockingHttp::new(HttpLimits::default())),
+            Arc::new(MemoryCredentialStore::new()),
+            HostLimits::default(),
+        ));
         Self {
             paths,
             store: None,
             store_error: None,
-            plugin_runtime: "none",
+            plugin_runtime: "quickjs",
+            plugins,
             events: Arc::new(NullEventSink),
         }
     }
@@ -94,6 +106,7 @@ pub fn dispatch(
         "plugin.remove" => plugin_remove(ctx, params),
         "plugin.setEnabled" => plugin_set_enabled(ctx, params),
         "plugin.setPriority" => plugin_set_priority(ctx, params),
+        "plugin.reload" => plugin_reload(ctx, params),
         // 其余命令：契约已登记，实现在后续里程碑接入
         other => Err(CoreError::not_implemented(other)),
     };
@@ -116,6 +129,7 @@ const IMPLEMENTED: &[&str] = &[
     "plugin.remove",
     "plugin.setEnabled",
     "plugin.setPriority",
+    "plugin.reload",
 ];
 
 /// 已实现命令数。
@@ -462,6 +476,35 @@ fn plugin_summary(record: &InstalledPlugin) -> serde_json::Value {
         "origin": origin,
         "sha256": record.sha256,
     })
+}
+
+/// `plugin.reload`：把插件装进沙箱并**真实探测能力**，然后把探测结果写回清单快照。
+///
+/// 这也是「插件首次可用」的入口：安装只落盘，真正建运行时（QuickJS）发生在这里。
+/// 探测优先于安装期的静态预扫描——例如 `const getLyric = async () => {}` 这种写法
+/// 静态扫描找不到，但运行时能认出来。
+fn plugin_reload(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: ReloadParams = parse_params(params)?;
+    let store = require_store(ctx)?;
+
+    let record = store
+        .get_plugin(&params.id)?
+        .ok_or_else(|| CoreError::not_found(format!("插件未安装：{}", params.id)))?;
+
+    let capabilities = ctx.plugins.load(record.manifest.clone())?;
+
+    let mut updated = record;
+    updated.manifest.capabilities = capabilities;
+    updated.updated_at = crate::store::now_millis();
+    store.upsert_plugin(&updated)?;
+
+    to_json(plugin_summary(&updated))
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReloadParams {
+    id: String,
 }
 
 // ---------------------------------------------------------------- 工具

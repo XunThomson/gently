@@ -8,6 +8,10 @@ description = "gently 本机核心：契约、存储、插件宿主、曲库（�
 [dependencies]
 rusqlite = { workspace = true }
 sha2 = { workspace = true }
+# 插件沙箱：内嵌 QuickJS（同步执行模型，见 host.rs）
+rquickjs = { workspace = true }
+# 插件出网（阻塞式；TLS 走 rustls，避免 openssl 依赖）
+ureq = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

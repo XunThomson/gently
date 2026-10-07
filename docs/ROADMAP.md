@@ -159,10 +159,28 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 - 过程中测试抓到的真 bug：`RemoveParams` 等结构体漏了 `rename_all = "camelCase"`，
   导致前端传 `deleteFiles: false` 被静默忽略 → 误删文件。
 
+#### M1b 运行时与沙箱（已完成）
+- **每个插件一个专用线程 + 同步执行模型**：QuickJS 单线程且不 `Send`，专用线程既满足类型约束
+  又隔离故障；宿主 `fetch` 是阻塞调用，插件写 `async function` 也能用——宿主用
+  `Ctx::execute_pending_job()` **手动排空微任务队列**直到结果落地（不需要 async 运行时）。
+- **沙箱能力**：空白全局对象 + bootstrap 显式安装 `fetch`（仅 HTTPS、仅 `@hosts` 白名单，
+  后缀域匹配但不误命中 `evil-example.com`）/ `console` / `storage`（插件私有 kv）/
+  `credentials.get`（需声明权限，keyring 里没有就返回空）；bootstrap 结束后**删除全部
+  `__host*` 原始入口**（测试断言插件侧看到的都是 `undefined`）。
+- **限制**：JS 内存上限 64 MiB / 栈 1 MiB / 单次调用 8s（截止时间 + `set_interrupt_handler`，
+  纯 CPU 死循环在 300ms 测试里被及时中断）；响应体上限 4 MiB 并标记 `truncated`；
+  重定向手动跟随且**每一跳重新过白名单**。
+- **能力探测优于静态预扫描**：安装期只能看到 `function name(` 写法；运行时通过 JS 侧
+  `__collect()`（用 `eval(name)` 读全局词法环境）识别 `function` / `const ... =>` /
+  `globalThis.x =` 三种写法，结果写回清单快照。
+- **错误映射**：越权 → `plugin.permission_denied`；能力缺失 → `common.not_implemented`；
+  抛错/超时/语法错误（加载期）→ `plugin.runtime_error`。
+- 新增 `plugin.reload{id}`（已实现命令 9 → 10）：安装只落盘，**建运行时发生在这里**。
+- 说明：OS keyring 仍是内存实现（`keyring` crate 未在本地缓存），M1c 接入；
+  计划中的「参考插件 + 故意越权测试插件」已由测试内的 fixture 覆盖（真实随包 demo 插件放 M1c）。
+
 #### M1 剩余
-1. **M1b 运行时**：`rquickjs` 宿主 + 能力白名单（受限 `fetch` 仅 `@hosts`）+ 超时/内存上限 +
-   错误映射 + 参考插件（移植现有模拟源）+ **故意越权**的测试插件；
-2. **M1c 订阅分发**：`plugin.subscriptions.*` + `plugin.catalog.list` + 一键安装 +
+1. **M1c 订阅分发**：`plugin.subscriptions.*` + `plugin.catalog.list` + 一键安装 +
    从 `plugins/*.js` 生成 `repository.json` 的作者工具 + **导入界面的第三方免责声明**
    （无默认订阅列表，ADR-0005）。
 - **承接 M0 推迟项**：引入 `specta`/`tauri-specta`，在第一批真实 DTO（插件清单已是第一批）

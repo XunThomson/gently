@@ -55,7 +55,7 @@ fn system_status_is_really_implemented() {
     let ctx = ctx();
     let value = serde_json::to_value(dispatch(&ctx, "system.status", json!({}))).unwrap();
     assert_eq!(value["ok"], json!(true), "{value}");
-    assert_eq!(value["data"]["pluginRuntime"], json!("none"), "M0 尚未接入 QuickJS");
+    assert_eq!(value["data"]["pluginRuntime"], json!("quickjs"), "M1b 起插件运行时是内嵌 QuickJS");
     assert_eq!(value["data"]["dbReady"], json!(false), "未打开库时应为降级状态");
     assert!(value["data"]["counts"]["favorites"].is_number());
     assert!(value["traceId"].is_string());
@@ -99,6 +99,6 @@ fn invalid_params_are_reported_as_invalid_argument() {
 
 #[test]
 fn implemented_count_matches_milestone_scope() {
-    // M0：system 三条；M1a：插件预览 + 安装 + 列表 + 卸载 + 启停/优先级
-    assert_eq!(implemented_count(), 9, "已实现命令数变了就要同步这里与 ROADMAP");
+    // M0：system 三条；M1a：预览 + 安装 + 列表 + 卸载 + 启停/优先级；M1b：reload（建运行时）
+    assert_eq!(implemented_count(), 10, "已实现命令数变了就要同步这里与 ROADMAP");
 }

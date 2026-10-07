@@ -25,3 +25,7 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 # 插件来源校验和（更新前后比对，不用于安全验签）：0.10 线为成熟版本，本机 registry 已缓存
 sha2 = "0.10.9"
+# 插件沙箱与出网：都是「本机自带、无系统依赖」的选择（ADR-0004 同款取舍）
+# 执行模型是同步的（fetch 阻塞 + 手动排空微任务队列），因此不需要 async 特性
+rquickjs = "0.7.0"
+ureq = { version = "2.12.1", default-features = false, features = ["tls", "gzip"] }
