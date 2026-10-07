@@ -234,10 +234,10 @@ async function getRecommend() {}                   // 可选
 ```json
 {
   "name": "某社区音源仓库", "version": "1.0.0", "updatedAt": "2026-10-07T00:00:00Z",
-  "url": "https://github.com/xxx/repo",
+  "url": "https://example.com/community-index",
   "sources": [{
     "name": "示例音源", "fileName": "example.js",
-    "downloadUrl": "https://raw.githubusercontent.com/xxx/repo/main/example.js",
+    "downloadUrl": "https://example.com/plugins/example.js",
     "version": "1.0.0", "author": "someone", "url": "https://example.com",
     "group": "示例", "logo": "", "description": "...", "tags": ["示例"],
     "enabled": true, "fileSize": 1234, "updatedAt": "2026-10-07T00:00:00Z",
@@ -254,6 +254,15 @@ async function getRecommend() {}                   // 可选
   （对应 Legado 的 `prepare_public_repository.py`），并做发布前校验；
 - **安装期展示**：来自订阅的插件在 `plugin.preview` 中展示 `hosts`/`permissions`/`credentials`
   与来源仓库，用户确认后才落盘。
+
+### 中立立场（必须遵守，见 `docs/adr/0005-neutral-third-party.md`）
+
+- **应用不内置任何第三方入口**：没有默认订阅列表、没有预置插件仓库、没有推荐位，
+  首次打开订阅列表必然为空；
+- **用户动作之前零外部请求**：启动、搜索、推荐、榜单都不会访问第三方地址；
+  只有用户导入并启用插件、且该插件被调用时，才按清单 `@hosts` 白名单发起请求；
+- **我们不托管、不镜像、不索引**第三方插件与皮肤；`repository.json` 只是格式约定；
+- 示例与文档只用 `example.com` 占位；插件导入界面必须给出第三方免责声明。
 
 ## 7. 媒体传输（本地流代理）
 

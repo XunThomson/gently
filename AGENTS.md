@@ -47,6 +47,7 @@
 13. **契约只有一处**：规范在 `docs/contracts/local-core-api.md`，类型在 `src/api/index.ts`。新增命令先登记契约，再由 `src/services/**` 封装；**UI/store 不得直接 `invoke`**（与第 5 条同源）。
 14. **社区资源按不可信代码对待**：插件安装必须 `plugin.preview` → 用户显式同意；不执行安装脚本；插件 JS 只在 QuickJS 沙箱内运行，网络限于清单 `hosts`；第三方凭据只进 OS keyring，日志与 SQLite 中不得出现明文。
 15. **单一职责**：前端只做 UI 与渲染；数据处理与算法（聚合去重、推荐打分、持久化、播放解析）归本机核心。**同一算法只允许一份实现**——迁移时先搬后删，禁止长期双份。
+16. **对第三方资源保持中立**（`docs/adr/0005-neutral-third-party.md`）：不内置/不推荐/不预置任何第三方音源或资源入口（订阅列表、插件仓库、示例链接都不预置）；导入必须由用户主动提供来源；**用户动作之前不发起任何外部请求**；代码、注释、文档、i18n、示例数据里不得出现具体第三方音源地址（`example.com` 与 `127.0.0.1` 占位除外）；UI 不得用「官方/推荐/精选」措辞指向第三方资源。
 
 ## 4. 每类操作的完成标准
 
@@ -64,7 +65,7 @@
 
 ```bash
 pnpm typecheck   # tsc --noEmit（只读）
-pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染 + i18n/CSS token 守卫（172 项）
+pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染 + i18n/CSS token 守卫（176 项）
 pnpm dev         # 开发
 pnpm build       # tsc && vite build
 pnpm tauri dev   # 桌面端

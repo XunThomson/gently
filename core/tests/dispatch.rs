@@ -99,5 +99,6 @@ fn invalid_params_are_reported_as_invalid_argument() {
 
 #[test]
 fn implemented_count_matches_milestone_scope() {
-    assert_eq!(implemented_count(), 3, "M0 只实现 system 域三条命令");
+    // M0：system 三条；M1a：新增 plugin.preview（安装链路的「看清楚」部分）
+    assert_eq!(implemented_count(), 4, "已实现命令数变了就要同步这里与 ROADMAP");
 }

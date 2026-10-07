@@ -17,6 +17,7 @@ pub mod contract;
 pub mod events;
 pub mod logging;
 pub mod paths;
+pub mod plugin;
 pub mod store;
 
 pub use commands::{dispatch, CoreContext};

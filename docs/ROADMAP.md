@@ -130,18 +130,39 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 > 唯一未验证项：设置页在真实窗口里的**视觉**表现（本环境无法截图）——
 > 启动链路与数据已由日志与 `system.status` 覆盖，外观需人工打开设置页确认。
 
-### M1 插件宿主与分发（L，约 10–14 人日；全计划最大不确定项）
+### M1 插件宿主与分发（L，约 10–14 人日；全计划最大不确定项）——**进行中（M1a 已完成）**
 
-- **承接 M0 推迟项**：引入 `specta`/`tauri-specta`，在第一批真实 DTO（插件清单、搜索结果）
-  落地时生成 `src/api/generated.ts`，`src/api/index.ts` 退化为生成产物；
-  命令名一致性仍由 `pnpm check:contract` 守卫。
+#### M1a 清单与预览（已完成）
+- `core/src/plugin/manifest.rs`：单文件头部注释（前 60 行 `// @key value`）与目录包 `plugin.json`
+  两种形态统一为 `PluginManifest`；校验 id/version 形状、音质、权限、域名白名单、凭据字段；
+  **权限推导**（声明 `@hosts`/`@credentials` 自动具备对应权限，避免作者漏写导致能力静默失效）；
+  未知头部字段只警告；错误码 `plugin.invalid_source` / `plugin.invalid_manifest` 且带字段级 `details`。
+- **能力静态预扫描**（找顶层 `function <name>`）+ 必选函数缺失警告；
+  M1b 接入运行时后由真实能力探测覆盖，预扫描仅用于预览提示、不作安全判断。
+- `plugin.preview` **真实实现**（已实现命令 3 → 4）：支持 `paste` / `file` / `dir` 三种来源，
+  产出 `{manifest, permissions, credentials, warnings, replacesExisting}`；
+  `archive` / `url` / `catalog` 明确返回 `not_implemented` 并带上「哪个来源 + 已支持哪些」。
+  **只读不写**（有测试断言插件目录在 preview 后仍为空）。
+- 中立性落地：清理了模拟源里两个**伪造的第三方 homepage**，模拟源改名标注「不访问网络」
+  （ADR-0005）。
 
+#### M1 剩余
+1. **M1a-2 安装**：`plugin.import`（copy 落盘到 `plugins/<id>/` + 记录来源与 sha256）+
+   迁移 0002（`plugin_state` / `plugin_config`）→ `plugin.list` / `remove` / `setEnabled` / `setPriority`；
+2. **M1b 运行时**：`rquickjs` 宿主 + 能力白名单（受限 `fetch` 仅 `@hosts`）+ 超时/内存上限 +
+   错误映射 + 参考插件（移植现有模拟源）+ **故意越权**的测试插件；
+3. **M1c 订阅分发**：`plugin.subscriptions.*` + `plugin.catalog.list` + 一键安装 +
+   从 `plugins/*.js` 生成 `repository.json` 的作者工具 + **导入界面的第三方免责声明**
+   （无默认订阅列表，ADR-0005）。
+- **承接 M0 推迟项**：引入 `specta`/`tauri-specta`，在第一批真实 DTO（插件清单已是第一批）
+  落地时生成 `src/api/generated.ts`；命令名一致性仍由 `pnpm check:contract` 守卫。
+
+#### M1 详细范围（供剩余三片执行时对照）
 - 包形态：**单文件 `.js` + 文件头注释元数据为主体**（前 60 行解析 `@name` / `@id` / `@version` /
   `@author` / `@url` / `@description` / `@tags` / `@qualities` / `@hosts` / `@credentials` /
   `@minCoreVersion`；缺失或格式错 → `plugin.invalid_source`）；**目录包（`plugin.json` + `entry`
-  + 可选 assets）为高级形态**，仅在需要多文件/资源/构建产物时使用，非法 → `plugin.invalid_manifest`。
-- 插件 ABI（9 个函数）：`search` / `getMediaSource` 必选，`getTrackInfo` / `getAlbumInfo` /
-  `getPlaylistInfo` / `getLyric` / `getTopLists` / `getTopList` / `getRecommend` 可选；
+  + 可选 assets）为高级形态**，非法 → `plugin.invalid_manifest`。
+- 插件 ABI（9 个函数）：`search` / `getMediaSource` 必选，其余 7 个可选；
   **能力探测**——函数缺失时对应命令返回 `common.not_implemented` 且 UI 隐藏入口。
 - QuickJS 宿主：每插件独立 runtime；注入受限 `fetch`（仅 `hosts` 白名单、仅 HTTPS）、
   `crypto`、`console`、插件私有 `storage`、`credentials.get`；单次调用超时 + 内存上限；
@@ -152,17 +173,18 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 - 订阅与仓库索引：解析 `repository.json`（与 Legado 社区仓库规范同构，字段只增不改，`sha256` 有则校验）
   → `plugin.subscriptions.list/add/remove/refresh`（索引本地缓存，失败保留旧索引并报
   `subscription.fetch_failed`）+ `plugin.catalog.list` 列可安装条目（带 `installed` / `updateAvailable`）；
-  `{kind:'catalog'}` 实现**一键安装**。分发不依赖我方服务器。
+  `{kind:'catalog'}` 实现**一键安装**。分发不依赖我方服务器，**且不预置任何订阅**（ADR-0005）。
 - 作者自测 CLI：校验单文件头部元数据、必选函数与 `@hosts` 合法性，并可生成 `repository.json`
   （对应 Legado 的 cli-testing / prepare_public_repository），供作者发布前自测。
 - 管理：`remove` / `setEnabled` / `setPriority` / `reload` / `config.get|put` / `checkUpdate`。
 - 凭据：OS keyring（`keyring` crate）按插件隔离；`credentials.status` 只回 present。
-- 参考插件：把现有 mock 源（`src/plugins/builtin/mock-source.ts`）移植成单文件 JS 插件，
-  作为示例与测试夹具；另加一个「故意越权」的测试插件验证拒绝路径。
-- 前端：插件页接入导入向导 + 订阅/仓库浏览 + 权限同意弹窗（样式走 token，文案 zh+en）。
+- 参考插件：把现有模拟源移植成单文件 JS 插件作为示例与测试夹具；另加一个「故意越权」的
+  测试插件验证拒绝路径。**示例插件不得解析任何真实音源**（只播随包测试音频）。
+- 前端：插件页接入导入向导 + 权限同意弹窗 + **第三方免责声明**（样式走 token，文案 zh+en；
+  空列表时给出三种导入方式的中性说明，不写任何具体地址）。
 - **退出标准**：导入 demo 插件后能搜索并解析出可播地址；越权插件被拒并给出 `permission_denied`；
-  超时插件被隔离且不影响其他源；**从订阅一键安装成功**（含 sha256 校验）；
-  **头部元数据缺失的文件被拒并报 `plugin.invalid_source`**。
+  超时插件被隔离且不影响其他源；头部元数据缺失的文件被拒并报 `plugin.invalid_source`；
+  用户自填订阅可一键安装（含 sha256 校验）；**首次安装前界面无任何预置来源**。
 
 ### M2 播放链路垂直切片（M，约 7–10 人日）
 
@@ -249,6 +271,9 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 
 - 不提供服务器、账号、市场后端、遥测（ADR-0003）。
 - 不内建 git 客户端：社区插件/皮肤由用户自行 clone 后指向目录。
+- **不内置、不推荐、不预置任何第三方资源入口**（订阅清单/插件仓库/示例链接）；
+  导入一律由用户提供来源，用户动作之前不发起任何外部请求
+  （`docs/adr/0005-neutral-third-party.md`，属硬约束）。
 - 不做音频转码/串流转封装（若将来需要，属独立决策）。
 - 不做多设备同步（触发条件见 ADR-0003）。
 
@@ -262,6 +287,6 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 | 社区插件质量参差 | 用户遇到崩溃/异常 | 沙箱 + 超时 + 健康度自动禁用 + 导入校验和；日志留痕 |
 | 无遥测导致问题难定位 | 线上排障靠用户 | M5 诊断页 + 一键打包日志 |
 | 前端双模式（mock/核心）维护成本 | 两套路径易漂移 | 桥接层单一入口 + smoke 断言两条路径的返回形状一致 |
-| **生态冷启动：零插件则播放器不可用** | 首启即空壳，用户不会等 | 单文件格式降门槛 + 订阅一键装 + **随仓库至少提供 1 个真实可用源（demo 不够）** + 作者自测 CLI |
+| **生态冷启动：零插件则播放器不可用** | 首启即空壳，用户不会等 | **不靠推荐资源解决**（ADR-0005 禁止预置第三方入口）：① 无插件时应用本身可用（本地文件播放/播放器/歌词/皮肤/本地库）；② 插件页给出三种导入方式的中性说明（不写具体地址）；③ 单文件格式降低作者门槛 + 订阅一键装（用户自填 URL）；④ 作者自测 CLI 降低插件质量门槛 |
 | **恶意媒体地址 SSRF**（插件让核心代理去打本机/内网） | 本机服务被探测或滥用 | 代理层阻断内网 / 回环 / 链路本地地址（`media.blocked_address`，`core/media/`） |
 | **我们比主流多了沙箱与同意流程，摩擦过大社区会绕开** | 生态流向无摩擦的替代品 | 保持一键安装 + 只保留**一个权限摘要确认框**（不做多层向导） |

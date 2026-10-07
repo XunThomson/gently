@@ -1,0 +1,617 @@
+//! 插件清单：单文件头部注释 / 目录包 `plugin.json` 两种形态的统一表示。
+//!
+//! 设计取舍：
+//! - **单文件为主形态**（契约 §5.1）：元数据写在文件头注释里，作者成本 = 一个文件；
+//! - 目录包只多一个 `entry` 字段，其余字段完全一致 → 两种形态共用同一个结构体与校验；
+//! - 解析**不执行任何代码**：`capabilities` 是**静态预扫描**结果（找 `function <name>`），
+//!   M1b 接入运行时后会用它做能力探测的初值——预扫描只用于预览提示，不作为安全判断依据。
+
+use serde::{Deserialize, Serialize};
+
+use crate::contract::{CoreError, ErrorCode, Fallible};
+
+/// 头部元数据只扫描文件前 N 行（沿用 Legado 社区约定，避免整文件扫描）。
+pub const HEADER_SCAN_LINES: usize = 60;
+
+/// 单文件插件的大小上限：插件是脚本，超过这个体量基本可以确定有问题。
+pub const MAX_SOURCE_BYTES: u64 = 1024 * 1024;
+
+const CAPABILITY_NAMES: [&str; 9] = [
+    "search",
+    "getMediaSource",
+    "getTrackInfo",
+    "getAlbumInfo",
+    "getPlaylistInfo",
+    "getLyric",
+    "getTopLists",
+    "getTopList",
+    "getRecommend",
+];
+
+/// 必选函数：缺失时预览给出警告（不作为硬错误——静态扫描可能误判）。
+const REQUIRED_CAPABILITIES: [&str; 2] = ["search", "getMediaSource"];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TrackQuality {
+    Standard,
+    High,
+    Lossless,
+    Hires,
+}
+
+impl TrackQuality {
+    fn parse(text: &str) -> Option<Self> {
+        match text.trim().to_ascii_lowercase().as_str() {
+            "standard" => Some(Self::Standard),
+            "high" => Some(Self::High),
+            "lossless" => Some(Self::Lossless),
+            "hires" => Some(Self::Hires),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PluginPermission {
+    #[serde(rename = "network")]
+    Network,
+    #[serde(rename = "filesystem:read")]
+    FilesystemRead,
+    #[serde(rename = "filesystem:write")]
+    FilesystemWrite,
+    #[serde(rename = "credentials")]
+    Credentials,
+}
+
+impl PluginPermission {
+    fn parse(text: &str) -> Option<Self> {
+        match text.trim() {
+            "network" => Some(Self::Network),
+            "filesystem:read" => Some(Self::FilesystemRead),
+            "filesystem:write" => Some(Self::FilesystemWrite),
+            "credentials" => Some(Self::Credentials),
+            _ => None,
+        }
+    }
+}
+
+/// 插件能力 = JS 顶层函数名（与契约 §5.2 的 ABI 一一对应）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PluginCapability {
+    #[serde(rename = "search")]
+    Search,
+    #[serde(rename = "getMediaSource")]
+    GetMediaSource,
+    #[serde(rename = "getTrackInfo")]
+    GetTrackInfo,
+    #[serde(rename = "getAlbumInfo")]
+    GetAlbumInfo,
+    #[serde(rename = "getPlaylistInfo")]
+    GetPlaylistInfo,
+    #[serde(rename = "getLyric")]
+    GetLyric,
+    #[serde(rename = "getTopLists")]
+    GetTopLists,
+    #[serde(rename = "getTopList")]
+    GetTopList,
+    #[serde(rename = "getRecommend")]
+    GetRecommend,
+}
+
+impl PluginCapability {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "search" => Some(Self::Search),
+            "getMediaSource" => Some(Self::GetMediaSource),
+            "getTrackInfo" => Some(Self::GetTrackInfo),
+            "getAlbumInfo" => Some(Self::GetAlbumInfo),
+            "getPlaylistInfo" => Some(Self::GetPlaylistInfo),
+            "getLyric" => Some(Self::GetLyric),
+            "getTopLists" => Some(Self::GetTopLists),
+            "getTopList" => Some(Self::GetTopList),
+            "getRecommend" => Some(Self::GetRecommend),
+            _ => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Search => "search",
+            Self::GetMediaSource => "getMediaSource",
+            Self::GetTrackInfo => "getTrackInfo",
+            Self::GetAlbumInfo => "getAlbumInfo",
+            Self::GetPlaylistInfo => "getPlaylistInfo",
+            Self::GetLyric => "getLyric",
+            Self::GetTopLists => "getTopLists",
+            Self::GetTopList => "getTopList",
+            Self::GetRecommend => "getRecommend",
+        }
+    }
+}
+
+/// 插件向用户索要的凭据字段（值只进 OS keyring，永不落库明文）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialField {
+    pub key: String,
+    pub label: String,
+    #[serde(default)]
+    pub required: bool,
+    /// 敏感值：界面掩码显示
+    #[serde(default = "default_secret")]
+    pub secret: bool,
+}
+
+fn default_secret() -> bool {
+    true
+}
+
+/// 插件清单：单文件头部注释与目录包 `plugin.json` 共用。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginManifest {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub author: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
+    /// 目录包的主文件名；单文件形态为 None
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
+    #[serde(default)]
+    pub qualities: Vec<TrackQuality>,
+    #[serde(default)]
+    pub permissions: Vec<PluginPermission>,
+    /// 网络白名单（仅 HTTPS）；空表示不允许任何网络访问
+    #[serde(default)]
+    pub hosts: Vec<String>,
+    #[serde(default)]
+    pub credentials: Vec<CredentialField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_core_version: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// 静态预扫描得到的能力；M1b 由运行时探测覆盖
+    #[serde(default)]
+    pub capabilities: Vec<PluginCapability>,
+}
+
+/// 解析结果：清单 + 非致命警告（预览界面展示给用户）。
+#[derive(Debug, Clone)]
+pub struct ParsedPlugin {
+    pub manifest: PluginManifest,
+    pub warnings: Vec<String>,
+}
+
+/// 解析单文件插件源码（头部注释 + 正文静态扫描）。
+pub fn parse_source(source: &str) -> Fallible<ParsedPlugin> {
+    let header = parse_header(source);
+    build(header, Some(source))
+}
+
+/// 解析目录包的 `plugin.json`。
+///
+/// `source` 传入入口文件内容时同样会做能力预扫描；不传则只解析声明。
+pub fn parse_manifest_json(json: &str, entry_source: Option<&str>) -> Fallible<ParsedPlugin> {
+    let raw: serde_json::Value = serde_json::from_str(json).map_err(|err| {
+        CoreError::new(ErrorCode::PluginInvalidManifest, format!("plugin.json 不是合法 JSON：{err}"))
+            .with_details(serde_json::json!({ "reason": err.to_string() }))
+    })?;
+    let header = header_from_json(&raw)?;
+    build(header, entry_source)
+}
+
+// ---------------------------------------------------------------- 头部解析
+
+/// 头部字段：key → 多个值（同名字段可重复出现，用逗号分隔也会展开）。
+type Header = Vec<(String, String)>;
+
+fn parse_header(source: &str) -> Header {
+    let mut header: Header = Vec::new();
+
+    for line in source.lines().take(HEADER_SCAN_LINES) {
+        let trimmed = line.trim_start();
+        let Some(rest) = trimmed.strip_prefix("//") else { continue };
+        let Some(at) = rest.trim_start().strip_prefix('@') else { continue };
+
+        // 形如 `@hosts a.com,b.com`：key 到第一个空白为止
+        let mut parts = at.splitn(2, char::is_whitespace);
+        let key = parts.next().unwrap_or_default().trim().to_ascii_lowercase();
+        let value = parts.next().unwrap_or_default().trim();
+        if key.is_empty() {
+            continue;
+        }
+
+        for single in value.split(',') {
+            let single = single.trim();
+            if !single.is_empty() {
+                header.push((key.clone(), single.to_string()));
+            }
+        }
+        // 无值字段（例如只写 `// @credentials`）也要留下痕迹，便于报错
+        if value.is_empty() {
+            header.push((key, String::new()));
+        }
+    }
+
+    header
+}
+
+/// 从 `plugin.json` 的 JSON 结构里取出与头部等价的信息。
+fn header_from_json(raw: &serde_json::Value) -> Fallible<Header> {
+    let object = raw.as_object().ok_or_else(|| {
+        CoreError::new(ErrorCode::PluginInvalidManifest, "plugin.json 顶层必须是对象")
+    })?;
+
+    let mut header: Header = Vec::new();
+    let mut push = |key: &str, value: &serde_json::Value| {
+        if let Some(text) = value.as_str() {
+            header.push((key.to_string(), text.to_string()));
+        }
+    };
+
+    for key in ["id", "name", "version", "author", "description", "homepage", "entry", "minCoreVersion"] {
+        if let Some(value) = object.get(key) {
+            push(key, value);
+        }
+    }
+    for key in ["qualities", "permissions", "hosts", "tags"] {
+        if let Some(items) = object.get(key).and_then(|v| v.as_array()) {
+            for item in items {
+                push(key, item);
+            }
+        }
+    }
+    if let Some(credentials) = object.get("credentials").and_then(|v| v.as_array()) {
+        for item in credentials {
+            let key = item.get("key").and_then(|v| v.as_str()).unwrap_or_default();
+            let label = item.get("label").and_then(|v| v.as_str()).unwrap_or(key);
+            let required = item.get("required").and_then(|v| v.as_bool()).unwrap_or(false);
+            let secret = item.get("secret").and_then(|v| v.as_bool()).unwrap_or(true);
+            header.push((
+                "credentials".into(),
+                format!("{key}:{label}:{}:{}", if required { "required" } else { "optional" }, if secret { "secret" } else { "plain" }),
+            ));
+        }
+    }
+
+    Ok(header)
+}
+
+// ---------------------------------------------------------------- 构建与校验
+
+fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
+    let mut warnings: Vec<String> = Vec::new();
+    let mut invalid: Vec<serde_json::Value> = Vec::new();
+
+    let single = |key: &str| -> Option<String> {
+        header.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone()).filter(|v| !v.is_empty())
+    };
+    let many = |key: &str| -> Vec<String> {
+        header.iter().filter(|(k, _)| k == key).map(|(_, v)| v.clone()).filter(|v| !v.is_empty()).collect()
+    };
+
+    // ---- 必填字段 ----
+    let mut missing: Vec<&str> = Vec::new();
+    let id = single("id").unwrap_or_default();
+    let name = single("name").unwrap_or_default();
+    let version = single("version").unwrap_or_default();
+    let author = single("author").unwrap_or_default();
+    for (field, value) in [("id", &id), ("name", &name), ("version", &version), ("author", &author)] {
+        if value.is_empty() {
+            missing.push(field);
+        }
+    }
+    if !missing.is_empty() {
+        return Err(invalid_source("插件源缺少必填字段", serde_json::json!({ "missing": missing })));
+    }
+
+    // ---- id / version 形状 ----
+    if !is_valid_id(&id) {
+        invalid.push(serde_json::json!({
+            "field": "id",
+            "value": id,
+            "expect": "小写字母/数字/连字符，2~32 位，不能以连字符开头"
+        }));
+    }
+    if !is_valid_version(&version) {
+        invalid.push(serde_json::json!({"field": "version", "value": version, "expect": "语义化版本，如 1.0.0"}));
+    }
+
+    // ---- 音质 / 权限 / 域名 ----
+    let mut qualities = Vec::new();
+    for value in many("qualities") {
+        match TrackQuality::parse(&value) {
+            Some(quality) => {
+                if !qualities.contains(&quality) {
+                    qualities.push(quality);
+                }
+            }
+            None => invalid.push(serde_json::json!({"field": "qualities", "value": value, "expect": "standard|high|lossless|hires"})),
+        }
+    }
+    if qualities.is_empty() {
+        // 未声明时按最低档处理，并在预览里说明（避免插件作者漏写导致不可用）
+        qualities.push(TrackQuality::Standard);
+        warnings.push("未声明 @qualities，按 standard 处理".into());
+    }
+
+    let mut permissions = Vec::new();
+    for value in many("permissions") {
+        match PluginPermission::parse(&value) {
+            Some(permission) => {
+                if !permissions.contains(&permission) {
+                    permissions.push(permission);
+                }
+            }
+            None => invalid.push(serde_json::json!({"field": "permissions", "value": value, "expect": "network|filesystem:read|filesystem:write|credentials"})),
+        }
+    }
+
+    let mut hosts = Vec::new();
+    for value in many("hosts") {
+        if is_valid_host(&value) {
+            if !hosts.contains(&value) {
+                hosts.push(value);
+            }
+        } else {
+            invalid.push(serde_json::json!({"field": "hosts", "value": value, "expect": "纯域名（不带协议与路径）"}));
+        }
+    }
+
+    // ---- 凭据 ----
+    let mut credentials = Vec::new();
+    for value in many("credentials") {
+        match parse_credential(&value) {
+            Ok(field) => credentials.push(field),
+            Err(detail) => invalid.push(detail),
+        }
+    }
+
+    // ---- 权限推导：声明即生效，避免作者漏写 @permissions 导致能力静默失效 ----
+    if !hosts.is_empty() && !permissions.contains(&PluginPermission::Network) {
+        permissions.push(PluginPermission::Network);
+    }
+    if !credentials.is_empty() && !permissions.contains(&PluginPermission::Credentials) {
+        permissions.push(PluginPermission::Credentials);
+    }
+
+    // ---- 能力预扫描（仅用于预览提示） ----
+    let capabilities = match source {
+        Some(text) => scan_capabilities(text),
+        None => Vec::new(),
+    };
+    if source.is_some() {
+        let found: Vec<&str> = capabilities.iter().map(|c| c.name()).collect();
+        for required in REQUIRED_CAPABILITIES {
+            if !found.contains(&required) {
+                warnings.push(format!("未找到必选函数 {required}（静态扫描结果，安装后以运行时探测为准）"));
+            }
+        }
+    }
+
+    // ---- 未知头部字段：提示但不阻断（便于格式演进） ----
+    const KNOWN: [&str; 13] = [
+        "id", "name", "version", "author", "description", "homepage", "entry", "qualities",
+        "permissions", "hosts", "credentials", "mincoreversion", "tags",
+    ];
+    let unknown: Vec<String> = header
+        .iter()
+        .map(|(k, _)| k.clone())
+        .filter(|k| !KNOWN.contains(&k.as_str()))
+        .collect();
+    if !unknown.is_empty() {
+        let mut unique = unknown;
+        unique.sort();
+        unique.dedup();
+        warnings.push(format!("忽略未知头部字段：{}", unique.join(", ")));
+    }
+
+    if !invalid.is_empty() {
+        return Err(invalid_source("插件源字段不合法", serde_json::json!({ "invalid": invalid })));
+    }
+
+    Ok(ParsedPlugin {
+        manifest: PluginManifest {
+            id,
+            name,
+            version,
+            author,
+            description: single("description").unwrap_or_default(),
+            homepage: single("homepage"),
+            entry: single("entry"),
+            qualities,
+            permissions,
+            hosts,
+            credentials,
+            min_core_version: single("mincoreversion"),
+            tags: many("tags"),
+            capabilities,
+        },
+        warnings,
+    })
+}
+
+fn invalid_source(message: &str, details: serde_json::Value) -> CoreError {
+    CoreError::new(ErrorCode::PluginInvalidSource, message).with_details(details)
+}
+
+fn is_valid_id(id: &str) -> bool {
+    let bytes = id.as_bytes();
+    if bytes.len() < 2 || bytes.len() > 32 {
+        return false;
+    }
+    if !bytes[0].is_ascii_lowercase() && !bytes[0].is_ascii_digit() {
+        return false;
+    }
+    bytes.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+}
+
+/// 语义化版本：`1.0.0`，允许 `-preview`/`+build` 后缀。
+fn is_valid_version(version: &str) -> bool {
+    let core = version.split(['-', '+']).next().unwrap_or_default();
+    let parts: Vec<&str> = core.split('.').collect();
+    parts.len() >= 3 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// 域名白名单：只接受纯主机名（可带端口），拒绝协议、路径与通配。
+fn is_valid_host(host: &str) -> bool {
+    if host.is_empty() || host.contains('/') || host.contains(' ') || host.contains("://") || host.contains('*') {
+        return false;
+    }
+    let (name, port) = match host.rsplit_once(':') {
+        Some((name, port)) => (name, Some(port)),
+        None => (host, None),
+    };
+    if let Some(port) = port {
+        if port.is_empty() || !port.chars().all(|c| c.is_ascii_digit()) {
+            return false;
+        }
+    }
+    name.contains('.') && name.split('.').all(|label| !label.is_empty() && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+}
+
+/// `key:label[:required|optional][:secret|plain]`
+fn parse_credential(value: &str) -> Result<CredentialField, serde_json::Value> {
+    let parts: Vec<&str> = value.split(':').map(str::trim).collect();
+    let key = parts.first().copied().unwrap_or_default();
+    let label = parts.get(1).copied().filter(|l| !l.is_empty()).unwrap_or(key);
+
+    if key.is_empty() || !key.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
+        return Err(serde_json::json!({
+            "field": "credentials",
+            "value": value,
+            "expect": "key:标签[:required|optional][:secret|plain]，key 以字母开头"
+        }));
+    }
+
+    let mut required = false;
+    let mut secret = true;
+    for flag in parts.iter().skip(2) {
+        match flag.to_ascii_lowercase().as_str() {
+            "" => {}
+            "required" => required = true,
+            "optional" => required = false,
+            "secret" => secret = true,
+            "plain" => secret = false,
+            other => {
+                return Err(serde_json::json!({
+                    "field": "credentials",
+                    "value": other,
+                    "expect": "required|optional|secret|plain"
+                }))
+            }
+        }
+    }
+
+    Ok(CredentialField { key: key.to_string(), label: label.to_string(), required, secret })
+}
+
+/// 静态预扫描：只认顶层 `function <name>` / `async function <name>` 声明。
+fn scan_capabilities(source: &str) -> Vec<PluginCapability> {
+    CAPABILITY_NAMES
+        .iter()
+        .filter(|name| {
+            source.contains(&format!("function {name}(")) || source.contains(&format!("function {name} ("))
+        })
+        .filter_map(|name| PluginCapability::from_name(name))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MINIMAL: &str = r#"
+// @id demo-source
+// @name 示例音源
+// @version 1.0.0
+// @author someone
+async function search(keyword, page) { return []; }
+async function getMediaSource(track, quality) { return null; }
+"#;
+
+    #[test]
+    fn parses_minimal_header() {
+        let parsed = parse_source(MINIMAL).expect("应解析成功");
+        assert_eq!(parsed.manifest.id, "demo-source");
+        assert_eq!(parsed.manifest.author, "someone");
+        // 未声明音质 → 默认 standard 并给出警告
+        assert_eq!(parsed.manifest.qualities, vec![TrackQuality::Standard]);
+        assert!(parsed.warnings.iter().any(|w| w.contains("qualities")));
+        // 能力预扫描
+        assert!(parsed.manifest.capabilities.contains(&PluginCapability::Search));
+        assert!(parsed.manifest.capabilities.contains(&PluginCapability::GetMediaSource));
+    }
+
+    #[test]
+    fn missing_required_field_is_invalid_source() {
+        let err = parse_source("// @name 没有 id\n").unwrap_err();
+        assert_eq!(err.code, ErrorCode::PluginInvalidSource);
+        let details = err.details.unwrap();
+        assert!(details["missing"].as_array().unwrap().iter().any(|v| v == "id"));
+    }
+
+    #[test]
+    fn hosts_grant_network_permission_and_reject_urls() {
+        let ok = parse_source(&format!("{MINIMAL}// @hosts api.example.com,cdn.example.com\n")).unwrap();
+        assert_eq!(ok.manifest.hosts.len(), 2);
+        assert!(ok.manifest.permissions.contains(&PluginPermission::Network));
+
+        let bad = parse_source(&format!("{MINIMAL}// @hosts https://api.example.com/path\n")).unwrap_err();
+        assert_eq!(bad.code, ErrorCode::PluginInvalidSource);
+    }
+
+    #[test]
+    fn credentials_are_parsed_and_imply_permission() {
+        let source = format!("{MINIMAL}// @credentials apiKey:API Key:required\n// @credentials user:账号:optional:plain\n");
+        let parsed = parse_source(&source).unwrap();
+        assert_eq!(parsed.manifest.credentials.len(), 2);
+        let first = &parsed.manifest.credentials[0];
+        assert_eq!(first.key, "apiKey");
+        assert_eq!(first.label, "API Key");
+        assert!(first.required && first.secret);
+        assert!(!parsed.manifest.credentials[1].secret);
+        assert!(parsed.manifest.permissions.contains(&PluginPermission::Credentials));
+    }
+
+    #[test]
+    fn unknown_header_keys_only_warn() {
+        let parsed = parse_source(&format!("{MINIMAL}// @whatever 1\n")).unwrap();
+        assert!(parsed.warnings.iter().any(|w| w.contains("whatever")));
+    }
+
+    #[test]
+    fn bad_quality_is_reported() {
+        let err = parse_source(&format!("{MINIMAL}// @qualities hq\n")).unwrap_err();
+        assert_eq!(err.code, ErrorCode::PluginInvalidSource);
+        let details = err.details.unwrap();
+        assert_eq!(details["invalid"][0]["field"], "qualities");
+    }
+
+    #[test]
+    fn json_manifest_uses_the_same_validation() {
+        let json = r#"{
+            "id": "dir-source", "name": "目录包", "version": "0.2.0", "author": "someone",
+            "entry": "main.js", "qualities": ["high"], "hosts": ["api.example.com"],
+            "credentials": [{"key": "token", "label": "Token", "required": true, "secret": true}]
+        }"#;
+        let parsed = parse_manifest_json(json, None).unwrap();
+        assert_eq!(parsed.manifest.entry.as_deref(), Some("main.js"));
+        assert_eq!(parsed.manifest.qualities, vec![TrackQuality::High]);
+        assert!(parsed.manifest.capabilities.is_empty(), "未提供入口源码时不做能力扫描");
+
+        let broken = parse_manifest_json("{ not json", None).unwrap_err();
+        assert_eq!(broken.code, ErrorCode::PluginInvalidManifest);
+    }
+
+    #[test]
+    fn id_and_version_shapes_are_enforced() {
+        assert!(parse_source(&MINIMAL.replace("demo-source", "Bad_ID")).is_err());
+        assert!(parse_source(&MINIMAL.replace("1.0.0", "v1")).is_err());
+    }
+}

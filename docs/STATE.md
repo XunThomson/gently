@@ -4,7 +4,7 @@ last_verified: 2026-10-07
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 950
-tldr: 第十轮：M0 完成——Cargo workspace + 单一命令分发入口 + 契约清单/错误码/信封 + rusqlite(WAL/迁移/FTS5 已验证) + 前端桥接层与设置页诊断卡片 + `check:contract` 四向守卫；`cargo test` 22/22、`pnpm smoke` 176/176、typecheck/build 通过，`pnpm tauri dev` 实测端到端调用成功。
+tldr: 第十一轮：M0 完成（Rust 核心骨架 + 前端桥接与诊断页，端到端实测）；随后立下 **ADR-0005 中立立场**（不内置/不推荐任何第三方资源入口）并完成 M1a——插件清单解析（单文件头部元数据 + 目录包）与 `plugin.preview`（只读不写）。`cargo test` 38/38、`pnpm smoke` 176/176、契约守卫四向一致。
 ---
 
 # STATE
@@ -71,6 +71,21 @@ tldr: 第十轮：M0 完成——Cargo workspace + 单一命令分发入口 + �
 `subscription.invalid_index` / `media.proxy_failed` / `media.blocked_address`。并明确
 **前端 `src/plugins/**` 不是插件 ABI**（只是 mock 兜底的最小接口）。
 
+### 5. M1a：插件清单与 preview（第十一轮，已完成）
+
+- **清单解析**（`core/src/plugin/manifest.rs`）：单文件头部注释（前 60 行 `// @key value`）与
+  目录包 `plugin.json` 统一为 `PluginManifest`；校验 id/version 形状、音质、权限、域名白名单、
+  凭据字段；**权限推导**（声明 `@hosts` / `@credentials` 即自动具备对应权限，避免作者漏写导致
+  能力静默失效）；未知头部字段只警告；错误带字段级 `details`。
+- **能力静态预扫描** + 必选函数（`search` / `getMediaSource`）缺失警告；
+  M1b 接入运行时后由真实探测覆盖，预扫描仅用于预览提示、**不作安全判断**。
+- **`plugin.preview` 真实实现**（已实现命令 3 → 4）：`paste` / `file` / `dir` 三种来源，
+  产出 `{manifest, permissions, credentials, warnings, replacesExisting}`；
+  `archive` / `url` / `catalog` 返回 `not_implemented` 并说明「哪个来源 + 已支持哪些」；
+  **只读不写**（测试断言 preview 后插件目录仍为空）。
+- **中立性落地**（ADR-0005）：不内置任何第三方入口；清理了模拟源里两个伪造的第三方 homepage，
+  模拟源改名并标注「不访问网络」；`plugin.subscriptions.*` 保留但无默认值。
+
 ## 验证
 
 | 验证 | 命令 | 结果 |
@@ -78,7 +93,7 @@ tldr: 第十轮：M0 完成——Cargo workspace + 单一命令分发入口 + �
 | 类型检查 | `pnpm typecheck` | 通过（契约 v0.1 → v0.2 重写后均为 0 错误） |
 | 冒烟测试 | `pnpm smoke` | **176/176 通过**（原 172 + 桥接层 4 条断言；v0.2 类型同步后复测） |
 | 前端接入 | 设置页「本机核心」诊断卡片 + `core.bridge.ts` | 浏览器显示「浏览器模式」并退回 mock；桌面端显示核心版本/平台/数据库状态/统计/数据目录（一键打开） |
-| 核心单测 | `cargo test -p gently-core` | **22/22 通过**（信封形状、26 个错误码字符串、57 条命令都被分发认识、`reveal` 目录白名单、迁移幂等、**FTS5 可用**） |
+| 核心单测 | `cargo test -p gently-core` | **38/38 通过**（信封形状、26 个错误码字符串、57 条命令都被分发认识、`reveal` 目录白名单、迁移幂等、**FTS5 可用**、清单解析 8 项、`plugin.preview` 8 项含「preview 不写入」断言） |
 | 契约守卫 | `pnpm check:contract` | 文档 ↔ Rust 三处一致（57 命令 / 8 事件 / 26 错误码） |
 | Rust 构建 | `cargo build -p gently` | 通过（1m03s，复用既有依赖缓存；产物固定在 `src-tauri/target`） |
 | 启动实测 | `cargo run -p gently` | 迁移 0001 应用、WAL 生效、库落在 `%APPDATA%\com.xun.gently\gently.db` |
@@ -98,6 +113,7 @@ M3 本机库与持久化 → M4 推荐与皮肤 → M5 收口交付）。要点�
 | 存储 | rusqlite（bundled）+ 单写线程 + WAL + FTS5 + `user_version` 迁移（`docs/adr/0004-local-storage.md`） |
 | 职责边界 | **前端只做 UI 与渲染；数据处理与算法（含推荐打分）归 core**；同一算法只允许一份实现 |
 | 首个插件 | demo 插件（移植现有 mock 源）+ 故意越权的测试插件 |
+| **第三方资源立场** | **不内置/不推荐/不预置任何第三方入口**（无默认订阅、无预置仓库、无推荐位）；导入必须由用户提供来源；用户动作前零外部请求；示例只用 `example.com` 占位（ADR-0005，硬约束） |
 | 插件形态 | **单文件 JS（头部注释元数据）为主，目录包为高级形式**；分发靠订阅 `repository.json` |
 | 媒体传输 | **核心内建仅回环流代理**（Range + 头部注入 + SSRF 防护）；本地文件走同一通道 |
 
@@ -125,8 +141,9 @@ M3 本机库与持久化 → M4 推荐与皮肤 → M5 收口交付）。要点�
 - **无遥测**：线上问题只能靠本地诊断页与用户主动提供的日志；
 - 皮肤令牌键名白名单目前只有契约，尚无实现；推荐算法的 Rust 迁移需防行为漂移（见 ROADMAP §6）；
 - **单实例假设**：SQLite 单写线程 + 内存缓存要求单实例，M0 需引入单实例守卫；
-- **生态冷启动**：零插件则播放器不可用——靠单文件格式降门槛 + 订阅一键装 + 随仓库提供至少
-  1 个真实可用源（demo 不够）+ 作者自测 CLI 缓解；
+- **生态冷启动**：零插件则播放器不可用——**不靠推荐资源解决**（ADR-0005 禁止预置第三方入口）：
+  无插件时应用本身可用（本地文件播放/播放器/歌词/皮肤/本地库）+ 插件页给出三种导入方式的中性说明
+  （不写具体地址）+ 单文件格式降低作者门槛 + 订阅一键装（用户自填 URL）+ 作者自测 CLI。
 - **恶意媒体地址 SSRF**：插件可借本地流代理访问本机/内网——代理层阻断内网/回环/链路本地地址
   （`media.blocked_address`）；
 - 视觉 / 交互正确性仍依赖人工走查（环境无法截图）。

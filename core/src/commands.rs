@@ -26,6 +26,7 @@ use crate::contract::{
 };
 use crate::events::{EventSink, NullEventSink};
 use crate::paths::AppPaths;
+use crate::plugin::{parse_manifest_json, parse_source, MAX_SOURCE_BYTES};
 use crate::store::Store;
 
 /// 处理器运行时上下文（由 `src-tauri` 在启动时构造一次）。
@@ -87,6 +88,7 @@ pub fn dispatch(
         "system.status" => to_json(system_status(ctx)),
         "system.paths" => to_json(ctx.paths.to_dto()),
         "system.reveal" => reveal(ctx, params),
+        "plugin.preview" => plugin_preview(ctx, params),
         // 其余命令：契约已登记，实现在后续里程碑接入
         other => Err(CoreError::not_implemented(other)),
     };
@@ -98,8 +100,8 @@ pub fn dispatch(
     CoreResult::from(outcome)
 }
 
-/// M0 已实现的命令（诊断用）。
-const IMPLEMENTED: &[&str] = &["system.status", "system.paths", "system.reveal"];
+/// M1 已实现的命令（诊断用；插件域随里程碑逐步点亮）。
+const IMPLEMENTED: &[&str] = &["system.status", "system.paths", "system.reveal", "plugin.preview"];
 
 /// 已实现命令数。
 pub fn implemented_count() -> usize {
@@ -190,6 +192,109 @@ fn platform_reveal(path: &std::path::Path) -> std::io::Result<()> {
     let target = if path.is_dir() { path } else { path.parent().unwrap_or(path) };
     Command::new("xdg-open").arg(target).spawn()?;
     Ok(())
+}
+
+// ---------------------------------------------------------------- plugin 域
+
+/// 导入来源（与契约 §2 的 `ImportSource` 对应）。
+///
+/// M1a 支持 `paste` / `file` / `dir`（都是本地、无网络、可即时校验的来源）；
+/// `archive` / `url` / `catalog` 需要解压与 HTTP 客户端，放在 M1b/M1c。
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+enum ImportSource {
+    File { path: String },
+    Dir { path: String },
+    Archive { path: String },
+    Url { url: String },
+    Paste { content: String },
+    Catalog { subscription_id: String, file_name: String },
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct PreviewParams {
+    from: ImportSource,
+}
+
+/// `plugin.preview`：**读清楚但不落盘、不执行代码**。
+///
+/// 这是安装链路的第一步，也是权限同意的依据：清单、权限、凭据需求与警告都在这里产出。
+fn plugin_preview(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: PreviewParams = parse_params(params)?;
+
+    let parsed = match params.from {
+        ImportSource::Paste { content } => {
+            if content.len() as u64 > MAX_SOURCE_BYTES {
+                return Err(too_large(content.len() as u64));
+            }
+            parse_source(&content)?
+        }
+        ImportSource::File { path } => {
+            // 读文件是用户的显式动作，因此不限制目录；但限制体积（插件是脚本）
+            let meta = std::fs::metadata(&path)?;
+            if meta.len() > MAX_SOURCE_BYTES {
+                return Err(too_large(meta.len()));
+            }
+            let content = std::fs::read_to_string(&path)?;
+            parse_source(&content)?
+        }
+        ImportSource::Dir { path } => {
+            let manifest_path = std::path::Path::new(&path).join("plugin.json");
+            let json = std::fs::read_to_string(&manifest_path).map_err(|err| {
+                CoreError::new(
+                    ErrorCode::PluginInvalidManifest,
+                    format!("读取 plugin.json 失败：{err}"),
+                )
+                .with_details(serde_json::json!({ "path": manifest_path.to_string_lossy() }))
+            })?;
+
+            // 入口源码用于能力预扫描；缺失不算错误（纯声明式插件也允许）
+            let raw: serde_json::Value = serde_json::from_str(&json).unwrap_or(serde_json::Value::Null);
+            let entry_source = raw
+                .get("entry")
+                .and_then(|v| v.as_str())
+                .and_then(|entry| std::fs::read_to_string(std::path::Path::new(&path).join(entry)).ok());
+            parse_manifest_json(&json, entry_source.as_deref())?
+        }
+        ImportSource::Archive { path } => {
+            // 明确告诉用户「哪个来源还没实现」，而不是笼统的 not_implemented
+            return Err(not_implemented_source("archive", &path));
+        }
+        ImportSource::Url { url } => {
+            return Err(not_implemented_source("url", &url));
+        }
+        ImportSource::Catalog { subscription_id, file_name } => {
+            return Err(not_implemented_source("catalog", &format!("{subscription_id}/{file_name}")));
+        }
+    };
+
+    let manifest = parsed.manifest;
+    // 同 id 是否已存在：M1a 直接看插件目录（安装目录按 id 命名），M1b 起改为读 plugin_state 表
+    let replaces_existing = ctx.paths.plugins.join(&manifest.id).exists();
+
+    to_json(serde_json::json!({
+        "manifest": manifest,
+        "permissions": manifest.permissions,
+        "credentials": manifest.credentials,
+        "warnings": parsed.warnings,
+        "replacesExisting": replaces_existing,
+    }))
+}
+
+fn too_large(bytes: u64) -> CoreError {
+    CoreError::invalid_argument(format!("插件源超过 {MAX_SOURCE_BYTES} 字节上限"))
+        .with_details(serde_json::json!({ "bytes": bytes, "limit": MAX_SOURCE_BYTES }))
+}
+
+/// 该来源形态尚未实现：带上具体来源与「什么时候会有」，便于前端给出准确提示。
+fn not_implemented_source(kind: &str, origin: &str) -> CoreError {
+    CoreError::not_implemented(&format!("plugin.preview({kind})")).with_details(
+        serde_json::json!({
+            "kind": kind,
+            "origin": origin,
+            "supported": ["paste", "file", "dir"],
+        }),
+    )
 }
 
 // ---------------------------------------------------------------- 工具
