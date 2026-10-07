@@ -121,7 +121,25 @@ function diff(label, documented, implemented, hint) {
     }
 }
 
-console.log('契约一致性检查（文档 ↔ Rust 清单）');
+/**
+ * 前端桥接层用到的命令名必须都在契约里：
+ * TS 侧没有「命令清单」这种结构（类型是按域/方法组织的），
+ * 唯一的点号字符串出现在 `invokeCore('<name>')` 调用处，因此在这里做单向校验，
+ * 拼错或用了过期名字会立刻失败。
+ */
+function frontendCommandNames() {
+    const files = ['src/services/core.bridge.ts'];
+    const names = new Set();
+    for (const file of files) {
+        const source = read(file);
+        for (const m of source.matchAll(/invokeCore<[^>]*>\(\s*'([^']+)'/g)) {
+            names.add(m[1]);
+        }
+    }
+    return names;
+}
+
+console.log('契约一致性检查（文档 ↔ Rust 清单 ↔ 前端桥接）');
 
 const markdown = read(CONTRACT);
 const commandsSection = section(markdown, '## 2. 命令清单');
@@ -141,6 +159,16 @@ diff(
     rustErrorCodes(read(ERROR_RS)),
     '',
 );
+
+/* 前端桥接只用 Rust 契约里存在的命令名（单向：不必要求 54 条未实现命令都有桥接） */
+const bridged = frontendCommandNames();
+const known = rustCommandNames(read(COMMANDS_RS));
+const stray = [...bridged].filter((name) => !known.has(name));
+if (stray.length > 0) {
+    note(`前端桥接使用了契约外的命令名 → ${stray.join(', ')}`);
+} else {
+    console.log(`  ok   前端桥接命令名（${bridged.size} 项都在契约内）`);
+}
 
 if (failures.length > 0) {
     console.error('\n契约不一致：');

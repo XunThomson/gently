@@ -4,7 +4,7 @@ last_verified: 2026-10-07
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 950
-tldr: 第十轮：M0 骨架落地——Cargo workspace（core 不依赖 tauri）+ 单一命令分发入口 + 契约清单/错误码/信封 + rusqlite(WAL,迁移,FTS5 已验证) + `check:contract` 守卫；`cargo test` 22/22、启动实测通过，契约 v0.2 已同步。typecheck / smoke(172) 全绿。
+tldr: 第十轮：M0 完成——Cargo workspace + 单一命令分发入口 + 契约清单/错误码/信封 + rusqlite(WAL/迁移/FTS5 已验证) + 前端桥接层与设置页诊断卡片 + `check:contract` 四向守卫；`cargo test` 22/22、`pnpm smoke` 176/176、typecheck/build 通过，`pnpm tauri dev` 实测端到端调用成功。
 ---
 
 # STATE
@@ -76,11 +76,14 @@ tldr: 第十轮：M0 骨架落地——Cargo workspace（core 不依赖 tauri）
 | 验证 | 命令 | 结果 |
 |---|---|---|
 | 类型检查 | `pnpm typecheck` | 通过（契约 v0.1 → v0.2 重写后均为 0 错误） |
-| 冒烟测试 | `pnpm smoke` | 172/172 通过（v0.2 类型同步后复测） |
+| 冒烟测试 | `pnpm smoke` | **176/176 通过**（原 172 + 桥接层 4 条断言；v0.2 类型同步后复测） |
+| 前端接入 | 设置页「本机核心」诊断卡片 + `core.bridge.ts` | 浏览器显示「浏览器模式」并退回 mock；桌面端显示核心版本/平台/数据库状态/统计/数据目录（一键打开） |
 | 核心单测 | `cargo test -p gently-core` | **22/22 通过**（信封形状、26 个错误码字符串、57 条命令都被分发认识、`reveal` 目录白名单、迁移幂等、**FTS5 可用**） |
 | 契约守卫 | `pnpm check:contract` | 文档 ↔ Rust 三处一致（57 命令 / 8 事件 / 26 错误码） |
 | Rust 构建 | `cargo build -p gently` | 通过（1m03s，复用既有依赖缓存；产物固定在 `src-tauri/target`） |
 | 启动实测 | `cargo run -p gently` | 迁移 0001 应用、WAL 生效、库落在 `%APPDATA%\com.xun.gently\gently.db` |
+| **端到端链路** | `pnpm tauri dev`（`GENTLY_LOG=debug`） | 日志出现 `DEBUG dispatch command="system.status" ok=true`：React 挂载 → `probeCore()` → `invoke('core_invoke')` → Tauri 参数解析 → `spawn_blocking` → core 分发 → 信封回传，全链路打通 |
+| 前端生产构建 | `pnpm build` | 通过，主包 339.82 KB（gzip 110 KB，+1.45 KB） |
 | 残留引用 | 搜 `@gently/server` / `server/src` | 0（配置、锁文件、文档均已清理） |
 | 消费方影响 | 全仓搜 `src/api` 导入 | 0——契约是纯类型，UI/store/services 未被波及 |
 

@@ -72,7 +72,11 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 约定：`ref` = `source:trackId`；`source` = 插件 id。写命令无需幂等键（本地事务）。
 
 ### system（3）
-`system.status` · `system.paths` · `system.reveal{path}`
+| 命令 | 参数 | 返回 |
+|---|---|---|
+| `system.status` | — | `{version, platform, dbPath, dataDir, pluginRuntime, dbReady, dbError?, counts:{plugins,favorites,tracks,downloads}}`——`pluginRuntime` 在 M0 为 `none`、M1 接入 QuickJS 后为 `quickjs`；`dbReady:false` 表示降级运行（`dbError` 给出原因） |
+| `system.paths` | — | `{data, cache, plugins, subscriptions, skins, downloads, logs}` |
+| `system.reveal{path}` | 受管目录内的路径 | `null`；目录外或不存在 → `common.invalid_argument` / `common.not_found` |
 
 ### plugin：管理（13）
 | 命令 | 说明 |

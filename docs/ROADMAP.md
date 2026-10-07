@@ -71,7 +71,7 @@ gently/
 工作量级：**M0 4–6 / M1 10–14 / M2 7–10 / M3 5–8 / M4 5–7 / M5 3–5（合计约 34–50 人日）**；
 M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + 作者自测 CLI）与本地流代理。
 
-### M0 骨架与契约（S，约 4–6 人日）——**进行中（Rust 侧已完成，前端诊断页待做）**
+### M0 骨架与契约（S，约 4–6 人日）——**已完成**（仅视觉确认待人工）
 
 #### 已完成（本里程碑 Rust 侧）
 - **Cargo workspace**：`core`（不依赖 tauri）+ `src-tauri`（薄适配层）；
@@ -106,13 +106,29 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
    `check:contract` 守卫。**M1 出现第一批真实 DTO 时接入**，届时 `src/api/index.ts`
    退化为生成产物。ROADMAP 的 M1 条目已承接此事。
 
-#### 待做（M0 收尾，前端）
-- `src/services/core.bridge.ts`：统一 `invoke('core_invoke', {command, params})`，
-  把信封转成永不抛异常的返回值；无 Tauri（浏览器 `pnpm dev`）时 `available: false`。
-- 设置页「诊断」区块显示 `system.status` / `system.paths`，并支持 `system.reveal` 打开目录
-  （样式走 theme token，文案 zh+en）。
-- **退出标准**：`pnpm tauri dev` 启动并在设置页看到真实状态；浏览器 mock 模式仍可运行；
-  `pnpm typecheck` / `pnpm smoke` 全绿。
+#### 前端（M0 收尾，已完成）
+- `src/services/core.bridge.ts`：全应用唯一调用 IPC 的地方；`invokeCore(command, params)`
+  经 `core_invoke` 分发，**永不抛异常**（IPC reject 归为 `common.internal`）；
+  浏览器（无 Tauri）下 `coreAvailable() === false`，返回 `common.unsupported_platform`
+  并由 `services/**` 退回 mock。
+- 设置页新增「本机核心」诊断卡片（`views/setting/components/diagnostics-card.tsx`）：
+  运行环境、核心版本、平台、数据库就绪状态、条目统计、数据目录 + 一键打开数据/日志目录。
+  浏览器下显示「浏览器模式」并说明 mock 数据来源，不发任何请求。
+- i18n zh/en 各 19 个新键；样式复用 `setting.module.css`（顺带补上被引用却不存在的
+  `.hint`，并新增 `.path`）。
+- 冒烟测试从 172 → **176 项**：新增桥接层四条断言（浏览器判定、不抛异常、错误码、
+  traceId 恒存在）。
+
+#### M0 验证（全部实测）
+| 验证 | 结果 |
+|---|---|
+| `cargo test -p gently-core` | 22/22（信封、26 错误码、57 命令均被路由、目录白名单、迁移幂等、FTS5 可用） |
+| `cargo build -p gently` / `cargo run -p gently` | 通过；启动日志显示迁移 0001 应用、WAL 生效、库落在 `%APPDATA%\com.xun.gently\gently.db` |
+| `pnpm check:contract` | 四向一致（57 命令 / 8 事件 / 26 错误码 / 前端桥接命令名） |
+| `pnpm typecheck` / `pnpm smoke` / `pnpm build` | 0 错误 / **176 项全绿** / 通过（主包 339.82 KB，+1.45 KB） |
+
+> 唯一未验证项：设置页在真实窗口里的**视觉**表现（本环境无法截图）——
+> 启动链路与数据已由日志与 `system.status` 覆盖，外观需人工打开设置页确认。
 
 ### M1 插件宿主与分发（L，约 10–14 人日；全计划最大不确定项）
 

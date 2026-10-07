@@ -91,6 +91,10 @@ pub fn dispatch(
         other => Err(CoreError::not_implemented(other)),
     };
 
+    // 分发日志：既是最低成本的链路可观测性（能确认前端确实调到了核心），
+    // 也是排查「前端报错但核心没收到」这类问题的第一手证据
+    tracing::debug!(command, ok = outcome.is_ok(), "dispatch");
+
     CoreResult::from(outcome)
 }
 

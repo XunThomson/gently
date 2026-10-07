@@ -36,3 +36,18 @@
     gap: var(--space-2);
     font-size: var(--font-size-sm);
 }
+
+/* 字段下方的补充说明（默认关闭二次确认、诊断提示等） */
+.hint {
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+    color: var(--text-tertiary);
+}
+
+/* 文件系统路径：等宽 + 允许在任意位置换行，避免长路径撑破卡片 */
+.path {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    word-break: break-all;
+}

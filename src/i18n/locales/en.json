@@ -295,7 +295,26 @@
       "confirmDestructive": "Confirm destructive actions",
       "confirmHint": "When off, delete / clear / uninstall actions run immediately",
       "about": "About",
-      "version": "Version {{version}}"
+      "version": "Version {{version}}",
+      "diagnostics": "Local core",
+      "diagRuntime": "Runtime",
+      "diagAvailable": "Core connected",
+      "diagUnavailable": "Browser mode",
+      "diagUnavailableHint": "The browser preview uses mock data; the desktop build serves the library, playback and local files from the local core",
+      "diagVersion": "Core version",
+      "diagPlatform": "Platform",
+      "diagDb": "Database",
+      "diagDbReady": "Ready",
+      "diagDbFailed": "Unavailable",
+      "diagDbErrorHint": "Database unavailable: {{reason}}",
+      "diagCounts": "Counts",
+      "diagCountsValue": "Plugins {{plugins}} · Favorites {{favorites}} · Tracks {{tracks}} · Downloads {{downloads}}",
+      "diagPaths": "Data directory",
+      "diagOpenData": "Open data directory",
+      "diagOpenLogs": "Open logs",
+      "diagErrorHint": "Failed to load: {{reason}}",
+      "diagRefresh": "Refresh",
+      "diagLoading": "Loading…"
     }
   },
   "language": {

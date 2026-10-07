@@ -297,26 +297,44 @@ export interface ResolvedMedia {
 
 /* ============================== 契约 ============================== */
 
+export interface SystemCountsDto {
+    plugins: number;
+    favorites: number;
+    tracks: number;
+    downloads: number;
+}
+
+/** `system.status`：核心版本、平台、数据目录与数据库状态。 */
+export interface SystemStatusDto {
+    version: string;
+    platform: string;
+    dbPath: string;
+    dataDir: string;
+    /** `none`（M0）→ `quickjs`（M1 接入插件宿主后） */
+    pluginRuntime: string;
+    /** 数据库是否可用；不可用时应用以降级模式运行 */
+    dbReady: boolean;
+    /** 数据库不可用的原因（`dbReady` 为 false 时存在） */
+    dbError?: string;
+    counts: SystemCountsDto;
+}
+
+/** `system.paths`：受管目录（`system.reveal` 只接受这些目录内的路径）。 */
+export interface SystemPathsDto {
+    data: string;
+    cache: string;
+    plugins: string;
+    subscriptions: string;
+    skins: string;
+    downloads: string;
+    logs: string;
+}
+
 export interface SystemApi {
-    status(): Promise<CoreResult<{
-        version: string;
-        platform: string;
-        dbPath: string;
-        dataDir: string;
-        pluginRuntime: string;
-        counts: {plugins: number; favorites: number; tracks: number; downloads: number};
-    }>>;
-    paths(): Promise<CoreResult<{
-        data: string;
-        cache: string;
-        plugins: string;
-        subscriptions: string;
-        skins: string;
-        downloads: string;
-        logs: string;
-    }>>;
-    /** 在系统文件管理器中打开某个路径（诊断/下载页用） */
-    reveal(input: {path: string}): Promise<CoreResult<void>>;
+    status(): Promise<CoreResult<SystemStatusDto>>;
+    paths(): Promise<CoreResult<SystemPathsDto>>;
+    /** 在系统文件管理器中打开某个路径（仅限受管目录） */
+    reveal(input: {path: string}): Promise<CoreResult<null>>;
 }
 
 export interface CatalogApi {

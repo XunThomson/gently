@@ -51,6 +51,7 @@ import FavoritesView from '../src/views/favorites';
 import PlaylistView from '../src/views/playlist';
 import NowPlayingView from '../src/views/now-playing';
 import SearchView from '../src/views/search';
+import {coreAvailable, invokeCore} from '../src/services';
 
 const failures: string[] = [];
 const notes: string[] = [];
@@ -743,6 +744,17 @@ async function main(): Promise<void> {
     check('store: 主题市场预设写入 ui 切片', s().ui.themePresetId === 'sakura');
     actions.ui.setThemePreset(themePresets[0].id);
     check('store: 预设可切回默认', s().ui.themePresetId === themePresets[0].id);
+
+    /* 核心桥接：浏览器（无 Tauri）下必须安全降级，且**永远不抛异常** */
+    check('core: 浏览器环境判定为不可用', coreAvailable() === false);
+    const bridgeResult = await invokeCore('system.status');
+    check('core: 不可用时返回信封而非抛异常', bridgeResult.ok === false);
+    check(
+        'core: 不可用时的错误码为 unsupported_platform',
+        bridgeResult.ok === false && bridgeResult.error.code === 'common.unsupported_platform',
+        bridgeResult.ok ? 'unexpected ok' : bridgeResult.error.code,
+    );
+    check('core: 信封始终带 traceId', typeof bridgeResult.traceId === 'string');
 
     console.log(notes.join('\n'));
     if (failures.length > 0) {

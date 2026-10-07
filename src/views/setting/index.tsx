@@ -12,6 +12,7 @@ import {getThemePreset, useTheme} from '../../theme';
 import type {ThemeMode} from '../../theme';
 import type {SourceDisplayMode, SourceFilterStyle, TrackQuality} from '../../types';
 import {QUALITIES_DESC, qualityLabelKey} from '../../utils/quality';
+import {DiagnosticsCard} from './components/diagnostics-card';
 import styles from './setting.module.css';
 
 const THEME_MODES: ThemeMode[] = ['light', 'dark', 'system'];
@@ -202,6 +203,9 @@ export default function SettingView() {
                     </span>
                 </div>
             </section>
+
+            {/* ---------- 本机核心诊断（浏览器下显示「浏览器模式」） ---------- */}
+            <DiagnosticsCard />
         </Page>
     );
 }

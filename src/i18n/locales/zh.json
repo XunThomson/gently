@@ -295,7 +295,26 @@
       "confirmDestructive": "危险操作前二次确认",
       "confirmHint": "关闭后，删除 / 清空 / 卸载类操作会立即执行",
       "about": "关于",
-      "version": "版本 {{version}}"
+      "version": "版本 {{version}}",
+      "diagnostics": "本机核心",
+      "diagRuntime": "运行环境",
+      "diagAvailable": "已连接核心",
+      "diagUnavailable": "浏览器模式",
+      "diagUnavailableHint": "浏览器预览使用 mock 数据；桌面端由本机核心提供曲库、播放与本地库",
+      "diagVersion": "核心版本",
+      "diagPlatform": "运行平台",
+      "diagDb": "数据库",
+      "diagDbReady": "已就绪",
+      "diagDbFailed": "不可用",
+      "diagDbErrorHint": "数据库不可用：{{reason}}",
+      "diagCounts": "条目统计",
+      "diagCountsValue": "插件 {{plugins}} · 收藏 {{favorites}} · 曲目 {{tracks}} · 下载 {{downloads}}",
+      "diagPaths": "数据目录",
+      "diagOpenData": "打开数据目录",
+      "diagOpenLogs": "打开日志目录",
+      "diagErrorHint": "读取失败：{{reason}}",
+      "diagRefresh": "刷新",
+      "diagLoading": "读取中…"
     }
   },
   "language": {

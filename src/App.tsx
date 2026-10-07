@@ -11,6 +11,7 @@ import {usePlayerEngine} from "./hooks/usePlayerEngine";
 import {useAudioEngine} from "./hooks/useAudioEngine";
 import {useDownloadEngine} from "./hooks/useDownloadEngine";
 import {useActions} from "./store";
+import {probeCore} from "./services";
 import {useTheme} from "./theme";
 import './App.css';
 
@@ -33,6 +34,11 @@ export default function App() {
         void loadCollection();
         void loadPlugins();
     }, [loadCollection, loadPlugins]);
+
+    /* 启动即探测本机核心：UI 据此判断是否运行在桌面宿主（浏览器预览时为不可用，退回 mock） */
+    useEffect(() => {
+        void probeCore();
+    }, []);
 
     return (
         <div className="app">

@@ -14,7 +14,8 @@
       {
         "title": "gently",
         "height": 600,
-        "minWidth": 900
+        "minWidth": 900,
+        "decorations": false
       }
     ],
     "security": {
