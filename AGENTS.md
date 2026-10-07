@@ -28,7 +28,7 @@
 | 7 | `src/views/` | 页面（含各自私有组件） |
 | 8 | `docs/contracts/local-core-api.md` | **本机核心契约**：命令/事件清单、错误码、插件与皮肤模型 |
 | 9 | `src/api/index.ts` | 上述契约的前端类型（只有类型，无实现） |
-| 10 | `docs/ARCHITECTURE.md` | 架构与数据流 |
+| 10 | `docs/ARCHITECTURE.md`、`docs/ROADMAP.md` | 架构与数据流；开发计划（M0–M5） |
 
 ## 3. 硬约束（改代码前必读）
 
@@ -46,6 +46,7 @@
 12. **不引入服务器依赖**：不加 HTTP 服务、账号体系、遥测上报、Docker/数据库服务；所有「后端」能力都必须是本机核心的 Tauri 命令或事件。
 13. **契约只有一处**：规范在 `docs/contracts/local-core-api.md`，类型在 `src/api/index.ts`。新增命令先登记契约，再由 `src/services/**` 封装；**UI/store 不得直接 `invoke`**（与第 5 条同源）。
 14. **社区资源按不可信代码对待**：插件安装必须 `plugin.preview` → 用户显式同意；不执行安装脚本；插件 JS 只在 QuickJS 沙箱内运行，网络限于清单 `hosts`；第三方凭据只进 OS keyring，日志与 SQLite 中不得出现明文。
+15. **单一职责**：前端只做 UI 与渲染；数据处理与算法（聚合去重、推荐打分、持久化、播放解析）归本机核心。**同一算法只允许一份实现**——迁移时先搬后删，禁止长期双份。
 
 ## 4. 每类操作的完成标准
 

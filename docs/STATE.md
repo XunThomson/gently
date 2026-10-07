@@ -57,18 +57,34 @@ tldr: 第八轮：产品定位澄清为「桌面端、无服务器」——取�
 
 ## 下一步
 
-1. **Rust 核心骨架**（按 ADR-0002 迁移清单）：Tauri 命令层 + 信封/错误码 + `system.status` /
-   `system.paths`，其余命令先返回 `common.not_implemented` 并移植三类守卫测试；
-2. `tauri-specta` 生成 TS 绑定，与 `src/api/index.ts` 逐项比对——**等价即视为迁移完成**；
-3. **插件宿主**：QuickJS 运行时 + 权限白名单（受限 fetch）+ `preview`/`import` 同意流程；
-4. **本机库**：SQLite schema（favorites / playlists / play_history / local_tracks / plugin_state /
-   download_tasks / skins）+ 目录扫描与音频元数据探测；
-5. **前端接入**：`src/services/**` 换成命令层调用，先做 catalog + playback，保留 mock 开关。
+计划与退出标准见 **`docs/ROADMAP.md`**（M0 骨架与契约 → M1 插件宿主 → M2 播放链路 →
+M3 本机库与持久化 → M4 推荐与皮肤 → M5 收口交付）。要点：
+
+| 项 | 结论 |
+|---|---|
+| Cargo 结构 | workspace：`core`（不依赖 tauri，可独立 `cargo test`）+ `src-tauri`（薄适配层） |
+| 存储 | rusqlite（bundled）+ 单写线程 + WAL + FTS5 + `user_version` 迁移（`docs/adr/0004-local-storage.md`） |
+| 职责边界 | **前端只做 UI 与渲染；数据处理与算法（含推荐打分）归 core**；同一算法只允许一份实现 |
+| 首个插件 | demo 插件（移植现有 mock 源）+ 故意越权的测试插件 |
+
+顺序与退出标准：
+
+1. **M0 骨架与契约**：Cargo workspace、信封/错误码/tracing、`system.*` 真实现、其余命令返回
+   `common.not_implemented`；`specta` 生成绑定 + `check-commands` 文档↔注册表一致性守卫；
+2. **M1 插件宿主**（最大不确定项）：QuickJS 沙箱 + 清单校验 + `hosts` 白名单 + 四种导入来源
+   + `preview`/同意/`import` + keyring 凭据；
+3. **M2 播放链路**：catalog 聚合去重排序 + `playback.resolve` 回退链，前端 catalog/audio 切命令层；
+4. **M3 本机库与持久化**（可与 M1/M2 并行）：SQLite 表与迁移、收藏/歌单/历史、本地扫描 + FTS5、
+   下载任务与事件；
+5. **M4 推荐与皮肤**：推荐画像与打分**迁入 `core/recommend`**（同夹具对比后删除 TS 实现，
+   mock 改预置数据）；皮肤令牌白名单校验与导入导出；
+6. **M5 收口**：诊断页、错误码→zh/en 文案、`pnpm verify` 一条命令、`pnpm tauri build` 实测出包。
 
 ## 风险
 
 - **命令清单仍需逐条确认落地**：`auth.*` 已删、市场写操作改为导入/导出，其余命令待 Rust 侧核对；
 - **社区插件是不可信代码**：沙箱与安装期同意是硬要求——不做就等于让用户执行陌生代码；
 - **无遥测**：线上问题只能靠本地诊断页与用户主动提供的日志；
-- 皮肤令牌键名白名单目前只有契约，尚无实现；
+- 皮肤令牌键名白名单目前只有契约，尚无实现；推荐算法的 Rust 迁移需防行为漂移（见 ROADMAP §6）；
+- **单实例假设**：SQLite 单写线程 + 内存缓存要求单实例，M0 需引入单实例守卫；
 - 视觉 / 交互正确性仍依赖人工走查（环境无法截图）。
