@@ -1,13 +1,23 @@
 ---
-status: active
+status: superseded
 last_verified: 2026-02-14
 owner: gently
-scope: 后端技术选型与目录结构决策
+scope: 后端技术选型与目录结构决策（已作废）
 token_budget: 1200
-tldr: Node 22 + TypeScript + Fastify 5 + Zod（校验/类型/OpenAPI 单源）+ Postgres/Drizzle + Redis/BullMQ；单仓 server/ 子包，与桌面端共享接口契约。
+tldr: 【已作废】若后端是云服务，则 Node 22 + Fastify 5 + Zod + Postgres/Drizzle + Redis/BullMQ 是合理选择。但产品定位为「桌面端、不提供服务器」后，该形态整体取消：语言部分见 ADR-0002（改 Rust），形态部分见 ADR-0003（改本机核心 + Tauri IPC）。
 ---
 
 # ADR 0001：后端技术选型与仓库结构
+
+> ⚠️ **本 ADR 已作废，仅作历史参考。**
+> - 语言选择（Node 22 + TypeScript）：被 `docs/adr/0002-backend-language.md` 取代（改 Rust）；
+> - 整体形态（HTTP 服务 / 数据库 / 缓存 / 队列 / 容器）：被 `docs/adr/0003-no-server-local-core.md`
+>   取代（产品不提供服务器，改为 Rust 本机核心 + Tauri IPC）；
+> - 实现骨架已归档到 `docs/archive/server-ts/`，HTTP 规范归档到
+>   `docs/archive/contracts/backend-api-http.md`。
+>
+> 仍然被沿用的思路（已迁入新契约）：分层与依赖方向、契约优先、优雅降级、可测试性、
+> 「清单唯一目录 + 遍历清单的守卫测试」、统一信封与错误码映射、插件清单的 permissions/credentials 设计。
 
 ## 背景
 

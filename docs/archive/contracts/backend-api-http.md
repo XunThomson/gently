@@ -1,3 +1,6 @@
+> ⚠️ 已弃用：本文件描述的是 **HTTP 服务**契约。产品定位澄清为「桌面端、无服务器」后该形态已废弃：
+> 规范正文改见 `docs/contracts/local-core-api.md`，实现骨架归档在 `docs/archive/server-ts/`。
+> 保留本文仅作历史参考——其中的多音源策略与错误模型已被新契约沿用，HTTP 相关章节全部作废。
 ---
 status: active
 last_verified: 2026-02-14
@@ -146,3 +149,4 @@ GET /v1/search?keyword=晚风&limit=30&cursor=eyJpZCI6...
 - **可观测**：响应必带 `requestId`，服务端日志与该 id 关联；
 - **兼容**：新增字段不得改变已有字段语义；删除字段需先标记 deprecated 一个小版本；
 - **安全**：不接受客户端传入的可执行内容（插件以清单 + 服务端签名方式下发）。
+

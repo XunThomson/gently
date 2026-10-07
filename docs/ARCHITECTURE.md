@@ -305,55 +305,64 @@ GentlyApi = { auth, catalog, library, recommend, playback, plugin, download, ski
   「导出当前皮肤」生成可分享 JSON；自定义皮肤可删除（走二次确认）；
 - 导入只做结构校验、不执行任何代码；解析失败给出具体原因。
 
-## 11. 后端实现骨架（`server/`）
+## 11. 本机核心契约（无服务器形态）
 
-契约落到了可运行的骨架上：**接口全部存在、被校验、被文档化**，业务实现尚未接入。
-技术选型与取舍见 `docs/adr/0001-backend-stack.md`（Node 22 + Fastify 5 + Zod + Postgres/Drizzle + Redis/BullMQ）。
+产品**不提供任何服务器**（见 `docs/adr/0003-no-server-local-core.md`）：无账号、无市场后端、
+无遥测、无 web 端。因此不存在 HTTP 边界——能力一律由 **Rust 本机核心**通过 Tauri IPC 暴露：
 
 ```
-server/src/
-├── contracts/   纯 zod 契约（primitives / models / endpoints），可被客户端复用
-├── http/        HTTP 边界：server / errors / result / auth / idempotency / pagination / swagger / routes
-├── infra/       db / cache / queue / realtime / plugins / logger
-└── config/      唯一配置入口（env.ts，Zod 校验）
+React（UI / store / services）
+   │  invoke(command) / listen(event)      ← 无 HTTP、无端口、无 CORS、无 JWT
+Rust 本机核心（规划中）
+   ├─ 插件宿主（内嵌 QuickJS + 清单权限白名单）
+   ├─ 曲库聚合与缓存（跨源去重、候选排序、播放回退）
+   ├─ 本地库 / 播放史 / 收藏 / 歌单（SQLite）
+   ├─ 下载管理（本地文件系统）
+   ├─ 皮肤仓库（惰性 JSON 文档）
+   └─ 第三方凭据（OS keyring，按插件隔离）
 ```
+
+契约两处，且只有两处：
+
+1. `docs/contracts/local-core-api.md`——规范正文：约 45 条命令 + 4 类事件、错误码表、
+   多音源策略、插件与皮肤模型、本机存储布局、安全与信任模型；
+2. `src/api/index.ts`——上述契约的前端类型（只有类型，无实现）。
 
 三条硬规则：
 
-1. **接口清单是唯一目录**：`contracts/endpoints.ts` 登记每个端点的
-   `id / method / path / tag / auth / idempotent`；路由文件必须与之逐条对应，
-   `operationId` 即清单 `id`。测试会遍历清单断言「没有 404」。
-2. **未实现 ≠ 不存在**：业务端点统一挂 `notImplementedHandler`，返回
-   `501 common.not_implemented`（信封与错误码见下），前端据此区分
-   「后端没有这个接口」（404）与「后端还没做」（501）。
-3. **错误状态码集中决定**：业务只抛 `ApiError`，状态码由 `ERROR_STATUS` 映射，
-   路由里不出现数字；非法参数由 Zod 统一转成 `422 common.invalid_argument` + `details.issues`。
+1. **命令永不抛异常**：Rust 侧返回信封 `{ok, data|error, traceId}`（不是 `Result`），
+   只有 IPC 反序列化失败/panic 才 reject，由前端薄封装转成 `common.internal`；
+2. **UI/store 不得直接 `invoke`**：一律经 `src/services/**` 封装（与第 4 条数据门面同源），
+   接入时只改这一层；
+3. **社区资源是不可信代码**：插件安装走 `plugin.preview` → 用户显式同意 → `plugin.import`；
+   不执行安装脚本；插件 JS 只在 QuickJS 沙箱内运行，网络限于清单 `hosts`；
+   第三方凭据只进 OS keyring，日志与 SQLite 不出现明文。
 
-横切能力（本阶段已可用）：统一信封 `{ok, data|error, requestId}`、游标分页、
-`Idempotency-Key` 幂等（Redis → 内存降级）、JWT 鉴权守卫（含开发期虚拟主体）、
-RBAC 预留、限流（`common.rate_limited` + `Retry-After`）、OpenAPI（`/docs`，由路由 schema 生成）、
-WebSocket 实时通道（`/v1/realtime`，`seq` 供客户端判断漏事件）。
+相对 HTTP 形态**删掉**的东西：鉴权/JWT、限流、CORS、幂等键、游标分页的跨请求语义、
+OpenAPI-over-HTTP 代码生成、Postgres/Redis/BullMQ/Docker。**新增**的必需能力：
+本地曲库扫描（含音频元数据探测）、插件导入与同意流程、凭据管理、本机诊断
+（`system.status` / 打开日志目录——无遥测意味着问题只能靠本地日志定位）。
 
-**降级**：未配置 `DATABASE_URL` / `REDIS_URL` 时服务照常启动，能力降级为内存实现，
-`/ready` 返回 `degraded`；只有「已配置但连不上」才返回 `503`。
-
-验证：`pnpm --filter @gently/server typecheck`（tsc）与 `pnpm --filter @gently/server test`
-（vitest，覆盖清单完整性、鉴权、501 语义、幂等、分页游标、错误映射）。
-桌面端构建不受影响：`server/` 不进 `tsconfig.include`，也不进 Vite 依赖图。
+未来单一来源：Rust 核心落地后用 `specta`/`tauri-specta` 从 Rust 结构体生成 `src/api` 的类型，
+该文件退化为生成产物。在此之前它是权威定义。
 
 ## 12. 与 Tauri 的边界
 
 - `services/window.service.ts` 封装最小化 / 最大化 / 关闭 / 置顶 / 小窗；
   浏览器环境为安全空操作，仅在 Tauri 宿主动态 `import('@tauri-apps/api/window')`。
-- 后续本地文件、下载落盘等能力同样从 `services/` 进入，视图不直接调用 Tauri API。
+- 后续本地文件、下载落盘、插件运行时等能力同样从 `services/` 进入，视图不直接调用 Tauri API。
 
 ## 13. 遗留与归档
 
-`docs/archive/` 保存未接入产品的早期实现，**不参与构建**：
+`docs/archive/` 保存未接入产品（或已作废）的实现，**不参与构建**：
 
 - `core-draft/`：可视化编辑器的 AOP / modifier / registry 草案（缺类型定义，未接入）。
 - `legacy-ui/`：旧版组件目录（table / input / radiobtn / icons / logo / tool / Sidebar / Player / card / section）。
 - `legacy-views/`：旧版 `*_view` 页面目录（含未完成的 ranking_view 占位实现）。
+- `contracts/backend-api-http.md`：HTTP 服务契约（产品定位改为无服务器后作废，多音源与错误模型被沿用）。
+- `server-ts/`：TypeScript 后端骨架（41 个 HTTP 端点 + JWT/幂等/限流/Docker/PG/Redis），
+  同上作废；其中「清单唯一目录 + 遍历清单的守卫测试」「统一信封与错误码映射」
+  「插件清单的 permissions/credentials 设计」已迁入新契约。
 
-归档原因：目录树按单一职责重组，旧实现已被 `components/{ui,shell}` 与 `views/<page>` 取代。
-如需恢复，直接 `Move-Item` 回 `src/` 并修正引用即可。
+归档原因：目录树按单一职责重组（前三条）；产品形态从「云服务」改为「纯桌面 + 本机核心」（后两条）。
+恢复前请先确认与 `docs/adr/0003-no-server-local-core.md` 不冲突。

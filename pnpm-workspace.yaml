@@ -1,6 +1,3 @@
 allowBuilds:
   esbuild: true
-  # BullMQ 的可选原生加速器；纯 JS 回退已足够
-  msgpackr-extract: false
-packages:
-  - server
+

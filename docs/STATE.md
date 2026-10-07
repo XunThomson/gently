@@ -1,83 +1,74 @@
 ---
 status: active
-last_verified: 2026-02-14
+last_verified: 2026-10-07
 owner: gently
 scope: 当前迭代状态与下一步
-token_budget: 900
-tldr: 第七轮：后端基础设施落地（server/ 子包：41 个端点契约 + 统一信封/鉴权/幂等/限流/实时通道/插件宿主/优雅退出，业务未实现返回 501）；server typecheck + 123 测试通过，桌面端 typecheck/build 不受影响（主包 338 KB）。
+token_budget: 950
+tldr: 第八轮：产品定位澄清为「桌面端、无服务器」——取消 HTTP 后端形态，TS 骨架与旧 HTTP 契约归档，契约重写为本机核心命令/事件清单（约 45 命令 + 4 类事件），新增 ADR-0003 并修订 ADR-0002 的传输层；typecheck / smoke(172) 全绿。
 ---
 
 # STATE
 
 ## 本轮目标
 
-构建完善**后端接口**（不含业务）并搭建**后端基础设施**：目录树、技术选型、可运行骨架。
+按澄清后的产品定位重整后端形态与契约：不提供服务器、不需要账户服务、桌面端无 web 端、
+社区资源（插件/皮肤）靠用户自行 clone / 下载 / 分享后**通用导入**。
 
-## 已完成（第七轮）
+## 已完成（第八轮）
 
-### 1. 技术选型（`docs/adr/0001-backend-stack.md`）
-Node 22 + TypeScript（与前端同语言，契约同源）· Fastify 5（插件模型契合音源宿主）·
-Zod（一份 schema 同时产出校验 + 类型 + OpenAPI）· Postgres/Drizzle + Redis/BullMQ ·
-jose + Argon2id · Vitest + `inject()`。单仓子包 `server/`（pnpm workspace 成员，桌面端零改动）。
+### 1. 定位与决策
+- 三条约束：**不提供服务器**（无账号、无市场后端、无遥测）；将来同步歌单是**用户自己的第三方账号**
+  （凭据存本机 keyring，不经我方服务）；**桌面端无 web 端**。
+- 新增 `docs/adr/0003-no-server-local-core.md`：取消 HTTP 服务形态，改为「Rust 本机核心 + Tauri IPC」。
+  ADR-0001 整体作废；ADR-0002 保留语言选择（Rust），传输层由 axum/HTTP 修订为命令/事件 + specta 绑定。
+- 分发机制定为**通用导入**（本地目录 / 压缩包 / URL / 粘贴文本四合一 `ImportSource`）：
+  社区仓库由用户自行 clone 后指向目录，**应用不内建 git 客户端**（不要求用户装 git）。
 
-### 2. 接口契约（41 个端点，全部登记且被校验/文档化）
-- `server/src/contracts/endpoints.ts` 是**接口唯一目录**：`id / method / path / tag / auth / idempotent`；
-  路由的 `operationId` 必须等于清单 id，`test/endpoints.test.ts` 遍历清单断言「没有任何端点 404」；
-- `contracts/primitives.ts`（信封 `ApiResult` / 游标分页 / 错误码 + `ERROR_STATUS` 映射）、
-  `contracts/models.ts`（Track/GroupedTrack/Album/Playlist/推荐/插件/下载/皮肤/实时事件）；
-- 未实现业务统一返回 **`501 common.not_implemented`**，与 404（契约里没有该接口）语义区分；
-- `/docs` 与 `openapi.json` 由路由 schema 生成（36 paths / 41 operations），**不手写文档**。
+### 2. 契约重写（`docs/contracts/local-core-api.md` + `src/api/index.ts`）
+- **约 45 条命令**（system / catalog / library / recommend / playback / plugin / download / skin）
+  + 4 类事件（下载进度、插件健康、导入进度、扫描进度）替代原 41 条 HTTP 端点与 WebSocket；
+- 统一信封 `{ok, data|error, traceId}` + 本机错误码表（新增 `plugin.permission_denied`、
+  `skin.token_rejected`、`download.disk_full`、`source.auth_expired` 等）；
+- **插件模型**：内嵌 QuickJS（贡献者写 JS/TS）；清单声明 `permissions` / `hosts`（网络白名单）/
+  `credentials`；安装必须 `plugin.preview` → 用户显式同意 → `plugin.import`；不执行安装脚本、
+  不自动更新；凭据只进 OS keyring；
+- **皮肤**：惰性 JSON，导入导出即分享；新增**令牌键名白名单**校验（修掉此前「未知键静默忽略」
+  的缺口，改为 `skin.token_rejected` 并列出被拒键名）；
+- **本机存储**：SQLite + `<appData>/gently/` 目录布局（plugins / skins / downloads / cache / logs）；
+  无 Postgres、无 Redis、无队列，长任务用 tokio 任务 + 事件推进度；
+- 前端类型同步重写：`src/api/index.ts`（原 `types.ts` / `contract.ts` 合并后删除）。
 
-### 3. 基础设施
-| 能力 | 落地 |
-|---|---|
-| 配置 | `config/env.ts`：Zod 校验，生产缺 `JWT_SECRET` 直接启动失败 |
-| 日志 | pino：生产 JSON、开发美化、敏感字段脱敏、请求日志带 requestId |
-| 错误 | `ApiError` + 全局映射（Zod → `422 invalid_argument` + `details.issues`），路由不写状态码 |
-| 鉴权 | `TokenService`（HS256 access/refresh，过期码 `auth.token_expired`）+ Argon2id + 守卫（开发期虚拟主体） |
-| 幂等 | `Idempotency-Key`：Redis 实现，未配 Redis 降级内存；重放返回首次结果 |
-| 限流 | 按 IP + 路由，超限 `common.rate_limited` + `Retry-After`，探针不限流 |
-| 实时 | `/v1/realtime` WebSocket 广播中枢（按 userId 分组、心跳、`seq` 供客户端判断漏事件） |
-| 插件宿主 | 扫描 `PLUGIN_DIR` 下 `plugin.json`，Zod 校验清单 + 权限声明 + 健康状态；**仅声明式**，代码沙箱未接入（`loadEntryPoint` 明确拒绝） |
-| 数据/队列 | Drizzle + pg 连接池（懒连接）、BullMQ 三个队列（download / plugin-probe / recommend-precompute） |
-| 生命周期 | 优雅退出（SIGINT/SIGTERM → close → 关池，10s 兜底）、未捕获异常记录 |
-
-降级原则：未配置外部依赖**不阻塞启动**，`/ready` 如实报告（未配置 → 200 `degraded`；已配置连不上 → 503）。
-
-### 4. 工程
-- `server/test/` 123 项：清单完整性、鉴权边界、501 语义、幂等缺键 422、探针降级、游标分页往返、
-  错误映射、**信封守卫**（从 OpenAPI 反查每个 2xx/4xx 是否为统一信封，防止漏包 `resultSchema`）；
-- 交付物：`server/Dockerfile`（多阶段 + 非 root + HEALTHCHECK）、`docker-compose.yml`（PG16 + Redis7）、
-  `server/README.md`（目录树/命令/新增接口 5 步/降级表/已知限制）、`server/plugins/README.md`；
-- 修订：修掉 `start` 脚本产物路径、去掉 fastify 弃用的 `disableRequestLogging`（改用日志级别静音）、
-  补 `server/Dockerfile.dockerignore`（上下文为仓库根时生效）。
+### 3. 归档与清理
+- `docs/archive/server-ts/`（51 个文件 + `ARCHIVE-NOTE.md`）：TS 骨架（41 个 HTTP 端点、JWT、
+  幂等、限流、Docker、Postgres/Redis/BullMQ）；其中「清单唯一目录 + 遍历清单的守卫测试」
+  「统一信封与错误码映射」「插件清单 permissions/credentials 设计」已迁入新契约；
+- `docs/archive/contracts/backend-api-http.md`：旧 HTTP 规范（带弃用横幅，多音源策略被沿用）；
+- 同步摘除 `pnpm-workspace.yaml` 的 server 子包、清理 `.gitignore`；锁文件已无 `@gently/server` 残留；
+- 清理了 10 个未随任务退出的历史 server 进程（它们以 `server/` 为工作目录，阻塞了目录归档）。
 
 ## 验证
 
 | 验证 | 命令 | 结果 |
 |---|---|---|
-| 后端类型检查 | `pnpm --filter @gently/server typecheck` | 通过（0 错误） |
-| 后端测试 | `pnpm --filter @gently/server test` | 123/123 通过（4 文件） |
-| 运行时（源码） | `tsx src/main.ts` | `/health` 200、`/ready` degraded、`/docs/json` 36 paths、未实现 → 501、无令牌 → 401 |
-| 运行时（产物） | `node dist/src/main.js`（NODE_ENV=production） | 启动正常、JSON 日志带 reqId、生产默认强制鉴权（401）|
-| 桌面端回归 | `pnpm typecheck && pnpm build` | 通过，主包 338 KB（gzip 110 KB）不变 |
+| 类型检查 | `pnpm typecheck` | 通过（契约重写后 0 错误） |
+| 冒烟测试 | `pnpm smoke` | 172/172 通过 |
+| 残留引用 | 搜 `@gently/server` / `server/src` | 0（配置、锁文件、文档均已清理） |
+| 消费方影响 | 全仓搜 `src/api` 导入 | 0——契约是纯类型，UI/store/services 未被波及 |
 
 ## 下一步
 
-1. **业务实现**：在 `server/src/services/**` 实现处理器，替换各 `*.routes.ts` 的 `notImplementedHandler`
-   （schema 与路由声明不变）；先做 catalog/playback（打通播放链路）。
-2. **数据库 schema**：`src/infra/db/schema/` 建表（users / favorites / playlists / play_history /
-   plugin_configs / download_tasks / skins）并生成首个迁移。
-3. **前端接入**：按 `docs/contracts/backend-api.md` §8 替换 `src/services/**`（UI/store 不动）；
-   先接 catalog + playback，本地打分逻辑保留为离线兜底。
-4. **插件沙箱**：worker/isolated-vm 执行 + 令牌与网络白名单，落地 `loadEntryPoint`。
-5. Docker 镜像实跑（本机无 docker）、`pnpm tauri build` 窗口权限校验。
+1. **Rust 核心骨架**（按 ADR-0002 迁移清单）：Tauri 命令层 + 信封/错误码 + `system.status` /
+   `system.paths`，其余命令先返回 `common.not_implemented` 并移植三类守卫测试；
+2. `tauri-specta` 生成 TS 绑定，与 `src/api/index.ts` 逐项比对——**等价即视为迁移完成**；
+3. **插件宿主**：QuickJS 运行时 + 权限白名单（受限 fetch）+ `preview`/`import` 同意流程；
+4. **本机库**：SQLite schema（favorites / playlists / play_history / local_tracks / plugin_state /
+   download_tasks / skins）+ 目录扫描与音频元数据探测；
+5. **前端接入**：`src/services/**` 换成命令层调用，先做 catalog + playback，保留 mock 开关。
 
 ## 风险
 
-- **Docker 未实跑**：镜像构建、HEALTHCHECK、`pnpm install --prod` 剪枝只做静态核对。
-- **无 DB schema**：`db:generate` 在业务表落地前不产出迁移；接口暂不落库。
-- **插件无沙箱**：只支持声明式清单，无法执行第三方代码（安全优先）。
-- **OpenAPI 不含 WebSocket**：`/v1/realtime` 是升级路由，不在 `ENDPOINTS` 清单中（以 `REALTIME_PATH` 登记）。
-- 桌面端仍全量 mock：推荐本地计算、三个模拟音源共用同一测试音频、本地曲目无可播地址。
-- 视觉 / 交互正确性依赖浏览器人工走查（环境无法截图）。
+- **命令清单仍需逐条确认落地**：`auth.*` 已删、市场写操作改为导入/导出，其余命令待 Rust 侧核对；
+- **社区插件是不可信代码**：沙箱与安装期同意是硬要求——不做就等于让用户执行陌生代码；
+- **无遥测**：线上问题只能靠本地诊断页与用户主动提供的日志；
+- 皮肤令牌键名白名单目前只有契约，尚无实现；
+- 视觉 / 交互正确性仍依赖人工走查（环境无法截图）。
