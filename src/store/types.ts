@@ -1,4 +1,4 @@
-import type {ColorScheme, ThemeMode} from '../theme';
+import type {ColorScheme, ThemeMode, ThemeSkin} from '../theme';
 import type {
     ChartType,
     DateSelection,
@@ -10,6 +10,7 @@ import type {
     Playlist,
     PluginInfo,
     RecentTrack,
+    RecommendationBundle,
     RepeatMode,
     SongRow,
     SourceDisplayMode,
@@ -41,6 +42,10 @@ export interface UiState {
     preferredSource: string | null;
     /** 优先音质 */
     preferredQuality: TrackQuality;
+    /** 危险操作前是否二次确认 */
+    confirmDestructive: boolean;
+    /** 用户导入的皮肤 */
+    customSkins: ThemeSkin[];
 }
 
 export interface PlayerState {
@@ -114,6 +119,33 @@ export interface CollectionState {
     loaded: boolean;
 }
 
+/**
+ * 二次确认：一次只挂一个请求。
+ * `onConfirm` 是命令而不是数据，因此不参与持久化。
+ */
+export interface ConfirmRequest {
+    /** i18n key */
+    titleKey: string;
+    /** i18n key */
+    descKey?: string;
+    /** 插值参数（如 {{name}}） */
+    descParams?: Record<string, string | number>;
+    /** danger 用红色主按钮 */
+    tone?: 'default' | 'danger';
+    onConfirm: () => void;
+}
+
+export interface DialogState {
+    confirm: ConfirmRequest | null;
+}
+
+/** 个性化推荐 */
+export interface RecommendState {
+    bundle: RecommendationBundle | null;
+    loading: boolean;
+    loaded: boolean;
+}
+
 export interface RootState {
     ui: UiState;
     player: PlayerState;
@@ -122,6 +154,8 @@ export interface RootState {
     plugin: PluginState;
     library: LibraryState;
     collection: CollectionState;
+    dialog: DialogState;
+    recommend: RecommendState;
 }
 
 /* ============================== 切片 Actions ============================== */
@@ -138,6 +172,24 @@ export interface UiActions {
     setSourceFilter: (sourceId: string) => void;
     setPreferredSource: (sourceId: string | null) => void;
     setPreferredQuality: (quality: TrackQuality) => void;
+    setConfirmDestructive: (enabled: boolean) => void;
+    /** 安装（导入）一个皮肤 */
+    installSkin: (skin: ThemeSkin) => void;
+    removeSkin: (skinId: string) => void;
+}
+
+export interface DialogActions {
+    /** 请求二次确认；`confirmDestructive` 关闭时会直接执行 */
+    requestConfirm: (request: ConfirmRequest) => void;
+    /** 用户确认 */
+    resolveConfirm: () => void;
+    /** 用户取消 */
+    cancelConfirm: () => void;
+}
+
+export interface RecommendActions {
+    /** 生成推荐；`force` 为 true 时即使已加载也重新计算 */
+    load: (force?: boolean) => Promise<void>;
 }
 
 export interface PlayerActions {
@@ -235,6 +287,8 @@ export interface RootActions {
     plugin: PluginActions;
     library: LibraryActions;
     collection: CollectionActions;
+    dialog: DialogActions;
+    recommend: RecommendActions;
 }
 
 /** 切片工厂上下文 */

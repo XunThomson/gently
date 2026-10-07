@@ -2,6 +2,7 @@ import {useState, type ReactNode} from 'react';
 import {NavLink, useNavigate} from 'react-router';
 import {useTranslation} from 'react-i18next';
 import {useActions, useSelect} from '../../../store';
+import {useConfirm} from '../../../hooks/useConfirm';
 import type {MenuRoute} from '../../../router/routes.types';
 import {IconChevronDown, IconChevronRight, IconHeart, IconMusic, IconPlus, IconTrash} from '../../ui/icon';
 import styles from './Sidebar.module.css';
@@ -22,6 +23,7 @@ export function Sidebar({mainMenu}: SidebarProps) {
     const navigate = useNavigate();
     const {toggleGroup} = useActions().ui;
     const {createPlaylist, removePlaylist} = useActions().collection;
+    const confirm = useConfirm();
     const collapsedGroups = useSelect((s) => s.ui.collapsedGroups);
     const favorites = useSelect((s) => s.collection.favorites);
     const playlists = useSelect((s) => s.collection.playlists);
@@ -188,7 +190,15 @@ export function Sidebar({mainMenu}: SidebarProps) {
                                             className={styles.rowAction}
                                             title={t('page.playlist.delete')}
                                             aria-label={t('page.playlist.delete')}
-                                            onClick={() => removePlaylist(playlist.id)}
+                                            onClick={() =>
+                                                confirm({
+                                                    titleKey: 'confirm.deletePlaylistTitle',
+                                                    descKey: 'confirm.deletePlaylistDesc',
+                                                    descParams: {name: playlist.name},
+                                                    tone: 'danger',
+                                                    onConfirm: () => removePlaylist(playlist.id),
+                                                })
+                                            }
                                         >
                                             <IconTrash size={14}/>
                                         </button>

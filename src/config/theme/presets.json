@@ -1,11 +1,12 @@
 {
-  "$comment": "主题市场预设。每个预设只覆盖 palette（品牌色）与可选的 scheme 颜色，其余样式元数据继承 theme.config.json。",
-  "presets": [
+  "$comment": "主题皮肤。可覆盖任意令牌组（palette / scheme / typography / radius / spacing / shadow / motion / zIndex / components），未声明的字段继承 theme.config.json。tags 用于主题市场分类筛选。",
+  "skins": [
     {
       "id": "violet",
       "name": "暮光紫",
       "description": "默认主题，冷静的紫色品牌色",
       "author": "Gently",
+      "tags": ["配色"],
       "swatches": ["#6b4eff", "#121212", "#f0f0f0"],
       "palette": {
         "brand": "#6b4eff",
@@ -19,6 +20,7 @@
       "name": "深海蓝",
       "description": "低饱和蓝色，长时间浏览更耐看",
       "author": "Gently",
+      "tags": ["配色", "深色"],
       "swatches": ["#2563eb", "#0f172a", "#eef2f7"],
       "palette": {
         "brand": "#2563eb",
@@ -27,8 +29,8 @@
         "brandContrast": "#ffffff"
       },
       "scheme": {
-        "light": { "app": "#eef2f7", "surface": "#ffffff", "surfaceAlt": "#e8eef6", "subtle": "#f4f7fb" },
-        "dark": { "app": "#0f172a", "surface": "#172033", "surfaceAlt": "#1e2a40", "subtle": "#121b2e" }
+        "light": { "app": "#eef2f7", "surface": "#ffffff", "surfaceAlt": "#e8eef6", "subtle": "#f4f7fb", "surfaceTranslucent": "rgba(255, 255, 255, 0.84)" },
+        "dark": { "app": "#0f172a", "surface": "#172033", "surfaceAlt": "#1e2a40", "subtle": "#121b2e", "surfaceTranslucent": "rgba(23, 32, 51, 0.76)", "videoScrim": "rgba(8, 15, 30, 0.55)" }
       }
     },
     {
@@ -36,6 +38,7 @@
       "name": "青柠",
       "description": "清爽绿色，适合白天使用",
       "author": "Gently",
+      "tags": ["配色"],
       "swatches": ["#16a34a", "#0d1a12", "#eef7f1"],
       "palette": {
         "brand": "#16a34a",
@@ -49,6 +52,7 @@
       "name": "樱花",
       "description": "柔和粉色，轻快的视觉氛围",
       "author": "Gently",
+      "tags": ["配色"],
       "swatches": ["#ec4899", "#1f1420", "#fdf2f8"],
       "palette": {
         "brand": "#ec4899",
@@ -66,6 +70,7 @@
       "name": "暖阳",
       "description": "温暖橙色，傍晚场景更舒适",
       "author": "Gently",
+      "tags": ["配色"],
       "swatches": ["#f97316", "#1c1410", "#fff7ed"],
       "palette": {
         "brand": "#f97316",
@@ -79,6 +84,7 @@
       "name": "石墨",
       "description": "全中性灰，几乎不抢内容注意力",
       "author": "Gently",
+      "tags": ["配色", "深色"],
       "swatches": ["#52525b", "#0a0a0b", "#f4f4f5"],
       "palette": {
         "brand": "#52525b",
@@ -96,6 +102,7 @@
       "name": "紧凑",
       "description": "压缩行高与间距，一屏看到更多内容",
       "author": "Gently",
+      "tags": ["密度"],
       "swatches": ["#6b4eff", "#1b1b1f", "#f2f2f5"],
       "palette": {
         "brand": "#6b4eff",
@@ -120,6 +127,7 @@
       "name": "宽适",
       "description": "放宽留白与行高，长时间浏览更放松",
       "author": "Gently",
+      "tags": ["密度", "配色"],
       "swatches": ["#0ea5e9", "#10202b", "#eef7fb"],
       "palette": {
         "brand": "#0ea5e9",
@@ -136,6 +144,129 @@
         "card": { "gap": 26, "minWidth": 184 },
         "chart": { "rowPaddingY": 14, "coverColumnWidth": 50 },
         "panel": { "width": 380, "maxHeight": 400, "itemPaddingY": 10 }
+      }
+    },
+    {
+      "id": "round",
+      "name": "圆润",
+      "description": "大圆角 + 柔和阴影 + 更松的行距，观感更轻",
+      "author": "Gently",
+      "tags": ["圆角", "效果"],
+      "swatches": ["#8b5cf6", "#1b1b22", "#f7f5ff"],
+      "palette": {
+        "brand": "#8b5cf6",
+        "brandHover": "#7c3aed",
+        "brandSoft": "rgba(139, 92, 246, 0.14)",
+        "brandContrast": "#ffffff"
+      },
+      "radius": { "sm": "10px", "md": "16px", "lg": "22px", "xl": "28px", "2xl": "34px" },
+      "shadow": {
+        "xs": "0 2px 6px rgba(24, 20, 48, 0.06)",
+        "sm": "0 4px 12px rgba(24, 20, 48, 0.08)",
+        "md": "0 10px 24px -8px rgba(24, 20, 48, 0.14)",
+        "lg": "0 22px 44px -18px rgba(24, 20, 48, 0.20)",
+        "xl": "0 34px 64px -24px rgba(24, 20, 48, 0.24)",
+        "panel": "0 24px 48px -20px rgba(24, 20, 48, 0.20)"
+      },
+      "typography": { "lineHeightRelaxed": 1.75, "weightSemibold": 600 },
+      "motion": { "fast": "200ms ease", "base": "320ms ease", "slow": "460ms ease" },
+      "components": {
+        "button": { "radius": "9999px" },
+        "dataTable": { "radius": "22px", "rowMinHeight": 50 },
+        "card": { "radius": "24px" },
+        "searchBox": { "radius": "9999px" },
+        "hero": { "coverRadius": "28px" },
+        "panel": { "radius": "22px" },
+        "menu": { "radius": "18px" }
+      }
+    },
+    {
+      "id": "sharp",
+      "name": "锐利",
+      "description": "小圆角 + 无阴影的扁平风格，信息密度感强",
+      "author": "Gently",
+      "tags": ["圆角", "效果", "密度"],
+      "swatches": ["#0f172a", "#000000", "#e2e8f0"],
+      "palette": {
+        "brand": "#0f172a",
+        "brandHover": "#1e293b",
+        "brandSoft": "rgba(15, 23, 42, 0.10)",
+        "brandContrast": "#ffffff"
+      },
+      "radius": { "sm": "2px", "md": "3px", "lg": "4px", "xl": "6px", "2xl": "8px" },
+      "shadow": {
+        "xs": "none",
+        "sm": "none",
+        "md": "none",
+        "lg": "none",
+        "xl": "none",
+        "panel": "0 0 0 1px rgba(0, 0, 0, 0.12)"
+      },
+      "motion": { "fast": "90ms linear", "base": "120ms linear", "slow": "180ms linear" },
+      "typography": { "lineHeightRelaxed": 1.5 },
+      "components": {
+        "button": { "radius": "3px" },
+        "card": { "radius": "4px", "hoverLift": "0px" },
+        "dataTable": { "radius": "4px", "rowMinHeight": 40, "cellPaddingY": 8 },
+        "searchBox": { "radius": "4px" },
+        "hero": { "coverRadius": "4px" },
+        "panel": { "radius": "4px" },
+        "menu": { "radius": "4px" }
+      }
+    },
+    {
+      "id": "contrast",
+      "name": "高对比",
+      "description": "更强的边框与字重、更大的字号，长时间阅读更省力",
+      "author": "Gently",
+      "tags": ["配色", "字体"],
+      "swatches": ["#0b5fff", "#000000", "#ffffff"],
+      "palette": {
+        "brand": "#0b5fff",
+        "brandHover": "#0047cc",
+        "brandSoft": "rgba(11, 95, 255, 0.16)",
+        "brandContrast": "#ffffff"
+      },
+      "scheme": {
+        "light": {
+          "app": "#ffffff",
+          "surface": "#ffffff",
+          "surfaceAlt": "#eef1f6",
+          "subtle": "#f6f8fb",
+          "textPrimary": "#000000",
+          "textSecondary": "#333a45",
+          "textTertiary": "#4a5361",
+          "borderSubtle": "#c7ced9",
+          "borderDefault": "#8f99a8",
+          "borderStrong": "#4a5361",
+          "surfaceTranslucent": "rgba(255, 255, 255, 0.92)"
+        },
+        "dark": {
+          "app": "#000000",
+          "surface": "#0b0d10",
+          "surfaceAlt": "#161a20",
+          "subtle": "#05070a",
+          "textPrimary": "#ffffff",
+          "textSecondary": "#e6e9ee",
+          "textTertiary": "#c2c8d2",
+          "borderSubtle": "#454d59",
+          "borderDefault": "#6b7482",
+          "borderStrong": "#98a2b3",
+          "surfaceTranslucent": "rgba(8, 10, 13, 0.9)"
+        }
+      },
+      "typography": {
+        "fontSizeSm": "0.9375rem",
+        "fontSizeBase": "1.0625rem",
+        "fontSizeLg": "1.1875rem",
+        "weightMedium": 600,
+        "weightSemibold": 700
+      },
+      "components": {
+        "dataTable": { "fontSize": 15, "headerFontSize": 13, "headerColor": "{text.secondary}", "rowMinHeight": 50 },
+        "sidebar": { "fontSize": 15, "sectionTitleFontSize": 13 },
+        "view": { "subtitleFontSize": 14 },
+        "lyrics": { "fontSize": 17, "activeFontSize": 19, "inactiveOpacity": 0.75 }
       }
     }
   ]

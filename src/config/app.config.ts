@@ -36,6 +36,10 @@ export const appConfig = {
         chartSize: 20,
         /** 热门推荐条数 */
         recommendLimit: 12,
+        /** 推荐专辑条数 */
+        albumLimit: 4,
+        /** 推荐歌单条数 */
+        playlistLimit: 4,
         /** 搜索结果上限 */
         searchLimit: 20,
         /** 最近播放最多保留条数 */

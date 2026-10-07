@@ -1,10 +1,23 @@
 export {themeConfig, buildCssVars, applyCssVars, resolveTokenRef} from './tokens';
-export {themePresets, getThemePreset, resolveTheme, DEFAULT_PRESET_ID} from './presets';
+export {
+    builtinSkins,
+    themePresets,
+    allSkins,
+    getThemeSkin,
+    getThemePreset,
+    resolveTheme,
+    parseSkin,
+    serializeSkin,
+    DEFAULT_PRESET_ID,
+} from './presets';
+export type {SkinParseResult} from './presets';
 export {ThemeProvider, useTheme, resolveScheme, prefersDark, applyInitialTheme} from './ThemeProvider';
 export type {
     ThemeConfig,
     ThemeMode,
     ThemePreset,
+    ThemeSkin,
+    SkinOverrides,
     ColorScheme,
     CssVarMap,
     ComponentTokens,

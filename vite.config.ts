@@ -18,6 +18,19 @@ export default defineConfig(async () => ({
     // .m4s 不在 Vite 默认资源类型里，需要显式声明为静态资源
     assetsInclude: ['**/*.m4s'],
 
+    build: {
+        rollupOptions: {
+            output: {
+                // 依赖分包：主包更小，且依赖可长期缓存
+                manualChunks: {
+                    react: ['react', 'react-dom'],
+                    router: ['react-router'],
+                    i18n: ['i18next', 'react-i18next', 'i18next-browser-languagedetector'],
+                },
+            },
+        },
+    },
+
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
     //
     // 1. prevent Vite from obscuring rust errors

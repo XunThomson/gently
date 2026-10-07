@@ -8,7 +8,10 @@ import type {UiActions, UiState, StoreCtx} from '../types';
  * 主题与音源偏好的实际解析由 ThemeProvider / 视图完成，这里只保存用户选择（并持久化）。
  */
 export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
-    const validPreset = themePresets.some((preset) => preset.id === persisted.themePresetId);
+    const customSkins = persisted.customSkins ?? [];
+    const validPreset = [...themePresets, ...customSkins].some(
+        (preset) => preset.id === persisted.themePresetId,
+    );
     const mode = persisted.themeMode ?? themeConfig.mode;
 
     const state: UiState = {
@@ -22,6 +25,8 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         sourceFilter: 'all',
         preferredSource: persisted.preferredSource ?? null,
         preferredQuality: persisted.preferredQuality ?? 'high',
+        confirmDestructive: persisted.confirmDestructive ?? true,
+        customSkins,
     };
 
     const patch = (partial: Partial<UiState>) => {
@@ -69,6 +74,27 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
             patch({preferredQuality});
             // 音质偏好变化后立即重新解析当前曲目
             ctx.getActions().player.reloadSource();
+        },
+        setConfirmDestructive(confirmDestructive) {
+            patch({confirmDestructive});
+        },
+        installSkin(skin) {
+            const {customSkins} = ctx.getState().ui;
+            patch({
+                customSkins: customSkins.some((item) => item.id === skin.id)
+                    ? customSkins.map((item) => (item.id === skin.id ? skin : item))
+                    : [...customSkins, skin],
+                // 导入后立即应用，符合「导入即预览」的直觉
+                themePresetId: skin.id,
+            });
+        },
+        removeSkin(skinId) {
+            const {customSkins, themePresetId} = ctx.getState().ui;
+            patch({
+                customSkins: customSkins.filter((item) => item.id !== skinId),
+                // 删掉正在使用的皮肤时回到默认
+                themePresetId: themePresetId === skinId ? DEFAULT_PRESET_ID : themePresetId,
+            });
         },
     };
 

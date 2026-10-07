@@ -1,8 +1,8 @@
-import type {ThemeMode} from '../theme/types';
+import type {ThemeMode, ThemeSkin} from '../theme/types';
 import type {SourceDisplayMode, SourceFilterStyle, TrackQuality} from '../types';
 
 /**
- * UI 偏好持久化（主题 + 音源展示方式）。
+ * UI 偏好持久化（主题 / 音源 / 皮肤 / 确认开关）。
  * 非浏览器环境（冒烟测试 / SSR）下为安全空操作。
  */
 
@@ -15,6 +15,9 @@ export interface PersistedUi {
     sourceFilterStyle?: SourceFilterStyle;
     preferredSource?: string | null;
     preferredQuality?: TrackQuality;
+    confirmDestructive?: boolean;
+    /** 用户导入的皮肤（体积小，直接存本地） */
+    customSkins?: ThemeSkin[];
 }
 
 export function readPersistedUi(): PersistedUi {

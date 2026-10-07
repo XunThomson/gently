@@ -12,6 +12,7 @@ import {
     titleColumn,
 } from '../../config/table.config';
 import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../hooks/useTrackActions';
+import {useConfirm} from '../../hooks/useConfirm';
 import {useActions, useLibraryState} from '../../store';
 import type {RecentTrack} from '../../types';
 import {formatRelative} from '../../utils/date';
@@ -20,6 +21,7 @@ export default function RecentView() {
     const {t} = useTranslation();
     const {recent, loaded} = useLibraryState();
     const {load, clearRecent} = useActions().library;
+    const confirm = useConfirm();
     const buildActions = useTrackActions();
     const playRow = usePlayRow();
     const currentId = useCurrentTrackId();
@@ -69,7 +71,14 @@ export default function RecentView() {
                     size="sm"
                     variant="ghost"
                     disabled={recent.length === 0}
-                    onClick={clearRecent}
+                    onClick={() =>
+                        confirm({
+                            titleKey: 'confirm.clearRecentTitle',
+                            descKey: 'confirm.clearRecentDesc',
+                            tone: 'danger',
+                            onConfirm: clearRecent,
+                        })
+                    }
                 >
                     {t('page.recent.clear')}
                 </Button>

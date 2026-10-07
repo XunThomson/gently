@@ -31,7 +31,8 @@ export default function SettingView() {
     const filterStyle = useSelect((s) => s.ui.sourceFilterStyle);
     const preferredSource = useSelect((s) => s.ui.preferredSource);
     const preferredQuality = useSelect((s) => s.ui.preferredQuality);
-    const {setSourceDisplay, setSourceFilterStyle, setPreferredSource, setPreferredQuality} =
+    const confirmDestructive = useSelect((s) => s.ui.confirmDestructive);
+    const {setSourceDisplay, setSourceFilterStyle, setPreferredSource, setPreferredQuality, setConfirmDestructive} =
         useActions().ui;
     const pluginList = usePluginState().list;
 
@@ -82,6 +83,22 @@ export default function SettingView() {
                         }))}
                     />
                 </div>
+
+                <div className={styles.field}>
+                    <span className={styles.label}>{t('page.setting.confirmDestructive')}</span>
+                    <span className={styles.value}>
+                        <UnderlineRadioGroup
+                            name="confirm-destructive"
+                            value={confirmDestructive ? 'on' : 'off'}
+                            onChange={(value) => setConfirmDestructive(value === 'on')}
+                            options={[
+                                {value: 'on', label: t('common.confirm')},
+                                {value: 'off', label: t('common.disable')},
+                            ]}
+                        />
+                    </span>
+                </div>
+                <p className={styles.hint}>{t('page.setting.confirmHint')}</p>
             </section>
 
             {/* ---------- 音源与音质 ---------- */}

@@ -3,6 +3,7 @@ import {useTranslation} from 'react-i18next';
 import {Page} from '../../components/ui/page';
 import {BadgeCell, DataTable, TextCell, type ColumnDef} from '../../components/ui/data-table';
 import {actionsColumn, indexColumn} from '../../config/table.config';
+import {useConfirm} from '../../hooks/useConfirm';
 import {useActions, usePluginState} from '../../store';
 import type {PluginInfo} from '../../types';
 
@@ -10,6 +11,7 @@ export default function PluginView() {
     const {t} = useTranslation();
     const {list, loaded} = usePluginState();
     const {load, setEnabled, remove, update} = useActions().plugin;
+    const confirm = useConfirm();
 
     useEffect(() => {
         void load();
@@ -83,7 +85,14 @@ export default function PluginView() {
                 label: t('common.uninstall'),
                 tone: 'danger',
                 disabled: plugin.builtin,
-                onClick: () => remove(plugin.id),
+                onClick: () =>
+                    confirm({
+                        titleKey: 'confirm.uninstallPluginTitle',
+                        descKey: 'confirm.uninstallPluginDesc',
+                        descParams: {name: plugin.name},
+                        tone: 'danger',
+                        onConfirm: () => remove(plugin.id),
+                    }),
             },
         ]),
     ];

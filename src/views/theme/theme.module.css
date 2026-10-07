@@ -1,4 +1,75 @@
-/* 主题市场：卡片网格 + 预览色块。尺寸/颜色/动效均来自主题 token。 */
+/* 主题市场：工具条 + 标签筛选 + 卡片网格 + 皮肤预览。
+   尺寸 / 颜色 / 动效均来自主题 token，色块颜色来自皮肤数据。 */
+
+.search {
+    height: var(--search-box-height);
+    min-width: var(--search-box-min-width);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--search-box-radius);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--search-box-font-size);
+    outline: none;
+}
+
+.search:focus {
+    border-color: var(--brand);
+    background: var(--bg-elevated);
+}
+
+/* 真正的文件选择由「导入皮肤」按钮触发 */
+.fileInput {
+    display: none;
+}
+
+.status {
+    margin-bottom: var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+/* ---------- 标签筛选 ---------- */
+
+.tagRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-bottom: var(--space-4);
+    padding-bottom: var(--space-1);
+    overflow-x: auto;
+}
+
+.chip {
+    flex-shrink: 0;
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-full);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color var(--motion-fast), background-color var(--motion-fast),
+        color var(--motion-fast);
+}
+
+.chip:hover {
+    border-color: var(--brand);
+    color: var(--text-primary);
+}
+
+.chipActive {
+    background: var(--brand-soft);
+    border-color: var(--brand);
+    color: var(--brand);
+    font-weight: var(--font-weight-semibold);
+}
+
+/* ---------- 皮肤网格 ---------- */
 
 .grid {
     display: grid;
@@ -38,10 +109,26 @@
     height: 100%;
 }
 
+.cardHead {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+}
+
 .name {
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
+}
+
+.customTag {
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
 }
 
 .description {
@@ -59,6 +146,32 @@
     color: var(--text-tertiary);
 }
 
+.cardTags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+}
+
+.cardTag {
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-subtle);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+}
+
 .apply {
+    margin-top: var(--space-2);
+}
+
+.remove {
     margin-top: var(--space-2);
 }

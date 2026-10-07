@@ -1,6 +1,7 @@
 import type {GroupedTrack, SongRow, Track, TrackCandidate, TrackQuality} from '../types';
 import {durationToSec} from './duration';
 import {grad} from './helpers';
+import {albumKey, tagsOf} from './tags';
 
 /** 带热度的曲目：榜单列表展示与播放队列共用同一份数据 */
 export interface RankedTrack extends Track {
@@ -9,7 +10,7 @@ export interface RankedTrack extends Track {
 
 /**
  * 榜单行 → 可播放曲目。
- * 统一的转换入口，避免各处重复拼装 Track（封面渐变、时长解析）。
+ * 统一的转换入口，避免各处重复拼装 Track（封面渐变、时长解析、标签）。
  */
 export function rankedTracks(rows: SongRow[], seed: number, source = 'ranking'): RankedTrack[] {
     return rows.map((row, index) => ({
@@ -21,6 +22,8 @@ export function rankedTracks(rows: SongRow[], seed: number, source = 'ranking'):
         durationSec: durationToSec(row.dur),
         source,
         gradient: grad(index + (seed % 5)),
+        tags: tagsOf(`${row.title}|${row.artist}`),
+        albumId: albumKey(row.artist, row.album),
         heat: row.heat,
     }));
 }

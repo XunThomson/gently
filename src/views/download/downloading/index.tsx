@@ -2,6 +2,7 @@ import {useEffect, useMemo} from 'react';
 import {useTranslation} from 'react-i18next';
 import {BadgeCell, DataTable, TextCell, type ColumnDef} from '../../../components/ui/data-table';
 import {actionsColumn, indexColumn, progressColumn} from '../../../config/table.config';
+import {useConfirm} from '../../../hooks/useConfirm';
 import {useActions, useDownloadState} from '../../../store';
 import type {DownloadStatus, DownloadTask} from '../../../types';
 
@@ -19,6 +20,7 @@ export default function DownloadingView() {
     const {t} = useTranslation();
     const {tasks, loaded} = useDownloadState();
     const {load, pause, resume, remove} = useActions().download;
+    const confirm = useConfirm();
 
     useEffect(() => {
         void load();
@@ -70,7 +72,19 @@ export default function DownloadingView() {
                     tone: 'primary' as const,
                     onClick: () => resume(task.id),
                 },
-            {key: 'remove', label: t('common.delete'), tone: 'danger', onClick: () => remove(task.id)},
+            {
+                key: 'remove',
+                label: t('common.delete'),
+                tone: 'danger',
+                onClick: () =>
+                    confirm({
+                        titleKey: 'confirm.removeDownloadTitle',
+                        descKey: 'confirm.removeDownloadDesc',
+                        descParams: {name: task.track.title},
+                        tone: 'danger',
+                        onConfirm: () => remove(task.id),
+                    }),
+            },
         ]),
     ];
 

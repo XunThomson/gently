@@ -12,6 +12,7 @@ import {
     titleColumn,
 } from '../../config/table.config';
 import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../hooks/useTrackActions';
+import {useConfirm} from '../../hooks/useConfirm';
 import {useActions, useLibraryState} from '../../store';
 import {fileService} from '../../services';
 import type {LocalTrack} from '../../types';
@@ -21,6 +22,7 @@ export default function LocalView() {
     const {t} = useTranslation();
     const {local, query, loaded} = useLibraryState();
     const {load, setQuery, removeLocal} = useActions().library;
+    const confirm = useConfirm();
     const buildActions = useTrackActions();
     const playRow = usePlayRow();
     const currentId = useCurrentTrackId();
@@ -60,7 +62,14 @@ export default function LocalView() {
                         key: 'remove',
                         label: t('page.local.remove'),
                         tone: 'danger',
-                        onClick: () => removeLocal(track.id),
+                        onClick: () =>
+                            confirm({
+                                titleKey: 'confirm.removeLocalTitle',
+                                descKey: 'confirm.removeLocalDesc',
+                                descParams: {name: track.title},
+                                tone: 'danger',
+                                onConfirm: () => removeLocal(track.id),
+                            }),
                     },
                 ],
             }),

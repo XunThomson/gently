@@ -16,11 +16,13 @@ import {resolveTheme, themePresets} from '../src/theme';
 import {store, useActions} from '../src/store';
 import {buildCssVars, themeConfig} from '../src/theme/tokens';
 import {getActiveMusicSource, listMusicSources} from '../src/plugins';
-import {catalogService, fileService, libraryService} from '../src/services';
+import {catalogService, fileService, libraryService, recommendService} from '../src/services';
 import zh from '../src/i18n/locales/zh.json';
 import en from '../src/i18n/locales/en.json';
 import {filterGroupsBySource, groupTracks} from '../src/utils/track';
 import {pickQuality} from '../src/utils/quality';
+import {buildTasteProfile, explain, rankTracks} from '../src/utils/recommend';
+import {getThemeSkin, parseSkin, resolveTheme as resolveSkin, serializeSkin} from '../src/theme';
 
 import {TitleBar} from '../src/components/shell/title-bar';
 import {Sidebar} from '../src/components/shell/sidebar';
@@ -29,6 +31,10 @@ import {QueuePanel} from '../src/components/shell/player-bar/QueuePanel';
 import {ActionsPanel} from '../src/components/shell/player-bar/ActionsPanel';
 import {SourcePicker} from '../src/components/shell/player-bar/SourcePicker';
 import {QualityPicker} from '../src/components/shell/player-bar/QualityPicker';
+import {ConfirmDialog} from '../src/components/ui/dialog';
+import {AlbumGrid} from '../src/components/ui/album-grid';
+import {PlaylistGrid} from '../src/components/ui/playlist-grid';
+import {ReasonChip} from '../src/components/ui/reason-chip';
 import {buildMenuRoutes, appRoutes} from '../src/router/meta';
 
 import RankingView from '../src/views/ranking';
@@ -559,6 +565,130 @@ async function main(): Promise<void> {
     check('nav: 主题市场不在侧边栏主菜单', !menuPaths.includes('/theme'));
     check('nav: 主菜单为 6 项', menuPaths.length === 6);
 
+    /* ---------------- 二次确认（防误操作） ---------------- */
+    let confirmedCount = 0;
+    const confirmProbe = {
+        titleKey: 'confirm.clearQueueTitle',
+        descKey: 'confirm.clearQueueDesc',
+        tone: 'danger' as const,
+        onConfirm: () => {
+            confirmedCount += 1;
+        },
+    };
+
+    actions.dialog.requestConfirm(confirmProbe);
+    check('confirm: 默认进入待确认状态', s().dialog.confirm?.titleKey === confirmProbe.titleKey);
+    check('confirm: 未确认前不执行', confirmedCount === 0);
+    actions.dialog.resolveConfirm();
+    check('confirm: 确认后执行并清空请求', confirmedCount === 1 && s().dialog.confirm === null);
+
+    actions.dialog.requestConfirm(confirmProbe);
+    actions.dialog.cancelConfirm();
+    check('confirm: 取消不执行', confirmedCount === 1 && s().dialog.confirm === null);
+
+    actions.ui.setConfirmDestructive(false);
+    actions.dialog.requestConfirm(confirmProbe);
+    check(
+        'confirm: 关闭开关后直接执行',
+        confirmedCount === 2 && s().dialog.confirm === null,
+    );
+    actions.ui.setConfirmDestructive(true);
+
+    /* ---------------- 个性化推荐 ---------------- */
+    const profile = buildTasteProfile({
+        recent: s().library.recent,
+        favorites: s().collection.favorites,
+    });
+    check(
+        'recommend: 画像含标签与歌手权重',
+        profile.sampleSize > 0 &&
+            Object.keys(profile.tags).length > 0 &&
+            Object.keys(profile.artists).length > 0,
+    );
+
+    const pool = s().library.local;
+    const ranked = rankTracks(pool, profile, 5);
+    check('recommend: 单曲推荐都带可解释理由', ranked.length > 0 && ranked.every((item) => !!item.reason.kind));
+
+    const excluded = rankTracks(pool, profile, 5, new Set([pool[0].id]));
+    check('recommend: 可排除最近听过的曲目', excluded.every((item) => item.id !== pool[0].id));
+
+    const emptyProfile = buildTasteProfile({recent: [], favorites: []});
+    check(
+        'recommend: 无行为样本时回落「近期热门」',
+        emptyProfile.sampleSize === 0 &&
+            explain(['深夜'], '某人', emptyProfile).kind === 'trending',
+    );
+
+    const bundle = await recommendService.suggest({
+        recent: s().library.recent,
+        favorites: s().collection.favorites,
+    });
+    check(
+        'recommend: 同时给出单曲 / 专辑 / 歌单',
+        bundle.tracks.length > 0 && bundle.albums.length > 0 && bundle.playlists.length > 0,
+    );
+    check('recommend: 专辑带曲目', bundle.albums.every((album) => album.tracks.length > 0));
+    check('recommend: 歌单带风格标签', bundle.playlists.every((item) => item.tags.length > 0));
+    check('recommend: 推荐理由与画像一致', bundle.tracks.every((item) => item.reason.score >= 0));
+
+    await actions.recommend.load(true);
+    check(
+        'store: 推荐写入切片',
+        s().recommend.loaded && s().recommend.bundle !== null && !s().recommend.loading,
+    );
+
+    /* ---------------- 皮肤（复杂主题） ---------------- */
+    const roundSkin = resolveSkin(themeConfig, 'round');
+    check(
+        'skin: 可覆盖圆角与阴影',
+        roundSkin.radius.lg !== themeConfig.radius.lg && roundSkin.shadow.md !== themeConfig.shadow.md,
+    );
+    check('skin: 可覆盖动效与字体度量', roundSkin.motion.base !== themeConfig.motion.base);
+
+    const sharpSkin = resolveSkin(themeConfig, 'sharp');
+    check(
+        'skin: 未声明的令牌组继承主题配置',
+        sharpSkin.spacing['4'] === themeConfig.spacing['4'] &&
+            sharpSkin.palette.success === themeConfig.palette.success,
+    );
+    check(
+        'skin: 可覆盖组件度量',
+        sharpSkin.components.dataTable.rowMinHeight !== themeConfig.components.dataTable.rowMinHeight,
+    );
+
+    const parsedSkin = parseSkin(
+        JSON.stringify({id: 'my-skin', name: '我的皮肤', palette: {brand: '#123456'}}),
+    );
+    check('skin: 合法皮肤可解析', parsedSkin.ok && parsedSkin.skin?.palette?.brand === '#123456');
+    check('skin: 非 JSON 被拒绝', parseSkin('{').ok === false);
+    check('skin: 缺少必填字段被拒绝', parseSkin(JSON.stringify({name: 'x'})).ok === false);
+    check('skin: 导出结果可再次导入', parseSkin(serializeSkin(getThemeSkin('round'))).ok === true);
+
+    actions.ui.installSkin({
+        id: 'smoke-skin',
+        name: '冒烟皮肤',
+        description: '',
+        author: 'test',
+        swatches: ['#000000'],
+        palette: {brand: '#000000'},
+    });
+    check(
+        'store: 导入皮肤后立即应用',
+        s().ui.customSkins.some((item) => item.id === 'smoke-skin') &&
+            s().ui.themePresetId === 'smoke-skin',
+    );
+    check(
+        'store: 自定义皮肤参与主题解析',
+        resolveSkin(themeConfig, 'smoke-skin', s().ui.customSkins).palette.brand === '#000000',
+    );
+    actions.ui.removeSkin('smoke-skin');
+    check(
+        'store: 删除皮肤后回到默认皮肤',
+        !s().ui.customSkins.some((item) => item.id === 'smoke-skin') &&
+            s().ui.themePresetId !== 'smoke-skin',
+    );
+
     /* ---------------- 组件渲染 ---------------- */
     render('TitleBar', <TitleBar/>);
     render('Sidebar', <Sidebar mainMenu={buildMenuRoutes(appRoutes)}/>);
@@ -589,6 +719,24 @@ async function main(): Promise<void> {
     render('QualityPicker（有候选音源）', <QualityPicker/>);
     render('SearchView（无关键词）', <SearchView/>, '/search');
     render('SearchView（带关键词）', <SearchView/>, '/search?q=晚风');
+    render(
+        'ConfirmDialog',
+        <ConfirmDialog
+            title="title"
+            description="description"
+            tone="danger"
+            cancelLabel="cancel"
+            confirmLabel="ok"
+            onConfirm={() => undefined}
+            onCancel={() => undefined}
+        />,
+    );
+    render('AlbumGrid', <AlbumGrid albums={[]} onSelect={() => undefined} onPlay={() => undefined}/>);
+    render(
+        'PlaylistGrid',
+        <PlaylistGrid playlists={[]} onSelect={() => undefined} onPlay={() => undefined}/>,
+    );
+    render('ReasonChip', <ReasonChip reason={{kind: 'tag', value: '深夜', score: 0.8}}/>);
 
     /* 主题市场：切换预设写入 ui 切片，ThemeProvider 会据此重算 CSS 变量 */
     actions.ui.setThemePreset('sakura');

@@ -2,10 +2,11 @@ import {GRADIENTS, SONG_POOL} from './base.data.mock';
 import type {Track} from '../types';
 import {hashStr, mulberry32} from '../utils/helpers';
 import {durationToSec} from '../utils/duration';
+import {albumKey, tagsOf} from '../utils/tags';
 
 /**
  * 由曲库行构造统一 Track。
- * 使用稳定哈希保证同一 (source, index) 永远得到相同的 id / 封面。
+ * 使用稳定哈希保证同一 (source, index) 永远得到相同的 id / 封面 / 标签。
  */
 export function makeTrack(index: number, source = 'mock'): Track {
     const row = SONG_POOL[index % SONG_POOL.length];
@@ -19,6 +20,8 @@ export function makeTrack(index: number, source = 'mock'): Track {
         durationSec: durationToSec(duration),
         source,
         gradient: GRADIENTS[index % GRADIENTS.length],
+        tags: tagsOf(`${title}|${artist}`),
+        albumId: albumKey(artist, album),
     };
 }
 

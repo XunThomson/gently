@@ -392,24 +392,45 @@ export type ComponentOverrides = {
 };
 
 /**
- * 主题市场预设（`src/config/theme/presets.json`）。
- * 可覆盖品牌色、配色板与组件度量；未声明的字段继承主题配置。
+ * 皮肤可覆盖的全部令牌组。
+ * 每组都是「只声明要改的字段」，其余继承 `theme.config.json`，
+ * 因此皮肤既能只换配色，也能整套替换字体 / 圆角 / 阴影 / 动效 / 密度（复杂主题）。
  */
-export interface ThemePreset {
-    id: string;
-    name: string;
-    description: string;
-    author: string;
-    /** 预览色块 */
-    swatches: string[];
-    palette: Partial<ThemePalette>;
+export interface SkinOverrides {
+    palette?: Partial<ThemePalette>;
     scheme?: {
         light?: Partial<SchemeTokens>;
         dark?: Partial<SchemeTokens>;
     };
-    /** 可选：覆盖组件度量（间距 / 行高 / 尺寸），实现「密度」类主题 */
+    typography?: Partial<TypographyTokens>;
+    radius?: Partial<RadiusTokens>;
+    spacing?: Partial<SpacingTokens>;
+    shadow?: Partial<ShadowTokens>;
+    motion?: Partial<MotionTokens>;
+    zIndex?: Partial<ZIndexTokens>;
     components?: ComponentOverrides;
 }
+
+/**
+ * 主题皮肤（主题市场条目 / `src/config/theme/presets.json`）。
+ * 内置皮肤随包发布；用户导入的皮肤存本地（`ui.customSkins`）。
+ */
+export interface ThemeSkin extends SkinOverrides {
+    id: string;
+    name: string;
+    description: string;
+    author: string;
+    version?: string;
+    /** 分类标签（配色 / 密度 / 圆角 / 字体 / 效果…） */
+    tags?: string[];
+    /** 市场卡片预览色块 */
+    swatches: string[];
+    /** 是否内置 */
+    builtin?: boolean;
+}
+
+/** 兼容旧命名 */
+export type ThemePreset = ThemeSkin;
 
 /** CSS 变量字典：--name → value */
 export type CssVarMap = Record<string, string>;

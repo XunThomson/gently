@@ -6,12 +6,16 @@
 |---|---|---|
 | 颜色、字号、间距、圆角、阴影、动效、层级 | `theme/theme.config.json` | 运行时注入 CSS 变量，刷新即生效 |
 | 某个组件的尺寸/度量（标题栏、搜索框、侧边栏、播放条、表格、卡片、榜单、按钮、歌词、空态、日期选择器…） | `theme/theme.config.json` → `components` | 同上，组件 CSS 只消费 `var(--token)` |
-| 主题皮肤与「密度」（配色 + 行高/间距/布局） | `theme/presets.json` | 主题市场选一套预设，立即生效并持久化 |
+| 主题皮肤与「密度」（配色 + 行高/间距/布局/圆角/阴影/动效） | `theme/presets.json` | 皮肤市场里选择 / 导入，立即生效并持久化 |
+| 用户导入的皮肤 | 皮肤市场「导入皮肤」(JSON) | 存 localStorage，可导出分享 |
 | 动态背景（视频透明度/模糊/遮罩/玻璃模糊半径） | `theme/theme.config.json` → `components.background` | 素材见 `src/assets/README.md` |
 | 行为与规模：窗口尺寸、音量/进度步长、列表条数、下载引擎、mock 数据量、模拟延迟 | `app.config.ts` | 构建期常量，改后重新构建 |
+| 危险操作是否需要二次确认 | 设置页开关（`ui.confirmDestructive`） | 运行时，持久化 |
 | 界面文案（中/英） | `src/i18n/locales/*.json` | 运行时切换语言 |
 | 列表列（标题/宽度/对齐/渲染） | `src/config/table.config.tsx` | 视图只做组合 |
+| 推荐算法权重（时间衰减 / 收藏加权 / 歌手加权） | `src/utils/recommend.ts` 顶部常量 | 纯函数，可被测试覆盖 |
 | 导航菜单（名称/图标/顺序/是否显示） | `src/router/meta.tsx` 的 `meta` | 菜单由路由派生，单一来源 |
+| 后端接口（路径/字段/错误码） | `src/api/**` + `docs/contracts/backend-api.md` | 契约，实现后由 `src/services/**` 接入 |
 | 假数据内容（曲库、歌单、下载、插件、歌词） | `src/mock/**` | 接入真实数据源后由 `src/services/**` 替换 |
 
 ## 三个文件的分工

@@ -83,6 +83,50 @@
     "resolving": "Matching sources…",
     "none": "Not playable on any enabled source"
   },
+  "recommend": {
+    "tracksTitle": "Made for you",
+    "tracksSubtitle": "Ranked by your taste",
+    "albumsTitle": "Albums for you",
+    "albumsSubtitle": "Worth a full listen",
+    "playlistsTitle": "Playlists for you",
+    "playlistsSubtitle": "Picked by style",
+    "reasonArtist": "Because you played {{name}}",
+    "reasonTag": "Because you like {{name}}",
+    "reasonTrending": "Trending now",
+    "reasonSimilar": "Similar to {{name}}",
+    "profile": "Taste profile",
+    "profileEmpty": "Play a few songs to build your profile",
+    "trackCount": "{{count}} songs"
+  },
+  "confirm": {
+    "clearQueueTitle": "Clear queue",
+    "clearQueueDesc": "This clears the play queue and keeps only the current track.",
+    "clearRecentTitle": "Clear history",
+    "clearRecentDesc": "This deletes all recently played records. It cannot be undone.",
+    "clearDownloadsTitle": "Clear finished downloads",
+    "clearDownloadsDesc": "This removes all finished download records.",
+    "deletePlaylistTitle": "Delete playlist",
+    "deletePlaylistDesc": "“{{name}}” will be deleted. This cannot be undone.",
+    "uninstallPluginTitle": "Uninstall source plugin",
+    "uninstallPluginDesc": "“{{name}}” will be uninstalled and no longer used for merging or fallback.",
+    "removeLocalTitle": "Remove from local library",
+    "removeLocalDesc": "“{{name}}” will be removed from the library. The file on disk is kept.",
+    "removeDownloadTitle": "Remove download task",
+    "removeDownloadDesc": "The download record for “{{name}}” will be removed.",
+    "deleteSkinTitle": "Delete skin",
+    "deleteSkinDesc": "“{{name}}” will be removed."
+  },
+  "skin": {
+    "import": "Import skin",
+    "export": "Export current skin",
+    "importFailed": "Invalid skin file: {{reason}}",
+    "imported": "Imported skin “{{name}}”",
+    "removed": "Removed skin “{{name}}”",
+    "remove": "Remove skin",
+    "searchPlaceholder": "Search skins",
+    "tagAll": "All",
+    "customTag": "Custom"
+  },
   "player": {
     "notPlaying": "Nothing playing",
     "pickSong": "Pick a song to start",
@@ -248,6 +292,8 @@
       "sourceFilterDrawer": "Drawer",
       "preferredSource": "Preferred source",
       "preferredQuality": "Preferred quality",
+      "confirmDestructive": "Confirm destructive actions",
+      "confirmHint": "When off, delete / clear / uninstall actions run immediately",
       "about": "About",
       "version": "Version {{version}}"
     }

@@ -245,8 +245,65 @@ UI 无需关心差别。
 ## 6. i18n
 
 `src/i18n/locales/{zh,en}.json`，命名空间：
-`app / nav / common / search / toolbar / sidebar / player / column / page.<页面>`。
-组件内不出现中文字面量。
+`app / nav / common / search / toolbar / sidebar / player / column / quality / source /
+recommend / confirm / skin / page.<页面>`。
+组件内不出现中文字面量；冒烟测试校验「键集合一致」与「无死键」。
+
+## 7. 个性化推荐
+
+```
+用户行为（最近播放 + 收藏）
+   ↓ utils/recommend.buildTasteProfile
+口味画像：标签权重 + 歌手权重（播放次数取对数、12h 半衰期衰减、收藏加权）
+   ↓ rankTracks / rankAlbums / rankPlaylists
+候选池（内置曲库 / 专辑 / 精选歌单）按命中强度排序
+   ↓ explain()
+可解释推荐理由：artist（因为你听过 X）/ tag（因为你喜欢某标签）/ trending（回落）
+   ↓ services/recommend.service → store.recommend 切片
+推荐页三个区块：单曲 / 专辑 / 歌单，每条都带 ReasonChip
+```
+
+- 纯计算在 `src/utils/recommend.ts`（可测试），数据编排在 `services/recommend.service.ts`；
+- 接入后端后换成 `api.recommend.home()`，本地打分逻辑保留为离线兜底；
+- 候选池：专辑由内置曲库按歌手归集，精选歌单带风格标签（`src/mock/catalog.mock.ts`）。
+
+## 8. 防误操作：二次确认
+
+```
+组件 → useConfirm()({titleKey, descKey, descParams, tone, onConfirm})
+   ├── ui.confirmDestructive === true（默认）→ dialog 切片挂起请求
+   │      → ConfirmHost 渲染 ConfirmDialog（Esc 取消 / Enter 确认 / 聚焦取消按钮 / Tab 环）
+   │      → resolveConfirm() 执行 onConfirm
+   └── false → 直接执行 onConfirm（用户显式关闭了提示）
+```
+
+已接入：删除歌单（侧边栏 / 歌单页）、卸载音源插件、清空播放列表、清空播放记录、
+清理已完成下载、移除本地音乐、移除下载任务、删除皮肤。
+
+## 9. 后端接口契约
+
+只定义规范，不含实现：`src/api/types.ts`（传输原语）+ `src/api/contract.ts`（8 个域的能力接口），
+规范正文见 `docs/contracts/backend-api.md`。
+
+```
+ApiResult<T>（不抛异常） / 游标分页 Page<T> / 幂等写（Idempotency-Key）
+GentlyApi = { auth, catalog, library, recommend, playback, plugin, download, skin }
+```
+
+接入时只替换 `src/services/**` 内部的调用，UI 与 store 不变（映射表见规范文档第 8 节）。
+
+## 10. 主题皮肤（复杂定制）
+
+皮肤 = `presets.json` 的一个条目，可覆盖**任意令牌组**
+（palette / scheme / typography / radius / spacing / shadow / motion / zIndex / components），
+未声明的字段继承 `theme.config.json`：
+
+- 内置 11 套：配色类（暮光紫 / 深海蓝 / 青柠 / 樱花 / 暖阳 / 石墨）、
+  密度类（紧凑 / 宽适）、复杂类（圆润 = 大圆角 + 柔和阴影 + 慢动效；
+  锐利 = 小圆角 + 无阴影 + 快动效；高对比 = 更强边框字重 + 更大字号）；
+- 用户导入：主题市场「导入皮肤」读取 JSON → `parseSkin` 结构校验 → `installSkin`（立即应用并持久化）；
+  「导出当前皮肤」生成可分享 JSON；自定义皮肤可删除（走二次确认）；
+- 导入只做结构校验、不执行任何代码；解析失败给出具体原因。
 
 ## 7. 与 Tauri 的边界
 

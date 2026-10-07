@@ -1,7 +1,8 @@
 import {useTranslation} from 'react-i18next';
 import {EmptyState} from '../../../components/ui/empty-state';
 import {IconMusic, IconPause, IconPlay} from '../../../components/ui/icon';
-import type {Track} from '../../../types';
+import {ReasonChip} from '../../../components/ui/reason-chip';
+import type {RecommendationReason, Track} from '../../../types';
 import styles from './TrackGrid.module.css';
 
 export interface TrackGridProps {
@@ -10,11 +11,20 @@ export interface TrackGridProps {
     /** 当前曲目 id，用于高亮与播放/暂停图标 */
     currentId?: string | null;
     playing?: boolean;
+    /** 可选：个性化推荐理由，传了就在卡片上显示「为什么推荐」 */
+    reasonOf?: (track: Track) => RecommendationReason | undefined;
     onSelect: (track: Track) => void;
 }
 
 /** 封面卡片网格：推荐列表与搜索结果共用。 */
-export function TrackGrid({tracks, loading = false, currentId, playing = false, onSelect}: TrackGridProps) {
+export function TrackGrid({
+    tracks,
+    loading = false,
+    currentId,
+    playing = false,
+    reasonOf,
+    onSelect,
+}: TrackGridProps) {
     const {t} = useTranslation();
 
     if (!loading && tracks.length === 0) {
@@ -31,6 +41,7 @@ export function TrackGrid({tracks, loading = false, currentId, playing = false, 
         <div className={styles.grid}>
             {tracks.map((track) => {
                 const isCurrent = currentId === track.id;
+                const reason = reasonOf?.(track);
 
                 return (
                     <button
@@ -47,6 +58,11 @@ export function TrackGrid({tracks, loading = false, currentId, playing = false, 
                         </span>
                         <span className={styles.title}>{track.title}</span>
                         <span className={styles.artist}>{track.artist}</span>
+                        {reason && (
+                            <span className={styles.reason}>
+                                <ReasonChip reason={reason}/>
+                            </span>
+                        )}
                     </button>
                 );
             })}

@@ -1,0 +1,129 @@
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
+    gap: var(--card-gap);
+}
+
+/* 卡片本体：div[role=button]，内部只放一个真正的播放按钮 */
+.card {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.card:focus-visible {
+    outline: none;
+}
+
+.cover {
+    position: relative;
+    display: grid;
+    place-items: center;
+    aspect-ratio: var(--card-cover-ratio);
+    margin-bottom: var(--space-3);
+    border-radius: var(--card-radius);
+    overflow: hidden;
+    color: var(--brand-contrast);
+    box-shadow: var(--shadow-sm);
+    transition: transform var(--motion-base), box-shadow var(--motion-base);
+}
+
+.initial {
+    font-size: var(--card-initial-size);
+    font-weight: var(--font-weight-bold);
+    opacity: 0.92;
+}
+
+.card:hover .cover {
+    transform: translateY(var(--card-hover-lift));
+    box-shadow: var(--shadow-lg);
+}
+
+/* 键盘焦点用封面外圈提示，替代被关闭的默认 outline */
+.card:focus-visible .cover {
+    box-shadow: 0 0 0 var(--space-1) var(--brand-soft);
+}
+
+.play {
+    position: absolute;
+    right: var(--card-play-inset);
+    bottom: var(--card-play-inset);
+    display: grid;
+    place-items: center;
+    width: var(--card-play-size);
+    height: var(--card-play-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: var(--bg-elevated);
+    color: var(--brand);
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(var(--space-1));
+    box-shadow: var(--shadow-md);
+    transition: opacity var(--motion-base), transform var(--motion-base);
+}
+
+.card:hover .play,
+.card:focus-within .play,
+.play:focus-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.title {
+    display: block;
+    font-size: var(--card-title-size);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.reason {
+    margin-top: var(--space-1);
+}
+
+/* 两行截断：不使用全局 .line-clamp-2 工具类 */
+.description {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-top: var(--space-2);
+    font-size: var(--card-meta-size);
+    line-height: var(--line-height-normal);
+    color: var(--text-secondary);
+}
+
+.meta {
+    display: block;
+    margin-top: var(--space-2);
+    font-size: var(--card-meta-size);
+    color: var(--text-tertiary);
+}
+
+.tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
+}
+
+.tag {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--bg-surface-alt);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-tight);
+    white-space: nowrap;
+}

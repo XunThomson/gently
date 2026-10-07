@@ -1,78 +1,95 @@
-import {useEffect, useMemo, useState} from 'react';
+import {useEffect} from 'react';
 import {useTranslation} from 'react-i18next';
+import {AlbumGrid} from '../../components/ui/album-grid';
+import {EmptyState} from '../../components/ui/empty-state';
 import {Page} from '../../components/ui/page';
-import {SourceFilter} from '../../components/ui/source-filter';
-import {appConfig} from '../../config/app.config';
-import {catalogService} from '../../services';
-import {useActions, useSelect} from '../../store';
-import type {GroupedTrack} from '../../types';
-import {filterGroupsBySource} from '../../utils/track';
+import {PlaylistGrid} from '../../components/ui/playlist-grid';
+import {SectionHeader} from '../../components/ui/section-header';
+import {useActions, useRecommendState} from '../../store';
+import type {RecommendedTrack} from '../../types';
+import {topTags} from '../../utils/recommend';
 import {TrackGrid} from './components/TrackGrid';
+import styles from './hot.module.css';
 
 /**
- * 热门推荐：只负责推荐，搜索结果已经独立为 /search 视图。
- * 音源默认聚合（同一首歌只出现一次），可切换为分源。
+ * 推荐页：个性化推荐的聚合页，不再只是单曲列表。
+ *
+ * - 单曲 / 专辑 / 歌单三个区块，全部由口味画像打分排序；
+ * - 每个条目带可解释的推荐理由（因为你听过 X / 因为你喜欢某标签）；
+ * - 画像来自最近播放（时间衰减 + 播放次数）与收藏，样本不足时回落「近期热门」。
  */
 export default function HotView() {
     const {t} = useTranslation();
-    const currentId = useSelect((s) => s.player.current?.id ?? null);
-    const playing = useSelect((s) => s.player.playing);
-    const display = useSelect((s) => s.ui.sourceDisplay);
-    const sourceFilter = useSelect((s) => s.ui.sourceFilter);
+    const {bundle, loading, loaded} = useRecommendState();
+    const {load} = useActions().recommend;
     const {playOrToggle} = useActions().player;
 
-    const [groups, setGroups] = useState<GroupedTrack[]>([]);
-    const [loading, setLoading] = useState(true);
-
     useEffect(() => {
-        let cancelled = false;
-        setLoading(true);
+        // 首次进入时先确保本地库（画像输入）就绪，再生成推荐
+        void load();
+    }, [load]);
 
-        const request =
-            display === 'aggregate'
-                ? catalogService.fetchRecommendAll(appConfig.list.recommendLimit)
-                : catalogService
-                      .fetchRecommendFrom(
-                          appConfig.list.recommendLimit,
-                          sourceFilter === 'all' ? undefined : sourceFilter,
-                      )
-                      .then((tracks) => tracks as GroupedTrack[]);
+    if (!bundle) {
+        return (
+            <Page title={t('page.hot.title')} subtitle={t('page.hot.recommendSub')}>
+                <EmptyState title={loading || !loaded ? t('common.loading') : t('recommend.profileEmpty')}/>
+            </Page>
+        );
+    }
 
-        request
-            .then((result) => {
-                if (!cancelled) setGroups(result);
-            })
-            .catch((err) => {
-                console.error('[hot] 推荐加载失败', err);
-                if (!cancelled) setGroups([]);
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
-            });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [display, sourceFilter]);
-
-    const tracks = useMemo(
-        () => (display === 'aggregate' ? filterGroupsBySource(groups, sourceFilter) : groups),
-        [groups, display, sourceFilter],
-    );
+    const {profile, tracks, albums, playlists} = bundle;
+    const tags = topTags(profile, 3);
+    const profileText = tags.length > 0 ? tags.join(' · ') : t('recommend.profileEmpty');
 
     return (
         <Page
             title={t('page.hot.title')}
             subtitle={t('page.hot.recommendSub')}
-            toolbar={<SourceFilter/>}
+            toolbar={
+                <span className={styles.profile} title={t('recommend.profile')}>
+                    <span className={styles.profileLabel}>{t('recommend.profile')}</span>
+                    <span className={styles.profileValue}>{profileText}</span>
+                </span>
+            }
         >
-            <TrackGrid
-                tracks={tracks}
-                loading={loading}
-                currentId={currentId}
-                playing={playing}
-                onSelect={(track) => playOrToggle(track, tracks)}
-            />
+            <section className={styles.section}>
+                <SectionHeader
+                    title={t('recommend.tracksTitle')}
+                    subtitle={t('recommend.tracksSubtitle')}
+                />
+                <TrackGrid
+                    tracks={tracks}
+                    loading={loading}
+                    reasonOf={(track) => (track as RecommendedTrack).reason}
+                    onSelect={(track) => playOrToggle(track, tracks)}
+                />
+            </section>
+
+            <section className={styles.section}>
+                <SectionHeader
+                    title={t('recommend.albumsTitle')}
+                    subtitle={t('recommend.albumsSubtitle')}
+                />
+                <AlbumGrid
+                    albums={albums}
+                    onSelect={(album) => album.tracks[0] && playOrToggle(album.tracks[0], album.tracks)}
+                    onPlay={(album) => playOrToggle(album.tracks[0], album.tracks)}
+                />
+            </section>
+
+            <section className={styles.section}>
+                <SectionHeader
+                    title={t('recommend.playlistsTitle')}
+                    subtitle={t('recommend.playlistsSubtitle')}
+                />
+                <PlaylistGrid
+                    playlists={playlists}
+                    onSelect={(playlist) =>
+                        playlist.tracks[0] && playOrToggle(playlist.tracks[0], playlist.tracks)
+                    }
+                    onPlay={(playlist) => playOrToggle(playlist.tracks[0], playlist.tracks)}
+                />
+            </section>
         </Page>
     );
 }

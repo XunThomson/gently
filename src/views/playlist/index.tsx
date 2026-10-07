@@ -15,6 +15,7 @@ import {
     titleColumn,
 } from '../../config/table.config';
 import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../hooks/useTrackActions';
+import {useConfirm} from '../../hooks/useConfirm';
 import {useActions, useSelect} from '../../store';
 import type {Track} from '../../types';
 import styles from './playlist.module.css';
@@ -33,7 +34,7 @@ export default function PlaylistView() {
 
     const [renaming, setRenaming] = useState(false);
     const [draft, setDraft] = useState(playlist?.name ?? '');
-    const [confirming, setConfirming] = useState(false);
+    const confirm = useConfirm();
 
     useEffect(() => {
         void load();
@@ -102,20 +103,6 @@ export default function PlaylistView() {
                                 {t('common.cancel')}
                             </Button>
                         </>
-                    ) : confirming ? (
-                        <>
-                            <span className={styles.confirmText}>{t('page.playlist.delete')}?</span>
-                            <Button
-                                size="sm"
-                                variant="danger"
-                                onClick={() => playlist && removePlaylist(playlist.id)}
-                            >
-                                {t('common.confirm')}
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
-                                {t('common.cancel')}
-                            </Button>
-                        </>
                     ) : (
                         <>
                             <Button
@@ -132,7 +119,16 @@ export default function PlaylistView() {
                                 size="sm"
                                 variant="ghost"
                                 icon={<IconTrash size={14}/>}
-                                onClick={() => setConfirming(true)}
+                                onClick={() =>
+                                    playlist &&
+                                    confirm({
+                                        titleKey: 'confirm.deletePlaylistTitle',
+                                        descKey: 'confirm.deletePlaylistDesc',
+                                        descParams: {name: playlist.name},
+                                        tone: 'danger',
+                                        onConfirm: () => removePlaylist(playlist.id),
+                                    })
+                                }
                             >
                                 {t('page.playlist.delete')}
                             </Button>

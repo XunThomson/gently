@@ -1,8 +1,8 @@
 import {useActions, useSelect} from '../store';
 import {readPersistedUi} from '../store/persist';
 import {applyCssVars, buildCssVars, themeConfig} from './tokens';
-import {resolveTheme} from './presets';
-import type {ColorScheme, ThemeConfig, ThemeMode} from './types';
+import {allSkins, getThemeSkin, resolveTheme, serializeSkin} from './presets';
+import type {ColorScheme, ThemeConfig, ThemeMode, ThemeSkin} from './types';
 
 import {
     createContext,
@@ -14,7 +14,7 @@ import {
 } from 'react';
 
 interface ThemeContextValue {
-    /** 当前生效的完整主题配置（已叠加主题市场预设） */
+    /** 当前生效的完整主题配置（已叠加皮肤） */
     config: ThemeConfig;
     /** 用户选择的模式 */
     mode: ThemeMode;
@@ -23,9 +23,19 @@ interface ThemeContextValue {
     setMode: (mode: ThemeMode) => void;
     /** 明暗一键切换（灯泡按钮） */
     toggleScheme: () => void;
-    /** 主题市场当前预设 id */
+    /** 当前皮肤 id */
     presetId: string;
     setPreset: (id: string) => void;
+    /** 内置 + 自定义皮肤 */
+    skins: ThemeSkin[];
+    /** 用户导入的皮肤 */
+    customSkins: ThemeSkin[];
+    /** 当前皮肤对象 */
+    skin: ThemeSkin;
+    installSkin: (skin: ThemeSkin) => void;
+    removeSkin: (id: string) => void;
+    /** 导出当前皮肤为可分享的 JSON 文本 */
+    exportSkin: () => string;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -48,7 +58,8 @@ export function ThemeProvider({children}: { children: ReactNode }) {
     const mode = useSelect((s) => s.ui.themeMode);
     const presetId = useSelect((s) => s.ui.themePresetId);
     const scheme = useSelect((s) => s.ui.scheme);
-    const {setScheme, setThemeMode, setThemePreset} = useActions().ui;
+    const customSkins = useSelect((s) => s.ui.customSkins);
+    const {setScheme, setThemeMode, setThemePreset, installSkin, removeSkin} = useActions().ui;
 
     const [systemDark, setSystemDark] = useState(prefersDark);
 
@@ -63,8 +74,11 @@ export function ThemeProvider({children}: { children: ReactNode }) {
 
     const resolved: ColorScheme = mode === 'system' ? (systemDark ? 'dark' : 'light') : mode;
 
-    /* 预设叠加后的主题配置 */
-    const activeConfig = useMemo(() => resolveTheme(themeConfig, presetId), [presetId]);
+    /* 皮肤叠加后的主题配置 */
+    const activeConfig = useMemo(
+        () => resolveTheme(themeConfig, presetId, customSkins),
+        [presetId, customSkins],
+    );
 
     /* 解析结果回写 store，供业务代码读取（歌词 / 封面配色等） */
     useEffect(() => {
@@ -81,8 +95,11 @@ export function ThemeProvider({children}: { children: ReactNode }) {
         root.style.colorScheme = resolved;
     }, [activeConfig, resolved, presetId]);
 
-    const value = useMemo<ThemeContextValue>(
-        () => ({
+    const value = useMemo<ThemeContextValue>(() => {
+        const skins = allSkins(customSkins);
+        const skin = getThemeSkin(presetId, customSkins);
+
+        return {
             config: activeConfig,
             mode,
             scheme,
@@ -90,9 +107,24 @@ export function ThemeProvider({children}: { children: ReactNode }) {
             toggleScheme: () => setThemeMode(scheme === 'dark' ? 'light' : 'dark'),
             presetId,
             setPreset: setThemePreset,
-        }),
-        [activeConfig, mode, scheme, setThemeMode, setThemePreset, presetId],
-    );
+            skins,
+            customSkins,
+            skin,
+            installSkin,
+            removeSkin,
+            exportSkin: () => serializeSkin(skin),
+        };
+    }, [
+        activeConfig,
+        mode,
+        scheme,
+        setThemeMode,
+        setThemePreset,
+        presetId,
+        customSkins,
+        installSkin,
+        removeSkin,
+    ]);
 
     return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
@@ -105,13 +137,15 @@ export function useTheme(): ThemeContextValue {
 
 /**
  * 首次渲染前同步注入主题变量，避免首屏闪烁。
- * 由 `main.tsx` 在挂载 React 之前调用（会读取已持久化的主题选择）。
+ * 由 `main.tsx` 在挂载 React 之前调用（会读取已持久化的主题与皮肤）。
  */
 export function applyInitialTheme(): void {
-    const {themeMode, themePresetId} = readPersistedUi();
+    const {themeMode, themePresetId, customSkins} = readPersistedUi();
     const mode = themeMode ?? themeConfig.mode;
     const scheme = resolveScheme(mode);
-    applyCssVars(buildCssVars(resolveTheme(themeConfig, themePresetId ?? ''), scheme));
+    applyCssVars(
+        buildCssVars(resolveTheme(themeConfig, themePresetId ?? '', customSkins ?? []), scheme),
+    );
     const root = document.documentElement;
     root.dataset.theme = scheme;
     root.dataset.preset = themePresetId ?? '';

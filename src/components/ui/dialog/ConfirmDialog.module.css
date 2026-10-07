@@ -1,0 +1,119 @@
+/* ==================== ConfirmDialog.module.css ==================== */
+/* 全部尺寸 / 颜色 / 圆角 / 动效均来自全局设计令牌（由主题系统注入到 <html>）。
+   唯一的字面量是遮罩色，见 .scrim 注释。 */
+
+/* ---------------- 遮罩 ---------------- */
+/* 主题里还没有「模态遮罩」专用 token（--bg-video-scrim 是动态背景用的场景遮罩，
+   语义与不透明度都不匹配），因此这里按约定使用字面 rgba。 */
+
+.scrim {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+    padding: var(--space-6);
+    /* 无遮罩 token，唯一允许的字面色 */
+    background: rgba(0, 0, 0, 0.45);
+    animation: confirmScrimIn var(--motion-fast);
+}
+
+/* ---------------- 对话框 ---------------- */
+
+.dialog {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    width: 100%;
+    max-width: var(--menu-width);
+    padding: var(--space-5);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl);
+    color: var(--text-primary);
+    animation: confirmDialogIn var(--motion-base);
+}
+
+/* ---------------- 头部 ---------------- */
+
+.head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+/* danger 语气：危险色强调环 + 危险色图标 */
+.dialog.isDanger {
+    box-shadow: var(--shadow-xl), inset 0 0 0 1px var(--danger);
+}
+
+.icon {
+    display: flex;
+    flex: none;
+    color: var(--danger);
+}
+
+.title {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    color: var(--text-primary);
+}
+
+/* ---------------- 描述 ---------------- */
+
+.desc {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-normal);
+    line-height: var(--line-height-relaxed);
+    color: var(--text-secondary);
+}
+
+/* ---------------- 操作区 ---------------- */
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}
+
+/* danger 主按钮：复用 Button 的 danger 变体（透明底 + 红字），
+   在此补足「危险主操作」应有的实心红底。 */
+
+.confirmDanger {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: var(--brand-contrast);
+}
+
+.confirmDanger:hover:not(:disabled) {
+    background: var(--danger);
+    border-color: var(--danger);
+    opacity: 0.88;
+}
+
+/* ---------------- 动效 ---------------- */
+
+@keyframes confirmScrimIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes confirmDialogIn {
+    from {
+        opacity: 0;
+        transform: scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}

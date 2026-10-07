@@ -3,6 +3,7 @@ import {useTranslation} from 'react-i18next';
 import {BadgeCell, DataTable, TextCell, type ColumnDef} from '../../../components/ui/data-table';
 import {actionsColumn, indexColumn} from '../../../config/table.config';
 import {usePlayRow, useTrackActions} from '../../../hooks/useTrackActions';
+import {useConfirm} from '../../../hooks/useConfirm';
 import {useActions, useDownloadState} from '../../../store';
 import type {DownloadTask} from '../../../types';
 import {ClearFinishedButton} from '../components/ClearFinishedButton';
@@ -14,6 +15,7 @@ export default function DownloadedView() {
     const {load, remove} = useActions().download;
     const buildActions = useTrackActions();
     const playRow = usePlayRow();
+    const confirm = useConfirm();
 
     useEffect(() => {
         void load();
@@ -70,7 +72,14 @@ export default function DownloadedView() {
                         key: 'remove',
                         label: t('common.delete'),
                         tone: 'danger',
-                        onClick: () => remove(task.id),
+                        onClick: () =>
+                            confirm({
+                                titleKey: 'confirm.removeDownloadTitle',
+                                descKey: 'confirm.removeDownloadDesc',
+                                descParams: {name: task.track.title},
+                                tone: 'danger',
+                                onConfirm: () => remove(task.id),
+                            }),
                     },
                 ],
             }),

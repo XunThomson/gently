@@ -36,6 +36,8 @@
 8. **两个主题入口职责不可合并**：灯泡 = 明暗背景，调色板 = 主题市场；设置只在右上角提供，不进侧边栏。
 9. **歌曲信息只在播放条展示**：歌词页（`/now-playing`）只保留封面 + 歌词；收藏 / 下载 / 加入歌单等功能性操作放播放条的「功能抽屉」。
 10. **进度条是播放条顶边的 SeekBar**：默认不显示焦点，悬浮 / 拖拽才显示；焦点皮肤由 `playerBar.progressThumbSkin` 配置。
+11. **危险操作必须走 `useConfirm()`**（删除 / 清空 / 卸载类），不要直接调用 action；弹窗由 App 里的 `ConfirmHost` 统一渲染。
+12. **后端接口只写在 `src/api/`（契约）与 `docs/contracts/`（规范）**，禁止在 UI/store 里直连 HTTP；替换点只有 `src/services/**`。
 
 ## 4. 每类操作的完成标准
 
@@ -52,7 +54,7 @@
 
 ```bash
 pnpm typecheck   # tsc --noEmit（只读）
-pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染 + i18n/CSS token 守卫（113 项）
+pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染 + i18n/CSS token 守卫（172 项）
 pnpm dev         # 开发
 pnpm build       # tsc && vite build
 pnpm tauri dev   # 桌面端

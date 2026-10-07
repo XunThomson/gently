@@ -83,6 +83,50 @@
     "resolving": "正在匹配音源…",
     "none": "该歌曲在所有已启用音源中均不可播放"
   },
+  "recommend": {
+    "tracksTitle": "为你推荐",
+    "tracksSubtitle": "根据你的口味排序",
+    "albumsTitle": "推荐专辑",
+    "albumsSubtitle": "整张听下来",
+    "playlistsTitle": "推荐歌单",
+    "playlistsSubtitle": "按风格挑选",
+    "reasonArtist": "因为你听过 {{name}}",
+    "reasonTag": "因为你喜欢「{{name}}」",
+    "reasonTrending": "近期热门",
+    "reasonSimilar": "与「{{name}}」相似",
+    "profile": "口味画像",
+    "profileEmpty": "多听几首，这里会出现你的口味画像",
+    "trackCount": "{{count}} 首"
+  },
+  "confirm": {
+    "clearQueueTitle": "清空播放列表",
+    "clearQueueDesc": "将清空当前播放列表，只保留正在播放的曲目。",
+    "clearRecentTitle": "清空播放记录",
+    "clearRecentDesc": "将删除全部最近播放记录，此操作不可撤销。",
+    "clearDownloadsTitle": "清理已完成任务",
+    "clearDownloadsDesc": "将移除全部已完成的下载记录。",
+    "deletePlaylistTitle": "删除歌单",
+    "deletePlaylistDesc": "「{{name}}」将被删除，此操作不可撤销。",
+    "uninstallPluginTitle": "卸载音源插件",
+    "uninstallPluginDesc": "「{{name}}」将被卸载，其数据不再参与聚合与回退。",
+    "removeLocalTitle": "移出本地音乐",
+    "removeLocalDesc": "将从本地曲库中移除「{{name}}」，不会删除磁盘文件。",
+    "removeDownloadTitle": "移除下载任务",
+    "removeDownloadDesc": "将移除「{{name}}」的下载记录。",
+    "deleteSkinTitle": "删除皮肤",
+    "deleteSkinDesc": "「{{name}}」将被移除。"
+  },
+  "skin": {
+    "import": "导入皮肤",
+    "export": "导出当前皮肤",
+    "importFailed": "皮肤文件无效：{{reason}}",
+    "imported": "已导入皮肤「{{name}}」",
+    "removed": "已删除皮肤「{{name}}」",
+    "remove": "删除皮肤",
+    "searchPlaceholder": "搜索皮肤",
+    "tagAll": "全部",
+    "customTag": "自定义"
+  },
   "player": {
     "notPlaying": "未在播放",
     "pickSong": "选择一首歌曲开始",
@@ -248,6 +292,8 @@
       "sourceFilterDrawer": "列表抽屉",
       "preferredSource": "优先音源",
       "preferredQuality": "优先音质",
+      "confirmDestructive": "危险操作前二次确认",
+      "confirmHint": "关闭后，删除 / 清空 / 卸载类操作会立即执行",
       "about": "关于",
       "version": "版本 {{version}}"
     }

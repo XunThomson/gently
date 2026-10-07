@@ -43,6 +43,10 @@ export interface Track {
     source: string;
     /** 封面渐变（无封面图时的占位） */
     gradient: string;
+    /** 风格标签：个性化推荐的基础（mock 由稳定哈希生成） */
+    tags: string[];
+    /** 所属专辑 id，用于「推荐专辑」与「因为你听过」的关联 */
+    albumId?: string;
 }
 
 /** 正在播放：在 Track 基础上记录播放序号，用于重置进度条 */
@@ -148,6 +152,76 @@ export interface ResolvedSource {
     url: string;
     source: string;
     quality: TrackQuality;
+}
+
+/* ============================== 推荐：专辑 / 歌单 / 画像 ============================== */
+
+/** 专辑 */
+export interface Album {
+    id: string;
+    title: string;
+    artist: string;
+    /** 封面渐变（占位） */
+    cover: string;
+    year: number;
+    /** 风格标签 */
+    tags: string[];
+    source: string;
+    tracks: Track[];
+}
+
+/** 编辑精选歌单（与用户自建 Playlist 区分） */
+export interface CuratedPlaylist {
+    id: string;
+    title: string;
+    description: string;
+    cover: string;
+    tags: string[];
+    source: string;
+    tracks: Track[];
+}
+
+/** 推荐理由类型 */
+export type RecommendationKind = 'tag' | 'artist' | 'trending' | 'similar';
+
+/** 推荐理由：让「为什么推荐」可解释 */
+export interface RecommendationReason {
+    kind: RecommendationKind;
+    /** 命中的标签 / 歌手 / 参照对象 */
+    value: string;
+    /** 匹配度 0~1 */
+    score: number;
+}
+
+export interface RecommendedTrack extends Track {
+    reason: RecommendationReason;
+}
+
+export interface RecommendedAlbum extends Album {
+    reason: RecommendationReason;
+}
+
+export interface RecommendedPlaylist extends CuratedPlaylist {
+    reason: RecommendationReason;
+}
+
+/** 用户口味画像：由播放记录与收藏聚合而来 */
+export interface TasteProfile {
+    /** 标签 → 权重 */
+    tags: Record<string, number>;
+    /** 歌手 → 权重 */
+    artists: Record<string, number>;
+    /** 参与统计的样本量（播放 + 收藏） */
+    sampleSize: number;
+    updatedAt: number;
+}
+
+/** 推荐结果聚合（推荐页一次拿到的全部区块） */
+export interface RecommendationBundle {
+    profile: TasteProfile;
+    tracks: RecommendedTrack[];
+    albums: RecommendedAlbum[];
+    playlists: RecommendedPlaylist[];
 }
 
 /* ============================== 歌词 ============================== */

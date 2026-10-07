@@ -1,11 +1,13 @@
 import {createStore, shallowEqual, useStore, type StoreApi} from './createStore';
 import {readPersistedUi, writePersistedUi} from './persist';
 import {createCollectionSlice} from './slices/collection.slice';
+import {createDialogSlice} from './slices/dialog.slice';
 import {createDownloadSlice} from './slices/download.slice';
 import {createLibrarySlice} from './slices/library.slice';
 import {createPlayerSlice} from './slices/player.slice';
 import {createPluginSlice} from './slices/plugin.slice';
 import {createRankingSlice} from './slices/ranking.slice';
+import {createRecommendSlice} from './slices/recommend.slice';
 import {createUiSlice} from './slices/ui.slice';
 import type {RootActions, RootState, StoreCtx} from './types';
 
@@ -37,6 +39,8 @@ const download = createDownloadSlice(ctx);
 const plugin = createPluginSlice(ctx);
 const library = createLibrarySlice(ctx);
 const collection = createCollectionSlice(ctx);
+const dialog = createDialogSlice(ctx);
+const recommend = createRecommendSlice(ctx);
 
 store = createStore<RootState>({
     ui: ui.state,
@@ -46,6 +50,8 @@ store = createStore<RootState>({
     plugin: plugin.state,
     library: library.state,
     collection: collection.state,
+    dialog: dialog.state,
+    recommend: recommend.state,
 });
 
 rootActions = {
@@ -56,13 +62,24 @@ rootActions = {
     plugin: plugin.actions,
     library: library.actions,
     collection: collection.actions,
+    dialog: dialog.actions,
+    recommend: recommend.actions,
 };
 
 /* 偏好持久化：只在真正变化时写入，避免每秒进度更新触发 localStorage 写 */
 let lastPersistedKey = '';
 store.subscribe(() => {
-    const {themeMode, themePresetId, sourceDisplay, sourceFilterStyle, preferredSource, preferredQuality} =
-        store.getState().ui;
+    const {
+        themeMode,
+        themePresetId,
+        sourceDisplay,
+        sourceFilterStyle,
+        preferredSource,
+        preferredQuality,
+        confirmDestructive,
+        customSkins,
+    } = store.getState().ui;
+
     const key = [
         themeMode,
         themePresetId,
@@ -70,9 +87,12 @@ store.subscribe(() => {
         sourceFilterStyle,
         preferredSource ?? '',
         preferredQuality,
+        String(confirmDestructive),
+        customSkins.map((skin) => `${skin.id}:${skin.name}`).join(','),
     ].join('|');
     if (key === lastPersistedKey) return;
     lastPersistedKey = key;
+
     writePersistedUi({
         themeMode,
         themePresetId,
@@ -80,6 +100,8 @@ store.subscribe(() => {
         sourceFilterStyle,
         preferredSource,
         preferredQuality,
+        confirmDestructive,
+        customSkins,
     });
 });
 
@@ -103,5 +125,7 @@ export const useDownloadState = () => useStore(store, (s) => s.download);
 export const usePluginState = () => useStore(store, (s) => s.plugin);
 export const useLibraryState = () => useStore(store, (s) => s.library);
 export const useCollectionState = () => useStore(store, (s) => s.collection);
+export const useDialogState = () => useStore(store, (s) => s.dialog);
+export const useRecommendState = () => useStore(store, (s) => s.recommend);
 
-export type {RootState, RootActions} from './types';
+export type {RootState, RootActions, ConfirmRequest} from './types';

@@ -2,6 +2,7 @@ import {useEffect} from "react";
 import {Outlet} from "react-router";
 import {LMRLayout, TMBLayout} from "./components/layout";
 import {BackgroundVideo} from "./components/shell/background";
+import {ConfirmHost} from "./components/ui/dialog";
 import {TitleBar} from "./components/shell/title-bar";
 import {Sidebar} from "./components/shell/sidebar";
 import {PlayerBar} from "./components/shell/player-bar";
@@ -61,6 +62,9 @@ export default function App() {
                     bottom={<PlayerBar/>}
                 />
             </div>
+
+            {/* 全局二次确认（危险操作）：由 useConfirm() 触发 */}
+            <ConfirmHost/>
         </div>
     );
 }
