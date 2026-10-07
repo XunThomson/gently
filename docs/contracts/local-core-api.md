@@ -85,7 +85,7 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 | `plugin.reload{id}` | 重建运行时（改配置后） |
 | `plugin.checkUpdate{id}` | 与来源比对版本/校验和（不自动更新） |
 | `plugin.config.get{id}` / `plugin.config.put{id, values, revision}` | 插件配置，revision 冲突 → `common.conflict` |
-| `plugin.credentials.set{id, key, value}` / `.clear{id, key?}` / `.status{id}` | OS keyring；`status` **永不返回值** |
+| `plugin.credentials.set{id, key, value}` · `plugin.credentials.clear{id, key?}` · `plugin.credentials.status{id}` | OS keyring；`status` **永不返回值** |
 
 ### plugin：订阅与仓库（5）
 | 命令 | 说明 |
@@ -108,8 +108,9 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 | `catalog.recommend{source}` | 源侧推荐 |
 | `catalog.lyrics{ref, withTranslation?}` | 歌词；无词返回 `data: null` |
 
-> 说明：原 v0.1 的 `catalog.charts{chart,period,date}` 被 `topLists`/`topList` 取代——
-> 真实源提供的是任意分类树，v0.1 那套固定枚举无法映射。**排行榜页需要按源的分类树渲染**（前端改动）。
+> 说明：v0.1 的 charts 命令（固定 hot/new/rise 枚举）已被 `topLists` / `topList` 取代——
+> 真实源提供的是任意分类树，固定枚举映射不了。**排行榜页需要按源的分类树渲染**（前端改动）。
+> 变更明细见 §10。
 
 ### library（10）
 `library.favorites.list{limit?,cursor?}` · `library.favorites.set{ref, favorite}` ·

@@ -4,7 +4,7 @@ last_verified: 2026-10-07
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 950
-tldr: 第九轮：契约修订到 **v0.2**——插件 ABI 补齐（4 → 9 函数）、新增媒体传输本地流代理、订阅与 `repository.json` 分发、搜索改流式；`src/api/index.ts` 已同步，typecheck / smoke(172) 仍全绿。
+tldr: 第十轮：M0 骨架落地——Cargo workspace（core 不依赖 tauri）+ 单一命令分发入口 + 契约清单/错误码/信封 + rusqlite(WAL,迁移,FTS5 已验证) + `check:contract` 守卫；`cargo test` 22/22、启动实测通过，契约 v0.2 已同步。typecheck / smoke(172) 全绿。
 ---
 
 # STATE
@@ -77,6 +77,10 @@ tldr: 第九轮：契约修订到 **v0.2**——插件 ABI 补齐（4 → 9 函�
 |---|---|---|
 | 类型检查 | `pnpm typecheck` | 通过（契约 v0.1 → v0.2 重写后均为 0 错误） |
 | 冒烟测试 | `pnpm smoke` | 172/172 通过（v0.2 类型同步后复测） |
+| 核心单测 | `cargo test -p gently-core` | **22/22 通过**（信封形状、26 个错误码字符串、57 条命令都被分发认识、`reveal` 目录白名单、迁移幂等、**FTS5 可用**） |
+| 契约守卫 | `pnpm check:contract` | 文档 ↔ Rust 三处一致（57 命令 / 8 事件 / 26 错误码） |
+| Rust 构建 | `cargo build -p gently` | 通过（1m03s，复用既有依赖缓存；产物固定在 `src-tauri/target`） |
+| 启动实测 | `cargo run -p gently` | 迁移 0001 应用、WAL 生效、库落在 `%APPDATA%\com.xun.gently\gently.db` |
 | 残留引用 | 搜 `@gently/server` / `server/src` | 0（配置、锁文件、文档均已清理） |
 | 消费方影响 | 全仓搜 `src/api` 导入 | 0——契约是纯类型，UI/store/services 未被波及 |
 

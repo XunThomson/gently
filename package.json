@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/run-smoke.mjs",
+    "check:contract": "node scripts/check-commands.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

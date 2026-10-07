@@ -1,0 +1,7 @@
+# 把构建产物固定在 src-tauri/target：
+#   1. 那里已有一份完整的 Tauri 依赖缓存（约 5 GB），换目录会导致全量重编；
+#   2. 根目录保持干净（不会有 target/ 大目录）。
+# 该目录已被 src-tauri/.gitignore 的 `/target/` 忽略。
+
+[build]
+target-dir = "src-tauri/target"

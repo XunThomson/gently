@@ -1,0 +1,25 @@
+# gently Rust 工作区
+#
+# `core` 是不依赖 tauri 的纯逻辑库（可 `cargo test` 快速迭代），
+# `src-tauri` 只做薄适配：把 core 的能力暴露为 Tauri 命令与事件。
+# 形态与边界见 docs/ROADMAP.md、docs/adr/0002-backend-language.md。
+
+[workspace]
+members = ["core", "src-tauri"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "gently 桌面音乐播放器"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+# bundled：把 SQLite 源码编进二进制，用户机器与 CI 都不需要预装 SQLite（ADR-0004）
+# 版本取本机 registry 已缓存的 0.32.1（首次构建无需下载 SQLite 源码）；升级版本是独立动作。
+rusqlite = { version = "0.32.1", features = ["bundled"] }

@@ -71,24 +71,54 @@ gently/
 工作量级：**M0 4–6 / M1 10–14 / M2 7–10 / M3 5–8 / M4 5–7 / M5 3–5（合计约 34–50 人日）**；
 M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + 作者自测 CLI）与本地流代理。
 
-### M0 骨架与契约（S，约 4–6 人日）
+### M0 骨架与契约（S，约 4–6 人日）——**进行中（Rust 侧已完成，前端诊断页待做）**
 
-- **契约 v0.2 已定稿**（`docs/contracts/local-core-api.md`：约 **57 条命令 + 8 类事件**、
-  统一错误码表；前端类型同步在 `src/api/index.ts`），本里程碑落地其骨架。
-- 建 Cargo workspace，拆 `core` 与 `src-tauri`（`core` 不依赖 tauri，便于单测）。
-- `core/contract`：`CoreResult<T>` / `CoreError` / 错误码枚举（serde 重命名对齐契约字符串，
-  含 `plugin.invalid_source` / `subscription.*` / `media.*`）、`traceId`（接入 `tracing` span）、
-  数据目录解析。
-- `core/store`：rusqlite 初始化（WAL、外键、`user_version` 迁移框架），空 schema 起步。
-- Tauri 命令层：`system.status` / `system.paths` / `system.reveal` **真实实现**；
-  其余命令按 v0.2 注册为骨架（含 `plugin.subscriptions.*` / `plugin.catalog.list` /
-  `catalog.searchCancel` / `catalog.topLists` / `catalog.topList`），返回 `common.not_implemented`。
-- `specta`/`tauri-specta` 生成 `src/api/generated.ts`；`scripts/check-commands.mjs`
-  从契约文档表格抽取命令名，与 Rust 注册表比对（不一致直接失败，纳入 CI）。
-- **退出标准**：`pnpm tauri dev` 启动；设置页显示 `system.status` 输出；
-  `check-commands` 通过（57 条命令名一致）；未实现命令返回 `common.not_implemented` 而非 reject。
+#### 已完成（本里程碑 Rust 侧）
+- **Cargo workspace**：`core`（不依赖 tauri）+ `src-tauri`（薄适配层）；
+  `.cargo/config.toml` 把产物固定在 `src-tauri/target`，复用已有 5 GB 依赖缓存（不重编）。
+- `core/contract`：`CoreResult` 信封（手写 Serialize，输出布尔判别字段 `ok`）、`CoreError`
+  + **26 个错误码**（字符串与文档/TS 三处一致，测试逐个锁定）、`COMMAND_NAMES`（**57 条**）、
+  system 域 DTO。
+- `core/commands`：**命令分发**（见下方偏差说明）；`system.status` / `system.paths` /
+  `system.reveal` 真实实现（含 `reveal` 的**受管目录白名单**校验）；其余 54 条返回
+  `common.not_implemented`；未登记命令返回 `common.not_found`（两者语义必须可区分）。
+- `core/store`：rusqlite（bundled，**版本用本机 registry 已缓存的 0.32.1**）+
+  WAL/foreign_keys/busy_timeout + `user_version` 迁移框架 + `meta` 表（迁移 0001）。
+- `core/events`：`EventSink` 抽象（Tauri 实现转发到前端）+ 8 个事件名常量。
+- `src-tauri`：启动时建目录、开库（失败降级不阻塞启动）、初始化 tracing；
+  只注册**一个** Tauri 命令 `core_invoke`。
+- `scripts/check-commands.mjs`（`pnpm check:contract`）：比对**文档 ↔ Rust 清单**三处
+  （57 命令 / 8 事件 / 26 错误码），已接入脚本命令。
+- **验证**：`cargo test -p gently-core` **22 项全绿**（含 FTS5 可用性、目录白名单、
+  信封形状、错误码字符串、每条契约命令都被分发认识）；`pnpm check:contract` 三处一致；
+  `cargo build -p gently` 通过；**实跑 `cargo run -p gently`**：迁移 0001 应用、WAL 生效、
+  数据库落在 `%APPDATA%\com.xun.gently\gently.db`。
+
+#### 两处相对计划的偏差（已决策，非遗漏）
+1. **用单一分发入口替代 57 个 `#[tauri::command]`**：Tauri 的命令名取自 Rust 函数名，
+   **无法表达 `plugin.import` 这种带点的名字**，而契约名是跨语言 ABI。因此只注册 `core_invoke`，
+   参数 `{command, params}`，由 core 按契约名 `match` 路由。
+   副作用（正面）：契约名原样保留、无需命名转换规则、命令名清单只有一处权威（core），
+   守卫脚本只需比对文档 ↔ core；`spawn_blocking` 让同步 SQLite/文件操作不占用异步运行时。
+   代价：失去 Tauri 逐命令的参数反序列化，改由 core 统一解析并把 serde 原因放进 `details`（更贴合错误码哲学）。
+2. **`specta`/`tauri-specta` 类型生成推迟到 M1**：M0 还没有真实 DTO（只有 system 域三个），
+   现在引入 codegen 只是增加版本/API 风险而不产生防漂移收益；命令名的一致性已由
+   `check:contract` 守卫。**M1 出现第一批真实 DTO 时接入**，届时 `src/api/index.ts`
+   退化为生成产物。ROADMAP 的 M1 条目已承接此事。
+
+#### 待做（M0 收尾，前端）
+- `src/services/core.bridge.ts`：统一 `invoke('core_invoke', {command, params})`，
+  把信封转成永不抛异常的返回值；无 Tauri（浏览器 `pnpm dev`）时 `available: false`。
+- 设置页「诊断」区块显示 `system.status` / `system.paths`，并支持 `system.reveal` 打开目录
+  （样式走 theme token，文案 zh+en）。
+- **退出标准**：`pnpm tauri dev` 启动并在设置页看到真实状态；浏览器 mock 模式仍可运行；
+  `pnpm typecheck` / `pnpm smoke` 全绿。
 
 ### M1 插件宿主与分发（L，约 10–14 人日；全计划最大不确定项）
+
+- **承接 M0 推迟项**：引入 `specta`/`tauri-specta`，在第一批真实 DTO（插件清单、搜索结果）
+  落地时生成 `src/api/generated.ts`，`src/api/index.ts` 退化为生成产物；
+  命令名一致性仍由 `pnpm check:contract` 守卫。
 
 - 包形态：**单文件 `.js` + 文件头注释元数据为主体**（前 60 行解析 `@name` / `@id` / `@version` /
   `@author` / `@url` / `@description` / `@tags` / `@qualities` / `@hosts` / `@credentials` /

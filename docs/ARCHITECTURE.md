@@ -358,7 +358,14 @@ OpenAPI-over-HTTP 代码生成、Postgres/Redis/BullMQ/Docker。**新增**的必
 （`system.status` / 打开日志目录——无遥测意味着问题只能靠本地日志定位）。
 
 未来单一来源：Rust 核心落地后用 `specta`/`tauri-specta` 从 Rust 结构体生成 `src/api` 的类型，
-该文件退化为生成产物。在此之前它是权威定义。
+该文件退化为生成产物（M1 出现第一批真实 DTO 时接入）。在此之前它是权威定义。
+
+**命令入口只有一个**：Tauri 的命令名来自 Rust 函数名，无法表达 `plugin.import` 这种点号名字，
+而契约名是跨语言 ABI，因此只注册 `core_invoke`（参数 `{command, params}`），
+由 `core/src/commands.rs` 按契约名 `match` 路由。已登记未实现 → `common.not_implemented`；
+名字未登记 → `common.not_found`（后者是 bug，测试会遍历契约清单确保不出现）。
+命令名清单的权威在 `core/src/contract/commands.rs`，由 `pnpm check:contract`
+（`scripts/check-commands.mjs`）与文档比对：命令、事件、错误码三处任一漏改都会失败。
 
 ## 12. 与 Tauri 的边界
 
