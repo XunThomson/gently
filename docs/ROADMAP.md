@@ -146,12 +146,23 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 - 中立性落地：清理了模拟源里两个**伪造的第三方 homepage**，模拟源改名标注「不访问网络」
   （ADR-0005）。
 
+#### M1a-2 安装与状态（已完成）
+- 迁移 **0002**：`plugin_state`（**清单整体存 JSON** + 可查询列 enabled/priority/origin/sha256，
+  清单格式演进不必每次写迁移）与 `plugin_config`（乐观并发 revision，冲突 → `common.conflict`）。
+- `plugin.import`：**同意是硬门槛**（`consent` 必须为字面量 `true`，否则 `common.invalid_argument`）
+  → **暂存 → 从暂存副本重新校验 → 原子 rename**；覆盖安装先把旧版本移到 `.trash`，
+  失败则把旧版本放回；单文件形态归一化为 `plugins/<id>/plugin.js`，目录包整体复制
+  （跳过符号链接、累计体积上限 8 MiB）；入口文件 sha256 入库；成功后清理 `.staging`/`.trash` 空目录。
+- `plugin.list`（按 priority → name）/ `plugin.remove`（`deleteFiles` 缺省 true）/
+  `plugin.setEnabled` / `plugin.setPriority`（0~9999，越界即拒并给 `details`）。
+- 数据库不可用时**明确失败**（`library.io_error` + 原因），不假装装上。
+- 过程中测试抓到的真 bug：`RemoveParams` 等结构体漏了 `rename_all = "camelCase"`，
+  导致前端传 `deleteFiles: false` 被静默忽略 → 误删文件。
+
 #### M1 剩余
-1. **M1a-2 安装**：`plugin.import`（copy 落盘到 `plugins/<id>/` + 记录来源与 sha256）+
-   迁移 0002（`plugin_state` / `plugin_config`）→ `plugin.list` / `remove` / `setEnabled` / `setPriority`；
-2. **M1b 运行时**：`rquickjs` 宿主 + 能力白名单（受限 `fetch` 仅 `@hosts`）+ 超时/内存上限 +
+1. **M1b 运行时**：`rquickjs` 宿主 + 能力白名单（受限 `fetch` 仅 `@hosts`）+ 超时/内存上限 +
    错误映射 + 参考插件（移植现有模拟源）+ **故意越权**的测试插件；
-3. **M1c 订阅分发**：`plugin.subscriptions.*` + `plugin.catalog.list` + 一键安装 +
+2. **M1c 订阅分发**：`plugin.subscriptions.*` + `plugin.catalog.list` + 一键安装 +
    从 `plugins/*.js` 生成 `repository.json` 的作者工具 + **导入界面的第三方免责声明**
    （无默认订阅列表，ADR-0005）。
 - **承接 M0 推迟项**：引入 `specta`/`tauri-specta`，在第一批真实 DTO（插件清单已是第一批）

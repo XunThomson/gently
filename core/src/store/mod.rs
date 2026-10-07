@@ -10,6 +10,7 @@
 //! 这样可以直接用 `?`；信封只在命令边界生成。
 
 mod migrations;
+mod plugins;
 
 pub use migrations::latest_version;
 
@@ -113,7 +114,8 @@ impl Store {
             .unwrap_or(0)
     }
 
-    fn lock(&self) -> Fallible<MutexGuard<'_, Connection>> {
+    /// 取连接（子模块 `plugins` 复用同一条连接）。
+    pub(crate) fn lock(&self) -> Fallible<MutexGuard<'_, Connection>> {
         self.conn
             .lock()
             .map_err(|_| CoreError::internal("数据库连接锁已中毒（上一次写入 panic）"))
@@ -132,7 +134,8 @@ fn apply_pragmas(conn: &Connection) -> Fallible<()> {
     Ok(())
 }
 
-fn now_millis() -> i64 {
+/// 当前毫秒时间戳（`plugins` 子模块也会用到）。
+pub(crate) fn now_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)

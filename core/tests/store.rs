@@ -26,12 +26,12 @@ fn migrates_to_latest_and_sets_wal() {
 
     let store = Store::open(&paths.db).expect("打开数据库");
     assert_eq!(store.schema_version(), latest_version(), "应迁移到最新版本");
-    assert_eq!(latest_version(), 1, "M0 只有 0001");
+    assert_eq!(latest_version(), 2, "M0 的 meta 表 + M1a 的 plugin_state/plugin_config");
 
     let info = store.info().expect("读取信息");
     assert_eq!(info.journal_mode.to_lowercase(), "wal", "WAL 未生效");
     assert!(info.foreign_keys, "外键约束未开启");
-    assert_eq!(info.schema_version, 1);
+    assert_eq!(info.schema_version, latest_version());
 
     // 未落地的业务表计数应为 0 而不是报错（诊断页需要这个容忍度）
     assert_eq!(store.count_or_zero("favorites"), 0);
@@ -53,7 +53,7 @@ fn reopening_is_idempotent() {
 
     // 二次打开：迁移不应重复执行，数据应保留
     let store = Store::open(&paths.db).expect("再次打开");
-    assert_eq!(store.schema_version(), 1);
+    assert_eq!(store.schema_version(), latest_version());
     assert_eq!(store.meta_get("last_run").unwrap().as_deref(), Some("first"));
 
     // upsert 语义：同一 key 覆盖而不是报错
@@ -68,7 +68,7 @@ fn reopening_is_idempotent() {
 #[test]
 fn in_memory_store_works_for_fast_tests() {
     let store = Store::open_in_memory().expect("内存库");
-    assert_eq!(store.schema_version(), 1);
+    assert_eq!(store.schema_version(), latest_version());
     store.meta_set("k", "v").unwrap();
     assert_eq!(store.meta_get("k").unwrap().as_deref(), Some("v"));
 }

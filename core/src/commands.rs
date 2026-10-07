@@ -26,7 +26,7 @@ use crate::contract::{
 };
 use crate::events::{EventSink, NullEventSink};
 use crate::paths::AppPaths;
-use crate::plugin::{parse_manifest_json, parse_source, MAX_SOURCE_BYTES};
+use crate::plugin::{parse_manifest_json, parse_source, InstallSource, InstalledPlugin, MAX_SOURCE_BYTES};
 use crate::store::Store;
 
 /// 处理器运行时上下文（由 `src-tauri` 在启动时构造一次）。
@@ -89,6 +89,11 @@ pub fn dispatch(
         "system.paths" => to_json(ctx.paths.to_dto()),
         "system.reveal" => reveal(ctx, params),
         "plugin.preview" => plugin_preview(ctx, params),
+        "plugin.import" => plugin_import(ctx, params),
+        "plugin.list" => plugin_list(ctx),
+        "plugin.remove" => plugin_remove(ctx, params),
+        "plugin.setEnabled" => plugin_set_enabled(ctx, params),
+        "plugin.setPriority" => plugin_set_priority(ctx, params),
         // 其余命令：契约已登记，实现在后续里程碑接入
         other => Err(CoreError::not_implemented(other)),
     };
@@ -101,7 +106,17 @@ pub fn dispatch(
 }
 
 /// M1 已实现的命令（诊断用；插件域随里程碑逐步点亮）。
-const IMPLEMENTED: &[&str] = &["system.status", "system.paths", "system.reveal", "plugin.preview"];
+const IMPLEMENTED: &[&str] = &[
+    "system.status",
+    "system.paths",
+    "system.reveal",
+    "plugin.preview",
+    "plugin.import",
+    "plugin.list",
+    "plugin.remove",
+    "plugin.setEnabled",
+    "plugin.setPriority",
+];
 
 /// 已实现命令数。
 pub fn implemented_count() -> usize {
@@ -295,6 +310,158 @@ fn not_implemented_source(kind: &str, origin: &str) -> CoreError {
             "supported": ["paste", "file", "dir"],
         }),
     )
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ImportParams {
+    from: ImportSource,
+    /// 必须是字面量 `true`：安装是不可逆的落盘动作，必须由用户显式同意。
+    #[serde(default)]
+    consent: bool,
+}
+
+/// `plugin.import`：**用户同意后**才落盘。成功返回安装后的完整摘要。
+fn plugin_import(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: ImportParams = parse_params(params)?;
+    if !params.consent {
+        return Err(CoreError::invalid_argument(
+            "安装需要用户显式同意（consent 必须为 true）；请先调用 plugin.preview 展示权限",
+        ));
+    }
+    let store = require_store(ctx)?;
+
+    let source = match &params.from {
+        ImportSource::Paste { content } => InstallSource::Paste(content),
+        ImportSource::File { path } => InstallSource::File(std::path::Path::new(path)),
+        ImportSource::Dir { path } => InstallSource::Dir(std::path::Path::new(path)),
+        ImportSource::Archive { path } => return Err(not_implemented_source("archive", path)),
+        ImportSource::Url { url } => return Err(not_implemented_source("url", url)),
+        ImportSource::Catalog { subscription_id, file_name } => {
+            return Err(not_implemented_source("catalog", &format!("{subscription_id}/{file_name}")))
+        }
+    };
+
+    let outcome = crate::plugin::install(&ctx.paths, source)?;
+    store.upsert_plugin(&outcome.record)?;
+
+    // 事件：安装完成后前端刷新列表（M1c 会带进度阶段）
+    ctx.events.emit(
+        crate::events::events::PLUGIN_IMPORT_PROGRESS,
+        serde_json::json!({ "phase": "install", "percent": 100 }),
+    );
+
+    to_json(serde_json::json!({
+        "plugin": plugin_summary(&outcome.record),
+        "warnings": outcome.warnings,
+        "replaced": outcome.replaced,
+    }))
+}
+
+/// `plugin.list`：已安装插件（按优先级 → 名称排序，与回退顺序一致）。
+fn plugin_list(ctx: &CoreContext) -> Fallible<serde_json::Value> {
+    let store = require_store(ctx)?;
+    let records = store.list_plugins()?;
+    to_json(records.iter().map(plugin_summary).collect::<Vec<_>>())
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoveParams {
+    id: String,
+    /// 缺省 true：卸载默认连文件一起删（只删库记录会留下孤儿目录）
+    #[serde(default = "default_true")]
+    delete_files: bool,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnabledParams {
+    id: String,
+    enabled: bool,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PriorityParams {
+    id: String,
+    priority: i64,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn plugin_remove(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: RemoveParams = parse_params(params)?;
+    let store = require_store(ctx)?;
+
+    let removed = store.remove_plugin(&params.id)?;
+    if !removed {
+        return Err(CoreError::not_found(format!("插件未安装：{}", params.id)));
+    }
+    if params.delete_files {
+        crate::plugin::remove_files(&ctx.paths, &params.id)?;
+    }
+    Ok(serde_json::Value::Null)
+}
+
+fn plugin_set_enabled(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: EnabledParams = parse_params(params)?;
+    let store = require_store(ctx)?;
+
+    if !store.set_plugin_enabled(&params.id, params.enabled)? {
+        return Err(CoreError::not_found(format!("插件未安装：{}", params.id)));
+    }
+    let record = store
+        .get_plugin(&params.id)?
+        .ok_or_else(|| CoreError::not_found(format!("插件未安装：{}", params.id)))?;
+    to_json(plugin_summary(&record))
+}
+
+fn plugin_set_priority(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: PriorityParams = parse_params(params)?;
+    let store = require_store(ctx)?;
+
+    if !store.set_plugin_priority(&params.id, params.priority)? {
+        return Err(CoreError::not_found(format!("插件未安装：{}", params.id)));
+    }
+    Ok(serde_json::Value::Null)
+}
+
+/// 数据库不可用时明确失败：插件状态以库为准，没有库就不能假装装上了。
+fn require_store(ctx: &CoreContext) -> Fallible<&Store> {
+    ctx.store.as_ref().ok_or_else(|| {
+        CoreError::new(ErrorCode::LibraryIoError, "数据库不可用，无法读写插件状态").with_details(
+            serde_json::json!({ "reason": ctx.store_error.clone().unwrap_or_default() }),
+        )
+    })
+}
+
+/// 插件摘要：契约里的 `PluginSummary`（前端列表与同意界面都用它）。
+fn plugin_summary(record: &InstalledPlugin) -> serde_json::Value {
+    let manifest = &record.manifest;
+    let origin = match record.origin_kind.as_str() {
+        "url" => serde_json::json!({ "kind": "url", "url": record.origin_value }),
+        "catalog" => serde_json::json!({ "kind": "catalog", "subscriptionId": record.origin_value }),
+        "paste" => serde_json::json!({ "kind": "paste" }),
+        other => serde_json::json!({ "kind": other, "path": record.origin_value }),
+    };
+
+    serde_json::json!({
+        "id": manifest.id,
+        "name": manifest.name,
+        "version": manifest.version,
+        "author": manifest.author,
+        "description": manifest.description,
+        "homepage": manifest.homepage,
+        // 我们不内置任何插件（ADR-0005），因此这里恒为 false
+        "builtin": false,
+        "enabled": record.enabled,
+        "priority": record.priority,
+        "manifest": manifest,
+        "origin": origin,
+        "sha256": record.sha256,
+    })
 }
 
 // ---------------------------------------------------------------- 工具

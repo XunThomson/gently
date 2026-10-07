@@ -11,10 +11,10 @@ pub struct Migration {
 }
 
 /// 迁移列表：**只追加，不修改历史条目**（已发布的迁移改了会让老库对不上）。
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    name: "0001_init",
-    sql: include_str!("migrations/0001_init.sql"),
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration { name: "0001_init", sql: include_str!("migrations/0001_init.sql") },
+    Migration { name: "0002_plugin_state", sql: include_str!("migrations/0002_plugin_state.sql") },
+];
 
 /// 顺序应用未执行的迁移，返回最终的 `user_version`。
 pub fn migrate(conn: &mut Connection) -> rusqlite::Result<i64> {

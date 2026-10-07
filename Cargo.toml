@@ -23,3 +23,5 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 # bundled：把 SQLite 源码编进二进制，用户机器与 CI 都不需要预装 SQLite（ADR-0004）
 # 版本取本机 registry 已缓存的 0.32.1（首次构建无需下载 SQLite 源码）；升级版本是独立动作。
 rusqlite = { version = "0.32.1", features = ["bundled"] }
+# 插件来源校验和（更新前后比对，不用于安全验签）：0.10 线为成熟版本，本机 registry 已缓存
+sha2 = "0.10.9"

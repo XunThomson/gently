@@ -82,10 +82,11 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 | 命令 | 说明 |
 |---|---|
 | `plugin.list` | 已安装插件（权限、健康、来源、订阅归属） |
-| `plugin.preview{from}` | 安装前展示清单、权限、凭据需求、warnings |
-| `plugin.import{from, consent:true}` | 落盘安装；**不执行安装脚本**；记录来源与校验和 |
-| `plugin.remove{id, deleteFiles?}` | 卸载 |
-| `plugin.setEnabled{id, enabled}` / `plugin.setPriority{id, priority}` | 启停与回退顺序 |
+| `plugin.preview{from}` | 安装前展示清单、权限、凭据需求、warnings（**只读不写**） |
+| `plugin.import{from, consent:true}` | 落盘安装（暂存 → 校验 → 原子替换）；`consent` 必须为字面量 `true`，否则 `common.invalid_argument`；返回 `{plugin, warnings, replaced}`；**不执行安装脚本**；记录来源与 sha256 |
+| `plugin.list` | 已安装插件（含 `manifest` / `origin` / `priority` / `sha256`），按优先级 → 名称排序 |
+| `plugin.remove{id, deleteFiles?}` | 卸载；`deleteFiles` 缺省 **true**（连文件一起删，避免孤儿目录） |
+| `plugin.setEnabled{id, enabled}` / `plugin.setPriority{id, priority}` | 启停与回退顺序（priority 0~9999，越小越优先，缺省 100） |
 | `plugin.reload{id}` | 重建运行时（改配置后） |
 | `plugin.checkUpdate{id}` | 与来源比对版本/校验和（不自动更新） |
 | `plugin.config.get{id}` / `plugin.config.put{id, values, revision}` | 插件配置，revision 冲突 → `common.conflict` |
@@ -146,6 +147,13 @@ type ImportSource =
     | {kind:'url';       url: string}         // 远程文件或压缩包
     | {kind:'paste';     content: string}     // 粘贴的源文件/清单文本
     | {kind:'catalog';   subscriptionId: string; fileName: string};  // 从订阅一键安装
+
+/** 已安装插件的来源（`paste` 没有可展示的路径，只靠 sha256 识别内容变化） */
+type PluginOrigin =
+    | {kind:'file'|'dir'|'archive'; path: string}
+    | {kind:'url'; url: string}
+    | {kind:'catalog'; subscriptionId: string}
+    | {kind:'paste'};
 ```
 
 ## 3. 事件清单（8）

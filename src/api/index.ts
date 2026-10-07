@@ -152,7 +152,9 @@ export type PluginOrigin =
     | {kind: 'dir'; path: string}
     | {kind: 'archive'; path: string}
     | {kind: 'url'; url: string}
-    | {kind: 'catalog'; subscriptionId: string; fileName: string};
+    | {kind: 'catalog'; subscriptionId: string}
+    /** 粘贴文本导入：不留来源路径，仅凭 sha256 识别内容变化 */
+    | {kind: 'paste'};
 
 /** 插件元数据：单文件来自头部注释，目录包来自 plugin.json */
 export interface PluginManifest {
@@ -194,6 +196,15 @@ export interface PluginSummary extends PluginInfo {
     subscriptionId?: string;
     /** 导入时记录的校验和，用于更新前后比对 */
     sha256?: string;
+    /** 回退优先级：数值越小越优先，决定 playback.resolve 的候选顺序 */
+    priority: number;
+}
+
+/** `plugin.import` 的结果：安装后的摘要 + 非致命警告 + 是否覆盖了旧版本 */
+export interface PluginImportResult {
+    plugin: PluginSummary;
+    warnings: string[];
+    replaced: boolean;
 }
 
 /**
@@ -405,7 +416,7 @@ export interface PluginApi {
     /** 安装前展示清单、权限与凭据需求，由用户显式同意 */
     preview(input: {from: ImportSource}): Promise<CoreResult<PluginImportPreview>>;
     /** `consent: true` 表示用户已确认权限；核心只在此时落盘 */
-    import(input: {from: ImportSource; consent: true}): Promise<CoreResult<PluginSummary>>;
+    import(input: {from: ImportSource; consent: true}): Promise<CoreResult<PluginImportResult>>;
     remove(input: {id: string; deleteFiles?: boolean}): Promise<CoreResult<void>>;
     setEnabled(input: {id: string; enabled: boolean}): Promise<CoreResult<PluginSummary>>;
     /** 数值越小越优先；决定 `playback.resolve` 的回退顺序 */
