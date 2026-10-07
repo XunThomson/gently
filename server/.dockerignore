@@ -1,0 +1,16 @@
+# 构建忽略清单。
+#
+# 注意生效范围：Docker 只读取「构建上下文根」的 .dockerignore。
+#   - `docker build server/`（上下文 = server/）时本文件生效；
+#   - 本项目推荐 `docker build -f server/Dockerfile .`（上下文 = 仓库根，pnpm workspace 需要
+#     根 lockfile），此时本文件**不生效**，需要把同样内容放到 server/Dockerfile.dockerignore
+#     或根目录 .dockerignore。
+# Dockerfile 已只 COPY 必需的最小路径，所以即便忽略规则未生效，也不会把下列内容打进镜像。
+
+node_modules
+dist
+.env
+drizzle
+test
+openapi.json
+*.log

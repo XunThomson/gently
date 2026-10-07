@@ -1,0 +1,19 @@
+# 构建忽略清单（生效于「上下文 = 仓库根」的推荐用法）：
+#   docker build -f server/Dockerfile .
+#
+# BuildKit 会优先查找与 Dockerfile 同名的 `<Dockerfile>.dockerignore`
+# （即 server/Dockerfile.dockerignore），因此在仓库根作为上下文时，
+# 这份文件才是真正生效的规则；server/.dockerignore 只在 `docker build server/` 时生效。
+# 两者内容保持同步。
+
+**/node_modules
+**/dist
+**/dist-ssr
+server/.env
+server/drizzle
+server/test
+server/openapi.json
+**/*.log
+.git
+src/assets
+docs/archive

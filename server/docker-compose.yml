@@ -1,0 +1,57 @@
+# gently 本地基础设施：只起状态型依赖（Postgres + Redis）。
+#
+# 取舍：**后端服务本身不进 compose**。
+#   - 桌面端开发时改一行后端代码就要立刻生效，`pnpm --filter @gently/server dev`（tsx watch）
+#     比重建容器快一个数量级；
+#   - compose 只负责「在宿主机上装起来麻烦」的依赖，职责单一，起停不影响正在跑的服务；
+#   - 需要容器化交付时用 server/Dockerfile 单独构建（见该文件的注释），本文件不代劳。
+#
+# 用法（在仓库根执行）：
+#   docker compose -f server/docker-compose.yml up -d     # 起依赖
+#   docker compose -f server/docker-compose.yml down      # 停（保留数据）
+#   docker compose -f server/docker-compose.yml down -v   # 停并删除数据卷
+#
+# 凭据与 server/.env.example 的缺省 DATABASE_URL / REDIS_URL 对齐，
+# 因此复制 .env.example 为 .env 后无需改动即可连上：
+#   postgres://gently:gently@127.0.0.1:5432/gently
+#   redis://127.0.0.1:6379
+
+name: gently-server
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gently-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gently
+      POSTGRES_USER: gently
+      POSTGRES_PASSWORD: gently
+    ports:
+      - "5432:5432"
+    volumes:
+      # 命名卷持久化：down 不丢数据，down -v 才丢
+      - gently-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gently -d gently"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    container_name: gently-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    # Redis 只承担缓存 / 限流计数 / 幂等键 / BullMQ 队列：这些都能在重启后重建，
+    # 因此不挂数据卷、不开 AOF，避免本地开发被脏状态干扰。
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  gently-pgdata:

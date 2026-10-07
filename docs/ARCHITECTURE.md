@@ -305,13 +305,49 @@ GentlyApi = { auth, catalog, library, recommend, playback, plugin, download, ski
   「导出当前皮肤」生成可分享 JSON；自定义皮肤可删除（走二次确认）；
 - 导入只做结构校验、不执行任何代码；解析失败给出具体原因。
 
-## 7. 与 Tauri 的边界
+## 11. 后端实现骨架（`server/`）
+
+契约落到了可运行的骨架上：**接口全部存在、被校验、被文档化**，业务实现尚未接入。
+技术选型与取舍见 `docs/adr/0001-backend-stack.md`（Node 22 + Fastify 5 + Zod + Postgres/Drizzle + Redis/BullMQ）。
+
+```
+server/src/
+├── contracts/   纯 zod 契约（primitives / models / endpoints），可被客户端复用
+├── http/        HTTP 边界：server / errors / result / auth / idempotency / pagination / swagger / routes
+├── infra/       db / cache / queue / realtime / plugins / logger
+└── config/      唯一配置入口（env.ts，Zod 校验）
+```
+
+三条硬规则：
+
+1. **接口清单是唯一目录**：`contracts/endpoints.ts` 登记每个端点的
+   `id / method / path / tag / auth / idempotent`；路由文件必须与之逐条对应，
+   `operationId` 即清单 `id`。测试会遍历清单断言「没有 404」。
+2. **未实现 ≠ 不存在**：业务端点统一挂 `notImplementedHandler`，返回
+   `501 common.not_implemented`（信封与错误码见下），前端据此区分
+   「后端没有这个接口」（404）与「后端还没做」（501）。
+3. **错误状态码集中决定**：业务只抛 `ApiError`，状态码由 `ERROR_STATUS` 映射，
+   路由里不出现数字；非法参数由 Zod 统一转成 `422 common.invalid_argument` + `details.issues`。
+
+横切能力（本阶段已可用）：统一信封 `{ok, data|error, requestId}`、游标分页、
+`Idempotency-Key` 幂等（Redis → 内存降级）、JWT 鉴权守卫（含开发期虚拟主体）、
+RBAC 预留、限流（`common.rate_limited` + `Retry-After`）、OpenAPI（`/docs`，由路由 schema 生成）、
+WebSocket 实时通道（`/v1/realtime`，`seq` 供客户端判断漏事件）。
+
+**降级**：未配置 `DATABASE_URL` / `REDIS_URL` 时服务照常启动，能力降级为内存实现，
+`/ready` 返回 `degraded`；只有「已配置但连不上」才返回 `503`。
+
+验证：`pnpm --filter @gently/server typecheck`（tsc）与 `pnpm --filter @gently/server test`
+（vitest，覆盖清单完整性、鉴权、501 语义、幂等、分页游标、错误映射）。
+桌面端构建不受影响：`server/` 不进 `tsconfig.include`，也不进 Vite 依赖图。
+
+## 12. 与 Tauri 的边界
 
 - `services/window.service.ts` 封装最小化 / 最大化 / 关闭 / 置顶 / 小窗；
   浏览器环境为安全空操作，仅在 Tauri 宿主动态 `import('@tauri-apps/api/window')`。
 - 后续本地文件、下载落盘等能力同样从 `services/` 进入，视图不直接调用 Tauri API。
 
-## 8. 遗留与归档
+## 13. 遗留与归档
 
 `docs/archive/` 保存未接入产品的早期实现，**不参与构建**：
 

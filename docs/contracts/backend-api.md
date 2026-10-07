@@ -104,6 +104,17 @@ GET /v1/search?keyword=晚风&limit=30&cursor=eyJpZCI6...
 | download | `GET /v1/downloads` `POST /v1/downloads` `POST /v1/downloads/{id}/pause|resume` `DELETE /v1/downloads/{id}` `POST /v1/downloads/clear-finished` | 下载管理 |
 | skin | `GET /v1/skins` `GET /v1/skins/{id}` `POST /v1/skins` `GET /v1/me/skins` `POST /v1/me/skins/sync` | 皮肤市场与同步 |
 
+### 实现状态（与 `server/` 的对应关系）
+
+后端骨架已按本规范落地：接口清单在 `server/src/contracts/endpoints.ts`，
+每个端点都有请求/响应 schema 与自动生成的 OpenAPI（`http://<host>/docs`），
+**业务实现尚未接入**——所以未实现端点返回 `501 common.not_implemented` 而非 404。
+
+- 404 = 契约里没有这个接口；501 = 契约已定、实现待接（前端在联调期据此区分）；
+- 接入业务时：把对应 `server/src/http/routes/*.routes.ts` 中的 `notImplementedHandler`
+  换成真实处理器即可，schema 与路由声明不变；
+- 技术选型与目录约定见 `docs/adr/0001-backend-stack.md` 与 `server/README.md`。
+
 ## 7. 实时通道
 
 `wss://<host>/v1/realtime`，事件体与 REST DTO 共用（`RealtimeEvent`）：

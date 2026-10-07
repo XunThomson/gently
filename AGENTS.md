@@ -23,6 +23,7 @@
 | 6 | `src/components/` | `layout` 布局容器、`ui` 通用组件、`shell` 应用外壳 |
 | 7 | `src/views/` | 页面（含各自私有组件） |
 | 8 | `docs/ARCHITECTURE.md` | 架构与数据流 |
+| 9 | `server/` | 后端骨架（契约 + 基础设施；业务未实现，见 `server/README.md`） |
 
 ## 3. 硬约束（改代码前必读）
 
@@ -38,6 +39,8 @@
 10. **进度条是播放条顶边的 SeekBar**：默认不显示焦点，悬浮 / 拖拽才显示；焦点皮肤由 `playerBar.progressThumbSkin` 配置。
 11. **危险操作必须走 `useConfirm()`**（删除 / 清空 / 卸载类），不要直接调用 action；弹窗由 App 里的 `ConfirmHost` 统一渲染。
 12. **后端接口只写在 `src/api/`（契约）与 `docs/contracts/`（规范）**，禁止在 UI/store 里直连 HTTP；替换点只有 `src/services/**`。
+13. **后端骨架（`server/`）里新增接口必须先在 `server/src/contracts/endpoints.ts` 登记**（id/method/path/tag/auth/idempotent），路由文件的 `operationId` 与清单 id 一致；未实现业务一律挂 `notImplementedHandler`（501），不要返回 404 占位。
+14. **后端不手写状态码**：业务抛 `ApiError`，状态码由 `server/src/contracts/primitives.ts` 的 `ERROR_STATUS` 决定；`server/src/infra/**` 不得依赖 fastify 的请求/响应对象。
 
 ## 4. 每类操作的完成标准
 
@@ -48,6 +51,7 @@
 | 改状态 | 只改 `src/store/**`；视图通过 selector hooks 订阅，不新增组件内 state 副本 |
 | 加音乐源 | 在 `src/plugins/` 新增实现并注册；不得改动 `services/catalog.service.ts` 的调用方 |
 | 替换 mock | 只改 `src/services/**` 或 `src/mock/**`；UI 与 store 不动 |
+| 加 / 改后端接口 | 先在 `server/src/contracts/endpoints.ts` 登记，再写路由 schema 与处理器；`pnpm --filter @gently/server typecheck && pnpm --filter @gently/server test` 通过 |
 | 结构调整 | 同步更新 `docs/ARCHITECTURE.md` 与 `docs/STATE.md` |
 
 ## 5. 命令
@@ -58,6 +62,11 @@ pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染 + i18n
 pnpm dev         # 开发
 pnpm build       # tsc && vite build
 pnpm tauri dev   # 桌面端
+
+# 后端骨架（server/，独立子包）
+pnpm --filter @gently/server dev         # 启动（默认 127.0.0.1:8787，/docs 看 OpenAPI）
+pnpm --filter @gently/server typecheck   # tsc --noEmit
+pnpm --filter @gently/server test        # vitest：清单完整性/鉴权/501/幂等/错误映射
 ```
 
 改动状态层 / 主题 / 插件后，**必须**跑 `pnpm typecheck && pnpm smoke`。

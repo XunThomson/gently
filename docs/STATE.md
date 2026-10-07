@@ -3,76 +3,81 @@ status: active
 last_verified: 2026-02-14
 owner: gently
 scope: 当前迭代状态与下一步
-token_budget: 800
-tldr: 第六轮：防误操作二次确认、个性化推荐（专辑/歌单/理由）、后端接口契约、复杂皮肤（全令牌覆盖 + 导入导出）；typecheck / smoke(172) / build 全绿，依赖已分包。
+token_budget: 900
+tldr: 第七轮：后端基础设施落地（server/ 子包：41 个端点契约 + 统一信封/鉴权/幂等/限流/实时通道/插件宿主/优雅退出，业务未实现返回 501）；server typecheck + 123 测试通过，桌面端 typecheck/build 不受影响（主包 338 KB）。
 ---
 
 # STATE
 
 ## 本轮目标
 
-四项：危险操作二次确认、推荐扩展到专辑/歌单并个性化、后端接口规范、更复杂的主题皮肤。
+构建完善**后端接口**（不含业务）并搭建**后端基础设施**：目录树、技术选型、可运行骨架。
 
-## 已完成（第六轮）
+## 已完成（第七轮）
 
-### 1. 防误操作的二次确认
-- 新增 `dialog` 切片 + `useConfirm()` + `ConfirmHost`（App 内挂载一次）+ `ConfirmDialog`
-  （Esc 取消 / Enter 确认 / 打开聚焦取消 / Tab 环绕 / 遮罩点击取消 / `role="alertdialog"`）；
-- 设置里可关闭「危险操作前二次确认」，关闭后直接执行；
-- 已接入 8 处：删除歌单（侧边栏、歌单页）、卸载音源插件、清空播放列表、清空播放记录、
-  清理已完成下载、移除本地音乐、移除下载任务、删除皮肤。
+### 1. 技术选型（`docs/adr/0001-backend-stack.md`）
+Node 22 + TypeScript（与前端同语言，契约同源）· Fastify 5（插件模型契合音源宿主）·
+Zod（一份 schema 同时产出校验 + 类型 + OpenAPI）· Postgres/Drizzle + Redis/BullMQ ·
+jose + Argon2id · Vitest + `inject()`。单仓子包 `server/`（pnpm workspace 成员，桌面端零改动）。
 
-### 2. 个性化推荐（不再只是单曲）
-- 模型新增 `Album` / `CuratedPlaylist` / `TasteProfile` / `RecommendationReason`，
-  `Track` 增加 `tags` 与 `albumId`（稳定哈希生成，接入真实源后由其提供）；
-- `utils/recommend.ts`：口味画像（播放次数取对数、12h 半衰期衰减、收藏加权）+
-  标签/歌手打分 + **可解释理由**（因为你听过 X / 因为你喜欢某标签 / 近期热门）；
-- `services/recommend.service.ts` + `recommend` 切片；推荐页改为三区块：
-  **为你推荐（单曲）/ 推荐专辑 / 推荐歌单**，每条带 ReasonChip，顶部显示口味画像摘要；
-- 新增 `album-grid` / `playlist-grid` / `reason-chip` 三个通用组件；
-  `TrackGrid` 支持 `reasonOf` 展示推荐理由。
+### 2. 接口契约（41 个端点，全部登记且被校验/文档化）
+- `server/src/contracts/endpoints.ts` 是**接口唯一目录**：`id / method / path / tag / auth / idempotent`；
+  路由的 `operationId` 必须等于清单 id，`test/endpoints.test.ts` 遍历清单断言「没有任何端点 404」；
+- `contracts/primitives.ts`（信封 `ApiResult` / 游标分页 / 错误码 + `ERROR_STATUS` 映射）、
+  `contracts/models.ts`（Track/GroupedTrack/Album/Playlist/推荐/插件/下载/皮肤/实时事件）；
+- 未实现业务统一返回 **`501 common.not_implemented`**，与 404（契约里没有该接口）语义区分；
+- `/docs` 与 `openapi.json` 由路由 schema 生成（36 paths / 41 operations），**不手写文档**。
 
-### 3. 后端接口规范（只有契约，无实现）
-- `src/api/types.ts`：统一信封 `ApiResult<T>`、游标分页、幂等写、错误码、实时事件；
-- `src/api/contract.ts`：8 个域的能力接口 `GentlyApi`
-  （auth / catalog / library / recommend / playback / plugin / download / skin）；
-- `docs/contracts/backend-api.md`：版本与命名、错误模型、分页、认证、**多音源策略**、
-  端点清单、实时通道、**前端替换映射表**、非功能性要求（限流/缓存/可观测/兼容/安全）。
+### 3. 基础设施
+| 能力 | 落地 |
+|---|---|
+| 配置 | `config/env.ts`：Zod 校验，生产缺 `JWT_SECRET` 直接启动失败 |
+| 日志 | pino：生产 JSON、开发美化、敏感字段脱敏、请求日志带 requestId |
+| 错误 | `ApiError` + 全局映射（Zod → `422 invalid_argument` + `details.issues`），路由不写状态码 |
+| 鉴权 | `TokenService`（HS256 access/refresh，过期码 `auth.token_expired`）+ Argon2id + 守卫（开发期虚拟主体） |
+| 幂等 | `Idempotency-Key`：Redis 实现，未配 Redis 降级内存；重放返回首次结果 |
+| 限流 | 按 IP + 路由，超限 `common.rate_limited` + `Retry-After`，探针不限流 |
+| 实时 | `/v1/realtime` WebSocket 广播中枢（按 userId 分组、心跳、`seq` 供客户端判断漏事件） |
+| 插件宿主 | 扫描 `PLUGIN_DIR` 下 `plugin.json`，Zod 校验清单 + 权限声明 + 健康状态；**仅声明式**，代码沙箱未接入（`loadEntryPoint` 明确拒绝） |
+| 数据/队列 | Drizzle + pg 连接池（懒连接）、BullMQ 三个队列（download / plugin-probe / recommend-precompute） |
+| 生命周期 | 优雅退出（SIGINT/SIGTERM → close → 关池，10s 兜底）、未捕获异常记录 |
 
-### 4. 复杂主题皮肤
-- `ThemePreset` 升级为 `ThemeSkin`：可覆盖**任意令牌组**（含 typography / radius / spacing /
-  shadow / motion / zIndex / components）；
-- 内置皮肤扩到 **11 套**，新增三套复杂皮肤：**圆润**（大圆角 + 柔和阴影 + 慢动效）、
-  **锐利**（小圆角 + 无阴影 + 快动效 + 紧凑行高）、**高对比**（更强边框与字重 + 更大字号）；
-- 主题市场升级为**皮肤市场**：搜索、标签筛选、自定义标记、应用/删除（带确认）、
-  **导入/导出皮肤 JSON**（结构校验，失败给出原因），自定义皮肤持久化到本地。
+降级原则：未配置外部依赖**不阻塞启动**，`/ready` 如实报告（未配置 → 200 `degraded`；已配置连不上 → 503）。
 
-### 工程
-- 依赖分包（react / router / i18n 独立 chunk）：主包从 500KB 降到 **338KB（gzip 110KB）**，
-  构建不再报警；
-- 冒烟测试扩到 **172 项**：新增二次确认状态机、推荐画像/排序/理由/排除、皮肤合并与导入校验，
-  以及新组件（ConfirmDialog / AlbumGrid / PlaylistGrid / ReasonChip）的渲染断言。
+### 4. 工程
+- `server/test/` 123 项：清单完整性、鉴权边界、501 语义、幂等缺键 422、探针降级、游标分页往返、
+  错误映射、**信封守卫**（从 OpenAPI 反查每个 2xx/4xx 是否为统一信封，防止漏包 `resultSchema`）；
+- 交付物：`server/Dockerfile`（多阶段 + 非 root + HEALTHCHECK）、`docker-compose.yml`（PG16 + Redis7）、
+  `server/README.md`（目录树/命令/新增接口 5 步/降级表/已知限制）、`server/plugins/README.md`；
+- 修订：修掉 `start` 脚本产物路径、去掉 fastify 弃用的 `disableRequestLogging`（改用日志级别静音）、
+  补 `server/Dockerfile.dockerignore`（上下文为仓库根时生效）。
 
 ## 验证
 
 | 验证 | 命令 | 结果 |
 |---|---|---|
-| 类型检查 | `pnpm typecheck` | 通过 |
-| 冒烟测试 | `pnpm smoke` | 172/172 通过 |
-| 生产构建 | `pnpm build` | 通过，主包 338 KB（gzip 110 KB） |
+| 后端类型检查 | `pnpm --filter @gently/server typecheck` | 通过（0 错误） |
+| 后端测试 | `pnpm --filter @gently/server test` | 123/123 通过（4 文件） |
+| 运行时（源码） | `tsx src/main.ts` | `/health` 200、`/ready` degraded、`/docs/json` 36 paths、未实现 → 501、无令牌 → 401 |
+| 运行时（产物） | `node dist/src/main.js`（NODE_ENV=production） | 启动正常、JSON 日志带 reqId、生产默认强制鉴权（401）|
+| 桌面端回归 | `pnpm typecheck && pnpm build` | 通过，主包 338 KB（gzip 110 KB）不变 |
 
 ## 下一步
 
-1. 接入后端：按 `docs/contracts/backend-api.md` 第 8 节替换 `src/services/**`（UI/store 不动）。
-2. 真实音乐源插件 + 由后端承担多音源回退。
-3. 推荐反馈闭环：把 `skip / like / complete` 上报（接口已定义），并让本地打分消费反馈。
-4. 专辑 / 歌单详情页（当前推荐页点击即整列表播放）。
-5. 浏览器人工走查：11 套皮肤 × 浅深色、二次确认交互、推荐页三区块。
+1. **业务实现**：在 `server/src/services/**` 实现处理器，替换各 `*.routes.ts` 的 `notImplementedHandler`
+   （schema 与路由声明不变）；先做 catalog/playback（打通播放链路）。
+2. **数据库 schema**：`src/infra/db/schema/` 建表（users / favorites / playlists / play_history /
+   plugin_configs / download_tasks / skins）并生成首个迁移。
+3. **前端接入**：按 `docs/contracts/backend-api.md` §8 替换 `src/services/**`（UI/store 不动）；
+   先接 catalog + playback，本地打分逻辑保留为离线兜底。
+4. **插件沙箱**：worker/isolated-vm 执行 + 令牌与网络白名单，落地 `loadEntryPoint`。
+5. Docker 镜像实跑（本机无 docker）、`pnpm tauri build` 窗口权限校验。
 
 ## 风险
 
-- 推荐全部本地计算：候选池是内置曲库（mock），真实个性化需后端。
-- 皮肤导入仅做结构校验（不执行代码），但未做「令牌键名白名单」，异常键名会被忽略而非报错。
-- 三个模拟音源共享同一测试音频；本地曲目在 mock 阶段无可播地址。
-- 动态背景素材不入库（见 `src/assets/README.md`）。
-- 视觉正确性依赖人工确认（环境无法截图）。
+- **Docker 未实跑**：镜像构建、HEALTHCHECK、`pnpm install --prod` 剪枝只做静态核对。
+- **无 DB schema**：`db:generate` 在业务表落地前不产出迁移；接口暂不落库。
+- **插件无沙箱**：只支持声明式清单，无法执行第三方代码（安全优先）。
+- **OpenAPI 不含 WebSocket**：`/v1/realtime` 是升级路由，不在 `ENDPOINTS` 清单中（以 `REALTIME_PATH` 登记）。
+- 桌面端仍全量 mock：推荐本地计算、三个模拟音源共用同一测试音频、本地曲目无可播地址。
+- 视觉 / 交互正确性依赖浏览器人工走查（环境无法截图）。
