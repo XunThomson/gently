@@ -17,6 +17,7 @@ pub mod commands;
 pub mod contract;
 pub mod events;
 pub mod logging;
+pub mod media;
 pub mod paths;
 pub mod plugin;
 pub mod store;

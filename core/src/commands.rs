@@ -18,6 +18,7 @@
 use std::sync::Arc;
 
 use serde::de::DeserializeOwned;
+use serde_json::json;
 use serde::Serialize;
 
 use crate::contract::{
@@ -47,6 +48,8 @@ pub struct CoreContext {
     pub http: Arc<dyn HttpTransport>,
     /// 流式搜索的取消登记表
     pub searches: Arc<crate::catalog::SearchRegistry>,
+    /// 本地流代理（仅回环 + 一次性令牌；契约 §7）
+    pub streams: Arc<crate::media::StreamRegistry>,
     pub events: Arc<dyn EventSink>,
 }
 
@@ -67,6 +70,7 @@ impl CoreContext {
             plugins,
             http,
             searches: Arc::new(crate::catalog::SearchRegistry::default()),
+            streams: Arc::new(crate::media::StreamRegistry::default()),
             events: Arc::new(NullEventSink),
         }
     }
@@ -122,6 +126,7 @@ pub fn dispatch(
         "plugin.catalog.list" => plugin_catalog_list(ctx, params),
         "catalog.search" => catalog_search(ctx, params),
         "catalog.searchCancel" => catalog_search_cancel(ctx, params),
+        "playback.resolve" => playback_resolve(ctx, params),
         // 其余命令：契约已登记，实现在后续里程碑接入
         other => Err(CoreError::not_implemented(other)),
     };
@@ -152,6 +157,7 @@ const IMPLEMENTED: &[&str] = &[
     "plugin.catalog.list",
     "catalog.search",
     "catalog.searchCancel",
+    "playback.resolve",
 ];
 
 /// 已实现命令数。
@@ -874,6 +880,104 @@ fn default_subscription_name(url: &str) -> String {
 
 fn index_cache_path(ctx: &CoreContext, id: &str) -> std::path::PathBuf {
     ctx.paths.subscriptions.join(format!("{id}.json"))
+}
+// ---------------------------------------------------------------- 播放（候选回退 + 流代理）
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolveParams {
+    /// 统一曲目引用 `source:rawId`
+    reference: String,
+    quality: String,
+    /// 用户偏好的音源顺序（可选）
+    #[serde(default)]
+    preferred_sources: Option<Vec<String>>,
+    /// 候选引用列表（来自搜索结果）：给定时核心按优先级依次回退
+    #[serde(default)]
+    candidates: Option<Vec<String>>,
+    /// 交给插件的曲目对象（MusicFree 风格插件需要原始字段，如 bvid/aid）
+    #[serde(default)]
+    track: Option<serde_json::Value>,
+}
+
+/// `playback.resolve`：按候选顺序依次尝试，全部失败返回 **`data: null`**（不是错误）。
+///
+/// 契约里的承诺：候选顺序即回退顺序；`null` 让前端退回模拟时钟。
+fn playback_resolve(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: ResolveParams = parse_params(params)?;
+    crate::catalog::ensure_loaded(ctx)?;
+
+    for reference in candidate_order(ctx, &params) {
+        let (source, raw_id) = match reference.split_once(':') {
+            Some(parts) => parts,
+            None => continue,
+        };
+
+        let Some(capabilities) = ctx.plugins.capabilities(source) else { continue };
+        if !capabilities.contains(&crate::plugin::PluginCapability::GetMediaSource) {
+            continue;
+        }
+
+        // 插件看到的曲目对象：优先用前端给的原始字段，否则用引用构造最小对象
+        let track = params.track.clone().unwrap_or_else(|| json!({ "id": raw_id, "source": source }));
+        let args = json!([track, params.quality]).to_string();
+
+        let raw = match ctx.plugins.call(source, "getMediaSource", &args) {
+            Ok(raw) => raw,
+            Err(error) => {
+                // 单个源失败不是终点：继续试下一个候选（对应契约的「不要提示用户，切换音源」）
+                tracing::warn!(source, code = error.code.as_str(), "解析播放地址失败，尝试下一个候选");
+                continue;
+            }
+        };
+
+        let Ok(Some(media)) = crate::media::parse_media(&raw) else {
+            continue; // null / 字段不合法 = 该源不可播
+        };
+
+        // SSRF 防护 + 发布流令牌（地址由上游给出，不受 @hosts 约束，必须在这里拦）
+        let stream_url = match ctx.streams.publish(&media.url, media.headers.clone()) {
+            Ok(url) => url,
+            Err(error) => {
+                tracing::warn!(source, code = error.code.as_str(), "媒体地址被拒：{}", error.message);
+                continue;
+            }
+        };
+
+        let quality = media.quality.unwrap_or_else(|| params.quality.clone());
+        return to_json(json!({
+            "source": source,
+            "quality": quality,
+            // 前端只应使用 streamUrl；originUrl/headers 仅供展示与排障
+            "streamUrl": stream_url,
+            "originUrl": media.url,
+            "headers": media.headers.iter().map(|(name, value)| (name.clone(), json!(value))).collect::<serde_json::Map<String, serde_json::Value>>(),
+            "mimeType": media.mime_type,
+            "expiresInSec": media.expires_in_sec.unwrap_or(1800),
+        }));
+    }
+
+    // 契约：全部候选失败 → data: null（前端据此退回模拟时钟），而不是抛错
+    to_json(serde_json::Value::Null)
+}
+
+/// 候选顺序：显式 candidates（按 preferredSources 排序）→ 否则只用引用自身来源。
+fn candidate_order(ctx: &CoreContext, params: &ResolveParams) -> Vec<String> {
+    let mut list: Vec<String> = params
+        .candidates
+        .clone()
+        .filter(|items| !items.is_empty())
+        .unwrap_or_else(|| vec![params.reference.clone()]);
+
+    if let Some(preferred) = &params.preferred_sources {
+        // 用户指定的顺序优先，其余保持原顺序
+        list.sort_by_key(|reference| {
+            let source = reference.split(':').next().unwrap_or_default();
+            preferred.iter().position(|item| item == source).unwrap_or(usize::MAX)
+        });
+    }
+    let _ = ctx;
+    list
 }
 // ---------------------------------------------------------------- 工具
 
