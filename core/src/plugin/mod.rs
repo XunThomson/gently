@@ -16,7 +16,7 @@ mod subscription;
 mod transport;
 
 pub use credentials::{CredentialStore, MemoryCredentialStore};
-pub use host::{kv_path, HostLimits, PluginHandle, PluginHost};
+pub use host::{kv_path, probe, HostLimits, ModuleProbe, PluginHandle, PluginHost};
 pub use install::{
     entry_path, install, remove_files, sha256_hex, InstallOutcome, InstallSource, InstalledPlugin,
     DEFAULT_PRIORITY, ENTRY_FILE, MAX_PLUGIN_BYTES,

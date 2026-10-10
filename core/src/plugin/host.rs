@@ -286,7 +286,7 @@ fn runtime_thread(
     // 2) 执行插件源码
     let evaluated = context.with(|ctx| {
         ctx.eval::<(), _>(source.as_bytes())
-            .map_err(|err| describe_js_error(&err, "插件加载失败（语法或顶层执行错误）"))
+            .map_err(|err| eval_failure(&ctx, &err, "插件加载失败（语法或顶层执行错误）"))
     });
     if let Err(err) = evaluated {
         let _ = ready.send(Err(err));
@@ -535,6 +535,75 @@ fn js_error(marker: &'static str, message: &str) -> rquickjs::Error {
     rquickjs::Error::new_from_js_message("host", marker, format!("{marker}: {message}"))
 }
 
+/// 探测结果：CommonJS 插件的元数据 + 真实能力。
+#[derive(Debug, Clone, Default)]
+pub struct ModuleProbe {
+    /// `module.exports` 里的元数据（MusicFree 风格：name/version/platform/author…）
+    pub metadata: std::collections::HashMap<String, String>,
+    pub capabilities: Vec<PluginCapability>,
+}
+
+/// 在沙箱里**只读地**跑一遍源码，读出 `module.exports` 的元数据与能力。
+///
+/// 用途：兼容模式下，MusicFree 风格插件没有头部注释，元数据在导出对象里。
+/// 代价是会在沙箱内执行插件的顶层代码（有副作用可能），因此只在**用户显式开启
+/// 兼容模式**的预览/安装流程里调用，并且此时 `fetch` 会因为空域名白名单而被拒绝。
+pub fn probe(source: &str, limits: HostLimits, transport: Arc<dyn HttpTransport>) -> Fallible<ModuleProbe> {
+    let runtime = Runtime::new()
+        .map_err(|err| CoreError::new(ErrorCode::PluginRuntimeError, format!("创建运行时失败：{err}")))?;
+    runtime.set_memory_limit(limits.memory_bytes);
+    runtime.set_max_stack_size(limits.stack_bytes);
+
+    // 空清单 + 空白名单：探测阶段不允许任何出网
+    let manifest = PluginManifest {
+        id: "probe".into(),
+        name: "probe".into(),
+        version: "0.0.0".into(),
+        author: String::new(),
+        description: String::new(),
+        homepage: None,
+        entry: None,
+        qualities: vec![super::manifest::TrackQuality::Standard],
+        permissions: Vec::new(),
+        hosts: Vec::new(),
+        credentials: Vec::new(),
+        min_core_version: None,
+        tags: Vec::new(),
+        capabilities: Vec::new(),
+    };
+
+    let context = Context::full(&runtime)
+        .map_err(|err| CoreError::new(ErrorCode::PluginRuntimeError, format!("创建上下文失败：{err}")))?;
+
+    context.with(|ctx| -> Fallible<()> {
+        install_host_functions(&ctx, &manifest, transport, Arc::new(super::credentials::MemoryCredentialStore::new()), std::path::PathBuf::new())?;
+        ctx.eval::<(), _>(BOOTSTRAP).map_err(|err| describe_js_error(&err, "bootstrap 失败"))?;
+        ctx.eval::<(), _>(source.as_bytes())
+            .map_err(|err| eval_failure(&ctx, &err, "模块加载失败（顶层代码执行出错）"))?;
+        Ok(())
+    })?;
+
+    let metadata = context.with(|ctx| -> Fallible<std::collections::HashMap<String, String>> {
+        let json: String = ctx
+            .eval(
+                "(function(){try{return JSON.stringify((globalThis.module&&globalThis.module.exports)||{})}catch(e){return '{}'}})()",
+            )
+            .map_err(|err| describe_js_error(&err, "读取 module.exports 失败"))?;
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap_or(serde_json::Value::Null);
+        Ok(value
+            .as_object()
+            .map(|object| {
+                object
+                    .iter()
+                    .filter_map(|(key, value)| value.as_str().map(|text| (key.clone(), text.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default())
+    })?;
+
+    let capabilities = collect_capabilities(&context)?;
+    Ok(ModuleProbe { metadata, capabilities })
+}
 /// 让 JS 侧收集插件导出的函数并映射成能力列表。
 ///
 /// 必须在**源码 eval 之后**调用：`const`/`let` 声明的函数存在于全局词法环境，
@@ -554,6 +623,15 @@ fn collect_capabilities(context: &Context) -> Fallible<Vec<PluginCapability>> {
             })
             .collect())
     })
+}
+/// `eval` 失败时的错误映射：优先带上 bootstrap 记录的说明
+/// （QuickJS 异常文本穿不过 `Display`，所以关键信息放在全局槽位里）。
+fn eval_failure(ctx: &rquickjs::Ctx<'_>, err: &rquickjs::Error, context: &str) -> CoreError {
+    let detail: Option<String> = ctx.eval("globalThis.__gentlyLoadError").unwrap_or(None);
+    match detail {
+        Some(message) => CoreError::new(ErrorCode::PluginRuntimeError, format!("{context}：{message}")),
+        None => describe_js_error(err, context),
+    }
 }
 /// 把 JS 异常翻译成契约错误码。
 fn describe_js_error(err: &rquickjs::Error, context: &str) -> CoreError {
@@ -634,6 +712,39 @@ fn now_millis() -> u64 {
 const BOOTSTRAP: &str = r#"
 (function () {
     const hostFetch = globalThis.__hostFetch;
+
+    // ---- CommonJS 兼容（最小集）----
+    // 现实中的社区插件（MusicFree / LX 风格）是 CommonJS 模块，需要 module/exports/require。
+    // 这里**不做任意模块解析**：只内置极少数纯 JS 模块，其余 require 立即抛出可执行的错误，
+    // 而不是让插件在深处因为 undefined 而莫名其妙地失败。
+    globalThis.module = { exports: {} };
+    globalThis.exports = globalThis.module.exports;
+
+    // he：HTML 实体解码（社区插件用它处理标题里的 &amp; 之类）
+    const he = {
+        decode(text) {
+            return String(text).replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, entity) => {
+                if (entity[0] === '#') {
+                    const code = entity[1] === 'x' || entity[1] === 'X'
+                        ? parseInt(entity.slice(2), 16)
+                        : parseInt(entity.slice(1), 10);
+                    return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+                }
+                const named = {amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' '};
+                return Object.prototype.hasOwnProperty.call(named, entity) ? named[entity] : match;
+            });
+        },
+    };
+
+    globalThis.require = function (name) {
+        if (name === 'he') { return he; }
+        // 关键：把可执行的说明放进槽位。QuickJS 的异常文本穿不过 rquickjs 的 Display，
+        // 只抛 Error 的话宿主只能看到 "Exception generated by QuickJS"，用户无从下手。
+        globalThis.__gentlyLoadError =
+            '模块 ' + name + ' 不可用：兼容模式只内置极少数模块（he）；使用 axios / crypto-js / dayjs '
+            + '等依赖的插件需要移植为单文件 ABI（顶层函数 + 文件头 @hosts 注释）';
+        throw new Error('GENTLY_MODULE_UNAVAILABLE: ' + name);
+    };
     const hostLog = globalThis.__hostLog;
     const hostStorageGet = globalThis.__hostStorageGet;
     const hostStorageSet = globalThis.__hostStorageSet;
@@ -689,9 +800,14 @@ const BOOTSTRAP: &str = r#"
         const names = ['search', 'getMediaSource', 'getTrackInfo', 'getAlbumInfo',
                        'getPlaylistInfo', 'getLyric', 'getTopLists', 'getTopList', 'getRecommend'];
         const out = {};
+        const exported = (globalThis.module && globalThis.module.exports) || {};
         for (let i = 0; i < names.length; i++) {
             let fn;
             try { fn = eval(names[i]); } catch (err) { fn = undefined; }
+            // CommonJS 风格：函数挂在 module.exports 上（单文件 ABI 则是顶层声明）
+            if (typeof fn !== 'function' && typeof exported[names[i]] === 'function') {
+                fn = exported[names[i]];
+            }
             if (typeof fn === 'function') { out[names[i]] = fn; }
         }
         globalThis.__plugin_exports = out;
