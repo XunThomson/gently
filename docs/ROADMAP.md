@@ -254,7 +254,28 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
   超时插件被隔离且不影响其他源；头部元数据缺失的文件被拒并报 `plugin.invalid_source`；
   用户自填订阅可一键安装（含 sha256 校验）；**首次安装前界面无任何预置来源**。
 
-### M2 播放链路垂直切片（M，约 7–10 人日）
+### M2 播放链路垂直切片（M，约 7–10 人日）——**进行中（第一片已完成）**
+
+#### M2a 跨源搜索聚合与流式推送（已完成）
+- `core/src/catalog.rs`：`catalog.search` **立即返回 `searchId`**；每个源一个线程并发调用，
+  逐源推 `catalog.search.partial`，协调线程收集后**在核心内合并**并推 `catalog.search.done`
+  （契约承诺：合并只在核心完成）。`catalog.searchCancel` 通过共享 `AtomicBool` 取消。
+- **不信任插件输出**：`source` 强制为插件 id、`id` 规范成 `source:rawId`、缺失字段给兜底值、
+  缺 `title` 的条目**丢弃并计数**（`dropped`），整源不会因个别脏数据失败。
+  同时接受 `[...]` 与 `{items:[...]}` 两种返回写法，`duration` 支持 `mm:ss`。
+- **候选顺序 = 优先级**：合并按 (标题+歌手) 归一化分组，`candidates` 按 `priority` 升序
+  （与播放回退顺序一致）。
+- **按需加载**：`ensure_loaded` 在搜索前把「已启用」的插件装进沙箱——**解决了此前记录的重启缺口**
+  （用户不必再手动点重载）；单个插件加载失败只记录并跳过，不影响整体。
+- **禁用立即生效**（测试抓到的真 bug）：已加载但被停用的插件此前仍会参与搜索，
+  现在以库中状态为准在每次搜索时过滤。
+- 已实现命令 15 → **17**（`catalog.search` / `catalog.searchCancel`）。
+- **仍待做（M2 剩余）**：`catalog.track/album/playlist/lyrics/topLists/topList/recommend`、
+  **本地流代理**（仅回环 + 一次性 token + Range + 请求头注入 + SSRF 防护）与
+  `playback.resolve` 的候选回退链；前端 `services/catalog` + `services/audio` 切到命令层
+  （含流式搜索的分源视图）。
+
+### M2 播放链路垂直切片（原计划范围，供剩余部分对照）
 
 - `catalog.search` **流式**：立即返回 `{searchId}` → `catalog.search.partial` 逐源到达 →
   `catalog.search.done` 给出跨源合并结果（标题+歌手归一化去重、候选按 `plugin.priority` 排序）；

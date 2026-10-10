@@ -148,5 +148,5 @@ fn too_large_paste_is_rejected() {
 #[test]
 fn preview_is_registered_as_implemented() {
     assert!(is_implemented("plugin.preview"));
-    assert_eq!(implemented_count(), 15);
+    assert_eq!(implemented_count(), 17);
 }

@@ -12,6 +12,7 @@
 //! - [`store`]：SQLite 访问层与迁移（ADR-0004）；
 //! - [`logging`]：tracing 初始化。
 
+pub mod catalog;
 pub mod commands;
 pub mod contract;
 pub mod events;

@@ -120,7 +120,7 @@ tldr: 第十一轮：M0 完成（Rust 核心骨架 + 前端桥接与诊断页，
 - 命令 `plugin.subscriptions.list/add/remove/refresh` + `plugin.catalog.list`（已实现 15 条）；
   `{kind:'catalog'}` 接入预览（下载不落盘）与安装（sha256 校验后才落盘，来源记为 catalog）；
   刷新失败保留旧索引并报 `subscription.fetch_failed`。
-- **作者 CLI 与示例插件已完成**：`plugin-tool check/index`（逻辑在 `plugin::authoring`，可测）+ `examples/plugins/`（示例不联网、不解析真实音源，有测试保证其合法）。`@url` 被误当未知字段的 bug 由 CLI 实跑发现并修复。`n- **URL 导入与导入界面已完成**：`{kind:'url'}` 走核心下载（仅 HTTPS/非内网），插件页新增「本机核心插件」面板（粘贴/地址 → 预览权限与凭据 → 显式同意 → 安装 + 已安装列表 + 第三方免责声明）；浏览器下只提示需桌面端。剩 `archive` 与原生文件选择器。`n- **管理动作已接入界面**：启停/重载/上移下移（整表重排回写优先级）/卸载（二次确认）；安装后自动 reload。`n- ⚠️ **已知缺口**：启动时不加载已启用插件（重启后需手动重载）——M2 启动时逐个 load，且单个失败不影响启动。`n- 仍待做：OS keyring、压缩包导入与原生文件选择器（`tauri-plugin-dialog`）。
+- **作者 CLI 与示例插件已完成**：`plugin-tool check/index`（逻辑在 `plugin::authoring`，可测）+ `examples/plugins/`（示例不联网、不解析真实音源，有测试保证其合法）。`@url` 被误当未知字段的 bug 由 CLI 实跑发现并修复。`n- **URL 导入与导入界面已完成**：`{kind:'url'}` 走核心下载（仅 HTTPS/非内网），插件页新增「本机核心插件」面板（粘贴/地址 → 预览权限与凭据 → 显式同意 → 安装 + 已安装列表 + 第三方免责声明）；浏览器下只提示需桌面端。剩 `archive` 与原生文件选择器。`n- **管理动作已接入界面**：启停/重载/上移下移（整表重排回写优先级）/卸载（二次确认）；安装后自动 reload。`n- ✅ **重启缺口已解决**：M2a 起搜索前会 `ensure_loaded` 按需加载已启用插件（单个失败只跳过），用户不必手动重载。`n- 仍待做：OS keyring、压缩包导入与原生文件选择器（`tauri-plugin-dialog`）。
 
 ## 验证
 
@@ -129,7 +129,7 @@ tldr: 第十一轮：M0 完成（Rust 核心骨架 + 前端桥接与诊断页，
 | 类型检查 | `pnpm typecheck` | 通过（契约 v0.1 → v0.2 重写后均为 0 错误） |
 | 冒烟测试 | `pnpm smoke` | **176/176 通过**（原 172 + 桥接层 4 条断言；v0.2 类型同步后复测） |
 | 前端接入 | 设置页「本机核心」诊断卡片 + `core.bridge.ts` | 浏览器显示「浏览器模式」并退回 mock；桌面端显示核心版本/平台/数据库状态/统计/数据目录（一键打开） |
-| 核心单测 | `cargo test -p gently-core` | **77/77 通过**（信封、26 错误码、57 命令均被路由、目录白名单、迁移幂等、FTS5、清单解析 8 项、`plugin.preview` 8 项、**插件安装/卸载/状态 7 项**） |
+| 核心单测 | `cargo test -p gently-core` | **81/81 通过**（信封、26 错误码、57 命令均被路由、目录白名单、迁移幂等、FTS5、清单解析 8 项、`plugin.preview` 8 项、**插件安装/卸载/状态 7 项**） |
 | 契约守卫 | `pnpm check:contract` | 文档 ↔ Rust 三处一致（57 命令 / 8 事件 / 26 错误码） |
 | Rust 构建 | `cargo build -p gently` | 通过（1m03s，复用既有依赖缓存；产物固定在 `src-tauri/target`） |
 | 启动实测 | `cargo run -p gently` | 迁移 0001 应用、WAL 生效、库落在 `%APPDATA%\com.xun.gently\gently.db` |

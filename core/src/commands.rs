@@ -45,6 +45,8 @@ pub struct CoreContext {
     pub plugins: Arc<PluginHost>,
     /// 核心自身发起的出网（订阅索引、插件下载）——与插件宿主共用同一传输实现
     pub http: Arc<dyn HttpTransport>,
+    /// 流式搜索的取消登记表
+    pub searches: Arc<crate::catalog::SearchRegistry>,
     pub events: Arc<dyn EventSink>,
 }
 
@@ -64,6 +66,7 @@ impl CoreContext {
             plugin_runtime: "quickjs",
             plugins,
             http,
+            searches: Arc::new(crate::catalog::SearchRegistry::default()),
             events: Arc::new(NullEventSink),
         }
     }
@@ -117,6 +120,8 @@ pub fn dispatch(
         "plugin.subscriptions.remove" => plugin_subscriptions_remove(ctx, params),
         "plugin.subscriptions.refresh" => plugin_subscriptions_refresh(ctx, params),
         "plugin.catalog.list" => plugin_catalog_list(ctx, params),
+        "catalog.search" => catalog_search(ctx, params),
+        "catalog.searchCancel" => catalog_search_cancel(ctx, params),
         // 其余命令：契约已登记，实现在后续里程碑接入
         other => Err(CoreError::not_implemented(other)),
     };
@@ -145,6 +150,8 @@ const IMPLEMENTED: &[&str] = &[
     "plugin.subscriptions.remove",
     "plugin.subscriptions.refresh",
     "plugin.catalog.list",
+    "catalog.search",
+    "catalog.searchCancel",
 ];
 
 /// 已实现命令数。
@@ -565,6 +572,35 @@ struct ReloadParams {
     id: String,
 }
 
+// ---------------------------------------------------------------- 曲库搜索（流式）
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CatalogSearchParams {
+    keyword: String,
+    #[serde(default)]
+    sources: Option<Vec<String>>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+fn catalog_search(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: CatalogSearchParams = parse_params(params)?;
+    let limit = params.limit.unwrap_or(30).clamp(1, 100);
+    crate::catalog::search(ctx, &params.keyword, params.sources, limit)
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchCancelParams {
+    search_id: String,
+}
+
+fn catalog_search_cancel(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: SearchCancelParams = parse_params(params)?;
+    crate::catalog::cancel(ctx, &params.search_id)?;
+    Ok(serde_json::Value::Null)
+}
 // ---------------------------------------------------------------- 订阅与社区仓库
 
 #[derive(Debug, serde::Deserialize)]
