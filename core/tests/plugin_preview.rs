@@ -124,10 +124,10 @@ fn invalid_source_returns_details_for_the_ui() {
 #[test]
 fn unimplemented_sources_say_so_explicitly() {
     let ctx = ctx();
+    // catalog 已在 M1c 实现（需要数据库与订阅缓存，覆盖在 tests/subscription.rs）
     for from in [
         json!({ "kind": "url", "url": "https://example.com/plugin.js" }),
         json!({ "kind": "archive", "path": "C:/tmp/plugin.zip" }),
-        json!({ "kind": "catalog", "subscriptionId": "sub-1", "fileName": "a.js" }),
     ] {
         let value = preview(&ctx, from.clone());
         assert_eq!(
@@ -150,5 +150,5 @@ fn too_large_paste_is_rejected() {
 #[test]
 fn preview_is_registered_as_implemented() {
     assert!(is_implemented("plugin.preview"));
-    assert_eq!(implemented_count(), 10);
+    assert_eq!(implemented_count(), 15);
 }

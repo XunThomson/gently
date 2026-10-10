@@ -11,6 +11,7 @@
 
 mod migrations;
 mod plugins;
+mod subscriptions;
 
 pub use migrations::latest_version;
 

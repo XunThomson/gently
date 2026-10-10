@@ -179,7 +179,24 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 - 说明：OS keyring 仍是内存实现（`keyring` crate 未在本地缓存），M1c 接入；
   计划中的「参考插件 + 故意越权测试插件」已由测试内的 fixture 覆盖（真实随包 demo 插件放 M1c）。
 
-#### M1 剩余
+#### M1c 订阅分发（进行中：核心已完成，界面与配套工具待做）
+- 迁移 **0003** `subscriptions` 表；索引原文缓存在 `<data>/subscriptions/<id>.json`（断网可用）；
+  订阅 id 由 URL 的 sha256 派生（稳定、无 uuid 依赖）。
+- **索引按不可信输入处理**：`fileName` 必须是纯文件名（拒绝 `..` / 路径分隔符 / `C:`，防目录穿越）、
+  `downloadUrl` 必须 HTTPS 且**不得指向回环/内网**（防 SSRF）、`sha256` 必须 64 位；任何非法条目
+  都会让整份索引被拒（避免「安静地少一半条目」），并把**字段级细节**写入订阅的 `lastError`。
+- 命令：`plugin.subscriptions.list/add/remove/refresh` + `plugin.catalog.list`（已实现 10 → **15**）。
+  添加订阅会立即尝试刷新一次；**刷新失败保留旧索引**并返回 `subscription.fetch_failed`。
+- `{kind:'catalog'}` 已接入 `plugin.preview`（下载但**不落盘**）与 `plugin.import`（校验 sha256 后才落盘，
+  不符 → `plugin.import_failed` 并给出实际校验和）；来源记为 `catalog`（含 subscriptionId 与 fileName），
+  `plugin.catalog.list` 据此标记 `installed` / `updateAvailable`。
+- 仍待做（M1c 收尾）：
+  1. **作者自测 CLI**（`check` 校验头部元数据/必选函数/`@hosts`；`index` 生成 `repository.json`）；
+  2. **随仓库 demo 插件**（只播随包测试音频，不解析任何真实音源）+ 说明文档；
+  3. **导入界面**：三种导入方式的中性说明 + 权限同意弹窗 + **第三方免责声明**（无默认订阅，ADR-0005）；
+  4. **OS keyring**（`keyring` crate 未在本地缓存；当前是内存实现，接口已抽好）。
+
+#### 历史：M1 早期剩余项（已完成）
 1. **M1c 订阅分发**：`plugin.subscriptions.*` + `plugin.catalog.list` + 一键安装 +
    从 `plugins/*.js` 生成 `repository.json` 的作者工具 + **导入界面的第三方免责声明**
    （无默认订阅列表，ADR-0005）。

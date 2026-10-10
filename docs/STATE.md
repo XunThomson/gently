@@ -111,6 +111,17 @@ tldr: 第十一轮：M0 完成（Rust 核心骨架 + 前端桥接与诊断页，
   （安装期静态扫描认不出箭头函数）；新增 `plugin.reload`（已实现命令 10 条）。
 - OS keyring 仍为内存实现（`keyring` crate 未缓存），M1c 接入。
 
+### 8. M1c：订阅与社区仓库（第十四轮，核心已完成）
+
+- 迁移 0003 `subscriptions`；索引缓存在 `<data>/subscriptions/<id>.json`（断网可列出条目）；
+  订阅 id 由 URL 的 sha256 派生。
+- **索引按不可信输入处理**：`fileName` 拒绝路径穿越、`downloadUrl` 必须 HTTPS 且非内网（防 SSRF）、
+  `sha256` 格式校验；非法条目整份拒绝并把字段级细节写进 `lastError`。
+- 命令 `plugin.subscriptions.list/add/remove/refresh` + `plugin.catalog.list`（已实现 15 条）；
+  `{kind:'catalog'}` 接入预览（下载不落盘）与安装（sha256 校验后才落盘，来源记为 catalog）；
+  刷新失败保留旧索引并报 `subscription.fetch_failed`。
+- 仍待做：作者自测 CLI、随仓库 demo 插件、导入界面（中性说明 + 同意弹窗 + 第三方免责声明）、OS keyring。
+
 ## 验证
 
 | 验证 | 命令 | 结果 |
@@ -118,7 +129,7 @@ tldr: 第十一轮：M0 完成（Rust 核心骨架 + 前端桥接与诊断页，
 | 类型检查 | `pnpm typecheck` | 通过（契约 v0.1 → v0.2 重写后均为 0 错误） |
 | 冒烟测试 | `pnpm smoke` | **176/176 通过**（原 172 + 桥接层 4 条断言；v0.2 类型同步后复测） |
 | 前端接入 | 设置页「本机核心」诊断卡片 + `core.bridge.ts` | 浏览器显示「浏览器模式」并退回 mock；桌面端显示核心版本/平台/数据库状态/统计/数据目录（一键打开） |
-| 核心单测 | `cargo test -p gently-core` | **60/60 通过**（信封、26 错误码、57 命令均被路由、目录白名单、迁移幂等、FTS5、清单解析 8 项、`plugin.preview` 8 项、**插件安装/卸载/状态 7 项**） |
+| 核心单测 | `cargo test -p gently-core` | **70/70 通过**（信封、26 错误码、57 命令均被路由、目录白名单、迁移幂等、FTS5、清单解析 8 项、`plugin.preview` 8 项、**插件安装/卸载/状态 7 项**） |
 | 契约守卫 | `pnpm check:contract` | 文档 ↔ Rust 三处一致（57 命令 / 8 事件 / 26 错误码） |
 | Rust 构建 | `cargo build -p gently` | 通过（1m03s，复用既有依赖缓存；产物固定在 `src-tauri/target`） |
 | 启动实测 | `cargo run -p gently` | 迁移 0001 应用、WAL 生效、库落在 `%APPDATA%\com.xun.gently\gently.db` |

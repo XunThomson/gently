@@ -14,6 +14,7 @@ pub struct Migration {
 pub const MIGRATIONS: &[Migration] = &[
     Migration { name: "0001_init", sql: include_str!("migrations/0001_init.sql") },
     Migration { name: "0002_plugin_state", sql: include_str!("migrations/0002_plugin_state.sql") },
+    Migration { name: "0003_subscriptions", sql: include_str!("migrations/0003_subscriptions.sql") },
 ];
 
 /// 顺序应用未执行的迁移，返回最终的 `user_version`。

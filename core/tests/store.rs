@@ -26,7 +26,7 @@ fn migrates_to_latest_and_sets_wal() {
 
     let store = Store::open(&paths.db).expect("打开数据库");
     assert_eq!(store.schema_version(), latest_version(), "应迁移到最新版本");
-    assert_eq!(latest_version(), 2, "M0 的 meta 表 + M1a 的 plugin_state/plugin_config");
+    assert_eq!(latest_version(), 3, "meta + plugin_state/plugin_config + subscriptions");
 
     let info = store.info().expect("读取信息");
     assert_eq!(info.journal_mode.to_lowercase(), "wal", "WAL 未生效");

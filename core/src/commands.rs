@@ -27,8 +27,9 @@ use crate::contract::{
 use crate::events::{EventSink, NullEventSink};
 use crate::paths::AppPaths;
 use crate::plugin::{
-    parse_manifest_json, parse_source, BlockingHttp, HostLimits, HttpLimits, InstallSource,
-    InstalledPlugin, MemoryCredentialStore, PluginHost, MAX_SOURCE_BYTES,
+    is_private_host, parse_index, parse_manifest_json, parse_source, sha256_hex, BlockingHttp,
+    CatalogEntry, HostLimits, HttpLimits, HttpRequest, HttpTransport, InstallSource,
+    InstalledPlugin, MemoryCredentialStore, PluginHost, Subscription, MAX_SOURCE_BYTES,
 };
 use crate::store::Store;
 
@@ -40,16 +41,19 @@ pub struct CoreContext {
     pub store_error: Option<String>,
     /// 插件运行时名：M1b 起为 `quickjs`。
     pub plugin_runtime: &'static str,
-    /// 插件沙箱宿主（默认出网实现 + 内存凭据；M1c 换成 OS keyring）
+    /// 插件沙箱宿主（默认出网实现 + 内存凭据；OS keyring 在后续步骤接入）
     pub plugins: Arc<PluginHost>,
+    /// 核心自身发起的出网（订阅索引、插件下载）——与插件宿主共用同一传输实现
+    pub http: Arc<dyn HttpTransport>,
     pub events: Arc<dyn EventSink>,
 }
 
 impl CoreContext {
     pub fn new(paths: AppPaths) -> Self {
+        let http: Arc<dyn HttpTransport> = Arc::new(BlockingHttp::new(HttpLimits::default()));
         let plugins = Arc::new(PluginHost::new(
             paths.clone(),
-            Arc::new(BlockingHttp::new(HttpLimits::default())),
+            Arc::clone(&http),
             Arc::new(MemoryCredentialStore::new()),
             HostLimits::default(),
         ));
@@ -59,6 +63,7 @@ impl CoreContext {
             store_error: None,
             plugin_runtime: "quickjs",
             plugins,
+            http,
             events: Arc::new(NullEventSink),
         }
     }
@@ -107,6 +112,11 @@ pub fn dispatch(
         "plugin.setEnabled" => plugin_set_enabled(ctx, params),
         "plugin.setPriority" => plugin_set_priority(ctx, params),
         "plugin.reload" => plugin_reload(ctx, params),
+        "plugin.subscriptions.list" => plugin_subscriptions_list(ctx),
+        "plugin.subscriptions.add" => plugin_subscriptions_add(ctx, params),
+        "plugin.subscriptions.remove" => plugin_subscriptions_remove(ctx, params),
+        "plugin.subscriptions.refresh" => plugin_subscriptions_refresh(ctx, params),
+        "plugin.catalog.list" => plugin_catalog_list(ctx, params),
         // 其余命令：契约已登记，实现在后续里程碑接入
         other => Err(CoreError::not_implemented(other)),
     };
@@ -130,6 +140,11 @@ const IMPLEMENTED: &[&str] = &[
     "plugin.setEnabled",
     "plugin.setPriority",
     "plugin.reload",
+    "plugin.subscriptions.list",
+    "plugin.subscriptions.add",
+    "plugin.subscriptions.remove",
+    "plugin.subscriptions.refresh",
+    "plugin.catalog.list",
 ];
 
 /// 已实现命令数。
@@ -293,7 +308,12 @@ fn plugin_preview(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serd
             return Err(not_implemented_source("url", &url));
         }
         ImportSource::Catalog { subscription_id, file_name } => {
-            return Err(not_implemented_source("catalog", &format!("{subscription_id}/{file_name}")));
+            // 预览同样要下载内容（否则无法给出真实清单），但仍**只读不写**
+            let (_, bytes) = download_catalog_entry(ctx, &subscription_id, &file_name)?;
+            let text = String::from_utf8(bytes).map_err(|_| {
+                CoreError::new(ErrorCode::PluginInvalidSource, "下载的插件不是 UTF-8 文本")
+            })?;
+            parse_source(&text)?
         }
     };
 
@@ -344,18 +364,31 @@ fn plugin_import(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde
     }
     let store = require_store(ctx)?;
 
-    let source = match &params.from {
-        ImportSource::Paste { content } => InstallSource::Paste(content),
-        ImportSource::File { path } => InstallSource::File(std::path::Path::new(path)),
-        ImportSource::Dir { path } => InstallSource::Dir(std::path::Path::new(path)),
-        ImportSource::Archive { path } => return Err(not_implemented_source("archive", path)),
-        ImportSource::Url { url } => return Err(not_implemented_source("url", url)),
+    // 订阅条目需要先把内容下载下来（字节必须活到 install 调用结束，因此单独一条分支）
+    let outcome = match &params.from {
         ImportSource::Catalog { subscription_id, file_name } => {
-            return Err(not_implemented_source("catalog", &format!("{subscription_id}/{file_name}")))
+            let (_, bytes) = download_catalog_entry(ctx, subscription_id, file_name)?;
+            crate::plugin::install(
+                &ctx.paths,
+                InstallSource::Downloaded {
+                    subscription_id,
+                    file_name,
+                    content: &bytes,
+                },
+            )?
+        }
+        other => {
+            let source = match other {
+                ImportSource::Paste { content } => InstallSource::Paste(content),
+                ImportSource::File { path } => InstallSource::File(std::path::Path::new(path)),
+                ImportSource::Dir { path } => InstallSource::Dir(std::path::Path::new(path)),
+                ImportSource::Archive { path } => return Err(not_implemented_source("archive", path)),
+                ImportSource::Url { url } => return Err(not_implemented_source("url", url)),
+                ImportSource::Catalog { .. } => unreachable!("catalog 已在上方分支处理"),
+            };
+            crate::plugin::install(&ctx.paths, source)?
         }
     };
-
-    let outcome = crate::plugin::install(&ctx.paths, source)?;
     store.upsert_plugin(&outcome.record)?;
 
     // 事件：安装完成后前端刷新列表（M1c 会带进度阶段）
@@ -456,7 +489,14 @@ fn plugin_summary(record: &InstalledPlugin) -> serde_json::Value {
     let manifest = &record.manifest;
     let origin = match record.origin_kind.as_str() {
         "url" => serde_json::json!({ "kind": "url", "url": record.origin_value }),
-        "catalog" => serde_json::json!({ "kind": "catalog", "subscriptionId": record.origin_value }),
+        "catalog" => {
+            // origin_value 形如 `<subscriptionId>::<fileName>`
+            let (subscription_id, file_name) =
+                record.origin_value.split_once("::").unwrap_or((record.origin_value.as_str(), ""));
+            serde_json::json!({
+                "kind": "catalog", "subscriptionId": subscription_id, "fileName": file_name
+            })
+        }
         "paste" => serde_json::json!({ "kind": "paste" }),
         other => serde_json::json!({ "kind": other, "path": record.origin_value }),
     };
@@ -507,6 +547,255 @@ struct ReloadParams {
     id: String,
 }
 
+// ---------------------------------------------------------------- 订阅与社区仓库
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SubscriptionAddParams {
+    url: String,
+    name: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SubscriptionIdParams {
+    id: String,
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct CatalogListParams {
+    subscription_id: Option<String>,
+    query: Option<String>,
+    tags: Option<Vec<String>>,
+}
+
+fn plugin_subscriptions_list(ctx: &CoreContext) -> Fallible<serde_json::Value> {
+    to_json(require_store(ctx)?.list_subscriptions()?)
+}
+
+/// 添加订阅：登记后**立即尝试拉一次索引**。
+/// 拉取失败不算添加失败——订阅仍然存在，只是带上 `lastError`（用户可在列表里看到并重试）。
+fn plugin_subscriptions_add(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: SubscriptionAddParams = parse_params(params)?;
+    validate_subscription_url(&params.url)?;
+    let store = require_store(ctx)?;
+
+    let id = subscription_id_for(&params.url);
+    let name = params
+        .name
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| default_subscription_name(&params.url));
+    store.add_subscription(&id, &name, &params.url)?;
+
+    if let Err(err) = refresh_subscription(ctx, store, &id) {
+        tracing::warn!(subscription = %id, %err, "订阅添加成功但首次刷新失败");
+    }
+
+    let record = store
+        .get_subscription(&id)?
+        .ok_or_else(|| CoreError::internal("订阅写入后读取失败"))?;
+    to_json(record)
+}
+
+fn plugin_subscriptions_remove(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: SubscriptionIdParams = parse_params(params)?;
+    let store = require_store(ctx)?;
+    if !store.remove_subscription(&params.id)? {
+        return Err(CoreError::not_found(format!("订阅不存在：{}", params.id)));
+    }
+    // 缓存索引一并清掉（否则删了订阅还能看到条目）
+    let _ = std::fs::remove_file(index_cache_path(ctx, &params.id));
+    Ok(serde_json::Value::Null)
+}
+
+fn plugin_subscriptions_refresh(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: SubscriptionIdParams = parse_params(params)?;
+    let store = require_store(ctx)?;
+    to_json(refresh_subscription(ctx, store, &params.id)?)
+}
+
+/// 拉取并校验索引；成功写缓存，失败**保留旧索引**并记录原因（契约 §2）。
+fn refresh_subscription(ctx: &CoreContext, store: &Store, id: &str) -> Fallible<Subscription> {
+    let record = store
+        .get_subscription(id)?
+        .ok_or_else(|| CoreError::not_found(format!("订阅不存在：{id}")))?;
+
+    let request = HttpRequest {
+        method: "GET".into(),
+        url: record.url.clone(),
+        headers: vec![("accept".into(), "application/json".into())],
+        body: None,
+    };
+
+    let response = ctx.http.send(&request).map_err(|err| {
+        let _ = store.mark_subscription_error(id, &err.message);
+        CoreError::new(
+            ErrorCode::SubscriptionFetchFailed,
+            format!("拉取订阅索引失败：{}", err.message),
+        )
+        .with_details(serde_json::json!({ "subscriptionId": id, "url": record.url }))
+    })?;
+
+    if response.truncated {
+        let _ = store.mark_subscription_error(id, "索引超过体积上限");
+        return Err(CoreError::new(ErrorCode::SubscriptionInvalidIndex, "索引超过体积上限"));
+    }
+
+    let index = parse_index(&response.body).map_err(|err| {
+        // 把字段级细节也带上：用户需要知道索引「哪里」非法，而不是只有一句「包含非法条目」
+        let _ = store.mark_subscription_error(id, &describe_error(&err));
+        err
+    })?;
+
+    std::fs::create_dir_all(&ctx.paths.subscriptions)?;
+    std::fs::write(index_cache_path(ctx, id), response.body.as_bytes())?;
+    store.mark_subscription_refreshed(id, index.sources.len() as i64)?;
+
+    store
+        .get_subscription(id)?
+        .ok_or_else(|| CoreError::internal("订阅刷新后读取失败"))
+}
+
+/// 订阅内可安装条目 + 本地安装状态。
+fn plugin_catalog_list(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: CatalogListParams = parse_params(params).unwrap_or_default();
+    let store = require_store(ctx)?;
+    let installed = store.list_plugins()?;
+    let mut entries: Vec<CatalogEntry> = Vec::new();
+
+    for subscription in store.list_subscriptions()? {
+        if let Some(filter) = &params.subscription_id {
+            if filter != &subscription.id {
+                continue;
+            }
+        }
+        // 未刷新过的订阅没有缓存：跳过（列表里由 lastError 提示）
+        let Ok(text) = std::fs::read_to_string(index_cache_path(ctx, &subscription.id)) else {
+            continue;
+        };
+        let Ok(index) = parse_index(&text) else { continue };
+
+        for entry in index.sources {
+            if let Some(query) = &params.query {
+                let needle = query.to_lowercase();
+                let haystack = format!("{} {} {}", entry.name, entry.author, entry.description).to_lowercase();
+                if !needle.is_empty() && !haystack.contains(&needle) {
+                    continue;
+                }
+            }
+            if let Some(tags) = &params.tags {
+                if !tags.is_empty() && !tags.iter().any(|tag| entry.tags.contains(tag)) {
+                    continue;
+                }
+            }
+
+            let origin_value = format!("{}::{}", subscription.id, entry.file_name);
+            let installed_record = installed
+                .iter()
+                .find(|record| record.origin_kind == "catalog" && record.origin_value == origin_value);
+            entries.push(CatalogEntry {
+                installed: installed_record.is_some(),
+                update_available: installed_record
+                    .map(|record| record.manifest.version != entry.version)
+                    .unwrap_or(false),
+                subscription_id: subscription.id.clone(),
+                subscription_name: index.name.clone(),
+                entry,
+            });
+        }
+    }
+
+    to_json(entries)
+}
+
+/// 下载订阅条目并校验 sha256（有则校验，缺则记录提示）。
+fn download_catalog_entry(
+    ctx: &CoreContext,
+    subscription_id: &str,
+    file_name: &str,
+) -> Fallible<(crate::plugin::SubscriptionSourceEntry, Vec<u8>)> {
+    let store = require_store(ctx)?;
+    if store.get_subscription(subscription_id)?.is_none() {
+        return Err(CoreError::not_found(format!("订阅不存在：{subscription_id}")));
+    }
+
+    let text = std::fs::read_to_string(index_cache_path(ctx, subscription_id)).map_err(|_| {
+        CoreError::new(ErrorCode::SubscriptionFetchFailed, "订阅索引尚未刷新，请先 refresh")
+            .with_details(serde_json::json!({ "subscriptionId": subscription_id }))
+    })?;
+    let index = parse_index(&text)?;
+    let entry = index
+        .find(file_name)
+        .ok_or_else(|| CoreError::not_found(format!("索引里没有该文件：{file_name}")))?
+        .clone();
+
+    let response = ctx.http.send(&HttpRequest {
+        method: "GET".into(),
+        url: entry.download_url.clone(),
+        headers: vec![],
+        body: None,
+    })?;
+    if response.truncated {
+        return Err(CoreError::new(ErrorCode::PluginImportFailed, "下载内容超过体积上限"));
+    }
+
+    let bytes = response.body.into_bytes();
+    if let Some(expected) = &entry.sha256 {
+        let actual = sha256_hex(&bytes);
+        if !actual.eq_ignore_ascii_case(expected) {
+            return Err(CoreError::new(ErrorCode::PluginImportFailed, "校验和不匹配，已拒绝安装")
+                .with_details(serde_json::json!({
+                    "expected": expected, "actual": actual, "file": entry.file_name
+                })));
+        }
+    } else {
+        tracing::warn!(file = %entry.file_name, "订阅条目未提供 sha256，无法校验完整性");
+    }
+
+    Ok((entry, bytes))
+}
+
+/// 订阅地址校验：必须 HTTPS 且不得指向回环/内网（核心主动发起，防 SSRF）。
+fn validate_subscription_url(url: &str) -> Fallible<()> {
+    if !url.starts_with("https://") {
+        return Err(CoreError::invalid_argument("订阅地址必须是 HTTPS"));
+    }
+    let host = crate::plugin::host_of(url)
+        .ok_or_else(|| CoreError::invalid_argument("无法解析订阅地址的域名"))?;
+    if is_private_host(&host) {
+        return Err(CoreError::invalid_argument("订阅地址不得指向回环或内网地址")
+            .with_details(serde_json::json!({ "host": host })));
+    }
+    Ok(())
+}
+
+/// 订阅 id 由 URL 派生（稳定且可复现，不需要 uuid 依赖）。
+/// 把错误压成一行可展示的说明（带字段级细节，超长截断）。
+fn describe_error(err: &CoreError) -> String {
+    match &err.details {
+        None => err.message.clone(),
+        Some(details) => {
+            let text = format!("{}（{details}）", err.message);
+            if text.chars().count() > 300 {
+                format!("{}…", text.chars().take(300).collect::<String>())
+            } else {
+                text
+            }
+        }
+    }
+}
+fn subscription_id_for(url: &str) -> String {
+    format!("sub-{}", &sha256_hex(url.as_bytes())[..12])
+}
+
+fn default_subscription_name(url: &str) -> String {
+    crate::plugin::host_of(url).unwrap_or_else(|| "订阅".to_string())
+}
+
+fn index_cache_path(ctx: &CoreContext, id: &str) -> std::path::PathBuf {
+    ctx.paths.subscriptions.join(format!("{id}.json"))
+}
 // ---------------------------------------------------------------- 工具
 
 /// 解析命令参数；失败时把 serde 的原因放进 `details`，便于前端定位字段。

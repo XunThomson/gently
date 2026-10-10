@@ -54,6 +54,8 @@ pub enum InstallSource<'a> {
     File(&'a Path),
     /// 目录包（含 `plugin.json`）
     Dir(&'a Path),
+    /// 从订阅下载的内容（sha256 由调用方在下载后校验）
+    Downloaded { subscription_id: &'a str, file_name: &'a str, content: &'a [u8] },
 }
 
 impl InstallSource<'_> {
@@ -62,6 +64,10 @@ impl InstallSource<'_> {
             Self::Paste(_) => ("paste", String::new()),
             Self::File(path) => ("file", path.to_string_lossy().replace('\\', "/")),
             Self::Dir(path) => ("dir", path.to_string_lossy().replace('\\', "/")),
+            // 用 `::` 拼接订阅 id 与文件名：列表时据此判断「某条索引是否已安装」
+            Self::Downloaded { subscription_id, file_name, .. } => {
+                ("catalog", format!("{subscription_id}::{file_name}"))
+            }
         }
     }
 }
@@ -186,6 +192,21 @@ fn stage_source(
             let bytes = read_limited(path)?;
             let text = String::from_utf8(bytes.clone()).map_err(|_| {
                 CoreError::new(ErrorCode::PluginInvalidSource, "插件文件不是 UTF-8 文本")
+            })?;
+            let parsed = parse_source(&text)?;
+            std::fs::write(staging.join(ENTRY_FILE), &bytes)?;
+            Ok((with_entry(parsed.manifest), parsed.warnings, Some(sha256_hex(&bytes))))
+        }
+        InstallSource::Downloaded { content, .. } => {
+            let bytes = content.to_vec();
+            if bytes.len() as u64 > MAX_PLUGIN_BYTES {
+                return Err(CoreError::invalid_argument(format!(
+                    "插件超过 {MAX_PLUGIN_BYTES} 字节上限"
+                ))
+                .with_details(serde_json::json!({ "bytes": bytes.len(), "limit": MAX_PLUGIN_BYTES })));
+            }
+            let text = String::from_utf8(bytes.clone()).map_err(|_| {
+                CoreError::new(ErrorCode::PluginInvalidSource, "下载的插件不是 UTF-8 文本")
             })?;
             let parsed = parse_source(&text)?;
             std::fs::write(staging.join(ENTRY_FILE), &bytes)?;

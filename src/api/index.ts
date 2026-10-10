@@ -152,7 +152,7 @@ export type PluginOrigin =
     | {kind: 'dir'; path: string}
     | {kind: 'archive'; path: string}
     | {kind: 'url'; url: string}
-    | {kind: 'catalog'; subscriptionId: string}
+    | {kind: 'catalog'; subscriptionId: string; fileName?: string}
     /** 粘贴文本导入：不留来源路径，仅凭 sha256 识别内容变化 */
     | {kind: 'paste'};
 

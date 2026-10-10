@@ -99,6 +99,6 @@ fn invalid_params_are_reported_as_invalid_argument() {
 
 #[test]
 fn implemented_count_matches_milestone_scope() {
-    // M0：system 三条；M1a：预览 + 安装 + 列表 + 卸载 + 启停/优先级；M1b：reload（建运行时）
-    assert_eq!(implemented_count(), 10, "已实现命令数变了就要同步这里与 ROADMAP");
+    // M0：system 三条；M1a：预览/安装/列表/卸载/启停/优先级；M1b：reload；M1c：订阅四条 + catalog.list
+    assert_eq!(implemented_count(), 15, "已实现命令数变了就要同步这里与 ROADMAP");
 }
