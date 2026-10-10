@@ -103,6 +103,12 @@ export const corePlugin = {
     install: (from: ImportSource) => invokeCore<PluginImportResult>('plugin.import', {from, consent: true}),
     /** 建立运行时并重新探测能力（安装只落盘，真正可用发生在这里） */
     reload: (id: string) => invokeCore<PluginSummary>('plugin.reload', {id}),
+    setEnabled: (id: string, enabled: boolean) =>
+        invokeCore<PluginSummary>('plugin.setEnabled', {id, enabled}),
+    /** 回退优先级：数值越小越优先（决定播放候选顺序） */
+    setPriority: (id: string, priority: number) => invokeCore<null>('plugin.setPriority', {id, priority}),
+    /** 卸载；`deleteFiles` 缺省为 true（核心侧默认连文件一起删） */
+    remove: (id: string, deleteFiles = true) => invokeCore<null>('plugin.remove', {id, deleteFiles}),
 };
 
 /** 供设置页展示的错误文案（不再区分错误码，直接给开发者说明）。 */

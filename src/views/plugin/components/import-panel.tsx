@@ -1,9 +1,10 @@
 import {useCallback, useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
-import type {ImportSource, PluginImportPreview, PluginPermission, PluginSummary} from '../../../api';
+import type {CoreResult, ImportSource, PluginImportPreview, PluginPermission, PluginSummary} from '../../../api';
 import {Button} from '../../../components/ui/button';
 import {UnderlineRadioGroup} from '../../../components/ui/radio-group';
 import {BadgeCell, TextCell} from '../../../components/ui/data-table';
+import {useConfirm} from '../../../hooks/useConfirm';
 import {coreAvailable, corePlugin} from '../../../services';
 import styles from '../plugin.module.css';
 
@@ -28,6 +29,7 @@ const PERMISSION_LABEL: Record<PluginPermission, string> = {
  */
 export function ImportPanel() {
     const {t} = useTranslation();
+    const confirm = useConfirm();
     const available = coreAvailable();
 
     const [mode, setMode] = useState<SourceMode>('paste');
@@ -75,6 +77,16 @@ export function ImportPanel() {
         setBusy(false);
     };
 
+    /** 统一动作包装：失败只提示，不抛；结束后刷新列表 */
+    const run = async (action: () => Promise<CoreResult<unknown>>) => {
+        setBusy(true);
+        setError(null);
+        const result = await action();
+        if (!result.ok) setError(result.error.message);
+        setBusy(false);
+        await refresh();
+    };
+
     const install = async () => {
         const from = currentSource();
         if (!from || !consent) return;
@@ -82,6 +94,9 @@ export function ImportPanel() {
         setError(null);
         const result = await corePlugin.install(from);
         if (result.ok) {
+            // 安装只落盘；这里顺手建立运行时并探测能力，让插件立刻可用
+            const reloaded = await corePlugin.reload(result.data.plugin.id);
+            if (!reloaded.ok) setError(reloaded.error.message);
             setPreview(null);
             setConsent(false);
             setText('');
@@ -91,6 +106,29 @@ export function ImportPanel() {
             setError(result.error.message);
         }
         setBusy(false);
+    };
+
+    /** 上/下移：整表重排后按 10 递增回写优先级（默认优先级都相同，交换数值无效，必须重排） */
+    const move = async (index: number, delta: number) => {
+        const target = index + delta;
+        if (target < 0 || target >= installed.length) return;
+        const next = [...installed];
+        const [moved] = next.splice(index, 1);
+        next.splice(target, 0, moved);
+
+        setBusy(true);
+        setError(null);
+        for (const [position, plugin] of next.entries()) {
+            const want = (position + 1) * 10;
+            if (plugin.priority === want) continue;
+            const result = await corePlugin.setPriority(plugin.id, want);
+            if (!result.ok) {
+                setError(result.error.message);
+                break;
+            }
+        }
+        setBusy(false);
+        await refresh();
     };
 
     return (
@@ -229,15 +267,68 @@ export function ImportPanel() {
                         <p className={styles.hint}>{t('page.plugin.installedEmpty')}</p>
                     ) : (
                         <ul className={styles.list}>
-                            {installed.map((plugin) => (
+                            {installed.map((plugin, index) => (
                                 <li key={plugin.id} className={styles.row}>
                                     <span>
                                         <TextCell>{plugin.name}</TextCell>{' '}
-                                        <TextCell tone="muted">v{plugin.version}</TextCell>
+                                        <TextCell tone="muted">v{plugin.version}</TextCell>{' '}
+                                        <BadgeCell tone={plugin.enabled ? 'success' : 'muted'}>
+                                            {plugin.enabled ? t('common.enabled') : t('common.disabled')}
+                                        </BadgeCell>
                                     </span>
-                                    <BadgeCell tone={plugin.enabled ? 'success' : 'muted'}>
-                                        {plugin.enabled ? t('common.enabled') : t('common.disabled')}
-                                    </BadgeCell>
+                                    <span className={styles.actions}>
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            disabled={busy}
+                                            onClick={() => void move(index, -1)}
+                                        >
+                                            {t('page.plugin.moveUp')}
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            disabled={busy}
+                                            onClick={() => void move(index, 1)}
+                                        >
+                                            {t('page.plugin.moveDown')}
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            disabled={busy}
+                                            onClick={() =>
+                                                void run(() => corePlugin.setEnabled(plugin.id, !plugin.enabled))
+                                            }
+                                        >
+                                            {plugin.enabled ? t('common.disable') : t('common.enable')}
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            disabled={busy}
+                                            onClick={() => void run(() => corePlugin.reload(plugin.id))}
+                                        >
+                                            {t('page.plugin.reload')}
+                                        </Button>
+                                        {/* 卸载是不可逆的落盘操作：必须走二次确认（AGENTS 约束 11） */}
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            disabled={busy}
+                                            onClick={() =>
+                                                confirm({
+                                                    titleKey: 'confirm.uninstallPluginTitle',
+                                                    descKey: 'confirm.uninstallPluginDesc',
+                                                    descParams: {name: plugin.name},
+                                                    tone: 'danger',
+                                                    onConfirm: () => run(() => corePlugin.remove(plugin.id)),
+                                                })
+                                            }
+                                        >
+                                            {t('common.uninstall')}
+                                        </Button>
+                                    </span>
                                 </li>
                             ))}
                         </ul>
