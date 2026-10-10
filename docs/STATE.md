@@ -129,7 +129,7 @@ tldr: 第十一轮：M0 完成（Rust 核心骨架 + 前端桥接与诊断页，
 | 类型检查 | `pnpm typecheck` | 通过（契约 v0.1 → v0.2 重写后均为 0 错误） |
 | 冒烟测试 | `pnpm smoke` | **176/176 通过**（原 172 + 桥接层 4 条断言；v0.2 类型同步后复测） |
 | 前端接入 | 设置页「本机核心」诊断卡片 + `core.bridge.ts` | 浏览器显示「浏览器模式」并退回 mock；桌面端显示核心版本/平台/数据库状态/统计/数据目录（一键打开） |
-| 核心单测 | `cargo test -p gently-core` | **81/81 通过**（信封、26 错误码、57 命令均被路由、目录白名单、迁移幂等、FTS5、清单解析 8 项、`plugin.preview` 8 项、**插件安装/卸载/状态 7 项**） |
+| 核心单测 | `cargo test -p gently-core` | **87/87 通过**（信封、26 错误码、57 命令均被路由、目录白名单、迁移幂等、FTS5、清单解析 8 项、`plugin.preview` 8 项、**插件安装/卸载/状态 7 项**） |
 | 契约守卫 | `pnpm check:contract` | 文档 ↔ Rust 三处一致（57 命令 / 8 事件 / 26 错误码） |
 | Rust 构建 | `cargo build -p gently` | 通过（1m03s，复用既有依赖缓存；产物固定在 `src-tauri/target`） |
 | 启动实测 | `cargo run -p gently` | 迁移 0001 应用、WAL 生效、库落在 `%APPDATA%\com.xun.gently\gently.db` |

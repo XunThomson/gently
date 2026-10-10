@@ -51,7 +51,7 @@ import FavoritesView from '../src/views/favorites';
 import PlaylistView from '../src/views/playlist';
 import NowPlayingView from '../src/views/now-playing';
 import SearchView from '../src/views/search';
-import {coreAvailable, invokeCore} from '../src/services';
+import {coreAvailable, coreResolveUrl, coreSearch, invokeCore} from '../src/services';
 
 const failures: string[] = [];
 const notes: string[] = [];
@@ -755,6 +755,12 @@ async function main(): Promise<void> {
         bridgeResult.ok ? 'unexpected ok' : bridgeResult.error.code,
     );
     check('core: 信封始终带 traceId', typeof bridgeResult.traceId === 'string');
+
+    /* 核心搜索/播放门面：无桌面宿主时必须安全降级（不请求、不抛异常） */
+    const searchResult = await coreSearch('夜曲', {handlers: {onPartial: () => undefined}});
+    check('core: 浏览器下搜索门面返回 null 而不抛异常', searchResult === null);
+    const resolved = await coreResolveUrl('demo:1', 'standard');
+    check('core: 浏览器下播放解析返回 null 而不抛异常', resolved === null);
 
     console.log(notes.join('\n'));
     if (failures.length > 0) {

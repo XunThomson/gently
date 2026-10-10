@@ -6,3 +6,5 @@ export type {AudioHandlers} from './audio.service';
 export {fileService} from './file.service';
 export {windowService, isTauri} from './window.service';
 export {coreAvailable, corePlugin, coreSystem, describeError, invokeCore, probeCore} from './core.bridge';
+export {coreCancelSearch, coreResolveUrl, coreSearch} from './core.catalog';
+export type {CoreSearchResult, SearchHandlers} from './core.catalog';

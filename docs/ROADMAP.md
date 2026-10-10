@@ -270,6 +270,10 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 - **禁用立即生效**（测试抓到的真 bug）：已加载但被停用的插件此前仍会参与搜索，
   现在以库中状态为准在每次搜索时过滤。
 - 已实现命令 15 → **17**（`catalog.search` / `catalog.searchCancel`）。
+- **前端门面（已完成，未接线到视图）**：`src/services/core.catalog.ts` 提供 `coreSearch`（把流式事件
+  适配成 Promise + 逐源回调，含超时兜底与取消）与 `coreResolveUrl`（只返回 `streamUrl`，并注明
+  `originUrl` 不可直接播放）。**无桌面宿主时一律返回 null**，由调用方退回 mock；冒烟测试锁定这两条。
+  替换 `catalog.service.ts` 内部实现与视图（流式分源视图）留作下一步——避免同时改动数据形状与渲染逻辑。
 - **仍待做（M2 剩余）**：`catalog.track/album/playlist/lyrics/topLists/topList/recommend`、
   **本地流代理**（仅回环 + 一次性 token + Range + 请求头注入 + SSRF 防护）与
   `playback.resolve` 的候选回退链；前端 `services/catalog` + `services/audio` 切到命令层
