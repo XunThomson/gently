@@ -305,7 +305,11 @@ fn plugin_preview(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serd
             return Err(not_implemented_source("archive", &path));
         }
         ImportSource::Url { url } => {
-            return Err(not_implemented_source("url", &url));
+            let bytes = download_url(ctx, &url)?;
+            let text = String::from_utf8(bytes).map_err(|_| {
+                CoreError::new(ErrorCode::PluginInvalidSource, "下载的插件不是 UTF-8 文本")
+            })?;
+            parse_source(&text)?
         }
         ImportSource::Catalog { subscription_id, file_name } => {
             // 预览同样要下载内容（否则无法给出真实清单），但仍**只读不写**
@@ -370,9 +374,22 @@ fn plugin_import(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde
             let (_, bytes) = download_catalog_entry(ctx, subscription_id, file_name)?;
             crate::plugin::install(
                 &ctx.paths,
-                InstallSource::Downloaded {
-                    subscription_id,
-                    file_name,
+                InstallSource::Bytes {
+                    origin_kind: "catalog",
+                    // 用 `::` 拼接订阅 id 与文件名：catalog.list 据此判断「某条索引是否已安装」
+                    origin_value: format!("{subscription_id}::{file_name}"),
+                    content: &bytes,
+                },
+            )?
+        }
+        // URL 直链同样要先下载（字节必须活到 install 调用结束）
+        ImportSource::Url { url } => {
+            let bytes = download_url(ctx, url)?;
+            crate::plugin::install(
+                &ctx.paths,
+                InstallSource::Bytes {
+                    origin_kind: "url",
+                    origin_value: url.clone(),
                     content: &bytes,
                 },
             )?
@@ -383,8 +400,9 @@ fn plugin_import(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde
                 ImportSource::File { path } => InstallSource::File(std::path::Path::new(path)),
                 ImportSource::Dir { path } => InstallSource::Dir(std::path::Path::new(path)),
                 ImportSource::Archive { path } => return Err(not_implemented_source("archive", path)),
-                ImportSource::Url { url } => return Err(not_implemented_source("url", url)),
-                ImportSource::Catalog { .. } => unreachable!("catalog 已在上方分支处理"),
+                ImportSource::Url { .. } | ImportSource::Catalog { .. } => {
+                    unreachable!("下载类来源已在上方分支处理")
+                }
             };
             crate::plugin::install(&ctx.paths, source)?
         }
@@ -756,6 +774,31 @@ fn download_catalog_entry(
     Ok((entry, bytes))
 }
 
+/// 下载一个 URL 直链（`{kind:'url'}` 导入用）。
+///
+/// 与订阅下载同样的约束：**仅 HTTPS、不得指向回环/内网**（用户填的地址也要防 SSRF）。
+fn download_url(ctx: &CoreContext, url: &str) -> Fallible<Vec<u8>> {
+    if !url.starts_with("https://") {
+        return Err(CoreError::invalid_argument("插件地址必须是 HTTPS"));
+    }
+    let host = crate::plugin::host_of(url)
+        .ok_or_else(|| CoreError::invalid_argument("无法解析插件地址的域名"))?;
+    if is_private_host(&host) {
+        return Err(CoreError::invalid_argument("插件地址不得指向回环或内网地址")
+            .with_details(serde_json::json!({ "host": host })));
+    }
+
+    let response = ctx.http.send(&HttpRequest {
+        method: "GET".into(),
+        url: url.to_string(),
+        headers: vec![],
+        body: None,
+    })?;
+    if response.truncated {
+        return Err(CoreError::new(ErrorCode::PluginImportFailed, "下载内容超过体积上限"));
+    }
+    Ok(response.body.into_bytes())
+}
 /// 订阅地址校验：必须 HTTPS 且不得指向回环/内网（核心主动发起，防 SSRF）。
 fn validate_subscription_url(url: &str) -> Fallible<()> {
     if !url.starts_with("https://") {

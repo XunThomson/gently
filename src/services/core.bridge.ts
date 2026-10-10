@@ -12,7 +12,17 @@
  * UI / store 不得直接 `invoke`，一律经此层或基于它的 service。
  */
 
-import type {CoreError, CoreErrorCode, CoreResult, SystemPathsDto, SystemStatusDto} from '../api';
+import type {
+    CoreError,
+    CoreErrorCode,
+    CoreResult,
+    ImportSource,
+    PluginImportPreview,
+    PluginImportResult,
+    PluginSummary,
+    SystemPathsDto,
+    SystemStatusDto,
+} from '../api';
 import {isTauri} from './window.service';
 
 /** Tauri 侧唯一注册的命令名 */
@@ -78,6 +88,22 @@ export function probeCore(): Promise<CoreResult<SystemStatusDto>> {
     probed ??= coreSystem.status();
     return probed;
 }
+
+/**
+ * 插件域（M1 已接入的部分）。
+ *
+ * 注意：**安装必须带 consent: true**，核心用它当硬门槛；界面因此一定要先 preview
+ * 把权限与凭据需求展示给用户，拿到显式勾选后再调用 install。
+ */
+export const corePlugin = {
+    list: () => invokeCore<PluginSummary[]>('plugin.list'),
+    /** 只读检查：读取并解析插件，展示权限/凭据/警告，**不落盘** */
+    preview: (from: ImportSource) => invokeCore<PluginImportPreview>('plugin.preview', {from}),
+    /** 落盘安装；consent: true 表示用户已确认权限 */
+    install: (from: ImportSource) => invokeCore<PluginImportResult>('plugin.import', {from, consent: true}),
+    /** 建立运行时并重新探测能力（安装只落盘，真正可用发生在这里） */
+    reload: (id: string) => invokeCore<PluginSummary>('plugin.reload', {id}),
+};
 
 /** 供设置页展示的错误文案（不再区分错误码，直接给开发者说明）。 */
 export const describeError = (error: CoreError): string => error.message;

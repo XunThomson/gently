@@ -54,8 +54,8 @@ pub enum InstallSource<'a> {
     File(&'a Path),
     /// 目录包（含 `plugin.json`）
     Dir(&'a Path),
-    /// 从订阅下载的内容（sha256 由调用方在下载后校验）
-    Downloaded { subscription_id: &'a str, file_name: &'a str, content: &'a [u8] },
+    /// 由核心下载到的内容（订阅条目或 URL 直链）；引用信息由调用方给出
+    Bytes { origin_kind: &'static str, origin_value: String, content: &'a [u8] },
 }
 
 impl InstallSource<'_> {
@@ -64,10 +64,7 @@ impl InstallSource<'_> {
             Self::Paste(_) => ("paste", String::new()),
             Self::File(path) => ("file", path.to_string_lossy().replace('\\', "/")),
             Self::Dir(path) => ("dir", path.to_string_lossy().replace('\\', "/")),
-            // 用 `::` 拼接订阅 id 与文件名：列表时据此判断「某条索引是否已安装」
-            Self::Downloaded { subscription_id, file_name, .. } => {
-                ("catalog", format!("{subscription_id}::{file_name}"))
-            }
+            Self::Bytes { origin_kind, origin_value, .. } => (origin_kind, origin_value.clone()),
         }
     }
 }
@@ -197,7 +194,7 @@ fn stage_source(
             std::fs::write(staging.join(ENTRY_FILE), &bytes)?;
             Ok((with_entry(parsed.manifest), parsed.warnings, Some(sha256_hex(&bytes))))
         }
-        InstallSource::Downloaded { content, .. } => {
+        InstallSource::Bytes { content, .. } => {
             let bytes = content.to_vec();
             if bytes.len() as u64 > MAX_PLUGIN_BYTES {
                 return Err(CoreError::invalid_argument(format!(

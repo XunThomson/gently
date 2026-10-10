@@ -1,0 +1,106 @@
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-5);
+    margin-bottom: var(--space-4);
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+}
+
+.cardTitle {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.label {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.input,
+.textarea {
+    width: 100%;
+    padding: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-primary);
+    background: var(--surface-chrome);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    resize: vertical;
+}
+
+.textarea {
+    min-height: 120px;
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+/* 权限同意：必须让用户看到「给什么能力」再勾选，因此单独一行突出 */
+.consent {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+}
+
+.checkbox {
+    margin-top: 2px;
+}
+
+.preview {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+}
+
+.previewTitle {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.hint {
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+    color: var(--text-tertiary);
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+    font-size: var(--font-size-sm);
+}

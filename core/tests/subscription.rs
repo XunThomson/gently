@@ -252,3 +252,35 @@ fn subscription_url_must_be_https_and_public() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn url_import_downloads_parses_and_records_origin() {
+    let transport = MockTransport::new();
+    transport.serve(PLUGIN_URL, PLUGIN_SOURCE);
+    let (ctx, dir) = ctx_with(transport);
+
+    // 预览：下载但不落盘
+    let preview = call(&ctx, "plugin.preview", json!({ "from": { "kind": "url", "url": PLUGIN_URL } }));
+    assert_eq!(preview["ok"], json!(true), "{preview}");
+    assert_eq!(preview["data"]["manifest"]["id"], json!("demo-source"));
+    assert!(!ctx.paths.plugins.join("demo-source").exists(), "预览不应落盘");
+
+    // 安装：来源记为 url
+    let installed = call(
+        &ctx,
+        "plugin.import",
+        json!({ "from": { "kind": "url", "url": PLUGIN_URL }, "consent": true }),
+    );
+    assert_eq!(installed["ok"], json!(true), "{installed}");
+    assert_eq!(installed["data"]["plugin"]["origin"]["kind"], json!("url"));
+    assert_eq!(installed["data"]["plugin"]["origin"]["url"], json!(PLUGIN_URL));
+    assert!(ctx.paths.plugins.join("demo-source").join("plugin.js").is_file());
+
+    // 非 HTTPS / 内网地址：核心主动下载前就拒绝（防 SSRF）
+    for url in ["http://example.com/a.js", "https://127.0.0.1/a.js", "https://192.168.0.9/a.js"] {
+        let value = call(&ctx, "plugin.preview", json!({ "from": { "kind": "url", "url": url } }));
+        assert_eq!(value["error"]["code"], ErrorCode::InvalidArgument.as_str(), "{url}: {value}");
+    }
+
+    std::fs::remove_dir_all(&dir).ok();
+}

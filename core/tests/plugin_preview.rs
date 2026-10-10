@@ -124,11 +124,9 @@ fn invalid_source_returns_details_for_the_ui() {
 #[test]
 fn unimplemented_sources_say_so_explicitly() {
     let ctx = ctx();
-    // catalog 已在 M1c 实现（需要数据库与订阅缓存，覆盖在 tests/subscription.rs）
-    for from in [
-        json!({ "kind": "url", "url": "https://example.com/plugin.js" }),
-        json!({ "kind": "archive", "path": "C:/tmp/plugin.zip" }),
-    ] {
+    // catalog 与 url 已在 M1c 实现（需要网络或数据库，覆盖在 tests/subscription.rs）。
+    // 注意：这里不能用 url 做「未实现」的样例——那会真的发起网络请求。
+    for from in [json!({ "kind": "archive", "path": "C:/tmp/plugin.zip" })] {
         let value = preview(&ctx, from.clone());
         assert_eq!(
             value["error"]["code"],

@@ -6,6 +6,7 @@ import {actionsColumn, indexColumn} from '../../config/table.config';
 import {useConfirm} from '../../hooks/useConfirm';
 import {useActions, usePluginState} from '../../store';
 import type {PluginInfo} from '../../types';
+import {ImportPanel} from './components/import-panel';
 
 export default function PluginView() {
     const {t} = useTranslation();
@@ -102,6 +103,9 @@ export default function PluginView() {
             title={t('page.plugin.title')}
             subtitle={t('page.plugin.subtitle', {count: list.length})}
         >
+            {/* 本机核心插件：用户自行导入（不预置任何来源，ADR-0005） */}
+            <ImportPanel/>
+
             <DataTable
                 columns={columns}
                 dataSource={rows}
