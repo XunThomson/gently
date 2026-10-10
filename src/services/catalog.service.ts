@@ -17,6 +17,7 @@ import type {
     Track,
     TrackQuality,
 } from '../types';
+import {coreResolveUrl, coreSearch} from './core.catalog';
 import {groupTracks, sortCandidates} from '../utils/track';
 
 /**
@@ -96,9 +97,22 @@ export const catalogService = {
         return this.aggregate((plugin) => plugin.fetchRecommend(limit));
     },
 
-    /** 多源搜索 → 聚合去重 */
+    /**
+     * 多源搜索 → 聚合去重。
+     *
+     * **桌面宿主优先走本机核心**：核心并发请求各源、逐源推事件、在核心内完成跨源合并
+     * （候选顺序 = 优先级）。浏览器预览或核心不可用时返回 null，退回下面的模拟音源路径，
+     * 因此这里不需要视图配合，行为与改造前完全一致。
+     *
+     * 逐源的流式结果（`catalog.search.partial`）留给搜索页的「分源视图」用，
+     * 需要 store 增加一个部分结果字段，因此这一步先只接合并结果。
+     */
     async searchAll(keyword: string): Promise<GroupedTrack[]> {
         if (!keyword.trim()) return [];
+
+        const viaCore = await coreSearch(keyword);
+        if (viaCore) return viaCore.items;
+
         return this.aggregate((plugin) => plugin.search(keyword));
     },
 
@@ -133,14 +147,28 @@ export const catalogService = {
      * 解析可播放地址；返回 null 表示该曲目在该音源不可播。
      * 自动回退由播放器按候选顺序调用本方法完成。
      */
-    resolveUrl(
+    async resolveUrl(
         track: Track,
         quality: TrackQuality,
         sourceId?: string,
     ): Promise<ResolvedSource | null> {
         const id = sourceId ?? track.source;
+
+        // 桌面宿主：核心按候选顺序回退，并返回**回环代理**地址
+        // （WebView 的 <audio> 无法设置 Referer/UA/Cookie，必须经代理播放）。
+        // 核心里没有这个音源时返回 null，继续走下面的模拟音源路径。
+        const viaCore = await coreResolveUrl(this.trackRef(id, track), quality);
+        if (viaCore) {
+            return {url: viaCore.url, source: viaCore.source, quality: viaCore.quality as TrackQuality};
+        }
+
         const plugin = getMusicSource(id);
-        if (!plugin) return Promise.resolve(null);
+        if (!plugin) return null;
         return plugin.resolveUrl(track, quality);
+    },
+
+    /** 统一曲目引用 `source:rawId`；避免 id 已经带前缀时重复拼接 */
+    trackRef(sourceId: string, track: Track): string {
+        return track.id.startsWith(`${sourceId}:`) ? track.id : `${sourceId}:${track.id}`;
     },
 };
