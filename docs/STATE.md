@@ -120,7 +120,7 @@ tldr: 第十一轮：M0 完成（Rust 核心骨架 + 前端桥接与诊断页，
 - 命令 `plugin.subscriptions.list/add/remove/refresh` + `plugin.catalog.list`（已实现 15 条）；
   `{kind:'catalog'}` 接入预览（下载不落盘）与安装（sha256 校验后才落盘，来源记为 catalog）；
   刷新失败保留旧索引并报 `subscription.fetch_failed`。
-- **作者 CLI 与示例插件已完成**：`plugin-tool check/index`（逻辑在 `plugin::authoring`，可测）+ `examples/plugins/`（示例不联网、不解析真实音源，有测试保证其合法）。`@url` 被误当未知字段的 bug 由 CLI 实跑发现并修复。`n- **URL 导入与导入界面已完成**：`{kind:'url'}` 走核心下载（仅 HTTPS/非内网），插件页新增「本机核心插件」面板（粘贴/地址 → 预览权限与凭据 → 显式同意 → 安装 + 已安装列表 + 第三方免责声明）；浏览器下只提示需桌面端。剩 `archive` 与原生文件选择器。`n- **管理动作已接入界面**：启停/重载/上移下移（整表重排回写优先级）/卸载（二次确认）；安装后自动 reload。`n- ✅ **重启缺口已解决**：M2a 起搜索前会 `ensure_loaded` 按需加载已启用插件（单个失败只跳过），用户不必手动重载。`n- 仍待做：OS keyring、压缩包导入与原生文件选择器（`tauri-plugin-dialog`）。
+- **作者 CLI 与示例插件已完成**：`plugin-tool check/index`（逻辑在 `plugin::authoring`，可测）+ `examples/plugins/`（示例不联网、不解析真实音源，有测试保证其合法）。`@url` 被误当未知字段的 bug 由 CLI 实跑发现并修复。`n- **URL 导入与导入界面已完成**：`{kind:'url'}` 走核心下载（仅 HTTPS/非内网），插件页新增「本机核心插件」面板（粘贴/地址 → 预览权限与凭据 → 显式同意 → 安装 + 已安装列表 + 第三方免责声明）；浏览器下只提示需桌面端。剩 `archive` 与原生文件选择器。`n- **管理动作已接入界面**：启停/重载/上移下移（整表重排回写优先级）/卸载（二次确认）；安装后自动 reload。`n- ✅ **重启缺口已解决**：M2a 起搜索前会 `ensure_loaded` 按需加载已启用插件（单个失败只跳过），用户不必手动重载。`n- **插件格式双轨制已决策**（`docs/adr/0006-plugin-format-dual-track.md`）：自有 ABI 为默认；兼容模式默认关闭，允许任意公网 HTTPS（本机/内网始终拒绝）。已完成 CommonJS 环境、`module.exports` 探测、`@compat` + 域名策略、缺依赖可执行报错；待做 require 垫片 / 形状适配 / 流程接线与 TOFU 收敛。`n- 仍待做：OS keyring、压缩包导入与原生文件选择器（`tauri-plugin-dialog`）。
 
 ## 验证
 

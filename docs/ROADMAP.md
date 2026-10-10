@@ -179,6 +179,11 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 - 说明：OS keyring 仍是内存实现（`keyring` crate 未在本地缓存），M1c 接入；
   计划中的「参考插件 + 故意越权测试插件」已由测试内的 fixture 覆盖（真实随包 demo 插件放 M1c）。
 
+> **插件格式双轨制**（`docs/adr/0006-plugin-format-dual-track.md`）：自有单文件 ABI 为默认路径；
+> 另设**默认关闭**的兼容模式支持 MusicFree / LX 生态的 CommonJS 插件。兼容模式允许访问任意公网
+> HTTPS 域名（**本机/内网在任何模式下都拒绝**），实际域名记入日志以便后续固化为白名单。
+> 已完成：CommonJS 环境、`module.exports` 探测、`@compat` 与域名策略、缺依赖的可执行报错。
+> 待完成：`require` 垫片（axios/dayjs/crypto-js 子集）、`{isEnd,data}` 形状适配、流程接线与 TOFU 收敛。
 #### M1c 订阅分发（进行中：核心已完成，界面与配套工具待做）
 - 迁移 **0003** `subscriptions` 表；索引原文缓存在 `<data>/subscriptions/<id>.json`（断网可用）；
   订阅 id 由 URL 的 sha256 派生（稳定、无 uuid 依赖）。
