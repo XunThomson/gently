@@ -172,6 +172,11 @@ export interface PluginManifest {
     credentials: PluginCredentialField[];
     minCoreVersion?: string;
     tags: string[];
+    /**
+     * 兼容模式：插件来自 MusicFree / LX 生态、不声明 `hosts`。
+     * 开启后允许访问任意**公网** HTTPS 域名（本机/内网始终拒绝），实际访问的域名会记入日志。
+     */
+    compat?: boolean;
     /** 该插件实际实现了哪些函数（能力探测结果，UI 据此隐藏入口） */
     capabilities: PluginCapability[];
 }

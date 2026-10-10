@@ -388,3 +388,75 @@ fn syntax_error_is_reported_at_load_time() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn compat_mode_allows_public_hosts_but_never_local_ones() {
+    let (paths, dir) = temp_paths("compat");
+    // 兼容模式插件：不声明 @hosts，只标 @compat
+    let source = r#"
+// @id compat-source
+// @name 兼容源
+// @version 1.0.0
+// @author tester
+// @compat
+async function search() {
+    const res = await fetch('https://api.example.com/list');
+    return await res.json();
+}
+"#;
+    let manifest = install_source(&paths, source);
+    assert!(manifest.compat, "应识别 @compat");
+    assert!(manifest.hosts.is_empty());
+
+    let transport = MockTransport::with("https://api.example.com/list", r#"{"ok":true}"#);
+    let host = host_with(&paths, transport.clone(), Arc::new(MemoryCredentialStore::new()), Duration::from_secs(5));
+    host.load(manifest).unwrap();
+
+    // 兼容模式：公网 HTTPS 放行
+    let value = host.call("compat-source", "search", "[]").expect("兼容模式应放行公网域名");
+    assert!(value.contains("true"), "{value}");
+    assert_eq!(transport.calls().len(), 1);
+
+    // 但本机/内网**始终**拒绝：兼容模式放宽的是「哪些公网域名」，不是「能不能打本机」
+    let local = install_source(
+        &paths,
+        &source.replace("api.example.com/list", "127.0.0.1:9/secret"),
+    );
+    let host2 = host_with(&paths, transport, Arc::new(MemoryCredentialStore::new()), Duration::from_secs(5));
+    host2.load(local).unwrap();
+    let err = host2.call("compat-source", "search", "[]").unwrap_err();
+    assert_eq!(err.code, ErrorCode::PluginPermissionDenied, "{err:?}");
+    assert!(err.message.contains("本机"), "{}", err.message);
+
+    host.unload("compat-source");
+    host2.unload("compat-source");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn non_compat_plugin_without_hosts_stays_blocked() {
+    let (paths, dir) = temp_paths("strict");
+    let source = r#"
+// @id strict-source
+// @name 严格源
+// @version 1.0.0
+// @author tester
+// @permissions network
+async function search() {
+    const res = await fetch('https://api.example.com/list');
+    return await res.json();
+}
+"#;
+    let manifest = install_source(&paths, source);
+    assert!(!manifest.compat, "未标 @compat 就不是兼容模式");
+
+    let transport = MockTransport::with("https://api.example.com/list", "{}");
+    let host = host_with(&paths, transport, Arc::new(MemoryCredentialStore::new()), Duration::from_secs(5));
+    host.load(manifest).unwrap();
+    let err = host.call("strict-source", "search", "[]").unwrap_err();
+    assert_eq!(err.code, ErrorCode::PluginPermissionDenied, "{err:?}");
+    assert!(err.message.contains("白名单"), "{}", err.message);
+
+    host.unload("strict-source");
+    std::fs::remove_dir_all(&dir).ok();
+}

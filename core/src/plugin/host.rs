@@ -417,6 +417,8 @@ fn install_host_functions(
     {
         let permissions = manifest.permissions.clone();
         let hosts = manifest.hosts.clone();
+        let compat = manifest.compat;
+        let plugin_id_for_net = manifest.id.clone();
         globals
             .set(
                 "__hostFetch",
@@ -429,7 +431,21 @@ fn install_host_functions(
                     }
                     let host = host_of(&url)
                         .ok_or_else(|| js_error("GENTLY_PLUGIN_ERROR", "无法解析请求 URL"))?;
-                    if !host_allowed(&hosts, &host) {
+
+                    // 本机/内网地址永远拒绝：兼容模式放宽的是「哪些公网域名」，
+                    // 不是「能不能打本机」——SSRF 防线不因兼容模式而退让。
+                    if crate::plugin::is_private_host(&host) {
+                        return Err(js_error(
+                            "GENTLY_PERMISSION_DENIED",
+                            &format!("拒绝访问本机/内网地址：{host}"),
+                        ));
+                    }
+
+                    if compat {
+                        // 兼容模式：允许任意公网 HTTPS，并把实际域名记进日志
+                        // （后续「把用到的域名固化进白名单」的确认流程以此为依据）
+                        tracing::info!(plugin = %plugin_id_for_net, host = %host, "兼容模式放行出网域名");
+                    } else if !host_allowed(&hosts, &host) {
                         return Err(js_error(
                             "GENTLY_PERMISSION_DENIED",
                             &format!("域名不在清单 @hosts 白名单内：{host}"),
@@ -570,6 +586,8 @@ pub fn probe(source: &str, limits: HostLimits, transport: Arc<dyn HttpTransport>
         min_core_version: None,
         tags: Vec::new(),
         capabilities: Vec::new(),
+        // 探测阶段按最严格策略：既不开兼容模式，也没有域名白名单 → 无法出网
+        compat: false,
     };
 
     let context = Context::full(&runtime)

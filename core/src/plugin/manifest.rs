@@ -178,6 +178,11 @@ pub struct PluginManifest {
     /// 静态预扫描得到的能力；M1b 由运行时探测覆盖
     #[serde(default)]
     pub capabilities: Vec<PluginCapability>,
+    /// **兼容模式**：该插件来自 MusicFree / LX 生态，不声明 `@hosts`。
+    /// 开启后允许访问任意**公网** HTTPS 域名（本机/内网始终拒绝），并把实际访问的域名记进日志，
+    /// 供后续「把用到的域名固化进白名单」的确认流程使用。默认关闭。
+    #[serde(default)]
+    pub compat: bool,
 }
 
 /// 解析结果：清单 + 非致命警告（预览界面展示给用户）。
@@ -372,8 +377,16 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
         }
     }
 
+    // 头部出现 `@compat` 即开启兼容模式（不需要值，避免 @compat=true 这类歧义）
+    let compat = header.iter().any(|(key, _)| key == "compat");
+
     // ---- 权限推导：声明即生效，避免作者漏写 @permissions 导致能力静默失效 ----
     if !hosts.is_empty() && !permissions.contains(&PluginPermission::Network) {
+        permissions.push(PluginPermission::Network);
+    }
+    // 兼容模式必然需要出网（放行任意公网 HTTPS），因此同样推导 network 权限——
+    // 否则插件会在权限检查处被拒，兼容模式形同虚设。
+    if compat && !permissions.contains(&PluginPermission::Network) {
         permissions.push(PluginPermission::Network);
     }
     if !credentials.is_empty() && !permissions.contains(&PluginPermission::Credentials) {
@@ -409,9 +422,9 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
         }
     }
     // ---- 未知头部字段：提示但不阻断（便于格式演进） ----
-    const KNOWN: [&str; 14] = [
+    const KNOWN: [&str; 15] = [
         "id", "name", "version", "author", "description", "homepage", "url", "entry", "qualities",
-        "permissions", "hosts", "credentials", "mincoreversion", "tags",
+        "permissions", "hosts", "credentials", "mincoreversion", "tags", "compat",
     ];
     let unknown: Vec<String> = header
         .iter()
@@ -446,6 +459,7 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
             min_core_version: single("mincoreversion"),
             tags: many("tags"),
             capabilities,
+            compat,
         },
         warnings,
     })

@@ -202,6 +202,7 @@ type PluginOrigin =
 // @hosts api.example.com,cdn.example.com    // 网络白名单（仅 HTTPS）
 // @credentials apiKey:API Key:required      // key:label[:required][:plain]
 // @minCoreVersion 0.1.0
+// @compat                    // 兼容模式：来自 MusicFree/LX 生态、不声明 @hosts（见 §5.4）
 ```
 
 ### 5.2 插件函数（顶层函数声明，无模块系统）
