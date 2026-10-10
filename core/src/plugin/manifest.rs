@@ -394,6 +394,20 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
         }
     }
 
+    // ---- 生态兼容性提示 ----
+    // 现实中的社区插件大量是 MusicFree / LX Music 风格：CommonJS 模块 + npm 依赖
+    // （require("axios"/"crypto-js"/"dayjs"/"he") + module.exports）。本沙箱刻意不提供模块系统，
+    // 因此这类文件装上也跑不起来——在**预览阶段**就说清楚，而不是让用户装完看到 "require is not defined"。
+    if let Some(text) = source {
+        let commonjs = text.contains("require(") || text.contains("module.exports") || text.contains("exports.");
+        if commonjs {
+            warnings.push(
+                "检测到 CommonJS 模块（require/module.exports）：当前沙箱不提供模块系统与 npm 依赖，\
+                 该插件需要移植为单文件 ABI 才能运行"
+                    .into(),
+            );
+        }
+    }
     // ---- 未知头部字段：提示但不阻断（便于格式演进） ----
     const KNOWN: [&str; 14] = [
         "id", "name", "version", "author", "description", "homepage", "url", "entry", "qualities",
@@ -578,6 +592,21 @@ async function getMediaSource(track, quality) { return null; }
         assert!(first.required && first.secret);
         assert!(!parsed.manifest.credentials[1].secret);
         assert!(parsed.manifest.permissions.contains(&PluginPermission::Credentials));
+    }
+
+    #[test]
+    fn commonjs_plugins_get_an_actionable_warning() {
+        let cjs = "// @id cjs-source\n// @name CJS\n// @version 1.0.0\n// @author x\nconst axios = require('axios');\nmodule.exports = {async search() { return []; }};\n";
+        let parsed = parse_source(cjs).expect("头部合法即应解析成功");
+        assert!(
+            parsed.warnings.iter().any(|w| w.contains("CommonJS")),
+            "应提示模块系统不兼容：{:?}",
+            parsed.warnings
+        );
+
+        // 自有 ABI 的单文件插件不应出现该提示
+        let parsed = parse_source(MINIMAL).expect("解析成功");
+        assert!(!parsed.warnings.iter().any(|w| w.contains("CommonJS")));
     }
 
     #[test]
