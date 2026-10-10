@@ -190,11 +190,18 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 - `{kind:'catalog'}` 已接入 `plugin.preview`（下载但**不落盘**）与 `plugin.import`（校验 sha256 后才落盘，
   不符 → `plugin.import_failed` 并给出实际校验和）；来源记为 `catalog`（含 subscriptionId 与 fileName），
   `plugin.catalog.list` 据此标记 `installed` / `updateAvailable`。
+- **作者自测 CLI**（已完成）：`cargo run -p gently-core --bin plugin-tool -- check <file.js>` 校验
+  头部元数据/必选函数/`@hosts` 写法并打印能力与警告；`index <dir> --base-url …` 由目录生成
+  `repository.json`（含 sha256/fileSize/updatedAt，`--skip-invalid` 可选）。
+  逻辑放在 `plugin::authoring`（CLI 只做薄壳），因此有测试覆盖；**生成的索引会被客户端同款
+  校验**（闭环）。实跑 CLI 当场抓到真 bug：`@url` 是社区约定的主页字段，解析器却只认 `@homepage`
+  → 已把两者都认。
+- **随仓库示例插件**（已完成）：`examples/plugins/gently-demo.js` + `examples/plugins/README.md`。
+  示例**不声明任何网络白名单、不索要凭据**，`getMediaSource` 恒返回 `null`（不解析任何真实音源），
+  只演示 ABI 与沙箱用法；有测试断言它始终合法且「不联网」（ADR-0005）。
 - 仍待做（M1c 收尾）：
-  1. **作者自测 CLI**（`check` 校验头部元数据/必选函数/`@hosts`；`index` 生成 `repository.json`）；
-  2. **随仓库 demo 插件**（只播随包测试音频，不解析任何真实音源）+ 说明文档；
-  3. **导入界面**：三种导入方式的中性说明 + 权限同意弹窗 + **第三方免责声明**（无默认订阅，ADR-0005）；
-  4. **OS keyring**（`keyring` crate 未在本地缓存；当前是内存实现，接口已抽好）。
+  1. **导入界面**：三种导入方式的中性说明 + 权限同意弹窗 + **第三方免责声明**（无默认订阅，ADR-0005）；
+  2. **OS keyring**（`keyring` crate 未在本地缓存；当前是内存实现，接口已抽好）。
 
 #### 历史：M1 早期剩余项（已完成）
 1. **M1c 订阅分发**：`plugin.subscriptions.*` + `plugin.catalog.list` + 一键安装 +

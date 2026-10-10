@@ -1,11 +1,13 @@
 //! 插件域：清单解析、安装落盘、运行时宿主、订阅索引。
 //!
-//! M1a 的两步都**不执行任何代码**：
-//! - `manifest`：把插件源解析成清单并校验；
+//! 各模块职责：
+//! - `manifest`：把插件源解析成清单并校验（不执行代码）；
 //! - `install`：在用户同意后把文件复制进 `plugins/<id>/`（暂存 → 校验 → 原子替换）；
 //! - `host`：内嵌 QuickJS 沙箱（M1b）；
-//! - `subscription`：社区仓库索引解析与校验（M1c）。
+//! - `subscription`：社区仓库索引解析与校验（M1c）；
+//! - `authoring`：作者工具逻辑（校验单文件、生成 `repository.json`）。
 
+pub mod authoring;
 mod credentials;
 mod host;
 mod install;

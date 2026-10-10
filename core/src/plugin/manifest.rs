@@ -395,8 +395,8 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
     }
 
     // ---- 未知头部字段：提示但不阻断（便于格式演进） ----
-    const KNOWN: [&str; 13] = [
-        "id", "name", "version", "author", "description", "homepage", "entry", "qualities",
+    const KNOWN: [&str; 14] = [
+        "id", "name", "version", "author", "description", "homepage", "url", "entry", "qualities",
         "permissions", "hosts", "credentials", "mincoreversion", "tags",
     ];
     let unknown: Vec<String> = header
@@ -422,7 +422,8 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
             version,
             author,
             description: single("description").unwrap_or_default(),
-            homepage: single("homepage"),
+            // `@url` 是社区约定（Legado 同款），`@homepage` 为兼容别名，两者都认
+            homepage: single("homepage").or_else(|| single("url")),
             entry: single("entry"),
             qualities,
             permissions,
