@@ -17,6 +17,7 @@ import {useActions, useLibraryState} from '../../store';
 import {fileService} from '../../services';
 import type {LocalTrack} from '../../types';
 import {matchesQuery} from '../../utils/helpers';
+import {ScanPanel} from './components/ScanPanel';
 
 export default function LocalView() {
     const {t} = useTranslation();
@@ -91,6 +92,9 @@ export default function LocalView() {
                 />
             }
         >
+            {/* 扫描面板常驻：这是**唯一**把音乐加进本地曲库的入口 */}
+            <ScanPanel/>
+
             <DataTable
                 columns={columns}
                 dataSource={rows}

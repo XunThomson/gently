@@ -31,6 +31,9 @@ export function Sidebar({mainMenu}: SidebarProps) {
     const [creating, setCreating] = useState(false);
     const [draftName, setDraftName] = useState('');
 
+    /** 折叠判定只有这一处（原先三个地方各写一遍 `collapsedGroups.includes(...)`） */
+    const isCollapsed = (key: string) => collapsedGroups.includes(key);
+
     const renderItem = (item: MenuRoute) => (
         <li key={item.key}>
             <NavLink
@@ -46,7 +49,7 @@ export function Sidebar({mainMenu}: SidebarProps) {
     );
 
     const groupHeader = (key: string, titleKey: string, action?: ReactNode) => {
-        const collapsed = collapsedGroups.includes(key);
+        const collapsed = isCollapsed(key);
         return (
             <div className={styles.groupHead}>
                 <button
@@ -83,7 +86,7 @@ export function Sidebar({mainMenu}: SidebarProps) {
             {/* ---------- 我的收藏 ---------- */}
             <div className={styles.group}>
                 {groupHeader('favorites', 'sidebar.favorites')}
-                {!collapsedGroups.includes('favorites') && (
+                {!isCollapsed('favorites') && (
                     <ul className={styles.menu}>
                         <li>
                             <NavLink
@@ -126,7 +129,7 @@ export function Sidebar({mainMenu}: SidebarProps) {
                     </button>,
                 )}
 
-                {!collapsedGroups.includes('playlists') && (
+                {!isCollapsed('playlists') && (
                     <>
                         {creating && (
                             <form

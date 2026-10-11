@@ -11,8 +11,10 @@ use gently_core::contract::{COMMAND_NAMES, ErrorCode};
 use gently_core::{AppPaths, CoreContext};
 use serde_json::json;
 
+mod common;
+
 fn ctx() -> CoreContext {
-    let dir = std::env::temp_dir().join(format!("gently-dispatch-{}", std::process::id()));
+    let dir = common::temp_dir("dispatch");
     let paths = AppPaths::resolve(dir);
     paths.ensure().expect("建目录");
     CoreContext::new(paths)
@@ -101,5 +103,5 @@ fn invalid_params_are_reported_as_invalid_argument() {
 fn implemented_count_matches_milestone_scope() {
     // M0：system 三条；M1a：预览/安装/列表/卸载/启停/优先级；M1b：reload；
     // M1c：订阅四条 + catalog.list；M2：catalog.search / searchCancel / playback.resolve
-    assert_eq!(implemented_count(), 18, "已实现命令数变了就要同步这里与 ROADMAP");
+    assert_eq!(implemented_count(), 60, "已实现命令数变了就要同步这里与 ROADMAP");
 }

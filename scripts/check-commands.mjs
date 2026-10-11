@@ -8,13 +8,15 @@
  *
  * 检查内容：
  *  1. 文档 §2 的命令清单 == `core/src/contract/commands.rs` 的 COMMAND_NAMES；
- *  2. 文档 §3 的事件清单 == `core/src/events.rs` 的 events::ALL；
+ *  2. 文档 §3 的事件清单 == `core/src/events.rs` 的 events::ALL
+ *     == `src/api/index.ts` 的 `CoreEventMap` 键 == `src/services/core.events.ts` 的 `CORE_EVENTS`
+ *     （并按 Tauri 的事件名字符集校验：点号会让事件在桌面上整条丢失）；
  *  3. 文档 §1 的错误码表 == `core/src/contract/error.rs` 的 as_str() 返回值。
  *
  * 用法：`node scripts/check-commands.mjs`（`pnpm check:contract`）
  */
 
-import {readFileSync} from 'node:fs';
+import {readFileSync, readdirSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {dirname, join} from 'node:path';
 
@@ -25,6 +27,11 @@ const CONTRACT = 'docs/contracts/local-core-api.md';
 const COMMANDS_RS = 'core/src/contract/commands.rs';
 const EVENTS_RS = 'core/src/events.rs';
 const ERROR_RS = 'core/src/contract/error.rs';
+const API_TS = 'src/api/index.ts';
+const EVENTS_TS = 'src/services/core.events.ts';
+
+/** Tauri 的事件名校验字符集（`is_event_name_valid`）：超出就当事件丢失处理 */
+const TRANSPORT_SAFE = /^[A-Za-z0-9\-/:_]+$/;
 
 /** 命令名的域前缀（用于过滤文档里的非命令反引号 token，如 `common.conflict`） */
 const DOMAINS = new Set(['system', 'plugin', 'catalog', 'library', 'recommend', 'playback', 'download', 'skin']);
@@ -95,6 +102,34 @@ function rustErrorCodes(source) {
     return new Set([...body.matchAll(/"([a-z]+\.[a-z_]+)"/g)].map((m) => m[1]));
 }
 
+/** `src/api/index.ts` 的 `CoreEventMap` 键（前端事件类型只有类型、没有运行时值） */
+function tsEventMapKeys(source) {
+    const block = source.slice(source.indexOf('export interface CoreEventMap'));
+    const body = block.slice(0, block.indexOf('\n}'));
+    return new Set([...body.matchAll(/^\s*'([^']+)':/gm)].map((m) => m[1]));
+}
+
+/** `src/services/core.events.ts` 的 `CORE_EVENTS` 值（运行时唯一的事件名定义处） */
+function tsEventConstants(source) {
+    const block = source.slice(source.indexOf('export const CORE_EVENTS'));
+    const body = block.slice(0, block.indexOf('} as const'));
+    return new Set([...body.matchAll(/'([^']+)':\s*'([^']+)'/g)].map((m) => m[2]));
+}
+
+/**
+ * 事件名必须落在 Tauri 接受的字符集里。
+ *
+ * 这不是风格问题：带点号的名字 `emit` 会报 `only alphanumeric, '-', '/', ':', '_' permitted`，
+ * 于是**事件全部静默丢失**——流式搜索只能等超时、下载进度永远不动。所以在这里拦。
+ */
+function checkTransportSafe(label, names) {
+    for (const name of names) {
+        if (!TRANSPORT_SAFE.test(name)) {
+            note(`${label}：事件名 \`${name}\` 含传输层不接受的字符（Tauri 只允许字母数字与 - / : _）`);
+        }
+    }
+}
+
 /** 文档侧的反引号 token（过滤掉文件名等非契约名） */
 function docTokens(text, pattern) {
     const names = new Set();
@@ -122,18 +157,27 @@ function diff(label, documented, implemented, hint) {
 }
 
 /**
- * 前端桥接层用到的命令名必须都在契约里：
- * TS 侧没有「命令清单」这种结构（类型是按域/方法组织的），
- * 唯一的点号字符串出现在 `invokeCore('<name>')` 调用处，因此在这里做单向校验，
- * 拼错或用了过期名字会立刻失败。
+ * 前端服务层用到的命令名必须都在契约里。
+ *
+ * 这里做**字面量全量扫描**而不是只看 `invokeCore('<name>')`：很多命令是通过统一的
+ * 包装函数（`detail<T>(command, params)` / `page<T>(command)`）转发的，命令名以普通字符串
+ * 参数出现。把「域前缀的点号字面量」全部收集起来，再减去事件名与错误码，剩下的就必须是
+ * 契约里的命令——拼错或用了过期名字会立刻失败。
  */
+const SERVICE_LITERAL = /'((?:system|plugin|catalog|library|recommend|playback|download|skin)\.[a-zA-Z0-9.]+)'/g;
+
 function frontendCommandNames() {
-    const files = ['src/services/core.bridge.ts'];
+    const dir = join(root, 'src/services');
+    const files = readdirSync(dir)
+        .filter((name) => name.endsWith('.ts'))
+        .map((name) => join(dir, name));
     const names = new Set();
     for (const file of files) {
-        const source = read(file);
-        for (const m of source.matchAll(/invokeCore<[^>]*>\(\s*'([^']+)'/g)) {
-            names.add(m[1]);
+        const source = readFileSync(file, 'utf8');
+        for (const m of source.matchAll(SERVICE_LITERAL)) {
+            const name = m[1];
+            if (FILE_LIKE.test(name)) continue;
+            names.add(name);
         }
     }
     return names;
@@ -146,13 +190,26 @@ const commandsSection = section(markdown, '## 2. 命令清单');
 const eventsSection = section(markdown, '## 3. 事件清单');
 const errorsSection = section(markdown, '## 1. 信封与错误码');
 
-diff('命令清单', extractCommandNames(commandsSection), rustCommandNames(read(COMMANDS_RS)), '若只是缩写写法（如 `.clear`），请在文档里写全名');
+/**
+ * 事件清单先算出来：命令小节里会自然地提到事件（例如「进度经 `library:scan:progress` 推送」），
+ * 那些 token 不是命令。不把它们从命令集合里剔除的话，守卫会因为一句说明文字而失败。
+ */
+const rustEvents = rustEventNames(read(EVENTS_RS));
+const documentedCommands = new Set(
+    [...extractCommandNames(commandsSection)].filter((name) => !rustEvents.has(name)),
+);
+
+diff('命令清单', documentedCommands, rustCommandNames(read(COMMANDS_RS)), '若只是缩写写法（如 `.clear`），请在文档里写全名');
+/* 事件名只从 §3 的表格行首取：正文里的说明文字、Rust 路径（`plugin::transport::x`）都不是清单 */
 diff(
-    '事件清单',
-    docTokens(eventsSection, /`([a-z]+\.[a-zA-Z.]+)`/g),
-    rustEventNames(read(EVENTS_RS)),
+    '事件清单（文档 ↔ Rust）',
+    docTokens(eventsSection, /^\|\s*`([a-z][a-z0-9]*(?::[a-z0-9]+)+)`/gm),
+    rustEvents,
     '',
 );
+diff('事件清单（Rust ↔ 前端类型）', tsEventMapKeys(read(API_TS)), rustEvents, '请同步 `src/api/index.ts` 的 CoreEventMap');
+diff('事件清单（Rust ↔ 前端常量）', tsEventConstants(read(EVENTS_TS)), rustEvents, '请同步 `src/services/core.events.ts`');
+checkTransportSafe('事件清单', rustEvents);
 diff(
     '错误码',
     docTokens(errorsSection, /`([a-z]+\.[a-z_]+)`/g),
@@ -160,14 +217,23 @@ diff(
     '',
 );
 
-/* 前端桥接只用 Rust 契约里存在的命令名（单向：不必要求 54 条未实现命令都有桥接） */
-const bridged = frontendCommandNames();
+/* 前端服务层只用 Rust 契约里存在的命令名（事件名与错误码从字面量集合里剔除） */
+const rustErrors = rustErrorCodes(read(ERROR_RS));
+const bridged = new Set([...frontendCommandNames()].filter((n) => !rustEvents.has(n) && !rustErrors.has(n)));
 const known = rustCommandNames(read(COMMANDS_RS));
 const stray = [...bridged].filter((name) => !known.has(name));
 if (stray.length > 0) {
-    note(`前端桥接使用了契约外的命令名 → ${stray.join(', ')}`);
+    note(`前端服务层使用了契约外的命令名 → ${stray.join(', ')}`);
 } else {
-    console.log(`  ok   前端桥接命令名（${bridged.size} 项都在契约内）`);
+    console.log(`  ok   前端服务层命令名（${bridged.size} 项都在契约内）`);
+}
+
+/* 反向：已实现且 UI 需要的命令是否都有前端封装（避免「后端有、前端没接线」） */
+const unbridged = [...known].filter((name) => !bridged.has(name));
+if (unbridged.length > 0) {
+    note(`契约命令没有前端封装 → ${unbridged.join(', ')}`);
+} else {
+    console.log(`  ok   契约命令全部有前端封装（${known.size} 项）`);
 }
 
 if (failures.length > 0) {

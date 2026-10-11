@@ -1,0 +1,75 @@
+/* 专辑 / 歌单详情：头图 + 元数据 + 曲目表 */
+
+.head {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+}
+
+.cover {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: var(--collection-cover-size);
+    height: var(--collection-cover-size);
+    flex-shrink: 0;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    color: var(--brand-contrast);
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+}
+
+/* 封面高光：与专辑/歌单卡片一致的处理，让占位渐变不那么平 */
+.cover::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 55%);
+}
+
+.meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.kind {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.tags {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.tag {
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--bg-surface-alt);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+.year {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+/* 相似推荐区块：与主表留出呼吸感，但不用卡片（它是提示，不是页面主体） */
+.similar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-top: var(--space-6);
+}

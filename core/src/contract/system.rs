@@ -24,6 +24,9 @@ pub struct SystemStatus {
     /// 数据库不可用时的原因
     #[serde(skip_serializing_if = "Option::is_none")]
     pub db_error: Option<String>,
+    /// 第三方凭据的落点：`windows-credential-manager` / `memory`（降级）。
+    /// 界面据此说明「重启后是否还要重新填写」——不猜，如实报。
+    pub credentials_backend: String,
     pub counts: SystemCounts,
 }
 

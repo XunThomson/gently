@@ -6,11 +6,13 @@
 
 mod commands;
 mod error;
+mod import;
 mod result;
 mod system;
 
 pub use commands::{command_count, is_known_command, COMMAND_NAMES};
 pub use error::{CoreError, ErrorCode};
+pub use import::ImportSource;
 pub use result::{new_trace_id, CoreResult};
 pub use system::{SystemCounts, SystemPaths, SystemStatus};
 

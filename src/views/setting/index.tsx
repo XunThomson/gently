@@ -6,7 +6,6 @@ import {UnderlineRadioGroup} from '../../components/ui/radio-group';
 import {BadgeCell, TextCell} from '../../components/ui/data-table';
 import {SUPPORTED_LANGS} from '../../i18n';
 import {getActiveMusicSource} from '../../plugins';
-import {catalogService} from '../../services';
 import {useActions, usePluginState, useSelect} from '../../store';
 import {getThemePreset, useTheme} from '../../theme';
 import type {ThemeMode} from '../../theme';
@@ -37,10 +36,8 @@ export default function SettingView() {
         useActions().ui;
     const pluginList = usePluginState().list;
 
-    /* 可选的优先音源：只列出已启用且已实现的音源 */
-    const activeSources = catalogService
-        .listActiveSources()
-        .filter((item) => pluginList.some((plugin) => plugin.id === item.id && plugin.enabled));
+    /* 可选的优先音源：store 的插件列表（桌面端来自核心），只取已启用的 */
+    const activeSources = pluginList.filter((plugin) => plugin.enabled);
 
     const currentLang = (i18n.resolvedLanguage ?? 'zh').slice(0, 2);
 

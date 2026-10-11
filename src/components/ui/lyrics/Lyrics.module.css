@@ -71,6 +71,19 @@
     transform: scale(1.02);
 }
 
+/* 译文：比原文小一号、颜色更弱，仍随同行高亮而提亮 */
+.translation {
+    display: block;
+    margin-top: var(--lyrics-line-padding-y);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-normal);
+    color: var(--lyrics-inactive-color);
+}
+
+.line[data-active='true'] .translation {
+    color: var(--lyrics-hover-color);
+}
+
 .empty {
     display: flex;
     align-items: center;

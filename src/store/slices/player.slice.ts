@@ -5,6 +5,12 @@ import type {PlayerActions, PlayerState, StoreCtx} from '../types';
 
 let playSeq = 0;
 
+/** 已经上报过播放历史的 `playId`（同一首歌只报一次） */
+let reportedPlayId = 0;
+
+/** 已经上报过**推荐反馈**的 `playId`（与历史上的去重分开：暂停会先消费掉历史那一次） */
+let feedbackPlayId = 0;
+
 /** 音源候选：聚合结果自带 candidates，普通曲目退化为单候选 */
 function candidatesOf(track: Track): TrackCandidate[] {
     const grouped = track as Partial<GroupedTrack>;
@@ -24,6 +30,7 @@ function candidatesOf(track: Track): TrackCandidate[] {
 export function createPlayerSlice(ctx: StoreCtx) {
     const state: PlayerState = {
         current: null,
+        detail: null,
         playing: false,
         queue: [],
         index: -1,
@@ -53,6 +60,23 @@ export function createPlayerSlice(ctx: StoreCtx) {
         } catch (err) {
             console.warn('[player] 歌词加载失败', err);
             if (ctx.getState().player.current?.playId === playId) patch({lyrics: []});
+        }
+    };
+
+    /**
+     * 异步补当前曲目的**源侧详情**（`catalog.track`）。
+     *
+     * 列表快照常常没有封面（搜索结果只带标题歌手），问一次源就能拿到真实封面：
+     * 播放条与歌词页据此渲染，而不是退到哈希渐变。失败/没有详情都只是「继续用快照」，
+     * 不打扰用户（`detail()` 里已经把「源没实现」当正常情况）。
+     */
+    const loadDetail = async (track: Track, playId: number) => {
+        try {
+            const detail = await catalogService.fetchTrackDetail(track);
+            if (ctx.getState().player.current?.playId === playId) patch({detail});
+        } catch (err) {
+            console.warn('[player] 曲目详情加载失败', err);
+            if (ctx.getState().player.current?.playId === playId) patch({detail: null});
         }
     };
 
@@ -116,12 +140,66 @@ export function createPlayerSlice(ctx: StoreCtx) {
         });
     };
 
+    /**
+     * 把这**一次**播放上报给本机核心（`playback.report`）：写的是播放历史，
+     * 与「最近播放」和推荐画像共用一份数据。带上实际播成的音源与真实秒数——
+     * 这正是它比 `library.history.push` 多出来的信息（候选回退后来源可能变了）。
+     *
+     * 时机：放完、被切走、暂停、停止、切源重来时各报一次；同一个 `playId` 只报一次。
+     */
+    const reportPlayback = (options: {final?: boolean} = {}) => {
+        const {current, elapsed, duration, activeSource, quality} = ctx.getState().player;
+        if (!current || current.playId === reportedPlayId) return;
+        reportedPlayId = current.playId;
+
+        const playedSec = Math.max(0, Math.round(elapsed));
+        const completed = duration > 0 && playedSec >= Math.round(duration) - 1;
+        void libraryService.reportPlay(current, {
+            source: activeSource ?? undefined,
+            quality: quality ?? undefined,
+            playedSec,
+            // 允许 1 秒误差：真实播放到尾部时进度条可能还差一点
+            completed,
+        });
+
+        if (options.final) reportFeedback(current, elapsed, duration, completed);
+    };
+
+    /**
+     * 上报推荐反馈（`recommend.feedback`）：**弱信号**，只报两种有明确倾向的结局。
+     *
+     * 为什么必须由界面报：「听了一半就切走」核心自己看不到——画像只消费播放次数与时间
+     * （`build_taste` 不看 `playedSec`），不报的话它在画像里与「完整听完」没有区别。
+     *
+     * **只在「这次播放真的结束了」时报**（切歌 / 停止 / 播完），暂停不算：
+     * 暂停可能是去接个电话，把它当负信号会平白压低用户喜欢的歌。
+     * 单独用 `feedbackPlayId` 去重（历史那边的 `reportedPlayId` 可能已被暂停路径消费）。
+     */
+    const reportFeedback = (track: NowPlaying, elapsed: number, duration: number, completed: boolean) => {
+        if (duration <= 0 || track.playId === feedbackPlayId) return;
+        feedbackPlayId = track.playId;
+
+        if (completed) {
+            void libraryService.recommendFeedback(track, 'complete', 1);
+            return;
+        }
+        const progress = Math.min(1, Math.max(0, elapsed / duration));
+        // 核心只把 `progress < 0.5` 的跳过当负信号；听到一半以上没听完算中立，不报
+        if (progress < appConfig.player.feedbackSkipRatio) {
+            void libraryService.recommendFeedback(track, 'skip', progress);
+        }
+    };
+
     const start = (track: Track, index: number, queue: Track[]) => {
+        // 先结算上一首，再开新的一首（切歌 = 上一首的一次播放真的结束了）
+        reportPlayback({final: true});
+
         const current: NowPlaying = {...track, playId: ++playSeq};
         const candidates = candidatesOf(track);
 
         patch({
             current,
+            detail: null, // 上一首的详情不能留在这一首上
             queue,
             index,
             playing: true,
@@ -138,6 +216,7 @@ export function createPlayerSlice(ctx: StoreCtx) {
         });
 
         void loadLyrics(track, current.playId);
+        void loadDetail(track, current.playId);
         void resolveWithFallback(candidates, current.playId);
         ctx.getActions().library.recordPlay(track);
     };
@@ -181,6 +260,8 @@ export function createPlayerSlice(ctx: StoreCtx) {
         toggle() {
             const {playing, current} = ctx.getState().player;
             if (!current) return;
+            // 暂停即一次播放结束（恢复播放算新的一次）：历史里记到的是真实听过的秒数
+            if (playing) reportPlayback();
             patch({playing: !playing});
         },
 
@@ -191,7 +272,18 @@ export function createPlayerSlice(ctx: StoreCtx) {
                 start(current, index, queue);
                 return;
             }
-            if (!moveTo(1)) patch({playing: false, elapsed: 0});
+            if (!moveTo(1)) {
+                /**
+                 * 队列到头：这一首**真的播完了**，必须结算（历史 + 推荐反馈）。
+                 *
+                 * 不结算的话，最后这首歌的「完整听完」信号就丢了：既没有 `playback.report`
+                 * （历史 / 画像看不到），也没有 `recommend.feedback complete`——
+                 * 而它恰恰是最强的正反馈（真实应用里点开一首 3 秒的本地曲目播完，日志里一条都没有，
+                 * 才发现这条路径一直漏着）。
+                 */
+                reportPlayback({final: true});
+                patch({playing: false, elapsed: 0});
+            }
         },
 
         prev() {
@@ -204,7 +296,6 @@ export function createPlayerSlice(ctx: StoreCtx) {
             }
             if (!moveTo(-1)) actions.seek(0);
         },
-
         setRepeat(repeat) {
             patch({repeat});
         },
@@ -242,8 +333,10 @@ export function createPlayerSlice(ctx: StoreCtx) {
         },
 
         stop() {
+            reportPlayback({final: true});
             patch({
                 current: null,
+                detail: null,
                 playing: false,
                 elapsed: 0,
                 duration: 0,

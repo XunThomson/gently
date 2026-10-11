@@ -4,6 +4,7 @@ import {EmptyState} from '../../components/ui/empty-state';
 import {IconChevronLeft, IconMusic, IconPause, IconPlay} from '../../components/ui/icon';
 import {Lyrics} from '../../components/ui/lyrics';
 import {useActions, usePlayerState} from '../../store';
+import {trackCoverStyle} from '../../utils/cover';
 import styles from './now-playing.module.css';
 
 /**
@@ -15,7 +16,7 @@ import styles from './now-playing.module.css';
 export default function NowPlayingView() {
     const {t} = useTranslation();
     const navigate = useNavigate();
-    const {current, playing, elapsed, lyrics} = usePlayerState();
+    const {current, detail, playing, elapsed, lyrics} = usePlayerState();
     const {seek, toggle} = useActions().player;
 
     if (!current) {
@@ -30,6 +31,9 @@ export default function NowPlayingView() {
         );
     }
 
+    /* 封面优先用源侧详情（`catalog.track`）：列表快照常常只有标题歌手 */
+    const artwork = detail ?? current;
+
     return (
         <div className={styles.page}>
             <button type="button" className={styles.back} onClick={() => navigate(-1)}>
@@ -39,8 +43,11 @@ export default function NowPlayingView() {
 
             <div className={styles.layout}>
                 <section className={styles.artwork}>
-                    <div className={styles.cover} style={{background: current.gradient}}>
-                        <span className={styles.initial}>{current.title.slice(0, 1)}</span>
+                    <div
+                        className={styles.cover}
+                        style={trackCoverStyle(artwork)}
+                    >
+                        <span className={styles.initial}>{artwork.title.slice(0, 1)}</span>
                         <button
                             type="button"
                             className={styles.coverPlay}

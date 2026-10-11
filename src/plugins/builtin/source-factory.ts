@@ -1,11 +1,11 @@
 import {appConfig} from '../../config/app.config';
 import {RECOMMENDED, SONG_POOL} from '../../mock/base.data.mock';
+import {TOP_LIST_GROUPS, buildTopListPage} from '../../mock/toplist.mock';
 import {makeTrack} from '../../mock/track.mock';
-import {buildChartData} from '../../utils/chart';
 import {hashStr} from '../../utils/helpers';
 import {pickQuality} from '../../utils/quality';
 import type {PluginInfo, ResolvedSource, Track, TrackQuality} from '../../types';
-import type {ChartQuery, MusicSourcePlugin} from '../types';
+import type {MusicSourcePlugin} from '../types';
 
 /**
  * 内置测试音频：仅用于验证「播放 / 暂停 / 进度 / 音量」整条链路，
@@ -65,11 +65,16 @@ export function createMockMusicSource(options: MockSourceOptions): MusicSourcePl
         info,
         qualities: options.qualities,
 
-        async fetchChart({chart, dateKey}: ChartQuery) {
+        async fetchTopLists() {
             await latency();
-            // 每个源用不同的 seed，因此返回的榜单集合「大体相同但不完全一致」
-            const rows = buildChartData(chart, `${options.id}|${dateKey}`);
-            return rows.slice(0, options.chartRows);
+            // 各源的分类树相同（真实源会各不相同，这里只提供一份合理的树）
+            return TOP_LIST_GROUPS;
+        },
+
+        async fetchTopList(id: string, page = 1) {
+            await latency();
+            // 每个源的数据不同，因此同一分类在不同源下列表也不完全一致
+            return buildTopListPage(options.id, id, page);
         },
 
         async fetchRecommend(limit: number) {

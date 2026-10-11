@@ -1,0 +1,9 @@
+/* 榜单页局部样式 */
+
+/* 源报错时的说明：跟在列表下面，弱一级但足够显眼（不是标题，不该抢焦点） */
+.errorHint {
+    margin-top: var(--space-3);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+    color: var(--danger);
+}

@@ -9,14 +9,30 @@
 //! 注意：本模块内部统一返回 `Fallible<T>`（`Result<_, CoreError>`），
 //! 这样可以直接用 `?`；信封只在命令边界生成。
 
+mod downloads;
+mod library;
+mod local;
 mod migrations;
 mod plugins;
+mod recommend;
+mod skins;
 mod subscriptions;
 
+pub use library::{
+    normalize_limit, FavoriteRow, HistoryRow, PageRows, PlaylistRow, StoredTrack, DEFAULT_PAGE,
+    MAX_PAGE,
+};
+pub use downloads::{
+    DownloadRow, NewDownload, STATUS_DONE, STATUS_DOWNLOADING, STATUS_ERROR, STATUS_PAUSED,
+    STATUS_PENDING,
+};
+pub use local::{LocalTrackInput, LocalTrackRow, UpsertOutcome};
+pub use recommend::FeedbackRow;
+pub use skins::{SkinRow, ACTIVE_KEY};
 pub use migrations::latest_version;
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use rusqlite::{Connection, OptionalExtension};
 
@@ -24,8 +40,12 @@ use crate::contract::{CoreError, Fallible};
 use migrations::MIGRATIONS;
 
 /// 数据库句柄。
+///
+/// 连接放在 `Arc` 里：下载线程这类长任务需要**自己的句柄**（`Store` 可 Clone，克隆的是句柄
+/// 而不是连接），因此不需要把 `CoreContext` 借到线程里。
+#[derive(Clone)]
 pub struct Store {
-    conn: Mutex<Connection>,
+    conn: Arc<Mutex<Connection>>,
     schema_version: i64,
 }
 
@@ -56,7 +76,7 @@ impl Store {
         apply_pragmas(&conn)?;
         let schema_version = migrations::migrate(&mut conn)?;
         tracing::info!(schema_version, migrations = MIGRATIONS.len(), "SQLite 就绪");
-        Ok(Self { conn: Mutex::new(conn), schema_version })
+        Ok(Self { conn: Arc::new(Mutex::new(conn)), schema_version })
     }
 
     pub fn schema_version(&self) -> i64 {

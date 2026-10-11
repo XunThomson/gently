@@ -7,6 +7,7 @@ import {useConfirm} from '../../hooks/useConfirm';
 import {useActions, usePluginState} from '../../store';
 import type {PluginInfo} from '../../types';
 import {ImportPanel} from './components/import-panel';
+import {SubscriptionPanel} from './components/subscription-panel';
 
 export default function PluginView() {
     const {t} = useTranslation();
@@ -105,6 +106,9 @@ export default function PluginView() {
         >
             {/* 本机核心插件：用户自行导入（不预置任何来源，ADR-0005） */}
             <ImportPanel/>
+
+            {/* 订阅源（社区仓库索引）：地址同样由用户提供；一键安装仍然走预览 + 显式同意 */}
+            <SubscriptionPanel/>
 
             <DataTable
                 columns={columns}

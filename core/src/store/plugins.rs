@@ -164,7 +164,8 @@ impl Store {
                 ErrorCode::Conflict,
                 "配置 revision 不匹配（本地尚无配置）",
             )
-            .with_details(serde_json::json!({ "expected": 1, "got": revision }))),
+            // `current` 让前端不必再查一次就能重试
+            .with_details(serde_json::json!({ "current": 0, "expected": 1, "got": revision }))),
             Some(found) if found == revision => {
                 let next = found + 1;
                 conn.execute(
@@ -175,7 +176,7 @@ impl Store {
                 Ok(next)
             }
             Some(found) => Err(CoreError::new(ErrorCode::Conflict, "配置已被其它窗口修改")
-                .with_details(serde_json::json!({ "expected": found, "got": revision }))),
+                .with_details(serde_json::json!({ "current": found, "expected": found, "got": revision }))),
         }
     }
 }

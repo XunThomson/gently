@@ -10,6 +10,8 @@ use gently_core::contract::ErrorCode;
 use gently_core::{AppPaths, CoreContext, Store};
 use serde_json::{json, Value};
 
+mod common;
+
 const V1: &str = r#"
 // @id demo-source
 // @name 示例音源
@@ -27,14 +29,7 @@ fn v2() -> String {
 }
 
 fn temp_ctx(tag: &str) -> (CoreContext, std::path::PathBuf) {
-    let dir = std::env::temp_dir().join(format!(
-        "gently-install-{tag}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or_default()
-    ));
+    let dir = common::temp_dir(&format!("install-{tag}"));
     let paths = AppPaths::resolve(&dir);
     paths.ensure().expect("建目录");
     let store = Store::open(&paths.db).expect("打开库");

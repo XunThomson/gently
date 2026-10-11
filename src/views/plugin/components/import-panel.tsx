@@ -1,29 +1,30 @@
 import {useCallback, useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
-import type {CoreResult, ImportSource, PluginImportPreview, PluginPermission, PluginSummary} from '../../../api';
+import {errorText} from '../../../i18n/errors';
+import type {CoreResult, ImportSource, PluginImportPreview, PluginSummary} from '../../../api';
 import {Button} from '../../../components/ui/button';
 import {UnderlineRadioGroup} from '../../../components/ui/radio-group';
 import {BadgeCell, TextCell} from '../../../components/ui/data-table';
 import {useConfirm} from '../../../hooks/useConfirm';
-import {coreAvailable, corePlugin} from '../../../services';
+import {coreAvailable, corePlugin, libraryService} from '../../../services';
+import {PERMISSION_LABEL} from '../permissions';
+import {PluginSettings} from './plugin-settings';
 import styles from '../plugin.module.css';
 
-type SourceMode = 'paste' | 'url';
+type SourceMode = 'paste' | 'url' | 'path';
 
-const PERMISSION_LABEL: Record<PluginPermission, string> = {
-    network: 'page.plugin.permissionNetwork',
-    credentials: 'page.plugin.permissionCredentials',
-    'filesystem:read': 'page.plugin.permissionFilesystemRead',
-    'filesystem:write': 'page.plugin.permissionFilesystemWrite',
-};
+/** 本机路径来源的三种形态（契约里的 `file` / `dir` / `archive`） */
+type PathKind = 'file' | 'dir' | 'archive';
 
 /**
- * 本机核心插件面板：导入（粘贴 / 地址）→ 权限确认 → 安装。
+ * 本机核心插件面板：导入（粘贴 / 地址 / 本机路径）→ 权限确认 → 安装。
  *
- * 两条硬约束体现在这里：
+ * 三条硬约束体现在这里：
  * 1. **中立立场**（ADR-0005）：界面不预置任何来源、不出现「官方/推荐」措辞，
  *    并常驻第三方免责声明；来源必须由用户自己填写。
  * 2. **同意是硬门槛**：先 `preview`（只读）把权限与凭据需求摆出来，用户显式勾选后才 `install`。
+ * 3. **本机路径要用户自己给**：原生文件选择器需要 `tauri-plugin-dialog`（不在离线依赖里），
+ *    因此这里不做「浏览…」按钮，而是让用户粘贴/输入路径——不在界面里假装有这个能力。
  *
  * 浏览器（无 Tauri）下不请求任何东西，只说明需要在桌面端操作。
  */
@@ -35,11 +36,17 @@ export function ImportPanel() {
     const [mode, setMode] = useState<SourceMode>('paste');
     const [text, setText] = useState('');
     const [url, setUrl] = useState('');
+    const [pathKind, setPathKind] = useState<PathKind>('archive');
+    const [path, setPath] = useState('');
+    /** 兼容模式（ADR-0006）：默认关闭，只有用户显式勾选才会请求核心开启 */
+    const [compat, setCompat] = useState(false);
     const [preview, setPreview] = useState<PluginImportPreview | null>(null);
     const [consent, setConsent] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [installed, setInstalled] = useState<PluginSummary[]>([]);
+    /** 正在展开管理面板（凭据 / 配置）的插件 id */
+    const [settingsId, setSettingsId] = useState<string | null>(null);
 
     const refresh = useCallback(async () => {
         const result = await corePlugin.list();
@@ -55,6 +62,16 @@ export function ImportPanel() {
         if (mode === 'paste') {
             return text.trim() ? {kind: 'paste', content: text} : null;
         }
+        if (mode === 'path') {
+            const value = path.trim();
+            if (!value) return null;
+            // 三种本地形态各有语义：单文件 / 目录包 / 压缩包（核心分别解析）
+            return pathKind === 'file'
+                ? {kind: 'file', path: value}
+                : pathKind === 'dir'
+                  ? {kind: 'dir', path: value}
+                  : {kind: 'archive', path: value};
+        }
         return url.trim() ? {kind: 'url', url: url.trim()} : null;
     };
 
@@ -66,13 +83,13 @@ export function ImportPanel() {
         }
         setBusy(true);
         setError(null);
-        const result = await corePlugin.preview(from);
+        const result = await corePlugin.preview(from, compat);
         if (result.ok) {
             setPreview(result.data);
             setConsent(false);
         } else {
             setPreview(null);
-            setError(result.error.message);
+            setError(errorText(t, result.error));
         }
         setBusy(false);
     };
@@ -82,7 +99,7 @@ export function ImportPanel() {
         setBusy(true);
         setError(null);
         const result = await action();
-        if (!result.ok) setError(result.error.message);
+        if (!result.ok) setError(errorText(t, result.error));
         setBusy(false);
         await refresh();
     };
@@ -92,20 +109,49 @@ export function ImportPanel() {
         if (!from || !consent) return;
         setBusy(true);
         setError(null);
-        const result = await corePlugin.install(from);
+        const result = await corePlugin.install(from, compat);
         if (result.ok) {
             // 安装只落盘；这里顺手建立运行时并探测能力，让插件立刻可用
             const reloaded = await corePlugin.reload(result.data.plugin.id);
-            if (!reloaded.ok) setError(reloaded.error.message);
+            if (!reloaded.ok) setError(errorText(t, reloaded.error));
             setPreview(null);
             setConsent(false);
             setText('');
             setUrl('');
             await refresh();
         } else {
-            setError(result.error.message);
+            setError(errorText(t, result.error));
         }
         setBusy(false);
+    };
+
+    /**
+     * 兼容模式收敛（ADR-0006/TOFU）：先把观测到的域名摆给用户看，确认后固化成白名单。
+     *
+     * 这是**收窄**动作（之后该插件只能访问这些域名），因此走二次确认；
+     * 没有观测记录时明确提示「先使用一次」，而不是弹一个空列表。
+     */
+    const converge = async (plugin: PluginSummary) => {
+        setBusy(true);
+        setError(null);
+        const result = await corePlugin.observedHosts(plugin.id);
+        setBusy(false);
+        if (!result.ok) {
+            setError(errorText(t, result.error));
+            return;
+        }
+        const hosts = result.data.hosts.map((entry) => entry.host);
+        if (hosts.length === 0) {
+            setError(t('page.plugin.compatNoHosts'));
+            return;
+        }
+        confirm({
+            titleKey: 'confirm.compatTitle',
+            descKey: 'confirm.compatDesc',
+            descParams: {name: plugin.name, hosts: hosts.join(' / ')},
+            tone: 'danger',
+            onConfirm: () => run(() => corePlugin.confirmHosts(plugin.id, hosts)),
+        });
     };
 
     /** 上/下移：整表重排后按 10 递增回写优先级（默认优先级都相同，交换数值无效，必须重排） */
@@ -121,9 +167,11 @@ export function ImportPanel() {
         for (const [position, plugin] of next.entries()) {
             const want = (position + 1) * 10;
             if (plugin.priority === want) continue;
-            const result = await corePlugin.setPriority(plugin.id, want);
+            /* 走 `libraryService`（而不是直接 `corePlugin`）：内置演示源不在核心里，
+               服务层会跳过它——直接发过去只会换回一条 `common.not_found` 并弹错 */
+            const result = await libraryService.setPluginPriority(plugin.id, want);
             if (!result.ok) {
-                setError(result.error.message);
+                setError(errorText(t, result.error));
                 break;
             }
         }
@@ -151,10 +199,11 @@ export function ImportPanel() {
                         options={[
                             {value: 'paste', label: t('page.plugin.sourcePaste')},
                             {value: 'url', label: t('page.plugin.sourceUrl')},
+                            {value: 'path', label: t('page.plugin.sourcePath')},
                         ]}
                     />
 
-                    {mode === 'paste' ? (
+                    {mode === 'paste' && (
                         <div className={styles.field}>
                             <span className={styles.label}>{t('page.plugin.pasteLabel')}</span>
                             <textarea
@@ -167,7 +216,9 @@ export function ImportPanel() {
                                 }}
                             />
                         </div>
-                    ) : (
+                    )}
+
+                    {mode === 'url' && (
                         <div className={styles.field}>
                             <span className={styles.label}>{t('page.plugin.urlLabel')}</span>
                             <input
@@ -183,6 +234,55 @@ export function ImportPanel() {
                         </div>
                     )}
 
+                    {mode === 'path' && (
+                        <>
+                            {/* 形态必须由用户选：单文件 / 目录包 / 压缩包在核心里是三条不同的解析路径 */}
+                            <UnderlineRadioGroup
+                                name="plugin-path-kind"
+                                value={pathKind}
+                                onChange={(value) => {
+                                    setPathKind(value as PathKind);
+                                    setPreview(null);
+                                }}
+                                options={[
+                                    {value: 'archive', label: t('page.plugin.kindArchive')},
+                                    {value: 'file', label: t('page.plugin.kindFile')},
+                                    {value: 'dir', label: t('page.plugin.kindDir')},
+                                ]}
+                            />
+                            <div className={styles.field}>
+                                <span className={styles.label}>{t('page.plugin.pathLabel')}</span>
+                                <input
+                                    className={styles.input}
+                                    type="text"
+                                    value={path}
+                                    placeholder={t('page.plugin.pathPlaceholder')}
+                                    onChange={(event) => {
+                                        setPath(event.target.value);
+                                        setPreview(null);
+                                    }}
+                                />
+                            </div>
+                            <p className={styles.hint}>{t('page.plugin.pathHint')}</p>
+                        </>
+                    )}
+
+                    {/* 兼容模式默认关闭：权限弱于自有 ABI，必须由用户主动选择（ADR-0006） */}
+                    <label className={styles.consent}>
+                        <input
+                            className={styles.checkbox}
+                            type="checkbox"
+                            checked={compat}
+                            onChange={(event) => {
+                                setCompat(event.target.checked);
+                                setPreview(null);
+                                setConsent(false);
+                            }}
+                        />
+                        <span>{t('page.plugin.compatLabel')}</span>
+                    </label>
+                    <TextCell tone="muted">{t('page.plugin.compatHint')}</TextCell>
+
                     <div className={styles.actions}>
                         <Button size="sm" variant="ghost" onClick={() => void check()} disabled={busy}>
                             {busy ? t('page.plugin.checking') : t('page.plugin.check')}
@@ -197,13 +297,25 @@ export function ImportPanel() {
                             </span>
                             <TextCell tone="muted">{preview.manifest.description}</TextCell>
 
+                            {/* 兼容模式必须显式提示代价：权限弱于自有 ABI（ADR-0006 第 4 条） */}
+                            {preview.compat && (
+                                <TextCell tone="warning">{t('page.plugin.compatWarning')}</TextCell>
+                            )}
+
                             <span className={styles.label}>{t('page.plugin.permissions')}</span>
                             <ul className={styles.list}>
                                 {preview.permissions.length === 0 ? (
                                     <li>{t('page.plugin.permissionNone')}</li>
                                 ) : (
                                     preview.permissions.map((permission) => (
-                                        <li key={permission}>· {t(PERMISSION_LABEL[permission])}</li>
+                                        <li key={permission}>
+                                            ·{' '}
+                                            {t(
+                                                permission === 'network' && preview.compat
+                                                    ? 'page.plugin.permissionNetworkCompat'
+                                                    : PERMISSION_LABEL[permission],
+                                            )}
+                                        </li>
                                     ))
                                 )}
                             </ul>
@@ -275,6 +387,10 @@ export function ImportPanel() {
                                         <BadgeCell tone={plugin.enabled ? 'success' : 'muted'}>
                                             {plugin.enabled ? t('common.enabled') : t('common.disabled')}
                                         </BadgeCell>
+                                        {/* 兼容插件不能与自有 ABI 插件看起来同等安全 */}
+                                        {plugin.compat && (
+                                            <BadgeCell tone="warning">{t('page.plugin.compatBadge')}</BadgeCell>
+                                        )}
                                     </span>
                                     <span className={styles.actions}>
                                         <Button
@@ -311,6 +427,30 @@ export function ImportPanel() {
                                         >
                                             {t('page.plugin.reload')}
                                         </Button>
+                                        {/* 凭据 / 配置：作者声明了凭据却没有填写入口，插件就永远是摆设 */}
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            disabled={busy}
+                                            onClick={() =>
+                                                setSettingsId(settingsId === plugin.id ? null : plugin.id)
+                                            }
+                                        >
+                                            {settingsId === plugin.id
+                                                ? t('page.plugin.settingsClose')
+                                                : t('page.plugin.settings')}
+                                        </Button>
+                                        {/* 兼容插件：把观测到的域名固化成白名单（TOFU 收敛，二次确认） */}
+                                        {plugin.compat && (
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                disabled={busy}
+                                                onClick={() => void converge(plugin)}
+                                            >
+                                                {t('page.plugin.compatConverge')}
+                                            </Button>
+                                        )}
                                         {/* 卸载是不可逆的落盘操作：必须走二次确认（AGENTS 约束 11） */}
                                         <Button
                                             size="sm"
@@ -329,6 +469,9 @@ export function ImportPanel() {
                                             {t('common.uninstall')}
                                         </Button>
                                     </span>
+
+                                    {/* 管理面板挂在插件行下面（同一行渲染，不引入路由） */}
+                                    {settingsId === plugin.id && <PluginSettings plugin={plugin}/>}
                                 </li>
                             ))}
                         </ul>

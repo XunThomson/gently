@@ -15,6 +15,14 @@ pub const MIGRATIONS: &[Migration] = &[
     Migration { name: "0001_init", sql: include_str!("migrations/0001_init.sql") },
     Migration { name: "0002_plugin_state", sql: include_str!("migrations/0002_plugin_state.sql") },
     Migration { name: "0003_subscriptions", sql: include_str!("migrations/0003_subscriptions.sql") },
+    Migration { name: "0004_library", sql: include_str!("migrations/0004_library.sql") },
+    Migration { name: "0005_local_tracks", sql: include_str!("migrations/0005_local_tracks.sql") },
+    Migration { name: "0006_downloads", sql: include_str!("migrations/0006_downloads.sql") },
+    Migration { name: "0007_skins", sql: include_str!("migrations/0007_skins.sql") },
+    Migration {
+        name: "0008_recommend_feedback",
+        sql: include_str!("migrations/0008_recommend_feedback.sql"),
+    },
 ];
 
 /// 顺序应用未执行的迁移，返回最终的 `user_version`。

@@ -1,32 +1,12 @@
 /**
  * 全局领域模型。
  * 仅存放跨模块共享的纯数据类型，不含 React / 状态 / 服务逻辑。
+ *
+ * 榜单/分类的**结构由源决定**（`TopListGroup` / `TopListPage` 在 `src/api`，
+ * 那是本机核心契约的形状），因此这里没有「热歌/新歌」或「日/周/月」这类固定枚举。
  */
 
-/* ============================== 榜单 ============================== */
-
-export type ChartType = 'hot' | 'new' | 'rise' | 'origin';
-export type Period = 'day' | 'week' | 'month' | 'year';
-
-export interface DateSelection {
-    year: number;
-    month: number;
-    day: number;
-}
-
-export interface SongRow {
-    title: string;
-    artist: string;
-    album: string;
-    dur: string;
-    heat: number;
-}
-
-export interface WeekOption extends DateSelection {
-    label: string;
-    range: string;
-    isCurrent: boolean;
-}
+/* ============================== 曲目 ============================== */
 
 /* ============================== 曲目 ============================== */
 
@@ -41,6 +21,13 @@ export interface Track {
     durationSec: number;
     /** 数据源（plugin）id */
     source: string;
+    /**
+     * 封面图地址（插件给的就是它的 `artwork`/`cover`；可能为空）。
+     *
+     * 为空时用 `gradient` 占位——**渲染统一走 `utils/cover.ts` 的 `coverStyle()`**，
+     * 它同时认识图片地址与渐变，视图不需要分支。
+     */
+    artwork?: string;
     /** 封面渐变（无封面图时的占位） */
     gradient: string;
     /** 风格标签：个性化推荐的基础（mock 由稳定哈希生成） */
@@ -65,13 +52,19 @@ export interface DownloadTask {
     id: string;
     track: Track;
     status: DownloadStatus;
-    /** 0 ~ 1 */
+    /** 0 ~ 1（总量未知时为 0） */
     progress: number;
-    /** 文件总大小（MB），用于计算已下载大小文案 */
+    /** 文件总大小（MB），未知为 0 */
     totalMb: number;
-    /** 已下载 / 总大小，如 3.0Mb/4.12Mb */
+    /** 已下载 / 总大小，如「3.0 MB/4.1 MB」（总量未知时只显示已下载） */
     sizeText: string;
     speedText?: string;
+    /** 最终落盘路径（先写 `.part`，完成后 rename 到这里） */
+    path?: string;
+    /** 失败原因（status === 'error' 时有值）——核心给的开发者说明，界面优先用 `errorCode` 走 i18n */
+    error?: string;
+    /** 失败原因的错误码（`download:error` 事件带 `code`）；界面按码取本地化文案 */
+    errorCode?: string;
 }
 
 /* ============================== 插件（数据源） ============================== */
@@ -230,4 +223,6 @@ export interface LyricLine {
     /** 该行开始时间（秒） */
     time: number;
     text: string;
+    /** 译文（源带翻译时才有；按同一时间戳对齐） */
+    translation?: string;
 }

@@ -1,24 +1,28 @@
 import {catalogService} from '../../services';
-import {thisMonday, toDateKey, today} from '../../utils/date';
 import type {RankingActions, RankingState, StoreCtx} from '../types';
 
 /**
- * 榜单切片：查询条件 + 榜单数据。
- * 条件变化后由 `load()` 统一从曲库门面拉取。
+ * 榜单/分类切片。
  *
- * 周榜按产品约定只展示「本周」，因此 `weekStart` 固定为初始化时的本周一，
- * 不提供修改入口（对应的 action 未实现，避免留下无人调用的 API）。
+ * **按源渲染**：真实源给的是任意分类树（契约 `catalog.topLists`），因此这里不保存
+ * 「热歌/新歌 + 日/周/月」这类固定查询条件，只保存「源 → 分类树 → 选中项 → 已加载页」。
+ *
+ * `ui.sourceFilter` 变化时由视图触发 `load()` 重新拉树（源换了，分类树也就换了）；
+ * `all` 表示「让应用挑一个优先级最高的源」（榜单无法跨源聚合）。
+ *
+ * **错误如实保留**：源报错（上游失败 / 插件抛错）时记下原始错误，
+ * 界面据此区分「这个源没有榜单」与「源跑挂了」——静默吞掉只会让用户看到空列表。
  */
 export function createRankingSlice(ctx: StoreCtx) {
     const state: RankingState = {
-        chart: 'hot',
-        period: 'day',
-        date: today(),
-        weekStart: thisMonday(),
-        expanded: false,
-        query: '',
+        sourceId: null,
+        groups: [],
+        selectedId: null,
         rows: [],
+        hasMore: false,
         loading: false,
+        loaded: false,
+        error: null,
     };
 
     /** 正在进行的请求键：避免同一条件重复请求（含 StrictMode 双调用） */
@@ -28,51 +32,88 @@ export function createRankingSlice(ctx: StoreCtx) {
         ctx.setState({ranking: {...ctx.getState().ranking, ...partial}});
     };
 
-    const load = async () => {
-        const {chart, period, date, weekStart} = ctx.getState().ranking;
-        const {sourceFilter} = ctx.getState().ui;
-        const dateKey = toDateKey(period, date, weekStart);
-        const requestKey = `${chart}|${period}|${dateKey}|${sourceFilter}`;
-
+    /** 拉取某个分类的一页；`append` 为 true 时把结果接在已加载列表后面 */
+    const fetchPage = async (sourceId: string, itemId: string, page: number, append: boolean) => {
+        const requestKey = `${sourceId}|${itemId}|${page}`;
         if (inflight === requestKey) return;
         inflight = requestKey;
 
         patch({loading: true});
         try {
-            // 榜单按音源提供：选中某个音源时只看它的榜，'all' 时用优先级最高的音源
-            const rows = await catalogService.fetchChart(
-                {chart, period, date, dateKey},
-                sourceFilter === 'all' ? undefined : sourceFilter,
-            );
-            patch({rows, loading: false});
+            const {page: result, error} = await catalogService.fetchTopList(sourceId, itemId, page);
+            const previous = append ? ctx.getState().ranking.rows : [];
+            patch({
+                rows: [...previous, ...result.items],
+                hasMore: result.hasMore,
+                nextPage: result.nextPage,
+                loading: false,
+                loaded: true,
+                error: error ?? null,
+            });
         } catch (err) {
             console.error('[ranking] 榜单加载失败', err);
-            patch({rows: [], loading: false});
+            patch({rows: append ? ctx.getState().ranking.rows : [], hasMore: false, loading: false, loaded: true});
         } finally {
             if (inflight === requestKey) inflight = null;
         }
     };
 
     const actions: RankingActions = {
-        setChart(chart) {
-            patch({chart, expanded: false});
-            return load();
+        async load() {
+            // 音源清单以 store 的插件列表为准（桌面端来自核心）：榜单是按源的，
+            // 选错源就等于拿不到数据，所以这里必须先确保列表就绪再挑源。
+            await ctx.getActions().plugin.load();
+
+            const {sourceFilter} = ctx.getState().ui;
+            const enabled = ctx.getState().plugin.list.filter((plugin) => plugin.enabled);
+            const sourceId =
+                sourceFilter === 'all'
+                    ? (enabled[0]?.id ?? catalogService.defaultSourceId())
+                    : sourceFilter;
+
+            // 同一个源已经加载过就不再重复拉（视图在挂载 / 筛选变化时都会调用）
+            const current = ctx.getState().ranking;
+            if (current.loaded && current.sourceId === sourceId) return;
+
+            patch({
+                loading: true,
+                sourceId,
+                rows: [],
+                hasMore: false,
+                nextPage: undefined,
+                error: null,
+            });
+
+            const {groups, error} = await catalogService.fetchTopLists(sourceId);
+            // 默认选中第一个分类（树为空说明该源没有提供榜单，视图给空态/错误提示）
+            const first = groups.flatMap((group) => group.items)[0] ?? null;
+            patch({
+                groups,
+                selectedId: first?.id ?? null,
+                loading: false,
+                loaded: true,
+                error: error ?? null,
+            });
+
+            if (!first) return;
+            await fetchPage(sourceId, first.id, 1, false);
         },
-        setPeriod(period) {
-            patch({period, expanded: false});
-            return load();
+
+        async selectItem(itemId) {
+            const {sourceId, selectedId} = ctx.getState().ranking;
+            if (!sourceId || itemId === selectedId) return;
+
+            patch({selectedId: itemId, rows: [], hasMore: false, nextPage: undefined, error: null});
+            await fetchPage(sourceId, itemId, 1, false);
         },
-        setDate(date) {
-            patch({date, expanded: false});
-            return load();
+
+        async loadMore() {
+            const {sourceId, selectedId, hasMore, nextPage} = ctx.getState().ranking;
+            if (!sourceId || !selectedId || !hasMore) return;
+            // 源没给 `nextPage` 时按「当前页 + 1」推进（协议里 nextPage 可选）
+            const page = nextPage ?? 2;
+            await fetchPage(sourceId, selectedId, page, true);
         },
-        toggleExpanded() {
-            patch({expanded: !ctx.getState().ranking.expanded});
-        },
-        setQuery(query) {
-            patch({query});
-        },
-        load,
     };
 
     return {key: 'ranking' as const, state, actions};

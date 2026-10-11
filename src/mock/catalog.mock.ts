@@ -102,3 +102,18 @@ export function discoveryPool(): Track[] {
     }
     return indexes.map((index) => makeTrack(index, 'mock'));
 }
+
+/* ---------------- 详情页（浏览器预览） ----------------
+ * 桌面端这两件事由核心的 `catalog.album` / `catalog.playlist` 完成，
+ * 这里只保证浏览器预览里点开卡片也能看到同一形状的详情。
+ */
+
+/** 按 id 找专辑；`mock` 的专辑 id 形如 `album:<歌手>` */
+export function findAlbum(id: string): Album | null {
+    return buildAlbums().find((album) => album.id === id) ?? null;
+}
+
+/** 按 id 找精选歌单；id 形如 `curated:<slug>` */
+export function findCuratedPlaylist(id: string): CuratedPlaylist | null {
+    return CURATED_PLAYLISTS.find((playlist) => playlist.id === id) ?? null;
+}

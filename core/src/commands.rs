@@ -22,15 +22,18 @@ use serde_json::json;
 use serde::Serialize;
 
 use crate::contract::{
-    command_count, is_known_command, CoreError, CoreResult, ErrorCode, Fallible, SystemCounts,
+    command_count, is_known_command, CoreError, CoreResult, ErrorCode, Fallible, ImportSource,
+    SystemCounts,
     SystemStatus, COMMAND_NAMES,
 };
 use crate::events::{EventSink, NullEventSink};
 use crate::paths::AppPaths;
 use crate::plugin::{
-    is_private_host, parse_index, parse_manifest_json, parse_source, sha256_hex, BlockingHttp,
-    CatalogEntry, HostLimits, HttpLimits, HttpRequest, HttpTransport, InstallSource,
-    InstalledPlugin, MemoryCredentialStore, PluginHost, Subscription, MAX_SOURCE_BYTES,
+    apply_explicit_compat, extract_archive, is_private_host, is_valid_host, parse_index,
+    parse_manifest_json, parse_source_compat, sha256_hex, ArchiveShape, BlockingHttp, CatalogEntry,
+    HostLimits, HttpLimits, HttpRequest, HttpTransport, InstallSource, InstalledPlugin,
+    CredentialStore, MemoryCredentialStore, ParsedPlugin, PluginHost, Subscription,
+    MAX_SOURCE_BYTES,
 };
 use crate::store::Store;
 
@@ -48,6 +51,8 @@ pub struct CoreContext {
     pub http: Arc<dyn HttpTransport>,
     /// 流式搜索的取消登记表
     pub searches: Arc<crate::catalog::SearchRegistry>,
+    /// 下载任务的控制登记表（暂停/取消标志）
+    pub downloads: Arc<crate::download::DownloadRegistry>,
     /// 本地流代理（仅回环 + 一次性令牌；契约 §7）
     pub streams: Arc<crate::media::StreamRegistry>,
     pub events: Arc<dyn EventSink>,
@@ -62,6 +67,10 @@ impl CoreContext {
             Arc::new(MemoryCredentialStore::new()),
             HostLimits::default(),
         ));
+        // 内嵌封面缓存目录：扫描时把图片落在这里，列表给回环地址（`/cover/<name>`）
+        let covers_dir = paths.cache.join("covers");
+        let streams = Arc::new(crate::media::StreamRegistry::default());
+        streams.set_covers_dir(covers_dir);
         Self {
             paths,
             store: None,
@@ -70,7 +79,8 @@ impl CoreContext {
             plugins,
             http,
             searches: Arc::new(crate::catalog::SearchRegistry::default()),
-            streams: Arc::new(crate::media::StreamRegistry::default()),
+            downloads: Arc::new(crate::download::DownloadRegistry::default()),
+            streams,
             events: Arc::new(NullEventSink),
         }
     }
@@ -89,6 +99,38 @@ impl CoreContext {
     pub fn with_store_error(mut self, error: impl Into<String>) -> Self {
         self.store = None;
         self.store_error = Some(error.into());
+        self
+    }
+
+    /// 换成自定义出网实现（测试、离线模式）。
+    ///
+    /// 插件宿主与核心自身的出网必须**共用同一个实现**：只改 `ctx.http` 不会影响已经建好的
+    /// 插件宿主——那样测试会以为「禁止出网」，插件却仍在打真实网络（这个坑踩过一次，
+    /// 所以入口做成方法而不是裸字段赋值）。
+    pub fn with_http(mut self, http: Arc<dyn HttpTransport>) -> Self {
+        self.http = Arc::clone(&http);
+        self.plugins = Arc::new(PluginHost::new(
+            self.paths.clone(),
+            http,
+            Arc::new(MemoryCredentialStore::new()),
+            HostLimits::default(),
+        ));
+        self
+    }
+
+    /// 换成指定凭据存储（宿主与命令层共用）。
+    ///
+    /// 桌面端用系统凭据库（[`crate::plugin::open_store`]），测试与降级场景用内存实现：
+    /// **默认是内存**，因此单元/集成测试不会往用户的凭据库里写东西。
+    pub fn with_credentials(mut self, credentials: Arc<dyn CredentialStore>) -> Self {
+        // 与 `with_http` 同因：宿主是单独构造的，换存储必须重建宿主
+        let http = Arc::clone(&self.http);
+        self.plugins = Arc::new(PluginHost::new(
+            self.paths.clone(),
+            http,
+            Arc::clone(&credentials),
+            HostLimits::default(),
+        ));
         self
     }
 }
@@ -119,21 +161,74 @@ pub fn dispatch(
         "plugin.setEnabled" => plugin_set_enabled(ctx, params),
         "plugin.setPriority" => plugin_set_priority(ctx, params),
         "plugin.reload" => plugin_reload(ctx, params),
+        "plugin.compat.observed" => plugin_compat_observed(ctx, params),
+        "plugin.compat.confirm" => plugin_compat_confirm(ctx, params),
         "plugin.subscriptions.list" => plugin_subscriptions_list(ctx),
         "plugin.subscriptions.add" => plugin_subscriptions_add(ctx, params),
         "plugin.subscriptions.remove" => plugin_subscriptions_remove(ctx, params),
         "plugin.subscriptions.refresh" => plugin_subscriptions_refresh(ctx, params),
         "plugin.catalog.list" => plugin_catalog_list(ctx, params),
+        "catalog.track" => crate::catalog_detail::track(ctx, params),
+        "catalog.album" => crate::catalog_detail::album(ctx, params),
+        "catalog.playlist" => crate::catalog_detail::playlist(ctx, params),
+        "catalog.topLists" => crate::catalog_detail::top_lists(ctx, params),
+        "catalog.topList" => crate::catalog_detail::top_list(ctx, params),
+        "catalog.recommend" => crate::catalog_detail::recommend(ctx, params),
+        "catalog.lyrics" => crate::catalog_detail::lyrics(ctx, params),
+        "library.favorites.list" => crate::library::favorites_list(ctx, params),
+        "library.favorites.set" => crate::library::favorites_set(ctx, params),
+        "library.playlists.list" => crate::library::playlists_list(ctx, params),
+        "library.playlists.save" => crate::library::playlists_save(ctx, params),
+        "library.playlists.delete" => crate::library::playlists_delete(ctx, params),
+        "library.history.list" => crate::library::history_list(ctx, params),
+        "library.history.push" => crate::library::history_push(ctx, params),
+        "library.history.clear" => crate::library::history_clear(ctx, params),
+        "library.local.scan" => crate::local_library::scan(ctx, params),
+        "library.local.list" => crate::local_library::list(ctx, params),
+        "library.local.remove" => crate::local_library::remove(ctx, params),
+        "download.list" => crate::download::list(ctx, params),
+        "download.create" => crate::download::create(ctx, params),
+        "download.pause" => crate::download::pause(ctx, params),
+        "download.resume" => crate::download::resume(ctx, params),
+        "download.remove" => crate::download::remove(ctx, params),
+        "download.clearFinished" => crate::download::clear_finished(ctx, params),
+        "skin.list" => crate::skin::list(ctx, params),
+        "skin.preview" => crate::skin::preview(ctx, params),
+        "skin.install" => crate::skin::install(ctx, params),
+        "skin.remove" => crate::skin::remove(ctx, params),
+        "skin.setActive" => crate::skin::set_active(ctx, params),
+        "skin.export" => crate::skin::export(ctx, params),
+        "recommend.home" => crate::recommend::home(ctx, params),
+        "recommend.similar" => crate::recommend::similar(ctx, params),
+        "recommend.feedback" => crate::recommend::feedback(ctx, params),
+        "plugin.checkUpdate" => crate::plugin_admin::check_update(ctx, params),
+        "plugin.config.get" => crate::plugin_admin::config_get(ctx, params),
+        "plugin.config.put" => crate::plugin_admin::config_put(ctx, params),
+        "plugin.credentials.set" => crate::plugin_admin::credentials_set(ctx, params),
+        "plugin.credentials.clear" => crate::plugin_admin::credentials_clear(ctx, params),
+        "plugin.credentials.status" => crate::plugin_admin::credentials_status(ctx, params),
         "catalog.search" => catalog_search(ctx, params),
         "catalog.searchCancel" => catalog_search_cancel(ctx, params),
         "playback.resolve" => playback_resolve(ctx, params),
+        "playback.report" => playback_report(ctx, params),
         // 其余命令：契约已登记，实现在后续里程碑接入
         other => Err(CoreError::not_implemented(other)),
     };
 
     // 分发日志：既是最低成本的链路可观测性（能确认前端确实调到了核心），
-    // 也是排查「前端报错但核心没收到」这类问题的第一手证据
-    tracing::debug!(command, ok = outcome.is_ok(), "dispatch");
+    // 也是排查「前端报错但核心没收到」这类问题的第一手证据。
+    // 失败时**连错误码与说明一起记**：只写 `ok=false` 会把「插件没装」和「插件跑挂了」
+    // 混成一行，用户拿着日志也判断不出原因（真实排查时踩到过）。
+    match &outcome {
+        Ok(_) => tracing::debug!(command, ok = true, "dispatch"),
+        Err(err) => tracing::warn!(
+            command,
+            ok = false,
+            code = err.code.as_str(),
+            message = %err.message,
+            "dispatch",
+        ),
+    }
 
     CoreResult::from(outcome)
 }
@@ -150,14 +245,56 @@ const IMPLEMENTED: &[&str] = &[
     "plugin.setEnabled",
     "plugin.setPriority",
     "plugin.reload",
+    "plugin.compat.observed",
+    "plugin.compat.confirm",
     "plugin.subscriptions.list",
     "plugin.subscriptions.add",
     "plugin.subscriptions.remove",
     "plugin.subscriptions.refresh",
     "plugin.catalog.list",
+    "library.favorites.list",
+    "library.favorites.set",
+    "library.playlists.list",
+    "library.playlists.save",
+    "library.playlists.delete",
+    "library.history.list",
+    "library.history.push",
+    "library.history.clear",
+    "library.local.scan",
+    "library.local.list",
+    "library.local.remove",
+    "download.list",
+    "download.create",
+    "download.pause",
+    "download.resume",
+    "download.remove",
+    "download.clearFinished",
+    "skin.list",
+    "skin.preview",
+    "skin.install",
+    "skin.remove",
+    "skin.setActive",
+    "skin.export",
+    "recommend.home",
+    "recommend.similar",
+    "recommend.feedback",
+    "plugin.checkUpdate",
+    "plugin.config.get",
+    "plugin.config.put",
+    "plugin.credentials.set",
+    "plugin.credentials.clear",
+    "plugin.credentials.status",
     "catalog.search",
     "catalog.searchCancel",
+    "catalog.track",
+    "catalog.album",
+    "catalog.playlist",
+    "catalog.topLists",
+    "catalog.topList",
+    "catalog.recommend",
+    "catalog.lyrics",
     "playback.resolve",
+    "playback.report",
 ];
 
 /// 已实现命令数。
@@ -186,6 +323,7 @@ fn system_status(ctx: &CoreContext) -> SystemStatus {
         plugin_runtime: ctx.plugin_runtime.to_string(),
         db_ready: ctx.store.is_some(),
         db_error: ctx.store_error.clone(),
+        credentials_backend: ctx.plugins.credentials().backend().to_string(),
         counts: SystemCounts {
             // 插件数在 M1 由插件宿主提供；M0 没有宿主
             plugins: 0,
@@ -257,34 +395,30 @@ fn platform_reveal(path: &std::path::Path) -> std::io::Result<()> {
 ///
 /// M1a 支持 `paste` / `file` / `dir`（都是本地、无网络、可即时校验的来源）；
 /// `archive` / `url` / `catalog` 需要解压与 HTTP 客户端，放在 M1b/M1c。
-#[derive(Debug, serde::Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
-enum ImportSource {
-    File { path: String },
-    Dir { path: String },
-    Archive { path: String },
-    Url { url: String },
-    Paste { content: String },
-    Catalog { subscription_id: String, file_name: String },
-}
+
 
 #[derive(Debug, serde::Deserialize)]
 struct PreviewParams {
     from: ImportSource,
+    /// 用户显式开启的兼容模式（ADR-0006）：源码没有头部元数据时，用只读探测合成清单。
+    /// 默认关闭——兼容插件的权限弱于自有 ABI，必须由用户主动选择。
+    #[serde(default)]
+    compat: bool,
 }
 
-/// `plugin.preview`：**读清楚但不落盘、不执行代码**。
+/// `plugin.preview`：**读清楚但不落盘**（兼容模式会在沙箱里只读执行一次源码）。
 ///
 /// 这是安装链路的第一步，也是权限同意的依据：清单、权限、凭据需求与警告都在这里产出。
 fn plugin_preview(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
     let params: PreviewParams = parse_params(params)?;
+    let compat = params.compat;
 
     let parsed = match params.from {
         ImportSource::Paste { content } => {
             if content.len() as u64 > MAX_SOURCE_BYTES {
                 return Err(too_large(content.len() as u64));
             }
-            parse_source(&content)?
+            parse_source_compat(&content, compat)?
         }
         ImportSource::File { path } => {
             // 读文件是用户的显式动作，因此不限制目录；但限制体积（插件是脚本）
@@ -293,36 +427,30 @@ fn plugin_preview(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serd
                 return Err(too_large(meta.len()));
             }
             let content = std::fs::read_to_string(&path)?;
-            parse_source(&content)?
+            parse_source_compat(&content, compat)?
         }
-        ImportSource::Dir { path } => {
-            let manifest_path = std::path::Path::new(&path).join("plugin.json");
-            let json = std::fs::read_to_string(&manifest_path).map_err(|err| {
-                CoreError::new(
-                    ErrorCode::PluginInvalidManifest,
-                    format!("读取 plugin.json 失败：{err}"),
-                )
-                .with_details(serde_json::json!({ "path": manifest_path.to_string_lossy() }))
-            })?;
-
-            // 入口源码用于能力预扫描；缺失不算错误（纯声明式插件也允许）
-            let raw: serde_json::Value = serde_json::from_str(&json).unwrap_or(serde_json::Value::Null);
-            let entry_source = raw
-                .get("entry")
-                .and_then(|v| v.as_str())
-                .and_then(|entry| std::fs::read_to_string(std::path::Path::new(&path).join(entry)).ok());
-            parse_manifest_json(&json, entry_source.as_deref())?
-        }
+        ImportSource::Dir { path } => parse_dir_package(std::path::Path::new(&path), compat)?,
         ImportSource::Archive { path } => {
-            // 明确告诉用户「哪个来源还没实现」，而不是笼统的 not_implemented
-            return Err(not_implemented_source("archive", &path));
+            // 解压到系统临时目录：预览**只读不落盘**，不能污染插件目录
+            let temp = temp_extract_dir("preview")?;
+            let result = (|| {
+                match extract_archive(std::path::Path::new(&path), &temp)? {
+                    ArchiveShape::Dir => parse_dir_package(&temp, compat),
+                    ArchiveShape::Single(name) => {
+                        let text = std::fs::read_to_string(temp.join(&name))?;
+                        parse_source_compat(&text, compat)
+                    }
+                }
+            })();
+            let _ = std::fs::remove_dir_all(&temp);
+            result?
         }
         ImportSource::Url { url } => {
             let bytes = download_url(ctx, &url)?;
             let text = String::from_utf8(bytes).map_err(|_| {
                 CoreError::new(ErrorCode::PluginInvalidSource, "下载的插件不是 UTF-8 文本")
             })?;
-            parse_source(&text)?
+            parse_source_compat(&text, compat)?
         }
         ImportSource::Catalog { subscription_id, file_name } => {
             // 预览同样要下载内容（否则无法给出真实清单），但仍**只读不写**
@@ -330,7 +458,7 @@ fn plugin_preview(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serd
             let text = String::from_utf8(bytes).map_err(|_| {
                 CoreError::new(ErrorCode::PluginInvalidSource, "下载的插件不是 UTF-8 文本")
             })?;
-            parse_source(&text)?
+            parse_source_compat(&text, compat)?
         }
     };
 
@@ -339,6 +467,8 @@ fn plugin_preview(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serd
     let replaces_existing = ctx.paths.plugins.join(&manifest.id).exists();
 
     to_json(serde_json::json!({
+        // `compat` 单独给一份：界面必须明示「权限弱于自有 ABI」，不能只靠 warnings 里的中文
+        "compat": manifest.compat,
         "manifest": manifest,
         "permissions": manifest.permissions,
         "credentials": manifest.credentials,
@@ -352,15 +482,43 @@ fn too_large(bytes: u64) -> CoreError {
         .with_details(serde_json::json!({ "bytes": bytes, "limit": MAX_SOURCE_BYTES }))
 }
 
-/// 该来源形态尚未实现：带上具体来源与「什么时候会有」，便于前端给出准确提示。
-fn not_implemented_source(kind: &str, origin: &str) -> CoreError {
-    CoreError::not_implemented(&format!("plugin.preview({kind})")).with_details(
-        serde_json::json!({
-            "kind": kind,
-            "origin": origin,
-            "supported": ["paste", "file", "dir"],
-        }),
-    )
+/// 目录包（或压缩包解出来的目录）→ 清单。预览与安装共用同一套解析与校验。
+fn parse_dir_package(dir: &std::path::Path, compat: bool) -> Fallible<ParsedPlugin> {
+    let manifest_path = dir.join("plugin.json");
+    let json = std::fs::read_to_string(&manifest_path).map_err(|err| {
+        CoreError::new(
+            ErrorCode::PluginInvalidManifest,
+            format!("读取 plugin.json 失败：{err}"),
+        )
+        .with_details(serde_json::json!({ "path": manifest_path.to_string_lossy() }))
+    })?;
+
+    // 入口源码用于能力预扫描；缺失不算错误（纯声明式插件也允许）
+    let raw: serde_json::Value = serde_json::from_str(&json).unwrap_or(serde_json::Value::Null);
+    let entry_source = raw
+        .get("entry")
+        .and_then(|v| v.as_str())
+        .and_then(|entry| std::fs::read_to_string(dir.join(entry)).ok());
+    let mut parsed = parse_manifest_json(&json, entry_source.as_deref())?;
+    // 目录包清单一定完整，但用户可能显式选了兼容模式（作者没写 @compat）
+    if compat {
+        apply_explicit_compat(&mut parsed);
+    }
+    Ok(parsed)
+}
+
+/// 预览压缩包用的临时目录（唯一名，用完即删）。
+fn temp_extract_dir(tag: &str) -> Fallible<std::path::PathBuf> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default();
+    let dir = std::env::temp_dir().join(format!("gently-plugin-{tag}-{stamp}"));
+    if dir.exists() {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -369,6 +527,10 @@ struct ImportParams {
     /// 必须是字面量 `true`：安装是不可逆的落盘动作，必须由用户显式同意。
     #[serde(default)]
     consent: bool,
+    /// 用户显式开启的兼容模式（ADR-0006）：与 `plugin.preview` 的同名参数一致，
+    /// 因为安装会**从暂存副本重新解析**清单，两侧口径必须相同。
+    #[serde(default)]
+    compat: bool,
 }
 
 /// `plugin.import`：**用户同意后**才落盘。成功返回安装后的完整摘要。
@@ -380,6 +542,7 @@ fn plugin_import(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde
         ));
     }
     let store = require_store(ctx)?;
+    let compat = params.compat;
 
     // 订阅条目需要先把内容下载下来（字节必须活到 install 调用结束，因此单独一条分支）
     let outcome = match &params.from {
@@ -393,6 +556,7 @@ fn plugin_import(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde
                     origin_value: format!("{subscription_id}::{file_name}"),
                     content: &bytes,
                 },
+                compat,
             )?
         }
         // URL 直链同样要先下载（字节必须活到 install 调用结束）
@@ -405,6 +569,7 @@ fn plugin_import(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde
                     origin_value: url.clone(),
                     content: &bytes,
                 },
+                compat,
             )?
         }
         other => {
@@ -412,12 +577,12 @@ fn plugin_import(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde
                 ImportSource::Paste { content } => InstallSource::Paste(content),
                 ImportSource::File { path } => InstallSource::File(std::path::Path::new(path)),
                 ImportSource::Dir { path } => InstallSource::Dir(std::path::Path::new(path)),
-                ImportSource::Archive { path } => return Err(not_implemented_source("archive", path)),
+                ImportSource::Archive { path } => InstallSource::Archive(std::path::Path::new(path)),
                 ImportSource::Url { .. } | ImportSource::Catalog { .. } => {
                     unreachable!("下载类来源已在上方分支处理")
                 }
             };
-            crate::plugin::install(&ctx.paths, source)?
+            crate::plugin::install(&ctx.paths, source, compat)?
         }
     };
     store.upsert_plugin(&outcome.record)?;
@@ -480,7 +645,109 @@ fn plugin_remove(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde
     if params.delete_files {
         crate::plugin::remove_files(&ctx.paths, &params.id)?;
     }
+    // 观测台账属于这个插件：无论是否删文件都清掉，避免下次装同 id 的插件继承旧域名
+    ctx.plugins.clear_observed_hosts(&params.id);
+    ctx.plugins.unload(&params.id);
     Ok(serde_json::Value::Null)
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompatIdParams {
+    id: String,
+}
+
+/// `plugin.compat.observed`：兼容插件在兼容模式下**实际访问过**的域名（TOFU 收敛的依据）。
+///
+/// 不是兼容插件时返回 `compat: false` 与空列表，而不是报错——「没有可收敛的东西」不是异常。
+fn plugin_compat_observed(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: CompatIdParams = parse_params(params)?;
+    let store = require_store(ctx)?;
+    let record = store
+        .get_plugin(&params.id)?
+        .ok_or_else(|| CoreError::not_found(format!("插件未安装：{}", params.id)))?;
+
+    to_json(serde_json::json!({
+        "pluginId": params.id,
+        "compat": record.manifest.compat,
+        "whitelist": record.manifest.hosts,
+        "hosts": ctx.plugins.observed_hosts(&params.id),
+    }))
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompatConfirmParams {
+    id: String,
+    /// 要固化的域名（来自 `plugin.compat.observed`）
+    hosts: Vec<String>,
+    /// 收窄权限同样要用户显式同意：可能让插件从此访问不了别的域名
+    #[serde(default)]
+    consent: bool,
+}
+
+/// `plugin.compat.confirm`：把观测到的域名固化成 `hosts` 白名单，**并关闭兼容模式**。
+///
+/// 为什么必须关兼容模式：兼容分支在权限检查里先于白名单，只写 `hosts` 而不关兼容模式
+/// 等于什么都没做（白名单永远不会被查）。收敛之后插件回到「声明式白名单」的严格模型；
+/// 想恢复兼容模式只能重新导入并勾选兼容模式（这是**收窄**动作，方向不可逆）。
+fn plugin_compat_confirm(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: CompatConfirmParams = parse_params(params)?;
+    if !params.consent {
+        return Err(CoreError::invalid_argument(
+            "收敛权限需要用户显式同意（consent 必须为 true）",
+        ));
+    }
+    if params.hosts.is_empty() {
+        return Err(CoreError::invalid_argument(
+            "至少要固化一个域名；若列表为空，说明该插件还没有成功出网过",
+        ));
+    }
+
+    let store = require_store(ctx)?;
+    let mut record = store
+        .get_plugin(&params.id)?
+        .ok_or_else(|| CoreError::not_found(format!("插件未安装：{}", params.id)))?;
+    if !record.manifest.compat {
+        return Err(CoreError::invalid_argument(format!(
+            "插件不是兼容模式，无需收敛：{}",
+            params.id
+        )));
+    }
+
+    // 只接受**观测到的**合法域名：白名单不能凭空写进来（否则这个命令就成了提权入口）
+    let observed: Vec<String> =
+        ctx.plugins.observed_hosts(&params.id).into_iter().map(|use_| use_.host).collect();
+    let mut hosts: Vec<String> = Vec::new();
+    for candidate in &params.hosts {
+        let host = candidate.trim().to_ascii_lowercase();
+        if !is_valid_host(&host) {
+            return Err(CoreError::invalid_argument(format!("不是合法的域名：{candidate}"))
+                .with_details(serde_json::json!({ "host": candidate })));
+        }
+        if !observed.contains(&host) {
+            return Err(CoreError::invalid_argument(format!(
+                "域名 {host} 不在观测记录里，不能写进白名单"
+            ))
+            .with_details(serde_json::json!({ "host": host, "observed": observed })));
+        }
+        if !hosts.contains(&host) {
+            hosts.push(host);
+        }
+    }
+
+    record.manifest.hosts = hosts;
+    record.manifest.compat = false;
+    record.updated_at = crate::store::now_millis();
+    store.upsert_plugin(&record)?;
+
+    // 运行时里还挂着旧的（compat = true）清单：卸载掉，下次使用时按新清单重新加载。
+    // 刻意不在这里 reload——改权限的命令不该顺手执行插件代码。
+    ctx.plugins.unload(&params.id);
+    ctx.plugins.clear_observed_hosts(&params.id);
+
+    tracing::info!(plugin = %params.id, hosts = ?record.manifest.hosts, "兼容模式已收敛为域名白名单");
+    to_json(plugin_summary(&record))
 }
 
 fn plugin_set_enabled(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
@@ -539,6 +806,8 @@ fn plugin_summary(record: &InstalledPlugin) -> serde_json::Value {
         "author": manifest.author,
         "description": manifest.description,
         "homepage": manifest.homepage,
+        // 兼容模式：界面据此打标记并明示「权限弱于自有 ABI」（ADR-0006）
+        "compat": manifest.compat,
         // 我们不内置任何插件（ADR-0005），因此这里恒为 false
         "builtin": false,
         "enabled": record.enabled,
@@ -819,6 +1088,10 @@ fn download_catalog_entry(
 /// 下载一个 URL 直链（`{kind:'url'}` 导入用）。
 ///
 /// 与订阅下载同样的约束：**仅 HTTPS、不得指向回环/内网**（用户填的地址也要防 SSRF）。
+pub(crate) fn download_url_checked(ctx: &CoreContext, url: &str) -> Fallible<Vec<u8>> {
+    download_url(ctx, url)
+}
+
 fn download_url(ctx: &CoreContext, url: &str) -> Fallible<Vec<u8>> {
     if !url.starts_with("https://") {
         return Err(CoreError::invalid_argument("插件地址必须是 HTTPS"));
@@ -883,10 +1156,20 @@ fn index_cache_path(ctx: &CoreContext, id: &str) -> std::path::PathBuf {
 }
 // ---------------------------------------------------------------- 播放（候选回退 + 流代理）
 
+/// 本地曲库的来源标识：`local:<绝对路径>`（id 由路径派生，见 `local_library`）。
+///
+/// 播放时它**不经插件**，直接走回环流代理——本地文件与远端媒体共用一条通道。
+const LOCAL_SOURCE: &str = "local";
+
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ResolveParams {
-    /// 统一曲目引用 `source:rawId`
+    /// 统一曲目引用 `source:rawId`。
+    ///
+    /// **同时接受 `ref`（契约里的名字）与 `reference`**：早期实现只认后者，而契约与其它
+    /// 命令写的是 `ref`——参数名不一致的代价是调用方收到一句「缺字段」，
+    /// 而真实原因只是名字不同（整链路测试就是为了照出这类错）。
+    #[serde(rename = "ref", alias = "reference")]
     reference: String,
     quality: String,
     /// 用户偏好的音源顺序（可选）
@@ -912,6 +1195,33 @@ fn playback_resolve(ctx: &CoreContext, params: serde_json::Value) -> Fallible<se
             Some(parts) => parts,
             None => continue,
         };
+
+        // 本地曲目：不经插件，直接把文件发布到**同一条回环代理**上
+        // （前端因此只有一条播放路径：Range/拖动进度、无 Blob hack）
+        if source == LOCAL_SOURCE {
+            let path = std::path::Path::new(raw_id);
+            match ctx.streams.publish_local(path) {
+                Ok(stream_url) => {
+                    return to_json(json!({
+                        "source": LOCAL_SOURCE,
+                        "quality": params.quality,
+                        "streamUrl": stream_url,
+                        "originUrl": raw_id,
+                        "headers": {},
+                        "mimeType": std::path::Path::new(raw_id)
+                            .extension()
+                            .and_then(|ext| ext.to_str())
+                            .map(|ext| format!("audio/{}", ext.to_ascii_lowercase())),
+                        "expiresInSec": 1800,
+                    }));
+                }
+                Err(error) => {
+                    // 文件被删/被移走：当作该候选不可播，继续试下一个（契约：不弹错）
+                    tracing::warn!(path = raw_id, code = error.code.as_str(), "本地文件不可播：{}", error.message);
+                    continue;
+                }
+            }
+        }
 
         let Some(capabilities) = ctx.plugins.capabilities(source) else { continue };
         if !capabilities.contains(&crate::plugin::PluginCapability::GetMediaSource) {
@@ -959,6 +1269,47 @@ fn playback_resolve(ctx: &CoreContext, params: serde_json::Value) -> Fallible<se
 
     // 契约：全部候选失败 → data: null（前端据此退回模拟时钟），而不是抛错
     to_json(serde_json::Value::Null)
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReportParams {
+    #[serde(rename = "ref")]
+    reference: serde_json::Value,
+    /// **实际播成的**音源（可能在候选回退中换了源）；缺省时用引用里的 source
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    played_sec: i64,
+    #[serde(default)]
+    completed: bool,
+    /// 曲目快照（同 `library.history.push`：界面手上有，带上就能离线列历史）
+    #[serde(default)]
+    track: Option<serde_json::Value>,
+}
+
+/// `playback.report{ref, source, quality, playedSec, completed, track?}`：上报一次播放。
+///
+/// 写的就是播放历史（与 `library.history.push` 同一份实现）：历史是「最近播放」与
+/// 后续推荐画像的共同数据源。`quality` 目前不落库——`RecentTrack` 里没有这一列，
+/// 记了也没人消费（要加就同时改契约与前端类型）。
+fn playback_report(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: ReportParams = parse_params(params)?;
+    let store = require_store(ctx)?;
+
+    // 引用既接受字符串也接受 TrackRef 对象（与 library 域同一套解析）
+    let (reference, ref_source) = crate::library::resolve_ref(&params.reference)?;
+    let source = params
+        .source
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .unwrap_or(&ref_source)
+        .to_string();
+
+    let snapshot = crate::library::snapshot_of(&reference, &source, params.track.as_ref());
+    store.push_history(&reference, &source, &snapshot, params.played_sec, params.completed)?;
+    Ok(serde_json::Value::Null)
 }
 
 /// 候选顺序：显式 candidates（按 preferredSources 排序）→ 否则只用引用自身来源。

@@ -13,13 +13,21 @@
 //! - [`logging`]：tracing 初始化。
 
 pub mod catalog;
+pub mod catalog_detail;
 pub mod commands;
 pub mod contract;
+pub mod covers;
+pub mod download;
 pub mod events;
+pub mod library;
+pub mod local_library;
 pub mod logging;
 pub mod media;
 pub mod paths;
 pub mod plugin;
+pub mod plugin_admin;
+pub mod recommend;
+pub mod skin;
 pub mod store;
 
 pub use commands::{dispatch, CoreContext};

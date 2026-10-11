@@ -1,0 +1,91 @@
+import type {Lyrics} from '../api';
+import type {LyricLine} from '../types';
+
+/**
+ * 歌词解析：把核心给的**原文**（契约 `Lyrics{format, content, translated?}`）转成
+ * 视图要的行数组（`{time, text, translation?}`）。
+ *
+ * 为什么解析留在前端：核心只交付歌词原文，**解析成行是纯展示问题**（高亮用哪一行、
+ * 翻译怎么对齐），放到核心等于把 UI 细节塞进 ABI。同一个解析器也只有这一份。
+ *
+ * 支持三种输入：核心已解析好的 `lines`、带时间轴的 `lrc`、没有时间轴的 `plain`。
+ */
+
+/** `[mm:ss]` / `[mm:ss.xx]` / `[mm:ss.xxx]`；一行可以带多个标签（共用同一段文本） */
+const TIME_TAG = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g;
+
+/** LRC 元数据标签（`[ar:]` / `[ti:]` / `[offset:]` 等），不是歌词行 */
+const META_TAG = /^\[[a-zA-Z]{2,}:/;
+
+/**
+ * 纯文本歌词的**占位**时序：源没给时间轴，按行均分只会让高亮显得很准。
+ * 这里取一个稳定的阅读节奏（每行 4 秒）并明确标注是占位，而不是假装真实时间。
+ */
+const PLAIN_LINE_SEC = 4;
+
+function toSeconds(minutes: string, seconds: string, fraction?: string): number {
+    const base = Number(minutes) * 60 + Number(seconds);
+    if (!fraction) return base;
+    // 两位是百分秒、三位是毫秒，都按小数位补齐
+    return base + Number(fraction) / 10 ** fraction.length;
+}
+
+/** 解析一份 LRC 文本 → `时间 → 文本`（同一时间多行时用数组保序） */
+function parseTimed(content: string): Map<number, string[]> {
+    const timed = new Map<number, string[]>();
+    for (const raw of content.split(/\r?\n/)) {
+        const line = raw.trim();
+        if (!line || META_TAG.test(line)) continue;
+
+        TIME_TAG.lastIndex = 0;
+        const stamps: number[] = [];
+        let lastEnd = 0;
+        let match: RegExpExecArray | null;
+        while ((match = TIME_TAG.exec(line)) !== null) {
+            stamps.push(toSeconds(match[1], match[2], match[3]));
+            lastEnd = match.index + match[0].length;
+        }
+        if (stamps.length === 0) continue;
+
+        const text = line.slice(lastEnd).trim();
+        if (!text) continue;
+        for (const stamp of stamps) {
+            const bucket = timed.get(stamp);
+            if (bucket) bucket.push(text);
+            else timed.set(stamp, [text]);
+        }
+    }
+    return timed;
+}
+
+/** 把翻译按**同一时间戳**贴到原文行上（时间戳对不上就忽略那一行，不硬凑）。 */
+function mergeTranslation(original: Map<number, string[]>, translated?: string): LyricLine[] {
+    const secondary = translated ? parseTimed(translated) : null;
+    return [...original.keys()]
+        .sort((a, b) => a - b)
+        .map((time) => {
+            const text = original.get(time)?.join(' ') ?? '';
+            const translation = secondary?.get(time)?.join(' ');
+            return translation ? {time, text, translation} : {time, text};
+        });
+}
+
+/** 纯文本 → 行（`time` 是按行序的占位秒数，只为让高亮能推进） */
+function parsePlain(content: string): LyricLine[] {
+    return content
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((text, index) => ({time: index * PLAIN_LINE_SEC, text}));
+}
+
+/** 契约 `Lyrics` → 视图行数组。核心已经解析好（`lines`）时直接用，不再二次解析。 */
+export function toLyricLines(lyrics: Lyrics): LyricLine[] {
+    if (lyrics.lines && lyrics.lines.length > 0) return lyrics.lines;
+
+    if (lyrics.format === 'plain') return parsePlain(lyrics.content);
+
+    const timed = mergeTranslation(parseTimed(lyrics.content), lyrics.translated);
+    // 标了 lrc 但一个时间标签都没有（源给了假格式）：退回纯文本，别显示空歌词
+    return timed.length > 0 ? timed : parsePlain(lyrics.content);
+}

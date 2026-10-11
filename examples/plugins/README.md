@@ -40,7 +40,7 @@
 
 ## 沙箱给了什么
 
-插件运行在**空白全局对象**上，只有这些能力，没有 `fs` / `process` / `require`：
+插件运行在**空白全局对象**上，只有这些能力，没有 `fs` / `process`：
 
 - `fetch(url, options)`：**只允许 HTTPS，且域名必须命中 `@hosts`**；有超时与体积上限。
   它是同步宿主调用，但对外是 Promise，可以自由 `await`。
@@ -50,6 +50,10 @@
 
 超出白名单的域名 → `plugin.permission_denied`；抛错或超时 → `plugin.runtime_error`。
 单次调用默认 8 秒、内存上限 64 MiB，死循环会被强制中断。
+
+> 另有一条**默认关闭**的兼容轨道，用于 MusicFree / LX 生态的 CommonJS 插件（`module.exports` +
+> 受限 `require`：只内置 `he` / `axios` / `dayjs` / `crypto-js` 子集，且域名策略更宽松）。
+> 它只是为了让现成插件能跑，**推荐路径始终是上面这条自有 ABI**；细节见 `docs/adr/0006`。
 
 ## 发布前自测
 

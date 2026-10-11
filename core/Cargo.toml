@@ -8,6 +8,8 @@ description = "gently 本机核心：契约、存储、插件宿主、曲库（�
 [dependencies]
 rusqlite = { workspace = true }
 sha2 = { workspace = true }
+# 兼容插件（MusicFree / LX 生态）的 crypto-js 子集：MD5 + SHA256
+md-5 = { workspace = true }
 # 插件沙箱：内嵌 QuickJS（同步执行模型，见 host.rs）
 rquickjs = { workspace = true }
 # 插件出网（阻塞式；TLS 走 rustls，避免 openssl 依赖）
@@ -17,3 +19,13 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+# 日志按天落盘（`<data>/logs/gently.log.<日期>`），保留策略见 logging.rs
+tracing-appender = { workspace = true }
+# 本地曲库扫描：元数据（标题/歌手/专辑）与时长
+symphonia = { workspace = true }
+walkdir = { workspace = true }
+# 插件压缩包导入（只读解压，见 plugin/archive.rs）
+zip = { workspace = true }
+# 系统凭据库（Windows Credential Manager）：只用到四个调用，直接调 Win32 比引 keyring 更可控
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }

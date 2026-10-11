@@ -7,6 +7,38 @@ use std::path::{Path, PathBuf};
 
 use crate::contract::SystemPaths;
 
+/// **源文件路径的稳定字符串形式**（本地曲目 id、曲库里的 `path` 列、封面缓存文件名共用同一个）。
+///
+/// 规则：`\` → `/`，折叠重复分隔符，去掉末尾分隔符。
+///
+/// 为什么必须归一：Windows 接受 `C:\\Music\\a.mp3` 这种重复分隔符的写法，用户粘贴目录时很容易带上。
+/// 不归一就会把**同一个文件**按两种拼法收进曲库两次（打包版实测真的出现了两行），
+/// 而且扫描侧（文件系统路径，单个 `\`）与列表侧（库里的路径）算出的封面哈希也会对不上。
+///
+/// 不做 `..`/`.` 解析：那要 `canonicalize`，会引入 `\\?\` 前缀并让已有曲库的 id 全部失效——
+/// 收益只是多认一种写法，不值得。
+pub fn normalize_source_path(path: &Path) -> String {
+    normalize_source_path_str(&path.to_string_lossy())
+}
+
+/// [`normalize_source_path`] 的字符串版（库里存的是字符串，清理时要按同一份规则比较）。
+pub fn normalize_source_path_str(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for ch in raw.replace('\\', "/").chars() {
+        if ch == '/' {
+            if !out.ends_with('/') {
+                out.push('/');
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    while out.len() > 1 && out.ends_with('/') {
+        out.pop();
+    }
+    out
+}
+
 /// `<appData>/gently/` 下的全部路径。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppPaths {

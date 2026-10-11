@@ -12,6 +12,8 @@ use gently_core::plugin::{sha256_hex, HttpRequest, HttpResponse, HttpTransport};
 use gently_core::{AppPaths, CoreContext, Store};
 use serde_json::{json, Value};
 
+mod common;
+
 #[derive(Default)]
 struct MockTransport {
     responses: Mutex<HashMap<String, String>>,
@@ -81,19 +83,11 @@ fn index_json(sha256: Option<&str>, file_name: &str, download_url: &str) -> Stri
 }
 
 fn ctx_with(transport: Arc<MockTransport>) -> (CoreContext, std::path::PathBuf) {
-    let dir = std::env::temp_dir().join(format!(
-        "gently-sub-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or_default()
-    ));
+    let dir = common::temp_dir("sub");
     let paths = AppPaths::resolve(&dir);
     paths.ensure().unwrap();
     let store = Store::open(&paths.db).unwrap();
-    let mut ctx = CoreContext::new(paths).with_store(store);
-    ctx.http = transport;
+    let ctx = CoreContext::new(paths).with_store(store).with_http(transport);
     (ctx, dir)
 }
 

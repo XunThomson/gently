@@ -26,6 +26,10 @@ pub const COMMAND_NAMES: &[&str] = &[
     "plugin.credentials.set",
     "plugin.credentials.clear",
     "plugin.credentials.status",
+    // plugin：兼容模式收敛（2）
+    // 兼容插件没有域名声明，只能靠观测；确认后固化为 hosts 白名单并关掉兼容模式（ADR-0006）
+    "plugin.compat.observed",
+    "plugin.compat.confirm",
     // plugin：订阅与仓库（5）
     "plugin.subscriptions.list",
     "plugin.subscriptions.add",
@@ -50,6 +54,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "library.playlists.delete",
     "library.history.list",
     "library.history.push",
+    "library.history.clear",
     "library.local.scan",
     "library.local.list",
     "library.local.remove",

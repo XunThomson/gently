@@ -2,7 +2,9 @@
 //!
 //! 三条不可妥协的约束（对应 ADR-0005 与契约 §5.3）：
 //! 1. **只在用户显式同意后落盘**（同意由命令层把关，本模块假定已被授权）；
-//! 2. **绝不执行任何代码或安装脚本**：只读字节、解析元数据、复制文件；
+//! 2. **自有 ABI 路径绝不执行任何代码或安装脚本**：只读字节、解析元数据、复制文件。
+//!    唯一的例外是用户显式开启的**兼容模式**（ADR-0006）：头部缺元数据时用 `probe`
+//!    在无出网通道的沙箱里只读执行一次，从 `module.exports` 合成清单；
 //! 3. **失败不留半成品**：先写 `plugins/.staging/<ts>/`，校验通过后再原子 rename 进
 //!    `plugins/<id>/`；替换旧版本时旧目录先移到 `.trash/` 再删除。
 //!
@@ -16,7 +18,7 @@ use sha2::{Digest, Sha256};
 use crate::contract::{CoreError, ErrorCode, Fallible};
 use crate::paths::AppPaths;
 
-use super::manifest::{parse_manifest_json, parse_source, PluginManifest};
+use super::manifest::{parse_manifest_json, PluginManifest};
 
 /// 单个插件的体积上限（含资源文件）：插件是脚本，超过这个体量基本可以确定有问题。
 pub const MAX_PLUGIN_BYTES: u64 = 8 * 1024 * 1024;
@@ -54,6 +56,8 @@ pub enum InstallSource<'a> {
     File(&'a Path),
     /// 目录包（含 `plugin.json`）
     Dir(&'a Path),
+    /// 压缩包（`.zip`）：解压后按目录包 / 单文件两种形态之一安装
+    Archive(&'a Path),
     /// 由核心下载到的内容（订阅条目或 URL 直链）；引用信息由调用方给出
     Bytes { origin_kind: &'static str, origin_value: String, content: &'a [u8] },
 }
@@ -64,6 +68,7 @@ impl InstallSource<'_> {
             Self::Paste(_) => ("paste", String::new()),
             Self::File(path) => ("file", path.to_string_lossy().replace('\\', "/")),
             Self::Dir(path) => ("dir", path.to_string_lossy().replace('\\', "/")),
+            Self::Archive(path) => ("archive", path.to_string_lossy().replace('\\', "/")),
             Self::Bytes { origin_kind, origin_value, .. } => (origin_kind, origin_value.clone()),
         }
     }
@@ -77,7 +82,11 @@ pub struct InstallOutcome {
 }
 
 /// 安装（或覆盖安装）一个插件。**调用方必须已取得用户同意**。
-pub fn install(paths: &AppPaths, source: InstallSource<'_>) -> Fallible<InstallOutcome> {
+///
+/// `compat` 是用户显式开启的兼容模式（ADR-0006）：为真且源码头部缺元数据时，
+/// 用 `probe` 只读执行一次源码，从 `module.exports` 合成清单（探测期无法出网）。
+/// 自有 ABI 的路径**依然不执行任何代码**。
+pub fn install(paths: &AppPaths, source: InstallSource<'_>, compat: bool) -> Fallible<InstallOutcome> {
     clean_leftovers(paths);
 
     let stamp = timestamp();
@@ -85,11 +94,11 @@ pub fn install(paths: &AppPaths, source: InstallSource<'_>) -> Fallible<InstallO
     std::fs::create_dir_all(&staging)?;
 
     // 任何失败都要把暂存目录清掉，绝不留半成品
-    let staged = stage_source(&staging, &source);
+    let staged = stage_source(&staging, &source, compat);
     let (manifest, warnings, entry_sha256) = match staged {
         Ok(value) => value,
         Err(err) => {
-            let _ = std::fs::remove_dir_all(&staging);
+            discard_staging(&staging);
             return Err(err);
         }
     };
@@ -102,7 +111,7 @@ pub fn install(paths: &AppPaths, source: InstallSource<'_>) -> Fallible<InstallO
     if replaced {
         std::fs::create_dir_all(trash.parent().unwrap_or(&paths.plugins))?;
         if let Err(err) = std::fs::rename(&target, &trash) {
-            let _ = std::fs::remove_dir_all(&staging);
+            discard_staging(&staging);
             return Err(CoreError::new(
                 ErrorCode::PluginImportFailed,
                 format!("替换旧版本失败（目录被占用？）：{err}"),
@@ -115,7 +124,7 @@ pub fn install(paths: &AppPaths, source: InstallSource<'_>) -> Fallible<InstallO
         if replaced {
             let _ = std::fs::rename(&trash, &target);
         }
-        let _ = std::fs::remove_dir_all(&staging);
+        discard_staging(&staging);
         return Err(CoreError::new(
             ErrorCode::PluginImportFailed,
             format!("写入插件目录失败：{err}"),
@@ -178,10 +187,11 @@ pub fn entry_path(paths: &AppPaths, manifest: &PluginManifest) -> PathBuf {
 fn stage_source(
     staging: &Path,
     source: &InstallSource<'_>,
+    compat: bool,
 ) -> Fallible<(PluginManifest, Vec<String>, Option<String>)> {
     match source {
         InstallSource::Paste(content) => {
-            let parsed = parse_source(content)?;
+            let parsed = super::compat::parse_source_compat(content, compat)?;
             std::fs::write(staging.join(ENTRY_FILE), content.as_bytes())?;
             Ok((with_entry(parsed.manifest), parsed.warnings, Some(sha256_hex(content.as_bytes()))))
         }
@@ -190,7 +200,7 @@ fn stage_source(
             let text = String::from_utf8(bytes.clone()).map_err(|_| {
                 CoreError::new(ErrorCode::PluginInvalidSource, "插件文件不是 UTF-8 文本")
             })?;
-            let parsed = parse_source(&text)?;
+            let parsed = super::compat::parse_source_compat(&text, compat)?;
             std::fs::write(staging.join(ENTRY_FILE), &bytes)?;
             Ok((with_entry(parsed.manifest), parsed.warnings, Some(sha256_hex(&bytes))))
         }
@@ -205,7 +215,7 @@ fn stage_source(
             let text = String::from_utf8(bytes.clone()).map_err(|_| {
                 CoreError::new(ErrorCode::PluginInvalidSource, "下载的插件不是 UTF-8 文本")
             })?;
-            let parsed = parse_source(&text)?;
+            let parsed = super::compat::parse_source_compat(&text, compat)?;
             std::fs::write(staging.join(ENTRY_FILE), &bytes)?;
             Ok((with_entry(parsed.manifest), parsed.warnings, Some(sha256_hex(&bytes))))
         }
@@ -215,33 +225,61 @@ fn stage_source(
             }
             // 1) 先整体复制（跳过符号链接与超大文件），保持相对结构
             copy_tree(path, staging)?;
-
-            // 2) 从**暂存副本**解析清单（而不是原目录）
-            let manifest_path = staging.join("plugin.json");
-            let json = std::fs::read_to_string(&manifest_path).map_err(|err| {
-                CoreError::new(
-                    ErrorCode::PluginInvalidManifest,
-                    format!("目录包缺少可读的 plugin.json：{err}"),
-                )
-            })?;
-            let raw: serde_json::Value = serde_json::from_str(&json).unwrap_or(serde_json::Value::Null);
-            let entry = raw.get("entry").and_then(|v| v.as_str()).map(str::to_string);
-            let entry_source = entry
-                .as_deref()
-                .and_then(|name| std::fs::read_to_string(staging.join(name)).ok());
-            if let Some(name) = entry.as_deref() {
-                if !staging.join(name).is_file() {
-                    return Err(CoreError::new(
-                        ErrorCode::PluginInvalidManifest,
-                        format!("plugin.json 声明的 entry 不存在：{name}"),
-                    ));
+            stage_dir_package(staging, compat)
+        }
+        InstallSource::Archive(path) => {
+            // 解压到暂存目录，再按形态走既有的两种路径（压缩包只是「取得插件目录」的第四种途径）
+            match super::archive::extract(path, staging)? {
+                super::archive::ArchiveShape::Dir => stage_dir_package(staging, compat),
+                super::archive::ArchiveShape::Single(name) => {
+                    // 归一化：目录里只留 `plugin.js`（README 之类的附件不属于安装目录）
+                    super::archive::flatten_single(staging, &name)?;
+                    let bytes = read_limited(&staging.join(ENTRY_FILE))?;
+                    let text = String::from_utf8(bytes.clone()).map_err(|_| {
+                        CoreError::new(ErrorCode::PluginInvalidSource, "插件文件不是 UTF-8 文本")
+                    })?;
+                    let parsed = super::compat::parse_source_compat(&text, compat)?;
+                    Ok((with_entry(parsed.manifest), parsed.warnings, Some(sha256_hex(&bytes))))
                 }
             }
-            let parsed = parse_manifest_json(&json, entry_source.as_deref())?;
-            let sha = entry_source.as_deref().map(|text| sha256_hex(text.as_bytes()));
-            Ok((parsed.manifest, parsed.warnings, sha))
         }
     }
+}
+
+/// 目录包（已复制/已解压到 `staging`）→ 清单。
+///
+/// 与预览路径共用同一套校验：**校验的就是将要落盘的东西**。
+fn stage_dir_package(
+    staging: &Path,
+    compat: bool,
+) -> Fallible<(PluginManifest, Vec<String>, Option<String>)> {
+    let manifest_path = staging.join("plugin.json");
+    let json = std::fs::read_to_string(&manifest_path).map_err(|err| {
+        CoreError::new(
+            ErrorCode::PluginInvalidManifest,
+            format!("目录包缺少可读的 plugin.json：{err}"),
+        )
+    })?;
+    let raw: serde_json::Value = serde_json::from_str(&json).unwrap_or(serde_json::Value::Null);
+    let entry = raw.get("entry").and_then(|v| v.as_str()).map(str::to_string);
+    let entry_source = entry
+        .as_deref()
+        .and_then(|name| std::fs::read_to_string(staging.join(name)).ok());
+    if let Some(name) = entry.as_deref() {
+        if !staging.join(name).is_file() {
+            return Err(CoreError::new(
+                ErrorCode::PluginInvalidManifest,
+                format!("plugin.json 声明的 entry 不存在：{name}"),
+            ));
+        }
+    }
+    let mut parsed = parse_manifest_json(&json, entry_source.as_deref())?;
+    // 目录包清单一定是完整的；但用户可能显式选了兼容模式（作者没写 @compat）
+    if compat {
+        super::compat::apply_explicit_compat(&mut parsed);
+    }
+    let sha = entry_source.as_deref().map(|text| sha256_hex(text.as_bytes()));
+    Ok((parsed.manifest, parsed.warnings, sha))
 }
 
 /// 单文件形态落盘后入口固定为 `plugin.js`。
@@ -293,6 +331,14 @@ fn copy_tree(from: &Path, to: &Path) -> Fallible<()> {
     }
 
     Ok(())
+}
+
+/// 丢弃暂存目录，并顺手清掉空的 `.staging` 父目录（失败路径不留任何痕迹）。
+fn discard_staging(staging: &Path) {
+    let _ = std::fs::remove_dir_all(staging);
+    if let Some(parent) = staging.parent() {
+        let _ = std::fs::remove_dir(parent);
+    }
 }
 
 /// 清理上次失败留下的暂存/回收目录（尽力而为，失败只记日志）。

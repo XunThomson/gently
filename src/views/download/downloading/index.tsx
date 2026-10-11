@@ -3,8 +3,10 @@ import {useTranslation} from 'react-i18next';
 import {BadgeCell, DataTable, TextCell, type ColumnDef} from '../../../components/ui/data-table';
 import {actionsColumn, indexColumn, progressColumn} from '../../../config/table.config';
 import {useConfirm} from '../../../hooks/useConfirm';
+import {errorKey} from '../../../i18n/errors';
 import {useActions, useDownloadState} from '../../../store';
 import type {DownloadStatus, DownloadTask} from '../../../types';
+import styles from '../download.module.css';
 
 const ACTIVE_STATUSES: DownloadStatus[] = ['pending', 'downloading', 'paused', 'error'];
 
@@ -22,6 +24,12 @@ export default function DownloadingView() {
     const {load, pause, resume, remove} = useActions().download;
     const confirm = useConfirm();
 
+    /** 失败原因：优先按错误码取本地化文案，没有码时才用核心给的开发者说明 */
+    const reasonOf = (task: DownloadTask): string | undefined => {
+        if (task.errorCode) return t(errorKey(task.errorCode));
+        return task.error;
+    };
+
     useEffect(() => {
         void load();
     }, [load]);
@@ -37,7 +45,15 @@ export default function DownloadingView() {
             key: 'title',
             title: t('column.title'),
             width: 'minmax(220px, 1.6fr)',
-            render: (_value, record) => <TextCell>{record.track.title}</TextCell>,
+            render: (_value, record) => (
+                <>
+                    <TextCell>{record.track.title}</TextCell>
+                    {/* 失败原因按错误码本地化（`download:error` 事件带 code），比「失败」两个字有用 */}
+                    {record.status === 'error' && reasonOf(record) && (
+                        <span className={styles.reason}>{reasonOf(record)}</span>
+                    )}
+                </>
+            ),
         },
         {
             key: 'artist',

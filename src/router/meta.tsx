@@ -103,6 +103,11 @@ export const appRoutes: AppRoute[] = [
         lazy: () => import('../views/playlist'),
     },
     {
+        /* 源侧的专辑 / 精选歌单详情（自建歌单走上面的 playlist/:id） */
+        path: 'collection/:kind/:source/:id',
+        lazy: () => import('../views/collection'),
+    },
+    {
         path: 'now-playing',
         lazy: () => import('../views/now-playing'),
     },

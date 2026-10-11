@@ -10,6 +10,10 @@
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/run-smoke.mjs",
     "check:contract": "node scripts/check-commands.mjs",
+    "check:reachability": "node scripts/check-reachability.mjs",
+    "ui:capture": "pwsh -NoProfile -File scripts/capture-window.ps1",
+    "verify": "node scripts/verify.mjs",
+    "package:portable": "node scripts/package-portable.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

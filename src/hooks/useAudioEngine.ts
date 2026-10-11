@@ -29,7 +29,7 @@ export function useAudioEngine(): void {
     /* 音源 → 引擎 */
     useEffect(() => {
         if (!audioUrl) return;
-        void audioEngine.load(audioUrl);
+        audioEngine.load(audioUrl);
     }, [audioUrl]);
 
     /* 播放状态 → 引擎（音源变化时同样需要重新 play） */

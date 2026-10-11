@@ -5,6 +5,12 @@
 }
 
 .card {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+
+.cardMain {
     display: block;
     width: 100%;
     padding: 0;
@@ -13,6 +19,34 @@
     font-family: inherit;
     text-align: left;
     cursor: pointer;
+}
+
+/* 「不感兴趣」：推荐卡片专属（搜索结果不传 onDislike，因此不会出现） */
+.dislike {
+    position: absolute;
+    top: var(--card-play-inset);
+    right: var(--card-play-inset);
+    display: grid;
+    place-items: center;
+    width: var(--card-play-size);
+    height: var(--card-play-size);
+    border: 0;
+    border-radius: var(--radius-full);
+    background: var(--bg-elevated);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    opacity: 0;
+    box-shadow: var(--shadow-md);
+    transition: opacity var(--motion-base), color var(--motion-base);
+}
+
+.card:hover .dislike,
+.card:focus-within .dislike {
+    opacity: 1;
+}
+
+.dislike:hover {
+    color: var(--danger);
 }
 
 .cardActive .title {

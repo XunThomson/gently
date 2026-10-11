@@ -53,22 +53,35 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            logging::init(&std::env::var("GENTLY_LOG").unwrap_or_else(|_| "info".into())).ok();
-
             // 数据目录：拿不到就用临时目录兜底，保证应用能起来（诊断页会显示真实路径）
             let paths = match app.path().app_data_dir() {
                 Ok(base) => AppPaths::resolve(base),
                 Err(err) => {
-                    tracing::error!(%err, "无法获取应用数据目录，回退到临时目录");
+                    // 日志还没初始化，只能先用 stderr
+                    eprintln!("无法获取应用数据目录，回退到临时目录：{err}");
                     AppPaths::resolve(std::env::temp_dir().join("gently"))
                 }
             };
             if let Err(err) = paths.ensure() {
-                tracing::warn!(%err, dir = %paths.data.display(), "创建数据目录失败");
+                eprintln!("创建数据目录失败：{err}");
+            }
+
+            // 日志：控制台 + 按天落盘（`<data>/logs/`，保留 7 天）。guard 必须活到进程结束，
+            // 否则后台写线程会被提前丢弃——因此挂到 AppState 里。
+            let log_guard =
+                logging::init(&std::env::var("GENTLY_LOG").unwrap_or_else(|_| "info".into()), Some(&paths.logs))
+                    .ok()
+                    .flatten();
+            if let Some(dir) = paths.logs.to_str() {
+                tracing::debug!(dir, "日志已初始化");
             }
 
             let sink = Arc::new(TauriEventSink::new(app.handle().clone()));
-            let mut core = CoreContext::new(paths).with_events(sink);
+            // 凭据落**系统凭据库**（Windows Credential Manager）；不可用时 `open_store()`
+            // 会退回内存实现并留一条 warn——界面上的凭据提示据此说明「重启后是否还在」。
+            let mut core = CoreContext::new(paths)
+                .with_events(sink)
+                .with_credentials(gently_core::plugin::open_store());
 
             // 数据库打不开时不阻塞启动：核心能力降级，诊断页显示原因
             let db_path = core.paths.db.clone();
@@ -83,7 +96,7 @@ pub fn run() {
                 }
             };
 
-            app.manage(AppState { core: Arc::new(core) });
+            app.manage(AppState { core: Arc::new(core), _log_guard: log_guard });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![core_invoke])

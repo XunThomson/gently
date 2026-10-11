@@ -20,6 +20,8 @@ use gently_core::plugin::{HttpRequest, HttpResponse, HttpTransport};
 use gently_core::{AppPaths, CoreContext, Store};
 use serde_json::{json, Value};
 
+mod common;
+
 struct OfflineTransport;
 
 impl HttpTransport for OfflineTransport {
@@ -35,21 +37,14 @@ impl EventSink for NullSink {
 }
 
 fn setup() -> (CoreContext, std::path::PathBuf) {
-    let dir = std::env::temp_dir().join(format!(
-        "gently-media-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or_default()
-    ));
+    let dir = common::temp_dir("media");
     let paths = AppPaths::resolve(&dir);
     paths.ensure().unwrap();
     let store = Store::open(&paths.db).unwrap();
-    let mut ctx = CoreContext::new(paths)
+    let ctx = CoreContext::new(paths)
         .with_store(store)
-        .with_events(Arc::new(NullSink));
-    ctx.http = Arc::new(OfflineTransport);
+        .with_events(Arc::new(NullSink))
+        .with_http(Arc::new(OfflineTransport));
     (ctx, dir)
 }
 
@@ -228,5 +223,148 @@ fn resolve_without_any_plugin_returns_null() {
     let value = call(&ctx, "playback.resolve", json!({ "reference": "whatever:1", "quality": "standard" }));
     assert_eq!(value["ok"], json!(true), "{value}");
     assert_eq!(value["data"], json!(null));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 生成一个可播放的 PCM WAV（8kHz 单声道 8bit），用于本地播放链路测试。
+fn write_wav(path: &std::path::Path, seconds: u32) {
+    let sample_rate: u32 = 8_000;
+    let data_len = sample_rate * seconds;
+    let mut bytes = Vec::with_capacity(44 + data_len as usize);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+    bytes.extend_from_slice(b"WAVE");
+    bytes.extend_from_slice(b"fmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&sample_rate.to_le_bytes());
+    bytes.extend_from_slice(&sample_rate.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&8u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_len.to_le_bytes());
+    bytes.extend(std::iter::repeat(128u8).take(data_len as usize));
+    std::fs::write(path, bytes).unwrap();
+}
+
+/// 本地曲库里的文件走**同一条回环代理**：`streamUrl` 可播、支持 Range（拖动进度）。
+#[test]
+fn local_files_play_through_the_same_proxy_with_range() {
+    let (ctx, dir) = setup();
+    let music = dir.join("music");
+    std::fs::create_dir_all(&music).unwrap();
+    let file = music.join("本地曲目.wav");
+    write_wav(&file, 4);
+
+    // 入库 → 播放解析：本地曲目不经插件，直接拿到代理地址
+    let scanned = call(&ctx, "library.local.scan", json!({ "dirs": [music.to_string_lossy()] }));
+    assert_eq!(scanned["ok"], json!(true), "{scanned}");
+    let id = call(&ctx, "library.local.list", json!({}))["data"]["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let resolved = call(&ctx, "playback.resolve", json!({ "reference": id, "quality": "standard" }));
+    assert_eq!(resolved["ok"], json!(true), "{resolved}");
+    let stream_url = resolved["data"]["streamUrl"].as_str().expect("应有代理地址").to_string();
+    assert!(stream_url.starts_with("http://127.0.0.1:"), "{stream_url}");
+    assert_eq!(resolved["data"]["source"], json!("local"));
+    assert_eq!(resolved["data"]["mimeType"], json!("audio/wav"));
+
+    let port: u16 = stream_url
+        .trim_start_matches("http://127.0.0.1:")
+        .split('/')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let path = format!("/m/{}", stream_url.rsplit('/').next().unwrap());
+
+    // 整段请求：200 + Content-Length + Accept-Ranges
+    let mut socket = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    socket
+        .write_all(format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes())
+        .unwrap();
+    let mut raw = Vec::new();
+    socket.read_to_end(&mut raw).unwrap();
+    let head = String::from_utf8_lossy(&raw[..600.min(raw.len())]).to_string();
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    assert!(head.contains("Accept-Ranges: bytes"), "{head}");
+    assert!(head.contains("Content-Type: audio/wav"), "{head}");
+    assert!(head.contains("Cache-Control: no-store"), "{head}");
+
+    // Range 请求：206 + Content-Range（拖动进度的前提）
+    let mut socket = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    socket
+        .write_all(
+            format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=100-199\r\n\r\n").as_bytes(),
+        )
+        .unwrap();
+    let mut raw = Vec::new();
+    socket.read_to_end(&mut raw).unwrap();
+    let head = String::from_utf8_lossy(&raw[..700.min(raw.len())]).to_string();
+    assert!(head.starts_with("HTTP/1.1 206"), "{head}");
+    assert!(head.contains("Content-Range: bytes 100-199/"), "{head}");
+    assert!(head.contains("Content-Length: 100"), "{head}");
+
+    // 越界 Range：416（而不是假装成功或泄漏文件大小以外的信息）
+    let mut socket = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    socket
+        .write_all(
+            format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=999999-\r\n\r\n").as_bytes(),
+        )
+        .unwrap();
+    let mut raw = Vec::new();
+    socket.read_to_end(&mut raw).unwrap();
+    let head = String::from_utf8_lossy(&raw[..400.min(raw.len())]).to_string();
+    assert!(head.starts_with("HTTP/1.1 416"), "{head}");
+
+    // 文件被删后：候选不可播 → data: null（不报错，前端退回模拟时钟）
+    std::fs::remove_file(&file).unwrap();
+    let resolved = call(&ctx, "playback.resolve", json!({ "reference": id, "quality": "standard" }));
+    assert_eq!(resolved["ok"], json!(true), "{resolved}");
+    assert_eq!(resolved["data"], json!(null));
+
+    // 非音频文件不允许被代理（白名单与扫描一致）
+    let text = music.join("notes.txt");
+    std::fs::write(&text, "not audio").unwrap();
+    let blocked = ctx.streams.publish_local(&text);
+    assert!(blocked.is_err(), "非音频文件必须被拒");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// `playback.report` 写播放历史（与 `library.history.push` 同一份数据）。
+#[test]
+fn playback_report_records_history() {
+    let (ctx, dir) = setup();
+
+    let value = call(
+        &ctx,
+        "playback.report",
+        json!({
+            "ref": {"id": "demo:a", "source": "demo", "sourceTrackId": "a"},
+            "source": "demo",
+            "quality": "high",
+            "playedSec": 42,
+            "completed": false,
+            "track": {"id": "demo:a", "title": "甲", "artist": "歌手", "durationSec": 200},
+        }),
+    );
+    assert_eq!(value["ok"], json!(true), "{value}");
+
+    let history = call(&ctx, "library.history.list", json!({}));
+    let items = history["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{history}");
+    assert_eq!(items[0]["id"], json!("demo:a"));
+    assert_eq!(items[0]["title"], json!("甲"));
+    assert_eq!(items[0]["playedSec"], json!(42));
+    assert_eq!(items[0]["playCount"], json!(1));
+
+    // 引用格式错误 → 参数非法；库不可用时 → library.io_error
+    let bad = call(&ctx, "playback.report", json!({ "ref": "没有冒号" }));
+    assert_eq!(bad["error"]["code"], ErrorCode::InvalidArgument.as_str(), "{bad}");
+
     std::fs::remove_dir_all(&dir).ok();
 }

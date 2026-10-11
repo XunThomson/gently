@@ -3,19 +3,12 @@
 use gently_core::paths::AppPaths;
 use gently_core::store::{latest_version, Store};
 
+mod common;
+
 /// 临时目录：避免引入额外依赖，测试结束自行清理。
 fn temp_dir(tag: &str) -> std::path::PathBuf {
-    let unique = format!(
-        "gently-test-{tag}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or_default()
-    );
-    let dir = std::env::temp_dir().join(unique);
-    std::fs::create_dir_all(&dir).expect("创建临时目录");
-    dir
+    // 唯一性交给 common：时钟粒度 + 并行测试会让两个测试撞同一个目录
+    common::temp_dir(&format!("gently-test-{tag}"))
 }
 
 #[test]
@@ -26,15 +19,17 @@ fn migrates_to_latest_and_sets_wal() {
 
     let store = Store::open(&paths.db).expect("打开数据库");
     assert_eq!(store.schema_version(), latest_version(), "应迁移到最新版本");
-    assert_eq!(latest_version(), 3, "meta + plugin_state/plugin_config + subscriptions");
+    assert_eq!(latest_version(), 8, "… + skins + recommend_feedback");
 
     let info = store.info().expect("读取信息");
     assert_eq!(info.journal_mode.to_lowercase(), "wal", "WAL 未生效");
     assert!(info.foreign_keys, "外键约束未开启");
     assert_eq!(info.schema_version, latest_version());
 
-    // 未落地的业务表计数应为 0 而不是报错（诊断页需要这个容忍度）
+    // 本机库表存在且为空；订阅表也应为空（诊断页需要这个容忍度）
     assert_eq!(store.count_or_zero("favorites"), 0);
+    assert_eq!(store.count_history().expect("历史计数"), 0);
+    assert!(store.list_playlists().expect("歌单列表").is_empty());
 
     drop(store);
     std::fs::remove_dir_all(&dir).ok();

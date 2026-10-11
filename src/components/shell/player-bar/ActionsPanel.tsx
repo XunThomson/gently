@@ -92,8 +92,10 @@ export function ActionsPanel({onClose}: { onClose: () => void }) {
                         disabled={!current}
                         onClick={() => {
                             if (!current) return;
-                            const playlist = createPlaylist(`${current.artist} 的歌单`);
-                            addTo(playlist.id, playlist.name);
+                            // 曲目**必须**在建的时候一起交给核心：占位 id 核心不认识，
+                            // 「先建、再补写」会静默失败（R40 实测：提示「已加入」但歌单是空的）
+                            const playlist = createPlaylist(`${current.artist} 的歌单`, [current]);
+                            setToast(t('page.nowPlaying.addedToPlaylist', {name: playlist.name}));
                         }}
                     >
                         <IconPlus size={12}/>

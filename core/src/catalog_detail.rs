@@ -1,0 +1,518 @@
+//! 详情类命令：曲目 / 专辑 / 歌单 / 榜单 / 歌词 / 源侧推荐（M2 剩余部分）。
+//!
+//! 与 `catalog::search` 同一套原则：
+//! - **不信任插件输出**：一律经 `catalog::normalize_track` 归一化，缺字段给兜底值、缺 `id` 丢弃；
+//! - **列表形状适配**：`plugin::list_items` 负责 `[...]` / `{items}` / `{isEnd, data}` /
+//!   `{isEnd, musicList}` 四种写法（兼容 MusicFree 生态，ADR-0006）；
+//! - **能力缺失 → `common.not_implemented`**：UI 据此隐藏入口，而不是报错；
+//! - **结果缓存**到 `cache/catalog/`（契约 §9 说明该目录可随时整目录删除，因此缓存键里
+//!   必须带齐所有影响结果的参数）。
+//!
+//! 歌词**不在核心解析成行**：前端已有 LRC 解析器，同一算法只留一份实现
+//! （契约里 `Lyrics.lines` 是「核心已解析时」的可选字段）。
+
+use serde_json::{json, Value};
+
+use crate::commands::{parse_params, CoreContext};
+use crate::contract::{CoreError, ErrorCode, Fallible};
+use crate::plugin::{list_items, PluginCapability};
+
+/// 详情类缓存时长（曲目/专辑/歌单/歌词）。
+const DETAIL_TTL_SEC: i64 = 6 * 60 * 60;
+/// 榜单与分类树变化慢，可以缓存久一点。
+const LIST_TTL_SEC: i64 = 24 * 60 * 60;
+
+#[derive(Debug, serde::Deserialize)]
+struct RefParams {
+    /// `source:trackId`
+    #[serde(rename = "ref")]
+    reference: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct SourceIdParams {
+    source: String,
+    #[serde(default)]
+    id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SourcePageParams {
+    source: String,
+    id: String,
+    #[serde(default)]
+    page: Option<u32>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LyricsParams {
+    #[serde(rename = "ref")]
+    reference: String,
+    #[serde(default)]
+    with_translation: bool,
+}
+
+// ---------------------------------------------------------------- 命令
+
+/// `catalog.track{ref}`：曲目详情。
+///
+/// 返回 `GroupedTrack | null`——详情只来自一个源，但仍包成聚合形状，
+/// 前端不必为「详情」写第二套渲染分支。
+pub fn track(ctx: &CoreContext, params: Value) -> Fallible<Value> {
+    let params: RefParams = parse_params(params)?;
+    let (source, raw_id) = split_ref(&params.reference)?;
+
+    let value = call_detail(
+        ctx,
+        source,
+        PluginCapability::GetTrackInfo,
+        "getTrackInfo",
+        json!([raw_id]),
+        &format!("track:{source}:{raw_id}"),
+        DETAIL_TTL_SEC,
+    )?;
+    if value.is_null() {
+        return Ok(Value::Null);
+    }
+
+    let object = inner_object(&value, &["track", "data", "song", "musicItem"]);
+    let mut dropped = 0;
+    let Some(mut item) = crate::catalog::normalize_track(source, object, &mut dropped) else {
+        return Ok(Value::Null);
+    };
+    // 引用必须稳定：插件返回的 id 可能被改写，统一回到请求里的 ref
+    item["id"] = json!(params.reference);
+    item["sourceCount"] = json!(1);
+    item["candidates"] = json!([{
+        "source": source,
+        "track": item.clone(),
+        "qualities": ["standard"],
+    }]);
+    Ok(item)
+}
+
+/// `catalog.album{source, id}`：专辑详情（含曲目）。
+pub fn album(ctx: &CoreContext, params: Value) -> Fallible<Value> {
+    let params: SourceIdParams = parse_params(params)?;
+    let value = call_detail(
+        ctx,
+        &params.source,
+        PluginCapability::GetAlbumInfo,
+        "getAlbumInfo",
+        json!([params.id]),
+        &format!("album:{}:{}", params.source, params.id),
+        DETAIL_TTL_SEC,
+    )?;
+    if value.is_null() {
+        return Ok(Value::Null);
+    }
+
+    let nested = nested_details(&value, &["albumItem", "album"]);
+    let id = pick_text(&nested, &["id"]).unwrap_or_else(|| params.id.clone());
+    Ok(json!({
+        "id": id,
+        "title": pick_text(&nested, &["title", "name"]).unwrap_or_else(|| params.id.clone()),
+        "artist": pick_text(&nested, &["artist", "creator", "singer"]).unwrap_or_default(),
+        "cover": pick_text(&nested, &["cover", "artwork", "pic"]).unwrap_or_default(),
+        "year": pick_u64(&nested, &["year"]).unwrap_or(0),
+        "tags": pick_strings(&nested, &["tags"]),
+        "source": params.source,
+        "tracks": detail_tracks(&params.source, &value),
+    }))
+}
+
+/// `catalog.playlist{source, id}`：歌单详情（含曲目）。
+pub fn playlist(ctx: &CoreContext, params: Value) -> Fallible<Value> {
+    let params: SourceIdParams = parse_params(params)?;
+    let value = call_detail(
+        ctx,
+        &params.source,
+        PluginCapability::GetPlaylistInfo,
+        "getPlaylistInfo",
+        json!([params.id]),
+        &format!("playlist:{}:{}", params.source, params.id),
+        DETAIL_TTL_SEC,
+    )?;
+    if value.is_null() {
+        return Ok(Value::Null);
+    }
+
+    let nested = nested_details(&value, &["sheetItem", "playlist", "playlistItem"]);
+    let id = pick_text(&nested, &["id"]).unwrap_or_else(|| params.id.clone());
+    Ok(json!({
+        "id": id,
+        "title": pick_text(&nested, &["title", "name"]).unwrap_or_else(|| params.id.clone()),
+        "description": pick_text(&nested, &["description", "desc"]).unwrap_or_default(),
+        "cover": pick_text(&nested, &["cover", "artwork", "pic"]).unwrap_or_default(),
+        "tags": pick_strings(&nested, &["tags"]),
+        "source": params.source,
+        "tracks": detail_tracks(&params.source, &value),
+    }))
+}
+
+/// `catalog.topLists{source}`：**源自定义的**榜单/分类树（不是固定枚举）。
+pub fn top_lists(ctx: &CoreContext, params: Value) -> Fallible<Value> {
+    let params: SourceIdParams = parse_params(params)?;
+    let value = call_detail(
+        ctx,
+        &params.source,
+        PluginCapability::GetTopLists,
+        "getTopLists",
+        json!([]),
+        &format!("topLists:{}", params.source),
+        LIST_TTL_SEC,
+    )?;
+
+    let groups = list_items(&value).unwrap_or(&[]);
+    let mut out = Vec::new();
+    for group in groups {
+        let items = list_items(group).unwrap_or(&[]);
+        let entries: Vec<Value> = items
+            .iter()
+            .filter_map(|item| {
+                // id 是入口的必需字段：没有 id 的条目点了也打不开
+                let id = pick_text(&[item], &["id", "key"])?;
+                let mut map = serde_json::Map::new();
+                map.insert("id".into(), json!(id));
+                map.insert(
+                    "title".into(),
+                    json!(pick_text(&[item], &["title", "name"])
+                        .unwrap_or_else(|| id.clone())),
+                );
+                insert_opt(&mut map, "cover", pick_text(&[item], &["cover", "artwork", "pic"]));
+                insert_opt(
+                    &mut map,
+                    "description",
+                    pick_text(&[item], &["description", "desc"]),
+                );
+                Some(Value::Object(map))
+            })
+            .collect();
+        // 空分组没有意义（前端会渲染出一个空标题）
+        if entries.is_empty() {
+            continue;
+        }
+        let mut map = serde_json::Map::new();
+        insert_opt(&mut map, "title", pick_text(&[group], &["title", "name"]));
+        map.insert("items".into(), json!(entries));
+        out.push(Value::Object(map));
+    }
+    Ok(Value::Array(out))
+}
+
+/// `catalog.topList{source, id, page?}`：某个榜单/分类的一页。
+pub fn top_list(ctx: &CoreContext, params: Value) -> Fallible<Value> {
+    let params: SourcePageParams = parse_params(params)?;
+    let page = params.page.unwrap_or(1).max(1);
+
+    let value = call_detail(
+        ctx,
+        &params.source,
+        PluginCapability::GetTopList,
+        "getTopList",
+        json!([params.id, page]),
+        &format!("topList:{}:{}:{page}", params.source, params.id),
+        LIST_TTL_SEC,
+    )?;
+
+    // `isEnd` 是社区协议的分页标志（不填默认「已到末页」）；缺了就不猜「还有下一页」
+    let has_more = value.get("isEnd").and_then(|flag| flag.as_bool()) == Some(false);
+    let mut map = serde_json::Map::new();
+    map.insert("items".into(), json!(detail_tracks(&params.source, &value)));
+    map.insert("hasMore".into(), json!(has_more));
+    if has_more {
+        map.insert("nextPage".into(), json!(page + 1));
+    }
+    Ok(Value::Object(map))
+}
+
+/// `catalog.recommend{source}`：源侧推荐（**不是**我们的个性化推荐，那个在 M4）。
+pub fn recommend(ctx: &CoreContext, params: Value) -> Fallible<Value> {
+    let params: SourceIdParams = parse_params(params)?;
+    let value = call_detail(
+        ctx,
+        &params.source,
+        PluginCapability::GetRecommend,
+        "getRecommend",
+        json!([]),
+        &format!("recommend:{}", params.source),
+        LIST_TTL_SEC,
+    )?;
+    Ok(json!(detail_tracks(&params.source, &value)))
+}
+
+/// `catalog.lyrics{ref, withTranslation?}`：歌词；**无词返回 `data: null`**（不是错误）。
+pub fn lyrics(ctx: &CoreContext, params: Value) -> Fallible<Value> {
+    let params: LyricsParams = parse_params(params)?;
+    let (source, raw_id) = split_ref(&params.reference)?;
+
+    let value = call_detail(
+        ctx,
+        source,
+        PluginCapability::GetLyric,
+        "getLyric",
+        json!([raw_id]),
+        &format!("lyrics:{source}:{raw_id}:{}", params.with_translation),
+        DETAIL_TTL_SEC,
+    )?;
+
+    // 三种写法都认：裸字符串、我们的 `{content}`、MusicFree 的 `{rawLrc}` / `{lrc}`
+    let content = match &value {
+        Value::String(text) => text.trim().to_string(),
+        other => pick_text(&[other], &["content", "rawLrc", "lrc", "lyric"])
+            .unwrap_or_default(),
+    };
+    if content.trim().is_empty() {
+        return Ok(Value::Null);
+    }
+
+    let format = match pick_text(&[&value], &["format"]).as_deref() {
+        Some("plain") => "plain",
+        Some("lrc") => "lrc",
+        _ if looks_like_lrc(&content) => "lrc",
+        _ => "plain",
+    };
+    let mut map = serde_json::Map::new();
+    map.insert("format".into(), json!(format));
+    map.insert("content".into(), json!(content));
+    if params.with_translation {
+        insert_opt(
+            &mut map,
+            "translated",
+            pick_text(&[&value], &["translated", "translation", "tlyric"]),
+        );
+    }
+    Ok(Value::Object(map))
+}
+
+// ---------------------------------------------------------------- 内部
+
+/// 调一次插件函数并（可选）缓存结果。
+fn call_detail(
+    ctx: &CoreContext,
+    source: &str,
+    capability: PluginCapability,
+    function: &str,
+    args: Value,
+    cache_key: &str,
+    ttl_sec: i64,
+) -> Fallible<Value> {
+    ready_source(ctx, source, capability)?;
+
+    if let Some(hit) = cache::read(&ctx.paths, cache_key) {
+        return Ok(hit);
+    }
+
+    let raw = ctx.plugins.call(source, function, &args.to_string())?;
+    let parsed: Value = serde_json::from_str(&raw).map_err(|err| {
+        CoreError::new(ErrorCode::PluginRuntimeError, format!("{function} 返回的不是合法 JSON：{err}"))
+            .with_details(json!({ "source": source, "function": function }))
+    })?;
+    cache::write(&ctx.paths, cache_key, ttl_sec, &parsed);
+    Ok(parsed)
+}
+
+/// 详情命令的前置条件：插件已安装、已启用、且具备该能力。
+///
+/// 缺能力 → `common.not_implemented`（社区插件能力参差是常态，UI 据此隐藏入口）；
+/// 未安装/已禁用 → `common.not_found`（与搜索的「禁用立即生效」一致）。
+fn ready_source(ctx: &CoreContext, source: &str, capability: PluginCapability) -> Fallible<()> {
+    crate::catalog::ensure_loaded(ctx)?;
+
+    let store = ctx
+        .store
+        .as_ref()
+        .ok_or_else(|| CoreError::new(ErrorCode::LibraryIoError, "数据库不可用，无法确认插件状态"))?;
+    let record = store
+        .get_plugin(source)?
+        .ok_or_else(|| CoreError::not_found(format!("插件未安装：{source}")))?;
+    if !record.enabled {
+        return Err(CoreError::not_found(format!("插件已禁用：{source}")));
+    }
+
+    match ctx.plugins.capabilities(source) {
+        Some(capabilities) if capabilities.contains(&capability) => Ok(()),
+        _ => Err(CoreError::not_implemented(&format!("{source}.{}", function_of(capability))).with_details(
+            json!({ "source": source, "capability": function_of(capability) }),
+        )),
+    }
+}
+
+fn function_of(capability: PluginCapability) -> &'static str {
+    capability.name()
+}
+
+/// `source:trackId` → 两段。引用格式是跨语言契约，写错要明确报错。
+fn split_ref(reference: &str) -> Fallible<(&str, &str)> {
+    match reference.split_once(':') {
+        Some((source, raw_id)) if !source.is_empty() && !raw_id.is_empty() => Ok((source, raw_id)),
+        _ => Err(CoreError::invalid_argument(format!(
+            "引用格式应为 source:trackId，实际为 {reference}"
+        ))
+        .with_details(json!({ "ref": reference }))),
+    }
+}
+
+/// 详情对象可能被包在 `data` / `track` 之类的字段里，这里取最内层。
+fn inner_object<'a>(value: &'a Value, keys: &[&str]) -> &'a Value {
+    let Some(object) = value.as_object() else { return value };
+    for key in keys {
+        if let Some(inner) = object.get(*key) {
+            if inner.is_object() {
+                return inner;
+            }
+        }
+    }
+    value
+}
+
+/// 元数据的候选对象：根对象 + 社区协议里的嵌套补充对象（`albumItem` / `sheetItem` / …）。
+fn nested_details<'a>(value: &'a Value, keys: &[&str]) -> Vec<&'a Value> {
+    let mut out = vec![value];
+    if let Some(object) = value.as_object() {
+        for key in keys {
+            if let Some(inner) = object.get(*key) {
+                out.push(inner);
+            }
+        }
+    }
+    out
+}
+
+fn pick_text(sources: &[&Value], keys: &[&str]) -> Option<String> {
+    for source in sources {
+        let Some(object) = source.as_object() else { continue };
+        for key in keys {
+            // 数字型 id / title 也认（社区插件并不总是给字符串）
+            let found = match object.get(*key) {
+                Some(Value::String(text)) => Some(text.trim().to_string()),
+                Some(Value::Number(number)) => Some(number.to_string()),
+                _ => None,
+            };
+            if let Some(text) = found.filter(|text| !text.is_empty()) {
+                return Some(text);
+            }
+        }
+    }
+    None
+}
+
+fn pick_u64(sources: &[&Value], keys: &[&str]) -> Option<u64> {
+    for source in sources {
+        let Some(object) = source.as_object() else { continue };
+        for key in keys {
+            if let Some(number) = object.get(*key).and_then(Value::as_u64) {
+                return Some(number);
+            }
+            if let Some(text) = object.get(*key).and_then(Value::as_str) {
+                if let Ok(number) = text.trim().parse::<u64>() {
+                    return Some(number);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn pick_strings(sources: &[&Value], keys: &[&str]) -> Vec<String> {
+    for source in sources {
+        let Some(object) = source.as_object() else { continue };
+        for key in keys {
+            if let Some(items) = object.get(*key).and_then(Value::as_array) {
+                return items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(|text| text.trim().to_string()))
+                    .filter(|text| !text.is_empty())
+                    .collect();
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn insert_opt(map: &mut serde_json::Map<String, Value>, key: &str, value: Option<String>) {
+    if let Some(text) = value.filter(|text| !text.is_empty()) {
+        map.insert(key.to_string(), json!(text));
+    }
+}
+
+/// 列表形状 → 归一化曲目（复用搜索那套归一化，缺 `title` 的条目丢弃）。
+fn detail_tracks(source: &str, value: &Value) -> Vec<Value> {
+    let mut dropped = 0usize;
+    list_items(value)
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|item| crate::catalog::normalize_track(source, item, &mut dropped))
+        .collect()
+}
+
+/// 歌词是否带时间戳（`[mm:ss`）。插件不声明 format 时用它推断。
+fn looks_like_lrc(content: &str) -> bool {
+    let bytes = content.as_bytes();
+    let mut index = 0;
+    while let Some(offset) = content[index..].find('[') {
+        let start = index + offset + 1;
+        let digits = content[start..].chars().take_while(char::is_ascii_digit).count();
+        if digits > 0 && content[start + digits..].starts_with(':') {
+            return true;
+        }
+        index = start;
+        if index >= bytes.len() {
+            break;
+        }
+    }
+    false
+}
+
+/// 详情缓存：`cache/catalog/<hash>.json`。
+///
+/// 契约 §9 明确 `cache/` 可随时整目录删除，因此这里**不**做失效协商：
+/// 读不到、读坏了、过期了都重新问插件，写失败也不影响本次结果（缓存是加速，不是状态）。
+mod cache {
+    use std::path::PathBuf;
+
+    use serde_json::{json, Value};
+
+    use crate::paths::AppPaths;
+    use crate::plugin::sha256_hex;
+
+    fn path_of(paths: &AppPaths, key: &str) -> PathBuf {
+        let digest = sha256_hex(key.as_bytes());
+        paths.cache.join("catalog").join(format!("{}.json", &digest[..16]))
+    }
+
+    pub fn read(paths: &AppPaths, key: &str) -> Option<Value> {
+        let text = std::fs::read_to_string(path_of(paths, key)).ok()?;
+        let entry: Value = serde_json::from_str(&text).ok()?;
+        let at = entry.get("at").and_then(Value::as_i64)?;
+        let ttl = entry.get("ttl").and_then(Value::as_i64)?;
+        if now_secs().saturating_sub(at) > ttl {
+            return None;
+        }
+        entry.get("value").cloned()
+    }
+
+    pub fn write(paths: &AppPaths, key: &str, ttl_sec: i64, value: &Value) {
+        let path = path_of(paths, key);
+        let Some(parent) = path.parent() else { return };
+        if std::fs::create_dir_all(parent).is_err() {
+            return;
+        }
+        let entry = json!({ "at": now_secs(), "ttl": ttl_sec, "key": key, "value": value });
+        let Ok(text) = serde_json::to_string(&entry) else { return };
+        // 原子写：缓存写坏比没有缓存更糟（会一直读到半截 JSON）
+        let temp = path.with_extension("tmp");
+        if std::fs::write(&temp, text).is_ok() {
+            let _ = std::fs::rename(&temp, &path);
+        }
+    }
+
+    fn now_secs() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs() as i64)
+            .unwrap_or_default()
+    }
+}

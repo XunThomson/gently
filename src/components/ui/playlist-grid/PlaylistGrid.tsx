@@ -3,6 +3,7 @@ import {useTranslation} from 'react-i18next';
 import {EmptyState} from '../../../components/ui/empty-state';
 import {IconPlay} from '../../../components/ui/icon';
 import type {RecommendedPlaylist} from '../../../types';
+import {coverStyle} from '../../../utils/cover';
 import {ReasonChip} from '../reason-chip';
 import styles from './PlaylistGrid.module.css';
 
@@ -45,7 +46,10 @@ export function PlaylistGrid({playlists, onSelect, onPlay}: PlaylistGridProps): 
                     onClick={() => onSelect(playlist)}
                     onKeyDown={(event) => activate(event, playlist)}
                 >
-                    <span className={styles.cover} style={{background: playlist.cover}}>
+                    <span
+                        className={styles.cover}
+                        style={coverStyle(playlist.cover, `${playlist.source}|${playlist.title}`)}
+                    >
                         <span className={styles.initial}>{playlist.title.slice(0, 1)}</span>
                         <button
                             type="button"

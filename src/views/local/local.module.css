@@ -1,0 +1,70 @@
+/* 本地音乐页：扫描面板（唯一的入库入口，因此常驻在列表上方） */
+
+.scanCard {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    margin-bottom: var(--space-4);
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+}
+
+.scanTitle {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+
+.scanRow {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.scanInput {
+    flex: 1 1 320px;
+    min-width: 240px;
+    padding: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-primary);
+    background: var(--surface-chrome);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    resize: vertical;
+}
+
+.scanControls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding-top: var(--space-1);
+}
+
+.scanToggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.scanHint {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.scanStatus {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.scanError {
+    font-size: var(--font-size-sm);
+    color: var(--danger);
+}

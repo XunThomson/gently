@@ -6,6 +6,7 @@ import {appConfig} from '../../../config/app.config';
 import {useActions, usePlayerState, useSelect} from '../../../store';
 import {useTheme} from '../../../theme';
 import type {RepeatMode} from '../../../types';
+import {trackCoverStyle} from '../../../utils/cover';
 import {fmt} from '../../../utils/helpers';
 import {
     IconHeart,
@@ -64,7 +65,9 @@ export function PlayerBar() {
     }, [panel]);
 
     const {config} = useTheme();
-    const {current, playing, elapsed, duration, repeat, volume} = player;
+    const {current, detail, playing, elapsed, duration, repeat, volume} = player;
+    /* 封面优先用**源侧详情**（`catalog.track` 补的元数据）：列表快照常常没有封面 */
+    const artwork = detail ?? current;
     const progressSkin = config.components.playerBar.progressThumbSkin;
 
     const repeatLabel =
@@ -100,7 +103,11 @@ export function PlayerBar() {
                     <button
                         type="button"
                         className={styles.cover}
-                        style={current ? {background: current.gradient} : undefined}
+                        style={
+                            artwork
+                                ? trackCoverStyle(artwork)
+                                : undefined
+                        }
                         title={current ? t('player.openDetail') : undefined}
                         aria-label={current ? t('player.openDetail') : undefined}
                         disabled={!current}

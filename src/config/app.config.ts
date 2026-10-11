@@ -25,17 +25,22 @@ export const appConfig = {
         seekStepSec: 5,
         /** 播放超过该秒数时，「上一首」先回到开头而不是切歌 */
         restartThresholdSec: 3,
+        /**
+         * 推荐反馈的负信号门槛：一次播放听到不到这个比例就被切走 → 报 `skip`。
+         * 与核心的判定线一致（`core/src/recommend.rs` 只把 `progress < 0.5` 的跳过当负信号）。
+         */
+        feedbackSkipRatio: 0.5,
         /** 无真实音源时，回退时钟的推进间隔（毫秒） */
         fallbackTickMs: 1000,
     },
 
     list: {
-        /** 榜单默认展示条数（展开前） */
-        chartVisible: 10,
-        /** 单个榜单生成条数 */
-        chartSize: 20,
+        /** 榜单/分类每页条数（mock 数据源的分页粒度；真实源由它自己决定） */
+        topListPageSize: 10,
         /** 热门推荐条数 */
         recommendLimit: 12,
+        /** 源侧推荐（`catalog.recommend`）展示条数：插件自己决定给多少，这里只取前 N 条 */
+        recommendSourceLimit: 6,
         /** 推荐专辑条数 */
         albumLimit: 4,
         /** 推荐歌单条数 */

@@ -3,6 +3,7 @@ import {useTranslation} from 'react-i18next';
 import type {SystemPathsDto, SystemStatusDto} from '../../../api';
 import {Button} from '../../../components/ui/button';
 import {TextCell} from '../../../components/ui/data-table';
+import {errorText} from '../../../i18n/errors';
 import {coreAvailable, coreSystem, probeCore} from '../../../services';
 import styles from '../setting.module.css';
 
@@ -18,7 +19,6 @@ import styles from '../setting.module.css';
 export function DiagnosticsCard() {
     const {t} = useTranslation();
     const available = coreAvailable();
-
     const [status, setStatus] = useState<SystemStatusDto | null>(null);
     const [paths, setPaths] = useState<SystemPathsDto | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -32,26 +32,32 @@ export function DiagnosticsCard() {
         // 启动时已探测过一次（结果缓存），这里复用避免重复往返；仅 paths 是新请求
         const [statusResult, pathsResult] = await Promise.all([probeCore(), coreSystem.paths()]);
         if (statusResult.ok) setStatus(statusResult.data);
-        else setError(statusResult.error.message);
+        else setError(errorText(t, statusResult.error));
         if (pathsResult.ok) setPaths(pathsResult.data);
-        else setError(pathsResult.error.message);
+        else setError(errorText(t, pathsResult.error));
 
         setLoading(false);
-    }, [available]);
+    }, [available, t]);
 
     useEffect(() => {
         void refresh();
     }, [refresh]);
 
-    const open = useCallback(async (path: string) => {
-        const result = await coreSystem.reveal(path);
-        if (!result.ok) setError(result.error.message);
-    }, []);
+    const open = useCallback(
+        async (path: string) => {
+            const result = await coreSystem.reveal(path);
+            if (!result.ok) setError(errorText(t, result.error));
+        },
+        [t],
+    );
+
+    /* 凭据是否落在系统凭据库里：`memory` 表示降级（重启后需要重新填写） */
+    const persistentCredentials =
+        !!status && status.credentialsBackend !== '' && status.credentialsBackend !== 'memory';
 
     return (
         <section className={styles.card}>
             <h2 className={styles.cardTitle}>{t('page.setting.diagnostics')}</h2>
-
             <div className={styles.field}>
                 <span className={styles.label}>{t('page.setting.diagRuntime')}</span>
                 <span className={styles.value}>
@@ -101,6 +107,22 @@ export function DiagnosticsCard() {
                     )}
 
                     <div className={styles.field}>
+                        <span className={styles.label}>{t('page.setting.diagCredentials')}</span>
+                        <span className={styles.value}>
+                            <TextCell tone={persistentCredentials ? 'accent' : 'warning'}>
+                                {status.credentialsBackend}
+                            </TextCell>
+                            <TextCell tone="muted">
+                                {t(
+                                    persistentCredentials
+                                        ? 'page.setting.diagCredentialsOs'
+                                        : 'page.setting.diagCredentialsMemory',
+                                )}
+                            </TextCell>
+                        </span>
+                    </div>
+
+                    <div className={styles.field}>
                         <span className={styles.label}>{t('page.setting.diagCounts')}</span>
                         <span className={styles.value}>
                             <TextCell tone="muted">
@@ -117,18 +139,28 @@ export function DiagnosticsCard() {
             )}
 
             {available && paths && (
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.diagPaths')}</span>
-                    <span className={styles.value}>
-                        <code className={styles.path}>{paths.data}</code>
-                        <Button size="sm" variant="ghost" onClick={() => void open(paths.data)}>
-                            {t('page.setting.diagOpenData')}
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => void open(paths.logs)}>
-                            {t('page.setting.diagOpenLogs')}
-                        </Button>
-                    </span>
-                </div>
+                <>
+                    <div className={styles.field}>
+                        <span className={styles.label}>{t('page.setting.diagPaths')}</span>
+                        <span className={styles.value}>
+                            <code className={styles.path}>{paths.data}</code>
+                            <Button size="sm" variant="ghost" onClick={() => void open(paths.data)}>
+                                {t('page.setting.diagOpenData')}
+                            </Button>
+                        </span>
+                    </div>
+
+                    {/* 日志目录单独一行：排障时用户要「打开日志目录」而不是先找数据目录 */}
+                    <div className={styles.field}>
+                        <span className={styles.label}>{t('page.setting.diagLogsPath')}</span>
+                        <span className={styles.value}>
+                            <code className={styles.path}>{paths.logs}</code>
+                            <Button size="sm" variant="ghost" onClick={() => void open(paths.logs)}>
+                                {t('page.setting.diagOpenLogs')}
+                            </Button>
+                        </span>
+                    </div>
+                </>
             )}
 
             {error && <p className={styles.hint}>{t('page.setting.diagErrorHint', {reason: error})}</p>}

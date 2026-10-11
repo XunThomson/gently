@@ -66,6 +66,8 @@ export function Lyrics({lines, elapsed, onSeek, className}: LyricsProps) {
                     onClick={() => onSeek(line.time)}
                 >
                     {line.text}
+                    {/* 译文贴在原文下方（源带翻译时才有），样式上弱一级 */}
+                    {line.translation && <span className={styles.translation}>{line.translation}</span>}
                 </button>
             ))}
         </div>

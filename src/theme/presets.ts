@@ -8,8 +8,19 @@ import type {
     ThemeSkin,
 } from './types';
 
-/** 内置皮肤（数据源：src/config/theme/presets.json） */
-export const builtinSkins = rawSkins.skins as ThemeSkin[];
+/**
+ * 内置皮肤（数据源：`src/config/theme/presets.json`）。
+ *
+ * **`builtin: true` 在这里补上**，而不是要求数据文件每条都写一遍：
+ * 视图据此隐藏「删除皮肤」入口、导出时据此决定要不要问核心（内置预设核心根本不认识）。
+ * 数据文件不写会得到一个「点了没用还会谎报成功」的删除按钮——
+ * `presets.json` 里漏了 `builtin`，R51 实测每个内置卡片都长出了那个按钮，点击后提示
+ * 「已删除皮肤「深海蓝」」而卡片纹丝不动（核心回 `skin.not_found`，被忽略）。
+ */
+export const builtinSkins: ThemeSkin[] = (rawSkins.skins as ThemeSkin[]).map((skin) => ({
+    ...skin,
+    builtin: true,
+}));
 
 /** 兼容旧命名 */
 export const themePresets = builtinSkins;
@@ -27,6 +38,36 @@ export function getThemeSkin(id: string, customSkins: readonly ThemeSkin[] = [])
 
 /** 兼容旧命名 */
 export const getThemePreset = getThemeSkin;
+
+/* ============================== 「当前用哪套皮肤」的唯一裁决 ============================== */
+
+/**
+ * 核心报的激活皮肤从 `skin.list` 的 `active` 标记里读出来。
+ *
+ * 只有**用户皮肤**可能带这个标记：内置预设随前端包发布，核心的 `skins` 表里没有它们，
+ * 因此「用户当前用的是哪套内置预设」只能存在前端（localStorage）。
+ */
+export function activeUserSkinId(skins: readonly (ThemeSkin & {active?: boolean})[]): string | null {
+    return skins.find((skin) => skin.active)?.id ?? null;
+}
+
+/**
+ * 启动时决定用哪套皮肤——**这里只有一份裁决逻辑**，避免「核心说 A、localStorage 说 B」。
+ *
+ * 规则：
+ * 1. 核心有激活的用户皮肤 → 用它（桌面端「当前选择」的事实来源是核心的 `meta.skin.active`）；
+ * 2. 否则沿用本地存的 id（内置预设只能这样记），但**必须仍然存在于当前皮肤集合里**
+ *    （换了机器、删了皮肤、清了 localStorage 都可能让它失效）；
+ * 3. 都不成立 → 回到默认预设。
+ */
+export function resolveActivePreset(
+    coreActive: string | null,
+    localId: string,
+    customSkins: readonly ThemeSkin[],
+): string {
+    if (coreActive) return coreActive;
+    return allSkins(customSkins).some((skin) => skin.id === localId) ? localId : DEFAULT_PRESET_ID;
+}
 
 /** 按组浅合并组件度量覆盖（每个组件组都是扁平对象） */
 function mergeComponents(

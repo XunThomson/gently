@@ -53,9 +53,13 @@ export default function SearchView() {
         let cancelled = false;
         setLoading(true);
 
+        /* 换关键词 / 切音源 / 离开页面时**中止上一轮搜索**：核心会 cancel，
+           还没开始调用插件的源线程就不再打网络（否则每敲一个字符都会多留一轮后台搜索）。 */
+        const controller = new AbortController();
+
         const request =
             display === 'aggregate'
-                ? catalogService.searchAll(keyword)
+                ? catalogService.searchAll(keyword, controller.signal)
                 : catalogService
                       .searchIn(keyword, sourceFilter === 'all' ? undefined : sourceFilter)
                       .then((tracks) => tracks as GroupedTrack[]);
@@ -74,6 +78,7 @@ export default function SearchView() {
 
         return () => {
             cancelled = true;
+            controller.abort();
         };
     }, [keyword, display, sourceFilter]);
 

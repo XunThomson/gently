@@ -14,14 +14,21 @@
 //! # 沙箱给了什么
 //!
 //! 插件运行在一个**空白全局对象**上，只有 bootstrap 显式安装的能力：
-//! - `fetch`：同步（宿主侧阻塞）→ 只能 HTTPS、只能命中清单 `@hosts`、有超时与体积上限；
+//! - `fetch`：同步（宿主侧阻塞）→ 只能 HTTPS、只能命中清单 `@hosts`（兼容模式例外，
+//!   见 ADR-0006）、有超时与体积上限；
 //! - `console`：转发到核心日志（带插件 id 前缀）；
 //! - `storage`：插件私有 kv（`plugins/.kv/<id>.json`，卸载时清理）；
 //! - `credentials.get`：只读、只对该插件、需要 `credentials` 权限；
+//! - `module` / `exports` / `require`：CommonJS 最小环境 + **固定、可审计的模块清单**
+//!   （`he` / `axios` / `dayjs` / `crypto-js` 子集，见 `sandbox/compat.js`）；
+//!   `fetch` 之外的一切仍受同一套权限与白名单约束，垫片只是「形状翻译」，不新增能力；
 //! - bootstrap 结束后**删除所有 `__host*` 原始入口**，插件无法绕过封装。
 //!
-//! 没有 `fs` / `process` / `require` / 定时器无限循环的逃生口：执行有内存上限与
+//! 没有 `fs` / `process` / 原生模块 / 定时器无限循环的逃生口：执行有内存上限与
 //! 截止时间中断（`set_interrupt_handler`），超时 → `plugin.runtime_error`。
+//!
+//! 沙箱代码（bootstrap 与 require 垫片）是纯 JS，放在 `sandbox/` 下用 `include_str!`
+//! 编进二进制——它们改起来比 Rust 字符串字面量安全得多（语法高亮 + 不转义）。
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -33,10 +40,14 @@ use std::time::Duration;
 
 use rquickjs::{Context, Function, Runtime, Value};
 
+use md5::Md5;
+use sha2::{Digest, Sha256};
+
 use crate::contract::{CoreError, ErrorCode, Fallible};
 use crate::paths::AppPaths;
 
 use super::credentials::CredentialStore;
+use super::hosts::{HostLedger, HostUse};
 use super::manifest::{PluginCapability, PluginManifest, PluginPermission};
 use super::transport::{host_allowed, host_of, HttpRequest, HttpTransport};
 
@@ -98,6 +109,8 @@ pub struct PluginHost {
     credentials: Arc<dyn CredentialStore>,
     limits: HostLimits,
     paths: AppPaths,
+    /// 兼容模式下实际访问过的域名（TOFU 收敛的依据，ADR-0006）
+    ledger: Arc<HostLedger>,
 }
 
 impl PluginHost {
@@ -107,7 +120,26 @@ impl PluginHost {
         credentials: Arc<dyn CredentialStore>,
         limits: HostLimits,
     ) -> Self {
-        Self { handles: Mutex::new(HashMap::new()), transport, credentials, limits, paths }
+        // 台账放在 plugins 目录下的隐藏子目录：卸载插件时一并清掉
+        let ledger = Arc::new(HostLedger::new(paths.plugins.join(".hosts")));
+        Self { handles: Mutex::new(HashMap::new()), transport, credentials, limits, paths, ledger }
+    }
+
+    /// 凭据读写句柄（命令层用）。
+    ///
+    /// 插件自己**只能**通过沙箱里的 `credentials.get` 只读访问；写入只发生在用户显式操作时。
+    pub fn credentials(&self) -> &Arc<dyn CredentialStore> {
+        &self.credentials
+    }
+
+    /// 该插件在兼容模式下访问过的域名（按首次出现顺序）。
+    pub fn observed_hosts(&self, id: &str) -> Vec<HostUse> {
+        self.ledger.observed(id)
+    }
+
+    /// 收敛（固化白名单）后清掉观测记录。
+    pub fn clear_observed_hosts(&self, id: &str) {
+        self.ledger.clear(id);
     }
 
     /// 加载（或重新加载）一个插件：读取源码 → 建运行时 → 探测能力。
@@ -129,11 +161,12 @@ impl PluginHost {
         let (tx, rx) = mpsc::channel::<Job>();
         let (ready_tx, ready_rx) = mpsc::channel::<Fallible<Vec<PluginCapability>>>();
         let thread_manifest = manifest.clone();
+        let ledger = Arc::clone(&self.ledger);
 
         thread::Builder::new()
             .name(format!("gently-plugin-{id}"))
             .spawn(move || {
-                runtime_thread(thread_manifest, source, limits, transport, credentials, kv_path, rx, ready_tx);
+                runtime_thread(thread_manifest, source, limits, transport, credentials, kv_path, ledger, rx, ready_tx);
             })
             .map_err(|err| CoreError::internal(format!("创建插件线程失败：{err}")))?;
 
@@ -234,6 +267,7 @@ fn runtime_thread(
     transport: Arc<dyn HttpTransport>,
     credentials: Arc<dyn CredentialStore>,
     kv_path: PathBuf,
+    ledger: Arc<HostLedger>,
     jobs: mpsc::Receiver<Job>,
     ready: Sender<Fallible<Vec<PluginCapability>>>,
 ) {
@@ -275,7 +309,14 @@ fn runtime_thread(
     // 1) 安装 bootstrap 与宿主能力
     // 同步上下文：宿主函数与 eval 都是普通调用
     let setup = context.with(|ctx| {
-        install_host_functions(&ctx, &manifest, Arc::clone(&transport), Arc::clone(&credentials), kv_path)?;
+        install_host_functions(
+            &ctx,
+            &manifest,
+            Arc::clone(&transport),
+            Arc::clone(&credentials),
+            kv_path,
+            Some(Arc::clone(&ledger)),
+        )?;
         ctx.eval::<(), _>(BOOTSTRAP).map_err(|err| describe_js_error(&err, "bootstrap 执行失败"))
     });
     if let Err(err) = setup {
@@ -391,6 +432,7 @@ fn install_host_functions(
     transport: Arc<dyn HttpTransport>,
     credentials: Arc<dyn CredentialStore>,
     kv_path: PathBuf,
+    ledger: Option<Arc<HostLedger>>,
 ) -> Fallible<()> {
     let globals = ctx.globals();
     let plugin_id = manifest.id.clone();
@@ -419,6 +461,7 @@ fn install_host_functions(
         let hosts = manifest.hosts.clone();
         let compat = manifest.compat;
         let plugin_id_for_net = manifest.id.clone();
+        let ledger = ledger.clone();
         globals
             .set(
                 "__hostFetch",
@@ -442,9 +485,12 @@ fn install_host_functions(
                     }
 
                     if compat {
-                        // 兼容模式：允许任意公网 HTTPS，并把实际域名记进日志
-                        // （后续「把用到的域名固化进白名单」的确认流程以此为依据）
+                        // 兼容模式：允许任意公网 HTTPS，并把实际域名记进日志与**观测台账**——
+                        // 台账是「把用到的域名固化为白名单」这条 TOFU 收敛路径的唯一依据。
                         tracing::info!(plugin = %plugin_id_for_net, host = %host, "兼容模式放行出网域名");
+                        if let Some(ledger) = &ledger {
+                            ledger.observe(&plugin_id_for_net, &host);
+                        }
                     } else if !host_allowed(&hosts, &host) {
                         return Err(js_error(
                             "GENTLY_PERMISSION_DENIED",
@@ -526,6 +572,7 @@ fn install_host_functions(
     {
         let plugin_id = plugin_id.clone();
         let allowed = manifest.permissions.contains(&PluginPermission::Credentials);
+        let store = Arc::clone(&credentials);
         globals
             .set(
                 "__hostCredentialGet",
@@ -533,13 +580,117 @@ fn install_host_functions(
                     if !allowed {
                         return None;
                     }
-                    credentials.get(&plugin_id, &key)
+                    store.get(&plugin_id, &key)
                 }),
             )
             .map_err(host_setup_error)?;
     }
 
+    // ---- 用户变量（MusicFree 的 `env.getUserVariables()`） ----
+    // 只回**清单声明过**的键：清单是用户同意时看到的那份，不允许插件偷偷多读。
+    // 没有凭据权限时返回空对象（与 `credentials.get` 同一道门）。
+    {
+        let plugin_id = plugin_id.clone();
+        let allowed = manifest.permissions.contains(&PluginPermission::Credentials);
+        let declared: Vec<String> = manifest.credentials.iter().map(|field| field.key.clone()).collect();
+        let store = Arc::clone(&credentials);
+        globals
+            .set(
+                "__hostUserVariables",
+                Function::new(ctx.clone(), move || -> String {
+                    if !allowed {
+                        return "{}".to_string();
+                    }
+                    let mut map = serde_json::Map::new();
+                    for key in &declared {
+                        if let Some(value) = store.get(&plugin_id, key) {
+                            map.insert(key.clone(), serde_json::Value::String(value));
+                        }
+                    }
+                    serde_json::Value::Object(map).to_string()
+                }),
+            )
+            .map_err(host_setup_error)?;
+    }
+
+    // ---- 运行环境信息（`env.os` / `env.appVersion` / `process.platform`） ----
+    // MusicFree 的插件常按 `env.os === 'android'` 分支；我们如实报当前桌面平台，
+    // 而不是假装成安卓——插件若因此拒绝运行，用户看到的提示才是真的原因。
+    {
+        globals
+            .set(
+                "__hostEnvInfo",
+                Function::new(ctx.clone(), move || -> String {
+                    serde_json::json!({
+                        "os": std::env::consts::OS,
+                        "platform": std::env::consts::OS,
+                        "appVersion": env!("CARGO_PKG_VERSION"),
+                        "lang": "zh-CN",
+                    })
+                    .to_string()
+                }),
+            )
+            .map_err(host_setup_error)?;
+    }
+
+    // ---- 哈希（crypto-js 垫片用） ----
+    // 输入固定是十六进制字节串，输出小写十六进制摘要：只有一种形状，垫片侧不需要
+    // 处理二进制编组，密码学实现也只有宿主这一份（sha2 / md-5）。
+    {
+        globals
+            .set(
+                "__hostDigest",
+                Function::new(
+                    ctx.clone(),
+                    move |algorithm: String, hex: String| -> rquickjs::Result<String> {
+                        let bytes = decode_hex(&hex).ok_or_else(|| {
+                            js_error("GENTLY_PLUGIN_ERROR", "哈希输入必须是偶数长度的十六进制字符串")
+                        })?;
+                        digest_hex(&algorithm, &bytes).ok_or_else(|| {
+                            js_error(
+                                "GENTLY_PLUGIN_ERROR",
+                                &format!("不支持的哈希算法：{algorithm}（只有 md5 / sha256）"),
+                            )
+                        })
+                    },
+                ),
+            )
+            .map_err(host_setup_error)?;
+    }
+
     Ok(())
+}
+
+/// 十六进制字符串 → 字节（非法输入返回 None；不接受奇数长度）。
+fn decode_hex(text: &str) -> Option<Vec<u8>> {
+    if text.len() % 2 != 0 {
+        return None;
+    }
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len() / 2);
+    for pair in bytes.chunks(2) {
+        let high = (pair[0] as char).to_digit(16)?;
+        let low = (pair[1] as char).to_digit(16)?;
+        out.push((high * 16 + low) as u8);
+    }
+    Some(out)
+}
+
+/// 摘要（小写十六进制）。只提供兼容插件实际需要的两种算法（ADR-0006：固定、可审计）。
+fn digest_hex(algorithm: &str, bytes: &[u8]) -> Option<String> {
+    match algorithm {
+        "md5" => {
+            let mut hasher = Md5::new();
+            hasher.update(bytes);
+            Some(format!("{:x}", hasher.finalize()))
+        }
+        "sha256" => {
+            let mut hasher = Sha256::new();
+            hasher.update(bytes);
+            Some(format!("{:x}", hasher.finalize()))
+        }
+        _ => None,
+    }
 }
 
 fn host_setup_error(err: rquickjs::Error) -> CoreError {
@@ -556,6 +707,8 @@ fn js_error(marker: &'static str, message: &str) -> rquickjs::Error {
 pub struct ModuleProbe {
     /// `module.exports` 里的元数据（MusicFree 风格：name/version/platform/author…）
     pub metadata: std::collections::HashMap<String, String>,
+    /// `module.exports.userVariables`：MusicFree 风格的用户变量声明（合成凭据字段用）
+    pub variables: Vec<super::manifest::CredentialField>,
     pub capabilities: Vec<PluginCapability>,
 }
 
@@ -564,11 +717,24 @@ pub struct ModuleProbe {
 /// 用途：兼容模式下，MusicFree 风格插件没有头部注释，元数据在导出对象里。
 /// 代价是会在沙箱内执行插件的顶层代码（有副作用可能），因此只在**用户显式开启
 /// 兼容模式**的预览/安装流程里调用，并且此时 `fetch` 会因为空域名白名单而被拒绝。
+///
+/// 和正常调用一样有**截止时间中断**：顶层死循环会按 `limits.call_timeout` 被掐断，
+/// 而不是让预览界面一直转圈。
 pub fn probe(source: &str, limits: HostLimits, transport: Arc<dyn HttpTransport>) -> Fallible<ModuleProbe> {
     let runtime = Runtime::new()
         .map_err(|err| CoreError::new(ErrorCode::PluginRuntimeError, format!("创建运行时失败：{err}")))?;
     runtime.set_memory_limit(limits.memory_bytes);
     runtime.set_max_stack_size(limits.stack_bytes);
+
+    // 探测期的截止时间在**进入 JS 之前**就设好：探测同样是一次会执行插件代码的动作
+    let deadline = Arc::new(AtomicU64::new(now_millis() + limits.call_timeout.as_millis() as u64));
+    {
+        let deadline = Arc::clone(&deadline);
+        runtime.set_interrupt_handler(Some(Box::new(move || {
+            let value = deadline.load(Ordering::Relaxed);
+            value != 0 && now_millis() >= value
+        })));
+    }
 
     // 空清单 + 空白名单：探测阶段不允许任何出网
     let manifest = PluginManifest {
@@ -594,7 +760,16 @@ pub fn probe(source: &str, limits: HostLimits, transport: Arc<dyn HttpTransport>
         .map_err(|err| CoreError::new(ErrorCode::PluginRuntimeError, format!("创建上下文失败：{err}")))?;
 
     context.with(|ctx| -> Fallible<()> {
-        install_host_functions(&ctx, &manifest, transport, Arc::new(super::credentials::MemoryCredentialStore::new()), std::path::PathBuf::new())?;
+        // 探测不记台账：探测期的白名单为空，任何请求都会先被拒（也正因为如此，
+        // 探测到的域名不算「插件真的访问过」，不该进 TOFU 候选）
+        install_host_functions(
+            &ctx,
+            &manifest,
+            transport,
+            Arc::new(super::credentials::MemoryCredentialStore::new()),
+            std::path::PathBuf::new(),
+            None,
+        )?;
         ctx.eval::<(), _>(BOOTSTRAP).map_err(|err| describe_js_error(&err, "bootstrap 失败"))?;
         ctx.eval::<(), _>(source.as_bytes())
             .map_err(|err| eval_failure(&ctx, &err, "模块加载失败（顶层代码执行出错）"))?;
@@ -620,7 +795,36 @@ pub fn probe(source: &str, limits: HostLimits, transport: Arc<dyn HttpTransport>
     })?;
 
     let capabilities = collect_capabilities(&context)?;
-    Ok(ModuleProbe { metadata, capabilities })
+    let variables = collect_user_variables(&context)?;
+    Ok(ModuleProbe { metadata, variables, capabilities })
+}
+
+/// 读 `module.exports.userVariables`（MusicFree 风格的**变量声明**数组）。
+///
+/// 声明形如 `[{key, label?, required?, secret?}]`：插件靠这些键名从
+/// `env.getUserVariables()` 取值，因此它们就是我们这边要展示给用户填的凭据字段。
+/// 只接受有 `key` 的条目（MusicFree 也是这么过滤的），其它字段缺失时给合理默认值。
+fn collect_user_variables(context: &Context) -> Fallible<Vec<super::manifest::CredentialField>> {
+    context.with(|ctx| {
+        let json: String = ctx
+            .eval(
+                r#"(function(){try{
+                    var list=(globalThis.module&&globalThis.module.exports&&globalThis.module.exports.userVariables)||[];
+                    if(!Array.isArray(list))return '[]';
+                    return JSON.stringify(list.map(function(item){
+                        item=item||{};
+                        return {
+                            key:String(item.key||''),
+                            label:String(item.label||item.name||item.key||''),
+                            required:item.required===true,
+                            secret:item.secret===true
+                        };
+                    }).filter(function(item){return item.key.length>0}));
+                }catch(e){return '[]'}})()"#,
+            )
+            .map_err(|err| describe_js_error(&err, "读取 userVariables 失败"))?;
+        Ok(serde_json::from_str(&json).unwrap_or_default())
+    })
 }
 /// 让 JS 侧收集插件导出的函数并映射成能力列表。
 ///
@@ -726,147 +930,12 @@ fn now_millis() -> u64 {
         .unwrap_or_default()
 }
 
-/// bootstrap：把原始宿主入口包装成插件友好的 API，然后**删除原始入口**。
-const BOOTSTRAP: &str = r#"
-(function () {
-    const hostFetch = globalThis.__hostFetch;
+/// 沙箱 JS：bootstrap（宿主能力封装 + `__invoke`）与 compat（CommonJS + 固定模块清单）。
+///
+/// 分成两个文件是为了各守一个职责；它们由 `include_str!` 编进二进制，执行顺序即拼接顺序。
+const BOOTSTRAP: &str = concat!(
+    include_str!("sandbox/bootstrap.js"),
+    "\n",
+    include_str!("sandbox/compat.js"),
+);
 
-    // ---- CommonJS 兼容（最小集）----
-    // 现实中的社区插件（MusicFree / LX 风格）是 CommonJS 模块，需要 module/exports/require。
-    // 这里**不做任意模块解析**：只内置极少数纯 JS 模块，其余 require 立即抛出可执行的错误，
-    // 而不是让插件在深处因为 undefined 而莫名其妙地失败。
-    globalThis.module = { exports: {} };
-    globalThis.exports = globalThis.module.exports;
-
-    // he：HTML 实体解码（社区插件用它处理标题里的 &amp; 之类）
-    const he = {
-        decode(text) {
-            return String(text).replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, entity) => {
-                if (entity[0] === '#') {
-                    const code = entity[1] === 'x' || entity[1] === 'X'
-                        ? parseInt(entity.slice(2), 16)
-                        : parseInt(entity.slice(1), 10);
-                    return Number.isFinite(code) ? String.fromCodePoint(code) : match;
-                }
-                const named = {amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' '};
-                return Object.prototype.hasOwnProperty.call(named, entity) ? named[entity] : match;
-            });
-        },
-    };
-
-    globalThis.require = function (name) {
-        if (name === 'he') { return he; }
-        // 关键：把可执行的说明放进槽位。QuickJS 的异常文本穿不过 rquickjs 的 Display，
-        // 只抛 Error 的话宿主只能看到 "Exception generated by QuickJS"，用户无从下手。
-        globalThis.__gentlyLoadError =
-            '模块 ' + name + ' 不可用：兼容模式只内置极少数模块（he）；使用 axios / crypto-js / dayjs '
-            + '等依赖的插件需要移植为单文件 ABI（顶层函数 + 文件头 @hosts 注释）';
-        throw new Error('GENTLY_MODULE_UNAVAILABLE: ' + name);
-    };
-    const hostLog = globalThis.__hostLog;
-    const hostStorageGet = globalThis.__hostStorageGet;
-    const hostStorageSet = globalThis.__hostStorageSet;
-    const hostStorageDelete = globalThis.__hostStorageDelete;
-    const hostCredentialGet = globalThis.__hostCredentialGet;
-
-    const flat = (args) => args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
-
-    globalThis.console = {
-        log: (...a) => hostLog('info', flat(a)),
-        info: (...a) => hostLog('info', flat(a)),
-        warn: (...a) => hostLog('warn', flat(a)),
-        error: (...a) => hostLog('error', flat(a)),
-    };
-
-    // fetch 是同步宿主调用，但对外暴露为 Promise（作者可以自由使用 await）
-    globalThis.fetch = function (url, options) {
-        const res = JSON.parse(hostFetch(String(url), JSON.stringify(options || {})));
-        return Promise.resolve({
-            ok: res.status >= 200 && res.status < 300,
-            status: res.status,
-            headers: res.headers || [],
-            text: () => Promise.resolve(res.body),
-            json: () => Promise.resolve(JSON.parse(res.body)),
-        });
-    };
-
-    globalThis.storage = {
-        get(key) {
-            const raw = hostStorageGet(String(key));
-            return raw === null || raw === undefined ? undefined : JSON.parse(raw);
-        },
-        set(key, value) {
-            hostStorageSet(String(key), JSON.stringify(value === undefined ? null : value));
-        },
-        delete(key) {
-            hostStorageDelete(String(key));
-        },
-    };
-
-    globalThis.credentials = {
-        get(key) {
-            const value = hostCredentialGet(String(key));
-            return value === null || value === undefined ? undefined : value;
-        },
-    };
-
-    // 统一入口：核心只通过它调用插件（能力缺失在这里就被挡住）。
-    // 结果写进全局槽位，宿主排空微任务队列后读取——这样插件可以自由地写 async 函数。
-    // 收集插件导出的函数：顶层 const/let 声明不在 globalThis 上，只有回到 JS 里
-    // 用 eval(name) 才能看到（宿主据此做能力探测）。
-    globalThis.__collect = function () {
-        const names = ['search', 'getMediaSource', 'getTrackInfo', 'getAlbumInfo',
-                       'getPlaylistInfo', 'getLyric', 'getTopLists', 'getTopList', 'getRecommend'];
-        const out = {};
-        const exported = (globalThis.module && globalThis.module.exports) || {};
-        for (let i = 0; i < names.length; i++) {
-            let fn;
-            try { fn = eval(names[i]); } catch (err) { fn = undefined; }
-            // CommonJS 风格：函数挂在 module.exports 上（单文件 ABI 则是顶层声明）
-            if (typeof fn !== 'function' && typeof exported[names[i]] === 'function') {
-                fn = exported[names[i]];
-            }
-            if (typeof fn === 'function') { out[names[i]] = fn; }
-        }
-        globalThis.__plugin_exports = out;
-        return Object.keys(out);
-    };
-
-    globalThis.__invoke = function (name, argsJson) {
-        const exports = globalThis.__plugin_exports || {};
-        const fn = exports[name];
-        if (typeof fn !== 'function') {
-            globalThis.__gentlyError = 'GENTLY_CAPABILITY_MISSING: ' + name;
-            return;
-        }
-        let args;
-        try {
-            args = JSON.parse(argsJson || '[]');
-        } catch (err) {
-            globalThis.__gentlyError = 'GENTLY_PLUGIN_ERROR: 调用参数不是合法 JSON';
-            return;
-        }
-        const fail = (err) => {
-            globalThis.__gentlyError = 'GENTLY_PLUGIN_ERROR: ' + (err && err.message ? err.message : String(err));
-        };
-        try {
-            Promise.resolve(fn.apply(null, args)).then(
-                (value) => {
-                    globalThis.__gentlyResult = JSON.stringify(value === undefined ? null : value);
-                },
-                fail
-            );
-        } catch (err) {
-            fail(err);
-        }
-    };
-
-    // 抹掉原始入口：插件只能用上面这些受控封装
-    delete globalThis.__hostFetch;
-    delete globalThis.__hostLog;
-    delete globalThis.__hostStorageGet;
-    delete globalThis.__hostStorageSet;
-    delete globalThis.__hostStorageDelete;
-    delete globalThis.__hostCredentialGet;
-})();
-"#;

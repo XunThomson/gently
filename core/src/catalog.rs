@@ -3,7 +3,7 @@
 //! # 为什么是流式
 //!
 //! 社区插件质量参差，一个慢源不应该拖死整页：`catalog.search` **立即返回 `searchId`**，
-//! 每个源返回时推一条 `catalog.search.partial`，全部结束后推 `catalog.search.done`
+//! 每个源返回时推一条 `catalog:search:partial`，全部结束后推 `catalog:search:done`
 //! （含跨源合并结果）。合并**只在核心完成**（单一职责），前端只负责渲染。
 //!
 //! # 为什么并发
@@ -257,6 +257,7 @@ pub fn cancel(ctx: &CoreContext, search_id: &str) -> Fallible<()> {
 /// 把插件返回的任意 JSON 归一化成契约里的 `Track`。
 ///
 /// 规则：`source` 强制为插件 id；`id` 为 `source:rawId`；缺 `title` 的条目丢弃。
+/// 列表形状交给 `plugin::list_items`（兼容 MusicFree 的 `{isEnd, data}` / `{isEnd, musicList}`）。
 fn normalize_tracks(source: &str, raw: &str, limit: usize, dropped: &mut usize) -> Vec<Value> {
     let parsed: Value = match serde_json::from_str(raw) {
         Ok(value) => value,
@@ -266,20 +267,10 @@ fn normalize_tracks(source: &str, raw: &str, limit: usize, dropped: &mut usize) 
         }
     };
 
-    let array = match parsed {
-        Value::Array(items) => items,
-        // 也接受 `{items: [...]}`：社区插件两种写法都常见
-        Value::Object(ref map) => match map.get("items").and_then(|value| value.as_array()) {
-            Some(items) => items.clone(),
-            None => {
-                *dropped += 1;
-                return Vec::new();
-            }
-        },
-        _ => {
-            *dropped += 1;
-            return Vec::new();
-        }
+    let Some(array) = crate::plugin::list_items(&parsed) else {
+        // 没有列表（形状不认识，或确实是空对象）→ 丢弃并计数，由 UI 体现「该源没结果」
+        *dropped += 1;
+        return Vec::new();
     };
 
     array
@@ -289,7 +280,7 @@ fn normalize_tracks(source: &str, raw: &str, limit: usize, dropped: &mut usize) 
         .collect()
 }
 
-fn normalize_track(source: &str, item: &Value, dropped: &mut usize) -> Option<Value> {
+pub(crate) fn normalize_track(source: &str, item: &Value, dropped: &mut usize) -> Option<Value> {
     let object = match item.as_object() {
         Some(object) => object,
         None => {
@@ -311,11 +302,7 @@ fn normalize_track(source: &str, item: &Value, dropped: &mut usize) -> Option<Va
         .or_else(|| object.get("id").and_then(|v| v.as_i64()).map(|n| n.to_string()))
         .unwrap_or_else(|| title.to_string());
 
-    let duration_sec = object
-        .get("durationSec")
-        .and_then(|v| v.as_u64())
-        .or_else(|| object.get("duration").and_then(|v| v.as_str()).and_then(parse_mmss))
-        .unwrap_or(0);
+    let duration_sec = read_duration_sec(object);
 
     let tags: Vec<String> = object
         .get("tags")
@@ -323,6 +310,16 @@ fn normalize_track(source: &str, item: &Value, dropped: &mut usize) -> Option<Va
         .map(|items| {
             items.iter().filter_map(|value| value.as_str()).map(str::to_string).collect::<Vec<_>>()
         })
+        .unwrap_or_default();
+
+    // 封面：插件给的字段名不统一（MusicFree 是 `artwork`，自有 ABI 是 `cover`，
+    // HTML 解析出来的常见 `coverImg` / `pic` / `img`）。**取第一个非空值**，
+    // 认不出来就留空串——前端会退回渐变占位，不会出现半个破图。
+    let artwork = ["artwork", "cover", "coverImg", "pic", "img", "image"]
+        .iter()
+        .find_map(|key| object.get(*key).and_then(|value| value.as_str()))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
         .unwrap_or_default();
 
     let mut track = json!({
@@ -334,6 +331,8 @@ fn normalize_track(source: &str, item: &Value, dropped: &mut usize) -> Option<Va
         "duration": format_mmss(duration_sec),
         "durationSec": duration_sec,
         "source": source,
+        // 封面图地址（可为空）；`gradient` 仍是「没有封面时」的占位
+        "artwork": artwork,
         "gradient": object.get("gradient").and_then(|v| v.as_str()).unwrap_or(""),
         "tags": tags,
     });
@@ -341,6 +340,31 @@ fn normalize_track(source: &str, item: &Value, dropped: &mut usize) -> Option<Va
         track["albumId"] = json!(album_id);
     }
     Some(track)
+}
+
+/// 时长（秒）。三种写法都认，因为自有 ABI 与 MusicFree 生态不一致：
+/// - 自有 ABI：`durationSec`（数字）或 `duration` 写成 `"3:05"`；
+/// - MusicFree：`duration` 是**数字**，单位秒（`IMusicItem.duration`）。
+///
+/// 数字字符串（HTML 解析常见，如 `"226"`）按秒处理——秒级是这个生态里唯一的约定；
+/// 认不出来就返回 0（宁可显示 0:00，也不猜一个错的时长）。
+fn read_duration_sec(object: &serde_json::Map<String, Value>) -> u64 {
+    object
+        .get("durationSec")
+        .and_then(seconds_of)
+        .or_else(|| object.get("duration").and_then(seconds_of))
+        .unwrap_or(0)
+}
+
+fn seconds_of(value: &Value) -> Option<u64> {
+    if let Some(number) = value.as_f64() {
+        return Some(if number > 0.0 { number as u64 } else { 0 });
+    }
+    let text = value.as_str()?.trim();
+    if text.contains(':') {
+        return parse_mmss(text);
+    }
+    text.parse::<u64>().ok()
 }
 
 fn parse_mmss(text: &str) -> Option<u64> {

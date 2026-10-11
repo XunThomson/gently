@@ -20,12 +20,31 @@ serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+# 日志按天滚动落盘到 <data>/logs/；保留策略（7 天）由 core 侧的启动清理负责
+tracing-appender = "0.2"
 # bundled：把 SQLite 源码编进二进制，用户机器与 CI 都不需要预装 SQLite（ADR-0004）
 # 版本取本机 registry 已缓存的 0.32.1（首次构建无需下载 SQLite 源码）；升级版本是独立动作。
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 # 插件来源校验和（更新前后比对，不用于安全验签）：0.10 线为成熟版本，本机 registry 已缓存
 sha2 = "0.10.9"
+# 兼容插件的 crypto-js 子集需要 MD5（B 站 WBI 签名）；与 sha2 同族（RustCrypto + digest 0.10），
+# 因此宿主侧只需要一份 `Digest` 用法。**不**为了兼容模式引入整包密码学库。
+md-5 = "0.10.6"
 # 插件沙箱与出网：都是「本机自带、无系统依赖」的选择（ADR-0004 同款取舍）
 # 执行模型是同步的（fetch 阻塞 + 手动排空微任务队列），因此不需要 async 特性
 rquickjs = "0.7.0"
 ureq = { version = "2.12.1", default-features = false, features = ["tls", "gzip"] }
+# 本地扫描：读音频标签与时长（mp3/flac/ogg/mp4/wav）+ 目录遍历。
+# lofty 更专注元数据，但本机 registry 没有缓存；symphonia 与 walkdir 已缓存（离线可构建），
+# 且覆盖我们需要的全部格式。
+symphonia = { version = "0.5.5", default-features = false, features = ["mp3", "flac", "ogg", "vorbis", "isomp4", "aac", "wav", "pcm"] }
+walkdir = "2.5.0"
+# 插件压缩包导入（`ImportSource{kind:'archive'}`）：只开 deflate（zip 的其它压缩后端
+# 不在本机 registry 缓存里，也没必要为「解压一个插件包」引入 zstd/bzip2/aes）。
+zip = { version = "0.6.6", default-features = false, features = ["deflate"] }
+# 系统凭据库（Windows Credential Manager）：只用 CredRead/CredWrite/CredDelete/CredEnumerate
+# 四个调用。`keyring` crate 不在本机缓存里，而直接调 Win32 反而更可控（见 plugin/keyring.rs）。
+windows-sys = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_Security_Credentials",
+] }

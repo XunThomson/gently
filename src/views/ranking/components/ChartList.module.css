@@ -7,15 +7,14 @@
     position: relative;
     display: grid;
     grid-template-columns:
-        var(--chart-rank-width)
-        var(--chart-cover-width)
+        var(--top-list-rank-width)
+        var(--top-list-cover-width)
         1fr
-        150px
-        var(--chart-heat-width)
-        var(--chart-duration-width);
+        180px
+        var(--top-list-duration-width);
     align-items: center;
     gap: var(--space-3);
-    padding: var(--chart-row-padding-y) var(--chart-row-padding-x);
+    padding: var(--top-list-row-padding-y) var(--top-list-row-padding-x);
     border-bottom: 1px solid var(--border-subtle);
     cursor: pointer;
     transition: background-color var(--motion-fast);
@@ -26,7 +25,7 @@
 }
 
 .row:hover {
-    background: var(--chart-hover-bg);
+    background: var(--top-list-hover-bg);
 }
 
 .rank {
@@ -39,25 +38,25 @@
 }
 
 .row:nth-child(1) .rank {
-    color: var(--chart-rank-first);
+    color: var(--top-list-rank-first);
 }
 
 .row:nth-child(2) .rank {
-    color: var(--chart-rank-second);
+    color: var(--top-list-rank-second);
 }
 
 .row:nth-child(3) .rank {
-    color: var(--chart-rank-third);
+    color: var(--top-list-rank-third);
 }
 
 .cover {
     position: relative;
     display: grid;
     place-items: center;
-    width: var(--chart-cover-width);
-    height: var(--chart-cover-width);
+    width: var(--top-list-cover-width);
+    height: var(--top-list-cover-width);
     flex-shrink: 0;
-    border-radius: var(--chart-cover-radius);
+    border-radius: var(--top-list-cover-radius);
     overflow: hidden;
     color: var(--brand-contrast);
     font-size: var(--font-size-sm);
@@ -101,35 +100,6 @@
     text-overflow: ellipsis;
 }
 
-.heat {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-}
-
-.heatBar {
-    flex: 1;
-    height: var(--chart-heat-bar-height);
-    border-radius: var(--radius-full);
-    background: var(--bg-surface-alt);
-    overflow: hidden;
-}
-
-.heatBar i {
-    display: block;
-    height: 100%;
-    border-radius: var(--radius-full);
-    background: linear-gradient(90deg, var(--brand-hover), var(--brand));
-}
-
-.heatNum {
-    width: 22px;
-    font-size: var(--font-size-xs);
-    color: var(--text-tertiary);
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-}
-
 .duration {
     font-size: var(--font-size-xs);
     color: var(--text-tertiary);
@@ -140,7 +110,7 @@
 /* ---------- 播放中 ---------- */
 
 .playing {
-    background: var(--chart-playing-bg);
+    background: var(--top-list-playing-bg);
 }
 
 .playing .title,
@@ -201,11 +171,10 @@
 @media (max-width: 1080px) {
     .row {
         grid-template-columns:
-            var(--chart-rank-width)
-            var(--chart-cover-width)
+            var(--top-list-rank-width)
+            var(--top-list-cover-width)
             1fr
-            var(--chart-heat-width)
-            var(--chart-duration-width);
+            var(--top-list-duration-width);
     }
 
     .album {
@@ -216,13 +185,9 @@
 @media (max-width: 880px) {
     .row {
         grid-template-columns:
-            var(--chart-rank-width)
-            var(--chart-cover-width)
+            var(--top-list-rank-width)
+            var(--top-list-cover-width)
             1fr
-            var(--chart-duration-width);
-    }
-
-    .heat {
-        display: none;
+            var(--top-list-duration-width);
     }
 }

@@ -19,6 +19,7 @@ import type {
     ImportSource,
     PluginImportPreview,
     PluginImportResult,
+    PluginObservedHosts,
     PluginSummary,
     SystemPathsDto,
     SystemStatusDto,
@@ -97,12 +98,29 @@ export function probeCore(): Promise<CoreResult<SystemStatusDto>> {
  */
 export const corePlugin = {
     list: () => invokeCore<PluginSummary[]>('plugin.list'),
-    /** 只读检查：读取并解析插件，展示权限/凭据/警告，**不落盘** */
-    preview: (from: ImportSource) => invokeCore<PluginImportPreview>('plugin.preview', {from}),
-    /** 落盘安装；consent: true 表示用户已确认权限 */
-    install: (from: ImportSource) => invokeCore<PluginImportResult>('plugin.import', {from, consent: true}),
+    /**
+     * 只读检查：读取并解析插件，展示权限/凭据/警告，**不落盘**。
+     *
+     * `compat: true` 表示用户显式开启兼容模式（ADR-0006）：没有头部元数据的 MusicFree / LX
+     * 插件才可能导入成功——核心会在沙箱里只读执行一次源码，从 `module.exports` 合成清单。
+     */
+    preview: (from: ImportSource, compat = false) =>
+        invokeCore<PluginImportPreview>('plugin.preview', {from, compat}),
+    /** 落盘安装；consent: true 表示用户已确认权限。`compat` 必须与预览时一致（核心从暂存副本重新解析） */
+    install: (from: ImportSource, compat = false) =>
+        invokeCore<PluginImportResult>('plugin.import', {from, consent: true, compat}),
     /** 建立运行时并重新探测能力（安装只落盘，真正可用发生在这里） */
     reload: (id: string) => invokeCore<PluginSummary>('plugin.reload', {id}),
+    /**
+     * 兼容模式收敛（ADR-0006/TOFU）：该插件**实际访问过**的域名。
+     *
+     * 兼容插件没有域名声明，这份观测结果就是把权限收窄成白名单的唯一依据；
+     * 界面必须先把域名摆给用户看，拿到显式同意后再调 `confirmHosts`。
+     */
+    observedHosts: (id: string) => invokeCore<PluginObservedHosts>('plugin.compat.observed', {id}),
+    /** 固化成白名单并关闭兼容模式（**收窄**，不可逆：要恢复兼容模式只能重新导入） */
+    confirmHosts: (id: string, hosts: string[]) =>
+        invokeCore<PluginSummary>('plugin.compat.confirm', {id, hosts, consent: true}),
     setEnabled: (id: string, enabled: boolean) =>
         invokeCore<PluginSummary>('plugin.setEnabled', {id, enabled}),
     /** 回退优先级：数值越小越优先（决定播放候选顺序） */

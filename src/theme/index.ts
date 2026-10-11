@@ -8,6 +8,8 @@ export {
     resolveTheme,
     parseSkin,
     serializeSkin,
+    activeUserSkinId,
+    resolveActivePreset,
     DEFAULT_PRESET_ID,
 } from './presets';
 export type {SkinParseResult} from './presets';

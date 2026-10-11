@@ -89,7 +89,10 @@ export type CoreResult<T> =
 export interface PageQuery {
     /** 1~500，缺省 50 */
     limit?: number;
+    /** 不透明游标：原样回传上一页的 `nextCursor` */
     cursor?: string;
+    /** 文本检索（目前只有本地曲库支持：FTS5 + 中文短词退回 LIKE） */
+    query?: string;
 }
 
 export interface Page<T> {
@@ -109,8 +112,12 @@ export interface TrackRef {
 export interface Lyrics {
     format: 'lrc' | 'plain';
     content: string;
+    /** 译文原文（与 `content` 同格式）；前端按时间戳对齐到行上 */
     translated?: string;
-    /** 核心已解析时直接下发，省去前端解析 */
+    /**
+     * 可选：核心若已解析成行就直接用它，前端跳过解析。
+     * 当前核心**只交原文**（解析是展示问题），因此实际路径是 `utils/lyrics.ts`。
+     */
     lines?: LyricLine[];
 }
 
@@ -203,6 +210,12 @@ export interface PluginSummary extends PluginInfo {
     sha256?: string;
     /** 回退优先级：数值越小越优先，决定 playback.resolve 的候选顺序 */
     priority: number;
+    /**
+     * 兼容模式插件（MusicFree / LX 生态的 CommonJS 插件，ADR-0006）。
+     * **权限弱于自有 ABI**：可访问任意公网 HTTPS 域名（本机/内网仍拒绝），
+     * 界面必须把它标出来，不能与自有 ABI 插件呈现为同等安全。
+     */
+    compat: boolean;
 }
 
 /** `plugin.import` 的结果：安装后的摘要 + 非致命警告 + 是否覆盖了旧版本 */
@@ -234,12 +247,54 @@ export interface PluginImportPreview {
     replacesExisting: boolean;
     /** 从 URL/压缩包/订阅导入时的校验和 */
     sha256?: string;
+    /**
+     * 兼容模式（ADR-0006）：`true` 时界面必须明示「可访问任意公网域名，权限弱于自有 ABI」。
+     * 来源可能是作者的 `@compat` 标记，也可能是用户在导入时显式开启。
+     */
+    compat: boolean;
 }
 
 export interface PluginCredentialStatus {
     key: string;
+    /** 清单里的展示名（界面用它当输入框标签） */
+    label: string;
+    /** 敏感值：界面掩码显示 */
+    secret: boolean;
     /** 只回「是否已配置」，**永不返回值** */
     present: boolean;
+}
+
+/** `plugin.checkUpdate` 的返回：**只比对，不自动更新** */
+export interface PluginUpdateCheck {
+    current: string;
+    latest: string;
+    /** 版本或校验和有变化 */
+    changed: boolean;
+    /** 比对来源：`url` 下载新版本比对，`catalog` 比对本地缓存的订阅索引 */
+    source: 'url' | 'catalog';
+}
+
+/**
+ * 兼容插件**实际访问过**的域名（TOFU 收敛的依据）。
+ *
+ * 观测台账在沙箱放行兼容请求时记录，重启后仍在（`plugins/.hosts/<id>.json`，卸载即清）。
+ * 收敛（`confirmHosts`）之后这些域名进 `hosts` 白名单，插件不再是兼容模式。
+ */
+export interface PluginHostUse {
+    host: string;
+    /** 放行次数（进程内累计） */
+    count: number;
+    firstSeen: number;
+    lastSeen: number;
+}
+
+export interface PluginObservedHosts {
+    pluginId: string;
+    /** `false` 表示该插件已不是兼容模式，没有可收敛的东西 */
+    compat: boolean;
+    /** 当前声明的白名单（收敛后 = 已确认的域名） */
+    whitelist: string[];
+    hosts: PluginHostUse[];
 }
 
 /* ---- 订阅与社区仓库索引（与 Legado 社区仓库规范同构，字段只增不改） ---- */
@@ -277,8 +332,8 @@ export interface Subscription {
     id: string;
     name: string;
     url: string;
-    /** 最近一次成功刷新的时间；从未成功为 undefined */
-    updatedAt?: string;
+    /** 最近一次成功刷新的时间（毫秒时间戳）；从未成功为 undefined */
+    updatedAt?: number;
     count: number;
     /** 最近一次刷新失败的说明（有值时 UI 提示，但保留旧索引可用） */
     error?: string;
@@ -332,6 +387,11 @@ export interface SystemStatusDto {
     dbReady: boolean;
     /** 数据库不可用的原因（`dbReady` 为 false 时存在） */
     dbError?: string;
+    /**
+     * 第三方凭据的落点：`windows-credential-manager`（系统凭据库，重启后仍在）
+     * 或 `memory`（降级：重启后需要重新填写）。界面据此如实说明，而不是一律警告。
+     */
+    credentialsBackend: string;
     counts: SystemCountsDto;
 }
 
@@ -355,8 +415,8 @@ export interface SystemApi {
 
 export interface CatalogApi {
     /**
-     * **流式搜索**：立即返回 searchId，结果经 `catalog.search.partial` 逐源到达，
-     * `catalog.search.done` 给出跨源合并后的最终列表。合并只在核心完成。
+     * **流式搜索**：立即返回 searchId，结果经 `catalog:search:partial` 逐源到达，
+     * `catalog:search:done` 给出跨源合并后的最终列表。合并只在核心完成。
      */
     search(input: {keyword: string; sources?: string[]; limit?: number}): Promise<CoreResult<{searchId: string}>>;
     /** 取消 fan-out（慢源不该拖住用户） */
@@ -375,60 +435,134 @@ export interface CatalogApi {
 export interface LibraryApi {
     favorites: {
         list(query?: PageQuery): Promise<CoreResult<Page<GroupedTrack>>>;
-        /** 本地事务：无需幂等键，重复调用结果一致 */
-        set(input: {ref: TrackRef; favorite: boolean}): Promise<CoreResult<{favorite: boolean}>>;
+        /**
+         * 本地事务：无需幂等键，重复调用结果一致。
+         *
+         * `track` 是**曲目快照**（界面手上有，直接带上）：本机库存快照而不是引用，
+         * 因为插件可能被卸载或改接口——列收藏不该依赖插件在线。缺快照时核心退化成
+         * 占位曲目（标题 = rawId），下次带快照写入会刷新。
+         */
+        set(input: {ref: TrackRef; favorite: boolean; track?: Track}): Promise<CoreResult<{favorite: boolean}>>;
     };
     playlists: {
         list(): Promise<CoreResult<Playlist[]>>;
-        /** 带 id 为更新，缺省为新建 */
-        save(input: {id?: string; name: string; trackRefs: TrackRef[]}): Promise<CoreResult<Playlist>>;
+        /**
+         * 带 id 为更新（曲目**整体覆盖**，顺序 = `trackRefs` 顺序），缺省为新建。
+         * `tracks` 与 `trackRefs` **一一对应**（可选）：缺的条目退化成占位曲目。
+         */
+        save(input: {id?: string; name: string; trackRefs: TrackRef[]; tracks?: Track[]})
+            : Promise<CoreResult<Playlist>>;
         delete(input: {id: string}): Promise<CoreResult<void>>;
     };
     history: {
         list(query?: PageQuery): Promise<CoreResult<Page<RecentTrack>>>;
-        push(input: {ref: TrackRef; playedSec: number; completed: boolean}): Promise<CoreResult<void>>;
+        /** 每次播放留一行；`track` 同 `favorites.set` 的快照语义 */
+        push(input: {ref: TrackRef; playedSec: number; completed: boolean; track?: Track})
+            : Promise<CoreResult<void>>;
     };
     local: {
-        /** 扫描本地目录；进度通过 `library.scan.progress` 事件推送 */
-        scan(input: {dirs: string[]; recursive?: boolean})
-            : Promise<CoreResult<{added: number; updated: number; removed: number}>>;
+        /**
+         * 扫描本地目录并入库；进度通过 `library:scan:progress` 事件推送。
+         *
+         * 语义：**大小没变的文件不重读标签**（`skipped`）；只清理**本次扫描范围内**消失的条目
+         * （非递归扫描不会误删子目录）；读不到标签的文件照样入库（标题退回文件名）。
+         */
+        scan(input: {dirs: string[]; recursive?: boolean}): Promise<CoreResult<LocalScanResult>>;
         list(query?: PageQuery): Promise<CoreResult<Page<LocalTrack>>>;
+        /**
+         * 从曲库移除；`deleteFile: true` 才真的删磁盘文件，且只接受音频扩展名。
+         * **界面必须走二次确认**（删文件不可逆）。
+         */
         remove(input: {id: string; deleteFile?: boolean}): Promise<CoreResult<void>>;
     };
+}
+
+/** `library.local.scan` 的结果：这一次扫描到底做了什么（界面如实说明，别只说「完成」） */
+export interface LocalScanResult {
+    /** 扫描到的音频文件总数 */
+    scanned: number;
+    /** 新入库 */
+    added: number;
+    /** 重新读了标签并更新 */
+    updated: number;
+    /** 本次扫描范围内已消失、被移出曲库 */
+    removed: number;
+    /** 大小没变、跳过重读（等价于「没动」） */
+    skipped: number;
+    /** 读不到标签（照样入库，标题退回文件名） */
+    unreadable: number;
 }
 
 export interface RecommendApi {
     home(input?: {limit?: number}): Promise<CoreResult<RecommendationBundle>>;
     similar(input: {seed: TrackRef | {albumId: string}; limit?: number}): Promise<CoreResult<RecommendedTrack[]>>;
+    /**
+     * 反馈（append-only 落库，下次打分时消费）：`like` 等价一次收藏、`skip`（进度 < 0.5）扣分、
+     * `complete`（进度 ≥ 0.9）加分、`play` 不额外加权（历史里已经有它）。
+     *
+     * `track` 是曲目快照：标签/歌手是打分的依据，缺了核心会从本机库反查（收藏 → 历史 → 本地曲库）。
+     */
     feedback(input: {
         ref: TrackRef;
         action: 'play' | 'skip' | 'like' | 'unlike' | 'complete';
         /** 播放进度 0~1：区分「跳过」与「没听完」 */
         progress?: number;
+        track?: Track;
     }): Promise<CoreResult<void>>;
 }
 
 export interface PlaybackApi {
-    /** 按插件优先级依次回退；全部失败返回 `data: null`，前端退回模拟时钟 */
+    /**
+     * 按候选顺序回退；全部失败返回 `data: null`，前端退回模拟时钟。
+     *
+     * **本地曲目（`source === 'local'`）也走这里**：核心把文件发布到同一条回环代理，
+     * 因此前端只有一条播放路径（Range/拖动进度、无需 Blob）。
+     */
     resolve(input: {ref: TrackRef; quality: TrackQuality; preferredSources?: string[]})
         : Promise<CoreResult<ResolvedMedia | null>>;
-    report(input: {ref: TrackRef; source: string; quality: TrackQuality; playedSec: number; completed: boolean})
-        : Promise<CoreResult<void>>;
+    /**
+     * 上报一次播放（写播放历史，「最近播放」与推荐画像的共同数据源）。
+     * `track` 是曲目快照（同 `library.history.push`）：带上它，历史在插件被卸载后也能列出。
+     */
+    report(input: {
+        ref: TrackRef;
+        source: string;
+        quality: TrackQuality;
+        playedSec: number;
+        completed: boolean;
+        track?: Track;
+    }): Promise<CoreResult<void>>;
 }
 
 export interface PluginApi {
     list(): Promise<CoreResult<PluginSummary[]>>;
-    /** 安装前展示清单、权限与凭据需求，由用户显式同意 */
-    preview(input: {from: ImportSource}): Promise<CoreResult<PluginImportPreview>>;
-    /** `consent: true` 表示用户已确认权限；核心只在此时落盘 */
-    import(input: {from: ImportSource; consent: true}): Promise<CoreResult<PluginImportResult>>;
+    /**
+     * 安装前展示清单、权限与凭据需求，由用户显式同意。
+     * `compat: true` = 用户显式开启兼容模式（没有头部元数据的 MusicFree / LX 插件靠它才能导入）。
+     */
+    preview(input: {from: ImportSource; compat?: boolean}): Promise<CoreResult<PluginImportPreview>>;
+    /** `consent: true` 表示用户已确认权限；核心只在此时落盘。`compat` 必须与预览时一致 */
+    import(input: {from: ImportSource; consent: true; compat?: boolean})
+        : Promise<CoreResult<PluginImportResult>>;
     remove(input: {id: string; deleteFiles?: boolean}): Promise<CoreResult<void>>;
     setEnabled(input: {id: string; enabled: boolean}): Promise<CoreResult<PluginSummary>>;
     /** 数值越小越优先；决定 `playback.resolve` 的回退顺序 */
     setPriority(input: {id: string; priority: number}): Promise<CoreResult<void>>;
     /** 与来源比对版本/校验和；**不自动更新**，本地目录导入的需要用户自己更新文件 */
-    checkUpdate(input: {id: string}): Promise<CoreResult<{current: string; latest: string} | null>>;
-    reload(input: {id: string}): Promise<CoreResult<void>>;
+    checkUpdate(input: {id: string}): Promise<CoreResult<PluginUpdateCheck | null>>;
+    /** 重建运行时并重新探测能力（安装只落盘，真正可用发生在这里） */
+    reload(input: {id: string}): Promise<CoreResult<PluginSummary>>;
+    /**
+     * 兼容模式收敛（ADR-0006/TOFU）：该插件实际访问过的域名。
+     * 非兼容插件返回 `compat: false` + 空列表，不报错。
+     */
+    compatObserved(input: {id: string}): Promise<CoreResult<PluginObservedHosts>>;
+    /**
+     * 把观测到的域名固化成 `hosts` 白名单并**关闭兼容模式**（收窄，方向不可逆：
+     * 要恢复兼容模式只能重新导入）。`hosts` 只能来自 `compatObserved` 的结果。
+     */
+    compatConfirm(input: {id: string; hosts: string[]; consent: true})
+        : Promise<CoreResult<PluginSummary>>;
     config: {
         get(input: {id: string}): Promise<CoreResult<{values: Record<string, unknown>; revision: number}>>;
         /** revision 不匹配返回 `common.conflict` */
@@ -436,9 +570,17 @@ export interface PluginApi {
             : Promise<CoreResult<{revision: number}>>;
     };
     credentials: {
-        /** 写入 OS keyring；第三方音乐账号只在这里，不经过我方任何服务器 */
+        /**
+         * 只接受插件**清单声明过**的键（清单就是用户同意时看到的那份）；
+         * 第三方音乐账号只在这里，不经过我方任何服务器。
+         *
+         * 落点当前是**进程内存储**（真 OS keyring 需要一个不在离线 registry 里的依赖），
+         * 因此重启后需要重新填写——这是已知缺口，不是静默行为。
+         */
         set(input: {id: string; key: string; value: string}): Promise<CoreResult<void>>;
+        /** 缺省清空该插件的全部凭据 */
         clear(input: {id: string; key?: string}): Promise<CoreResult<void>>;
+        /** 只回「是否已配置」，**永不返回值** */
         status(input: {id: string}): Promise<CoreResult<PluginCredentialStatus[]>>;
     };
     /** 订阅源：指向社区仓库的 `repository.json`（不依赖我们的服务器） */
@@ -457,11 +599,21 @@ export interface PluginApi {
 }
 
 export interface DownloadApi {
-    list(): Promise<CoreResult<DownloadTask[]>>;
-    create(input: {ref: TrackRef; quality: TrackQuality; dir?: string}): Promise<CoreResult<DownloadTask>>;
+    list(input?: {status?: DownloadStatus}): Promise<CoreResult<DownloadTask[]>>;
+    /**
+     * 建任务后**立刻返回**（状态 `pending`），真正的下载在后台线程，进度靠
+     * `download:progress` / `download:done` / `download:error` 事件推送。
+     * `track` 是曲目快照（列表在插件被卸载后也能显示歌名）；`dir` 必须是已存在的目录。
+     */
+    create(input: {ref: TrackRef; quality?: TrackQuality; dir?: string; track?: Track})
+        : Promise<CoreResult<DownloadTask>>;
+    /** 停在下一次分块处，进度落库（半成品 `<file>.part` 保留给续传） */
     pause(input: {id: string}): Promise<CoreResult<DownloadTask>>;
+    /** 从已收字节数续传；上游不支持 Range 时会从头开始 */
     resume(input: {id: string}): Promise<CoreResult<DownloadTask>>;
+    /** 缺省只移除**任务记录**（已完成的文件是用户的资产）；`deleteFile` 才连文件一起删 */
     remove(input: {id: string; deleteFile?: boolean}): Promise<CoreResult<void>>;
+    /** 清理已完成/失败的记录（不删文件） */
     clearFinished(): Promise<CoreResult<{removed: number}>>;
 }
 
@@ -494,20 +646,24 @@ export interface LocalCore {
 /** 核心 → 前端推送（替代原 WebSocket 实时通道） */
 export interface CoreEventMap {
     /** 逐源到达的搜索结果（原始、未合并），用于流式 UI 与分源视图 */
-    'catalog.search.partial': {searchId: string; source: string; tracks: Track[]; failed?: CoreError};
+    'catalog:search:partial': {searchId: string; source: string; tracks: Track[]; failed?: CoreError};
     /** 搜索收敛：跨源合并后的候选列表 */
-    'catalog.search.done': {
+    'catalog:search:done': {
         searchId: string;
         items: GroupedTrack[];
         sources: string[];
         failedSources: string[];
     };
-    'download.progress': DownloadTask;
-    'download.done': DownloadTask;
-    'download.error': DownloadTask;
-    'plugin.health': PluginInfo;
-    'plugin.import.progress': {phase: 'fetch' | 'extract' | 'validate' | 'install'; percent?: number};
-    'library.scan.progress': {dir: string; found: number; percent?: number};
+    /**
+     * 下载事件：**不是**整个任务对象（进度只需要几个字段，任务本身用 `download.list` 读）。
+     * 失败事件带 `code`——界面按码走 i18n（`src/i18n/errors.ts`），不解析 `message`。
+     */
+    'download:progress': {id: string; received: number; total?: number; speed?: number};
+    'download:done': {id: string; path: string; bytes: number};
+    'download:error': {id: string; code: CoreErrorCode; message: string};
+    'plugin:health': PluginInfo;
+    'plugin:import:progress': {phase: 'fetch' | 'extract' | 'validate' | 'install'; percent?: number};
+    'library:scan:progress': {dir: string; found: number; percent?: number};
 }
 
 export type CoreEventName = keyof CoreEventMap;

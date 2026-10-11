@@ -362,20 +362,26 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--card-play-inset': px(c.card.playInset),
         '--card-hover-lift': c.card.hoverLift,
 
-        /* ---------- 组件：榜单 ---------- */
-        '--chart-rank-width': px(c.chart.rankColumnWidth),
-        '--chart-cover-width': px(c.chart.coverColumnWidth),
-        '--chart-cover-radius': c.chart.coverRadius,
-        '--chart-heat-width': px(c.chart.heatColumnWidth),
-        '--chart-duration-width': px(c.chart.durationColumnWidth),
-        '--chart-row-padding-y': px(c.chart.rowPaddingY),
-        '--chart-row-padding-x': px(c.chart.rowPaddingX),
-        '--chart-heat-bar-height': px(c.chart.heatBarHeight),
-        '--chart-hover-bg': t(c.chart.hoverBg),
-        '--chart-playing-bg': t(c.chart.playingBg),
-        '--chart-rank-first': t(c.chart.rankFirstColor),
-        '--chart-rank-second': t(c.chart.rankSecondColor),
-        '--chart-rank-third': t(c.chart.rankThirdColor),
+        /* ---------- 组件：榜单/分类列表 ---------- */
+        '--top-list-rank-width': px(c.topList.rankColumnWidth),
+        '--top-list-cover-width': px(c.topList.coverColumnWidth),
+        '--top-list-cover-radius': c.topList.coverRadius,
+        '--top-list-duration-width': px(c.topList.durationColumnWidth),
+        '--top-list-row-padding-y': px(c.topList.rowPaddingY),
+        '--top-list-row-padding-x': px(c.topList.rowPaddingX),
+        '--top-list-hover-bg': t(c.topList.hoverBg),
+        '--top-list-playing-bg': t(c.topList.playingBg),
+        '--top-list-rank-first': t(c.topList.rankFirstColor),
+        '--top-list-rank-second': t(c.topList.rankSecondColor),
+        '--top-list-rank-third': t(c.topList.rankThirdColor),
+
+        /* ---------- 组件：专辑/歌单详情 ---------- */
+        '--collection-cover-size': px(c.collection.coverSize),
+
+        /* ---------- 组件：业务列表（表格） ---------- */
+        '--table-cover-size': px(c.table.coverSize),
+        '--table-cover-radius': c.table.coverRadius,
+        '--table-cover-gap': px(c.table.coverGap),
     };
 
     return vars;

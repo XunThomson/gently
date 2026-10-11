@@ -1,7 +1,6 @@
 import {useMemo} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useActions, usePluginState, useSelect} from '../../../store';
-import {catalogService} from '../../../services';
 import {IconChevronDown} from '../icon';
 import {useClickOutside} from '../../../hooks/useClickOutside';
 import {useState, useRef} from 'react';
@@ -34,11 +33,15 @@ export function SourceFilter({className}: SourceFilterProps) {
     const rootRef = useRef<HTMLDivElement>(null);
     useClickOutside(rootRef, () => setOpen(false), open);
 
-    /* 只有「已实现且已启用」的音源参与聚合与筛选 */
-    const sources = useMemo(() => {
-        const active = catalogService.listActiveSources();
-        return active.filter((source) => pluginList.some((p) => p.id === source.id && p.enabled));
-    }, [pluginList]);
+    /* 音源清单以 **store 的插件列表**为准：桌面端来自核心（`plugin.list`），
+       浏览器预览来自内置模拟源——只有这一个列表，不再与 mock 注册表各说各话 */
+    const sources = useMemo(
+        () =>
+            pluginList
+                .filter((plugin) => plugin.enabled)
+                .map((plugin) => ({id: plugin.id, name: plugin.name, enabled: plugin.enabled})),
+        [pluginList],
+    );
 
     /* 分源模式必须锁定一个音源；当前选中项失效时回落到「全部」 */
     const effectiveValue = useMemo(() => {

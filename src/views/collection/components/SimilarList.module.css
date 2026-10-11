@@ -1,0 +1,87 @@
+/* 相似推荐（详情页底部）：一行一首，比主列表轻 */
+
+.list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.row {
+    display: grid;
+    grid-template-columns: var(--top-list-cover-width) 1fr auto auto;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    font-family: inherit;
+    text-align: left;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background-color var(--motion-fast);
+}
+
+.row:hover {
+    background: var(--bg-hover);
+}
+
+.playing {
+    background: var(--top-list-playing-bg);
+}
+
+.playing .title {
+    color: var(--brand);
+}
+
+.cover {
+    display: grid;
+    place-items: center;
+    width: var(--top-list-cover-width);
+    height: var(--top-list-cover-width);
+    border-radius: var(--top-list-cover-radius);
+    color: var(--brand-contrast);
+    font-size: var(--font-size-xs);
+}
+
+.meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.artist {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.reason {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.duration {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 880px) {
+    .reason {
+        display: none;
+    }
+}

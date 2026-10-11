@@ -1,0 +1,61 @@
+/* 榜单/分类树：一组一行，组名在左、条目在右；窄屏自动堆叠 */
+
+.root {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    margin-bottom: var(--space-4);
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+}
+
+.group {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.groupTitle {
+    flex-shrink: 0;
+    width: 56px;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.items {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.item {
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid transparent;
+    border-radius: var(--radius-full);
+    background: var(--bg-surface-alt);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition:
+        color var(--motion-fast),
+        background-color var(--motion-fast),
+        border-color var(--motion-fast);
+}
+
+.item:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+}
+
+/* 选中项：品牌色实心，与未选中项形成明确对比 */
+.active {
+    color: var(--brand-contrast);
+    background: var(--brand);
+    border-color: var(--brand);
+}

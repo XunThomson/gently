@@ -1,18 +1,15 @@
 import type {ColorScheme, ThemeMode, ThemeSkin} from '../theme';
+import type {CoreError, LocalScanResult, TopListGroup} from '../api';
 import type {
-    ChartType,
-    DateSelection,
     DownloadTask,
     LocalTrack,
     LyricLine,
     NowPlaying,
-    Period,
     Playlist,
     PluginInfo,
     RecentTrack,
     RecommendationBundle,
     RepeatMode,
-    SongRow,
     SourceDisplayMode,
     SourceFilterStyle,
     Track,
@@ -50,6 +47,13 @@ export interface UiState {
 
 export interface PlayerState {
     current: NowPlaying | null;
+    /**
+     * 当前曲目的**源侧详情**（`catalog.track`，播放时异步补）。
+     *
+     * 列表里的快照常常缺封面/专辑（搜索结果只有标题歌手）；这里拿到的是源给的完整元数据，
+     * 播放条与歌词页用它渲染封面。为 `null` 表示「源没提供」或「还在路上」——界面继续用快照。
+     */
+    detail: Track | null;
     playing: boolean;
     /** 播放队列（含当前曲目，index 指向当前） */
     queue: Track[];
@@ -79,18 +83,34 @@ export interface PlayerState {
     resolving: boolean;
 }
 
+/**
+ * 榜单/分类切片。
+ *
+ * **结构由源决定**（契约 `catalog.topLists` / `catalog.topList`）：这里只保存
+ * 「源给的分类树 + 当前选中项 + 已加载的页」，不假设「日/周/月」或「热歌/新歌」这种固定枚举。
+ */
 export interface RankingState {
-    chart: ChartType;
-    period: Period;
-    date: DateSelection;
-    weekStart: DateSelection;
-    /** 榜单列表是否展开全部 */
-    expanded: boolean;
-    /** 榜单内搜索关键词 */
-    query: string;
-    /** 当前榜单数据 */
-    rows: SongRow[];
+    /** 当前生效的源 id（`all` 已换算成实际源） */
+    sourceId: string | null;
+    /** 该源的分类树 */
+    groups: TopListGroup[];
+    /** 当前选中的分类条目 id */
+    selectedId: string | null;
+    /** 已加载的曲目（翻页累加） */
+    rows: Track[];
+    /** 源说还有下一页（缺字段不猜） */
+    hasMore: boolean;
+    nextPage?: number;
     loading: boolean;
+    /** 分类树是否已加载过（区分「加载中」与「这个源没有分类」） */
+    loaded: boolean;
+    /**
+     * 源报错时的原始错误（`source.upstream_failed` / `plugin.runtime_error` …）。
+     *
+     * 有它才能把「这个源没有榜单」和「源跑挂了」区分开——界面按码取本地化文案，
+     * 而不是一律显示「没有提供榜单」（那会把用户引到完全错误的方向）。
+     */
+    error: CoreError | null;
 }
 
 export interface DownloadState {
@@ -110,6 +130,14 @@ export interface LibraryState {
     query: string;
     /** 是否已从数据源加载 */
     loaded: boolean;
+    /** 正在扫描本地目录（进度见 `scanProgress`） */
+    scanning: boolean;
+    /** 扫描进度（`library:scan:progress` 事件；扫描结束后清空） */
+    scanProgress: {dir: string; found: number; percent?: number} | null;
+    /** 上一次扫描的统计结果（界面如实说明做了什么） */
+    scanSummary: LocalScanResult | null;
+    /** 上一次扫描的失败原因 */
+    scanError: CoreError | null;
 }
 
 /** 收藏与歌单 */
@@ -144,6 +172,12 @@ export interface RecommendState {
     bundle: RecommendationBundle | null;
     loading: boolean;
     loaded: boolean;
+    /** 源侧推荐（`catalog.recommend`）：当前音源自己给的推荐，与上面的画像推荐并存 */
+    sourceTracks: Track[];
+    /** 源侧推荐来自哪个源（界面显示名字用） */
+    sourceId: string | null;
+    sourceLoading: boolean;
+    sourceLoaded: boolean;
 }
 
 export interface RootState {
@@ -165,7 +199,6 @@ export interface UiActions {
     setThemePreset: (presetId: string) => void;
     setScheme: (scheme: ColorScheme) => void;
     toggleGroup: (key: string) => void;
-    isGroupCollapsed: (key: string) => boolean;
     setSearchQuery: (query: string) => void;
     setSourceDisplay: (mode: SourceDisplayMode) => void;
     setSourceFilterStyle: (style: SourceFilterStyle) => void;
@@ -176,6 +209,8 @@ export interface UiActions {
     /** 安装（导入）一个皮肤 */
     installSkin: (skin: ThemeSkin) => void;
     removeSkin: (skinId: string) => void;
+    /** 从本机核心读取已安装的用户皮肤（浏览器预览是空操作，沿用本地持久化的那份） */
+    loadSkins: () => Promise<void>;
 }
 
 export interface DialogActions {
@@ -190,6 +225,13 @@ export interface DialogActions {
 export interface RecommendActions {
     /** 生成推荐；`force` 为 true 时即使已加载也重新计算 */
     load: (force?: boolean) => Promise<void>;
+    /** 拉当前音源的推荐（`catalog.recommend`）；`force` 为 true 时重新拉一次 */
+    loadSource: (force?: boolean) => Promise<void>;
+    /**
+     * 「不感兴趣」：上报负反馈（`skip` + `progress: 0`，核心只认 < 0.5 的跳过）
+     * 并把它从当前列表里去掉——画像下次打分就会压低这类标签/歌手。
+     */
+    dislike: (track: Track) => void;
 }
 
 export interface PlayerActions {
@@ -227,19 +269,18 @@ export interface PlayerActions {
 }
 
 export interface RankingActions {
-    /** 切换查询条件并重新加载（返回 Promise，便于等待或忽略） */
-    setChart: (chart: ChartType) => Promise<void>;
-    setPeriod: (period: Period) => Promise<void>;
-    setDate: (date: DateSelection) => Promise<void>;
-    toggleExpanded: () => void;
-    setQuery: (query: string) => void;
-    /** 按当前查询条件拉取榜单 */
+    /** 加载分类树（并按需选中默认条目） */
     load: () => Promise<void>;
+    /** 切换分类：重新从第一页开始加载 */
+    selectItem: (itemId: string) => Promise<void>;
+    /** 加载下一页并追加（`hasMore` 为 false 时是空操作） */
+    loadMore: () => Promise<void>;
 }
 
 export interface DownloadActions {
-    load: () => Promise<void>;
-    /** 加入下载队列（当前为 mock：直接生成一个等待中的任务） */
+    /** 读任务列表；`force` 为 true 时重新读一次（并重新订阅核心事件） */
+    load: (options?: {force?: boolean}) => Promise<void>;
+    /** 加入下载队列（桌面端交给核心；核心拒绝时会在列表里留下带错误码的任务） */
     add: (track: Track) => void;
     /** 从队列移除（已下载的为删除文件记录） */
     remove: (id: string) => void;
@@ -254,13 +295,20 @@ export interface PluginActions {
     load: () => Promise<void>;
     setEnabled: (id: string, enabled: boolean) => void;
     remove: (id: string) => void;
-    /** 更新到最新版本（mock：仅改版本号占位） */
-    update: (id: string) => void;
+    /** 检查更新：桌面端与来源比对版本，浏览器预览退回 mock 的版本号占位 */
+    update: (id: string) => void | Promise<void>;
 }
 
 export interface LibraryActions {
-    load: () => Promise<void>;
+    /** 读本地曲库与最近播放；`force` 为 true 时重新读一次（扫描完要用它刷新列表） */
+    load: (options?: {force?: boolean}) => Promise<void>;
     setQuery: (query: string) => void;
+    /**
+     * 扫描本地目录并入库（桌面端 `library.local.scan`）。
+     *
+     * 结束后**强制重读列表**：扫描的成果必须立刻出现在页面上，否则用户会以为没生效。
+     */
+    scan: (input: {dirs: string[]; recursive?: boolean}) => Promise<void>;
     /** 记录一次播放：写入最近播放 */
     recordPlay: (track: Track) => void;
     clearRecent: () => void;
@@ -272,7 +320,14 @@ export interface CollectionActions {
     isFavorite: (trackId: string) => boolean;
     toggleFavorite: (track: Track) => void;
     /** 新建歌单，返回创建结果，便于调用方立即使用 */
-    createPlaylist: (name: string) => Playlist;
+    /**
+     * 新建歌单；`tracks` 是**初建就要放进去**的曲目。
+     *
+     * 必须一次带上去：桌面端歌单 id 由**核心**生成，本地先用的占位 id（`pl:…`）核心不认识，
+     * 建完再「补一次写入」只会拿到 `common.not_found`（R40 实测：界面提示「已加入」、
+     * 歌单里却是 0 首）。带初值后核心在建的时候就把曲目存好，返回的 `saved` 里带着它们。
+     */
+    createPlaylist: (name: string, tracks?: Track[]) => Playlist;
     renamePlaylist: (id: string, name: string) => void;
     removePlaylist: (id: string) => void;
     addToPlaylist: (playlistId: string, track: Track) => void;

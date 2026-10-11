@@ -3,10 +3,13 @@ import type {ChangeEvent} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Page} from '../../components/ui/page';
 import {Button} from '../../components/ui/button';
+import {UnderlineRadioGroup} from '../../components/ui/radio-group';
 import {EmptyState} from '../../components/ui/empty-state';
 import {IconTrash} from '../../components/ui/icon';
 import {useConfirm} from '../../hooks/useConfirm';
-import {parseSkin, useTheme} from '../../theme';
+import {errorText} from '../../i18n/errors';
+import {skinService} from '../../services';
+import {useTheme} from '../../theme';
 import type {ThemeSkin} from '../../theme';
 import {matchesQuery} from '../../utils/helpers';
 import styles from './theme.module.css';
@@ -30,6 +33,18 @@ export default function ThemeView() {
     const [activeTag, setActiveTag] = useState<string | null>(null);
     const [status, setStatus] = useState<string | null>(null);
     const fileRef = useRef<HTMLInputElement>(null);
+    /**
+     * 导入面板：**粘贴 JSON / 粘贴本机路径 / 原生文件选择器**三条来源。
+     *
+     * 为什么不能只有文件选择器：桌面端没有 Tauri 的 dialog 插件，`<input type=file>` 那扇
+     * 原生选择器在自动化环境里驱动不了（R49 实测：点得开、按钮点不动），而插件页早就用
+     * 「粘贴文本 / 粘贴路径」解决了同一个问题——皮肤没有理由更差。核心侧 `skin.preview/install`
+     * 收的就是同一个 `ImportSource`，所以这三条来源只是同一能力的三种入口。
+     */
+    const [importing, setImporting] = useState(false);
+    const [sourceMode, setSourceMode] = useState<'json' | 'path'>('json');
+    const [sourceText, setSourceText] = useState('');
+    const [busy, setBusy] = useState(false);
 
     /* 提示自动消失：定时器只在 effect 内注册，SSR 下不会执行 */
     useEffect(() => {
@@ -60,6 +75,45 @@ export default function ThemeView() {
         [skins, activeTag, query],
     );
 
+    /** 导入结果的统一收尾：成功就装上并提示，失败按「被拒键名 / 错误码 / 原因」逐级说清 */
+    const applyOutcome = (
+        outcome: Awaited<ReturnType<typeof skinService.importFromText>>,
+    ): void => {
+        if (outcome.ok && outcome.skin) {
+            installSkin(outcome.skin);
+            setStatus(t('skin.imported', {name: outcome.skin.name}));
+            setSourceText('');
+            setImporting(false);
+            return;
+        }
+        setStatus(
+            outcome.rejectedKeys && outcome.rejectedKeys.length > 0
+                ? t('skin.importRejected', {keys: outcome.rejectedKeys.join(', ')})
+                : outcome.code
+                  ? errorText(t, {code: outcome.code, message: outcome.reason ?? ''})
+                  : t('skin.importFailed', {reason: outcome.reason ?? ''}),
+        );
+    };
+
+    /** 面板里的「导入」：按当前来源（粘贴 JSON / 粘贴路径）走核心 */
+    const submitSource = async () => {
+        const value = sourceText.trim();
+        if (!value) {
+            setStatus(t('skin.importFailed', {reason: t('skin.jsonPlaceholder')}));
+            return;
+        }
+        setBusy(true);
+        try {
+            applyOutcome(
+                sourceMode === 'json'
+                    ? await skinService.importFromText(value)
+                    : await skinService.importFromPath(value),
+            );
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
         const input = event.currentTarget;
         const file = input.files?.[0];
@@ -67,17 +121,13 @@ export default function ThemeView() {
         input.value = '';
         if (!file) return;
 
-        const result = parseSkin(await file.text());
-        if (result.ok && result.skin) {
-            installSkin(result.skin);
-            setStatus(t('skin.imported', {name: result.skin.name}));
-            return;
-        }
-        setStatus(t('skin.importFailed', {reason: result.reason ?? ''}));
+        /* 桌面端由**本机核心**校验（结构 + 令牌键名白名单）；浏览器预览用本地解析兜底 */
+        applyOutcome(await skinService.importFromText(await file.text()));
     };
 
-    const handleExport = () => {
-        const blob = new Blob([exportSkin()], {type: 'application/json'});
+    const handleExport = async () => {
+        const json = await exportSkin();
+        const blob = new Blob([json], {type: 'application/json'});
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
@@ -113,8 +163,8 @@ export default function ThemeView() {
                         aria-label={t('skin.searchPlaceholder')}
                         onChange={(event) => setQuery(event.target.value)}
                     />
-                    <Button size="sm" onClick={() => fileRef.current?.click()}>
-                        {t('skin.import')}
+                    <Button size="sm" onClick={() => setImporting((prev) => !prev)}>
+                        {importing ? t('skin.close') : t('skin.import')}
                     </Button>
                     <Button size="sm" onClick={handleExport}>
                         {t('skin.export')}
@@ -130,6 +180,56 @@ export default function ThemeView() {
             }
         >
             {status && <p className={styles.status}>{status}</p>}
+
+            {/* ---------- 导入面板：粘贴 JSON / 粘贴路径 / 原生选择器 ---------- */}
+            {importing && (
+                <section className={styles.importPanel}>
+                    <div className={styles.importTabs}>
+                        <UnderlineRadioGroup
+                            name="skin-source"
+                            value={sourceMode}
+                            onChange={(value) => setSourceMode(value as 'json' | 'path')}
+                            options={[
+                                {value: 'json', label: t('skin.sourceJson')},
+                                {value: 'path', label: t('skin.sourcePath')},
+                            ]}
+                        />
+                        <Button size="sm" variant="ghost" onClick={() => fileRef.current?.click()}>
+                            {t('skin.fromFile')}
+                        </Button>
+                    </div>
+
+                    {sourceMode === 'json' ? (
+                        <div className={styles.importField}>
+                            <span className={styles.importLabel}>{t('skin.jsonLabel')}</span>
+                            <textarea
+                                className={styles.importTextarea}
+                                value={sourceText}
+                                placeholder={t('skin.jsonPlaceholder')}
+                                onChange={(event) => setSourceText(event.target.value)}
+                            />
+                        </div>
+                    ) : (
+                        <div className={styles.importField}>
+                            <span className={styles.importLabel}>{t('skin.pathLabel')}</span>
+                            <input
+                                className={styles.importInput}
+                                type="text"
+                                value={sourceText}
+                                placeholder={t('skin.pathPlaceholder')}
+                                onChange={(event) => setSourceText(event.target.value)}
+                            />
+                            <p className={styles.importHint}>{t('skin.pathHint')}</p>
+                        </div>
+                    )}
+
+                    <div className={styles.importActions}>
+                        <Button size="sm" variant="primary" disabled={busy} onClick={() => void submitSource()}>
+                            {busy ? t('skin.submitting') : t('skin.submit')}
+                        </Button>
+                    </div>
+                </section>
+            )}
 
             {tags.length > 0 && (
                 <div className={styles.tagRow} role="group" aria-label={t('skin.tagAll')}>

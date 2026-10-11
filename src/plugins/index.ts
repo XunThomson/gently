@@ -22,5 +22,5 @@ export {
     getActiveMusicSource,
 } from './registry';
 
-export type {MusicSourcePlugin, ChartQuery} from './types';
+export type {MusicSourcePlugin} from './types';
 export type {MockSourceOptions} from './builtin/source-factory';

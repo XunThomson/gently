@@ -352,20 +352,31 @@ export interface ComponentTokens {
         /** 悬浮上移距离，如 -3px */
         hoverLift: string;
     };
-    chart: {
+    /** 榜单/分类列表（名次 + 封面 + 专辑 + 时长） */
+    topList: {
         rankColumnWidth: number;
         coverColumnWidth: number;
         coverRadius: string;
-        heatColumnWidth: number;
         durationColumnWidth: number;
         rowPaddingY: number;
         rowPaddingX: number;
-        heatBarHeight: number;
         hoverBg: string;
         playingBg: string;
         rankFirstColor: string;
         rankSecondColor: string;
         rankThirdColor: string;
+    };
+
+    /** 专辑 / 歌单详情头图 */
+    collection: {
+        coverSize: number;
+    };
+
+    /** 业务列表（数据表格）：标题列左边的封面缩略图 */
+    table: {
+        coverSize: number;
+        coverRadius: string;
+        coverGap: number;
     };
 }
 

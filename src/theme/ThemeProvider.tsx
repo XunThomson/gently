@@ -1,7 +1,8 @@
+import {skinService} from '../services';
 import {useActions, useSelect} from '../store';
 import {readPersistedUi} from '../store/persist';
 import {applyCssVars, buildCssVars, themeConfig} from './tokens';
-import {allSkins, getThemeSkin, resolveTheme, serializeSkin} from './presets';
+import {allSkins, getThemeSkin, resolveTheme} from './presets';
 import type {ColorScheme, ThemeConfig, ThemeMode, ThemeSkin} from './types';
 
 import {
@@ -34,8 +35,8 @@ interface ThemeContextValue {
     skin: ThemeSkin;
     installSkin: (skin: ThemeSkin) => void;
     removeSkin: (id: string) => void;
-    /** 导出当前皮肤为可分享的 JSON 文本 */
-    exportSkin: () => string;
+    /** 导出当前皮肤为可分享的 JSON 文本（桌面端用核心落盘的那份原文） */
+    exportSkin: () => Promise<string>;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -59,7 +60,19 @@ export function ThemeProvider({children}: { children: ReactNode }) {
     const presetId = useSelect((s) => s.ui.themePresetId);
     const scheme = useSelect((s) => s.ui.scheme);
     const customSkins = useSelect((s) => s.ui.customSkins);
-    const {setScheme, setThemeMode, setThemePreset, installSkin, removeSkin} = useActions().ui;
+    const {setScheme, setThemeMode, setThemePreset, installSkin, removeSkin, loadSkins} =
+        useActions().ui;
+
+    /**
+     * 桌面端：导入过的皮肤存在本机核心里，进应用时同步一次（浏览器里是空操作）。
+     *
+     * 首屏用的是 `applyInitialTheme()` 从 localStorage 读到的皮肤（同步、无闪烁）；
+     * 这里随后按核心的 `active` 标记纠正——只有在「本地没有记录（换机器/清过缓存）
+     * 而核心记得用户选过哪套」时才会看到一次切换。
+     */
+    useEffect(() => {
+        void loadSkins();
+    }, [loadSkins]);
 
     const [systemDark, setSystemDark] = useState(prefersDark);
 
@@ -112,7 +125,7 @@ export function ThemeProvider({children}: { children: ReactNode }) {
             skin,
             installSkin,
             removeSkin,
-            exportSkin: () => serializeSkin(skin),
+            exportSkin: () => skinService.exportSkin(skin),
         };
     }, [
         activeConfig,
@@ -124,6 +137,7 @@ export function ThemeProvider({children}: { children: ReactNode }) {
         customSkins,
         installSkin,
         removeSkin,
+        loadSkins,
     ]);
 
     return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

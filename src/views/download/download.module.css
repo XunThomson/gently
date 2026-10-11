@@ -12,3 +12,11 @@
     justify-content: flex-end;
     margin-bottom: var(--space-1);
 }
+
+/* 失败原因：跟在曲目名下面，弱一级（不抢标题的视觉重量） */
+.reason {
+    display: block;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-xs);
+    color: var(--danger);
+}

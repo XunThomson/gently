@@ -1,5 +1,6 @@
 import {useTranslation} from 'react-i18next';
 import type {RowAction} from '../components/ui/data-table';
+import {CORE_LOCAL_SOURCE} from '../services/core.sources';
 import {useActions, useSelect} from '../store';
 import type {Track} from '../types';
 
@@ -13,6 +14,15 @@ export interface TrackActionOptions {
     /** 是否显示「下载」 */
     withDownload?: boolean;
 }
+
+/**
+ * 是否给这首曲目提供「下载」操作。
+ *
+ * **本地文件不提供**：它已经在本机（核心对 `local:` 的 `download.create` 会直接拒绝：
+ * 「本地曲目不需要下载（文件已经在本机）」）。给一个点了必然失败的按钮，比没有这个按钮更糟。
+ */
+export const canDownload = (track: Pick<Track, 'source'>): boolean =>
+    track.source !== CORE_LOCAL_SOURCE;
 
 /**
  * 曲目行内操作的统一构造器。
@@ -46,7 +56,7 @@ export function useTrackActions() {
             });
         }
 
-        if (options.withDownload) {
+        if (options.withDownload && canDownload(track)) {
             actions.push({
                 key: 'download',
                 label: t('common.download'),

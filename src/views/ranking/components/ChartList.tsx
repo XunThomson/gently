@@ -1,23 +1,35 @@
 import {EmptyState} from '../../../components/ui/empty-state';
 import {useTranslation} from 'react-i18next';
 import {IconMusic} from '../../../components/ui/icon';
-import type {RankedTrack} from '../../../utils/track';
+import type {Track} from '../../../types';
+import {trackCoverStyle} from '../../../utils/cover';
 import styles from './ChartList.module.css';
 
 export interface ChartListProps {
-    rows: RankedTrack[];
+    rows: Track[];
     /** 正在播放的曲目标识（`title|artist`） */
     currentTitle: string | null;
     loading?: boolean;
-    onSelect: (track: RankedTrack) => void;
+    onSelect: (track: Track) => void;
 }
 
-/** 榜单列表：名次 / 封面 / 歌曲信息 / 专辑 / 热度 / 时长。 */
+/**
+ * 榜单/分类列表：名次 / 封面 / 歌曲信息 / 专辑 / 时长。
+ *
+ * 名次用**源给的顺序**（`catalog.topList` 返回的顺序就是榜单顺序，核心不重排），
+ * 因此这里不做任何排序，也不显示「热度」——真实源不返回热度，编一个只会误导。
+ */
 export function ChartList({rows, currentTitle, loading = false, onSelect}: ChartListProps) {
     const {t} = useTranslation();
 
     if (!loading && rows.length === 0) {
-        return <EmptyState icon={<IconMusic size={30}/>} title={t('page.ranking.emptyTitle')} hint={t('page.ranking.emptyHint')}/>;
+        return (
+            <EmptyState
+                icon={<IconMusic size={30}/>}
+                title={t('page.ranking.emptyTitle')}
+                hint={t('page.ranking.emptyHint')}
+            />
+        );
     }
 
     return (
@@ -33,7 +45,10 @@ export function ChartList({rows, currentTitle, loading = false, onSelect}: Chart
                     >
                         <div className={styles.rank}>{i + 1}</div>
 
-                        <div className={styles.cover} style={{background: track.gradient}}>
+                        <div
+                            className={styles.cover}
+                            style={trackCoverStyle(track)}
+                        >
                             {playing ? (
                                 <div className={styles.playingBars}>
                                     <i/>
@@ -51,13 +66,6 @@ export function ChartList({rows, currentTitle, loading = false, onSelect}: Chart
                         </div>
 
                         <div className={styles.album}>{track.album}</div>
-
-                        <div className={styles.heat}>
-                            <div className={styles.heatBar}>
-                                <i style={{width: `${track.heat}%`}}/>
-                            </div>
-                            <span className={styles.heatNum}>{track.heat}</span>
-                        </div>
 
                         <div className={styles.duration}>{track.duration}</div>
                     </div>

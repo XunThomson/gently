@@ -7,17 +7,29 @@ import {
     registerMusicSource,
     setMusicSourceEnabled,
     unregisterMusicSource,
-    type ChartQuery,
 } from '../plugins';
+import type {CoreError, TopListGroup, TopListPage} from '../api';
+import {findAlbum, findCuratedPlaylist} from '../mock/catalog.mock';
 import type {
+    Album,
+    CuratedPlaylist,
     GroupedTrack,
     PluginInfo,
     ResolvedSource,
-    SongRow,
     Track,
     TrackQuality,
 } from '../types';
-import {coreResolveUrl, coreSearch} from './core.catalog';
+import {
+    coreAlbum,
+    corePlaylist,
+    coreRecommend,
+    coreResolveUrl,
+    coreSearch,
+    coreTopList,
+    coreTopLists,
+    coreTrackDetail,
+} from './core.catalog';
+import {coreSourceIds, ensureCoreSources, isCorePlayableSource, isCoreSource} from './core.sources';
 import {groupTracks, sortCandidates} from '../utils/track';
 
 /**
@@ -28,10 +40,14 @@ import {groupTracks, sortCandidates} from '../utils/track';
  *   「一首歌一条」，多个音源作为候选挂在 `candidates` 上 —— 避免同一首歌重复出现；
  * - **分源（perSource）**：只请求指定音源，返回原始条目（不做合并）；
  * - 播放时按候选顺序调用 `resolveUrl`，`null` 表示该源不可播，由播放器自动切换到下一个。
+ *
+ * 榜单/分类是**按源**的（跨源的分类树无法合并），因此不参与聚合：`all` 表示
+ * 「让应用挑一个优先级最高的源」。
+ *
+ * **按源路由**（`core.sources`）：核心认识的源走本机核心，只活在前端注册表里的
+ * 内置演示源走本地实现。判定必须按**源**做，不能按「有没有核心」做——桌面上装了
+ * 插件时核心认识 A 源、不认识内置演示源，两者要同时可用。
  */
-
-/** 榜单结果缓存：同一 (音源, 榜单, 时间) 不重复请求 */
-const chartCache = new Map<string, SongRow[]>();
 
 export const catalogService = {
     /* ---------------- 音源元数据 ---------------- */
@@ -64,30 +80,165 @@ export const catalogService = {
         registerMusicSource(plugin);
     },
 
-    /* ---------------- 榜单（按源提供，聚合模式下取优先级最高的源） ---------------- */
+    /* ---------------- 榜单 / 分类（按源渲染，结构由源决定） ---------------- */
 
-    async fetchChart(query: ChartQuery, sourceId?: string): Promise<SongRow[]> {
-        const plugin = (sourceId ? getMusicSource(sourceId) : undefined) ?? getActiveMusicSource();
-        const key = `${plugin.info.id}|${query.chart}|${query.dateKey}|${query.period}`;
+    /**
+     * 某个源的榜单/分类树。
+     *
+     * **路由按源判定**（`core.sources`）：核心认识的源走本机核心（`catalog.topLists`），
+     * 只活在前端注册表里的**内置演示源**走本地实现。
+     *
+     * 这里**不能**先无脑问核心、错了再退回 mock：核心对不认识的源只会回
+     * `common.not_found`（`插件未安装：mock`），而 `not_found` 与「源跑挂了」在
+     * 前端看来是同一类失败——结果就是「核心里一个音源都没装」这种正常状态
+     * 被显示成一条故障提示，连演示数据都看不到。
+     *
+     * **核心报错时不悄悄退回 mock**：那会把「源跑挂了」伪装成「这个源没有分类」，
+     * 用户看到的空列表与真实原因完全无关（实测踩到过：插件报 404，界面只显示空态）。
+     * 因此把原始错误一并交出去，由界面如实说明。
+     */
+    async fetchTopLists(sourceId?: string): Promise<{groups: TopListGroup[]; error?: CoreError}> {
+        await ensureCoreSources();
+        const id = sourceId && sourceId !== 'all' ? sourceId : this.defaultSourceId();
 
-        const cached = chartCache.get(key);
-        if (cached) return cached;
+        if (isCoreSource(id)) {
+            /* 用对象持有错误：`let` 变量在闭包里被赋值时 TS 的收窄会把它当成 `null` */
+            const seen: {failure?: CoreError} = {};
+            const viaCore = await coreTopLists(id, (error) => {
+                seen.failure = error;
+            });
+            if (viaCore) return {groups: viaCore};
+            // 核心说「这个源不存在」= 它属于前端演示源那条路（路由表可能刚过期），不是故障
+            const failure = seen.failure;
+            if (failure && failure.code !== 'common.not_found') return {groups: [], error: failure};
+        }
 
-        const rows = await plugin.fetchChart(query);
-        chartCache.set(key, rows);
-        return rows;
+        const plugin = getMusicSource(id);
+        if (!plugin) return {groups: []};
+        return {groups: await plugin.fetchTopLists()};
+    },
+
+    /** 某个分类的一页内容（分页由源决定：`hasMore` / `nextPage`）。错误语义同上。 */
+    async fetchTopList(
+        sourceId: string,
+        itemId: string,
+        page = 1,
+    ): Promise<{page: TopListPage; error?: CoreError}> {
+        await ensureCoreSources();
+        if (isCoreSource(sourceId)) {
+            const seen: {failure?: CoreError} = {};
+            const viaCore = await coreTopList(sourceId, itemId, page, (error) => {
+                seen.failure = error;
+            });
+            if (viaCore) return {page: viaCore};
+            const failure = seen.failure;
+            if (failure && failure.code !== 'common.not_found') {
+                return {page: {items: [], hasMore: false}, error: failure};
+            }
+        }
+
+        const plugin = getMusicSource(sourceId);
+        if (!plugin) return {page: {items: [], hasMore: false}};
+        return {page: await plugin.fetchTopList(itemId, page)};
+    },
+
+    /**
+     * 聚合模式下「用哪个源」：优先级最高的已启用源。
+     *
+     * 榜单是**按源**提供的，聚合没有意义（跨源的分类树无法合并），
+     * 因此 `all` 只是「让应用替我挑一个源」，而不是真的聚合。
+     *
+     * 桌面端优先挑**核心认识的源**：内置演示源是兜底，不该盖过核心里真实装好的音源。
+     */
+    defaultSourceId(): string {
+        const coreId = coreSourceIds(true)[0];
+        if (coreId) return coreId;
+        return getActiveMusicSource().info.id;
+    },
+
+    /* ---------------- 专辑 / 歌单详情 ---------------- */
+
+    /**
+     * 专辑详情（`catalog.album`）。
+     *
+     * 核心认识的源由核心调插件的 `getAlbumInfo`；**核心不认识的源（内置演示源）
+     * 不问核心**——核心只会回 `common.not_found`，白跑一趟还污染日志——
+     * 直接退回浏览器预览的 mock。两条路径返回同一形状 `Album`（含 `tracks`），视图不分支。
+     */
+    async fetchAlbum(source: string, id: string): Promise<Album | null> {
+        await ensureCoreSources();
+        if (isCoreSource(source)) {
+            const viaCore = await coreAlbum(source, id);
+            if (viaCore) return viaCore;
+        }
+        return findAlbum(id);
+    },
+
+    /** 歌单（源侧精选）详情（`catalog.playlist`），与专辑同构。 */
+    async fetchCuratedPlaylist(source: string, id: string): Promise<CuratedPlaylist | null> {
+        await ensureCoreSources();
+        if (isCoreSource(source)) {
+            const viaCore = await corePlaylist(source, id);
+            if (viaCore) return viaCore;
+        }
+        return findCuratedPlaylist(id);
     },
 
     /* ---------------- 推荐 / 搜索 ---------------- */
 
-    /** 单源推荐 */
-    fetchRecommendFrom(limit: number, sourceId?: string): Promise<Track[]> {
-        const plugin = (sourceId ? getMusicSource(sourceId) : undefined) ?? getActiveMusicSource();
+    /**
+     * 曲目详情（`catalog.track`）：当前曲目由**插件**补充的元数据（封面、专辑、时长、候选）。
+     *
+     * 用途：列表里的曲目快照可能缺封面/专辑（搜索结果往往只有标题歌手），
+     * 播放时问一次源，把封面补上——播放条与歌词页因此能显示真实封面，而不是哈希渐变。
+     *
+     * 与详情页同一套**按源路由**：核心认识的源走核心；内置演示源没有详情端点，直接返回 `null`
+     * （调用方继续用快照，不算失败）。
+     */
+    async fetchTrackDetail(track: Track): Promise<Track | null> {
+        await ensureCoreSources();
+        if (!isCoreSource(track.source)) return null;
+        const viaCore = await coreTrackDetail(this.trackRef(track.source, track));
+        if (!viaCore) return null;
+        /* 详情来自单源，但核心返回的是 `GroupedTrack`（含候选）；调用方只要曲目本身 */
+        return viaCore;
+    },
+
+    /**
+     * 单源推荐（源侧 `getRecommend`）。
+     *
+     * 与 `searchIn` 同一套**按源路由**：核心认识的源走 `catalog.recommend`，
+     * 内置演示源走前端实现。核心的源绝不能静默退回演示源——否则「某个源的推荐」
+     * 会变成「演示数据」，用户以为看到了 A 源的内容。
+     *
+     * `limit` 只对**本地**实现有意义（核心的 `catalog.recommend{source}` 没有条数参数，
+     * 由插件自己决定给多少）；这里统一切到 `limit`，让界面拿到稳定的「前 N 条」。
+     */
+    async fetchRecommendFrom(limit: number, sourceId?: string): Promise<Track[]> {
+        await ensureCoreSources();
+        const id = sourceId ?? this.defaultSourceId();
+        if (isCoreSource(id)) {
+            const viaCore = await coreRecommend(id);
+            return (viaCore ?? []).slice(0, limit);
+        }
+        const plugin = getMusicSource(id);
+        if (!plugin) return [];
         return plugin.fetchRecommend(limit);
     },
 
-    /** 单源搜索 */
-    searchIn(keyword: string, sourceId?: string): Promise<Track[]> {
+    /**
+     * 单源搜索。
+     *
+     * 核心认识的源**必须**走核心：前端注册表里没有它的实现，不判定就会静默退回
+     * 内置演示源——用户以为在搜 A 源，拿到的其实是演示数据（比报错更糟）。
+     */
+    async searchIn(keyword: string, sourceId?: string): Promise<Track[]> {
+        await ensureCoreSources();
+        if (sourceId && isCoreSource(sourceId)) {
+            const viaCore = await coreSearch(keyword, {sources: [sourceId]});
+            // 单源搜索没有跨源合并可言：核心结果里每条只有一个候选，取候选里的曲目即原始条目
+            return viaCore ? viaCore.items.flatMap((item) => item.candidates.map((candidate) => candidate.track)) : [];
+        }
         const plugin = (sourceId ? getMusicSource(sourceId) : undefined) ?? getActiveMusicSource();
         return plugin.search(keyword);
     },
@@ -100,20 +251,56 @@ export const catalogService = {
     /**
      * 多源搜索 → 聚合去重。
      *
-     * **桌面宿主优先走本机核心**：核心并发请求各源、逐源推事件、在核心内完成跨源合并
-     * （候选顺序 = 优先级）。浏览器预览或核心不可用时返回 null，退回下面的模拟音源路径，
-     * 因此这里不需要视图配合，行为与改造前完全一致。
+     * **两类源并行跑**（`core.sources` 判定）：
+     * - 核心认识的源 → 一次 `catalog.search`（核心并发请求各源、逐源推事件、核心内合并）；
+     * - 内置演示源 → 前端本地实现（核心不认识它）。
      *
-     * 逐源的流式结果（`catalog.search.partial`）留给搜索页的「分源视图」用，
-     * 需要 store 增加一个部分结果字段，因此这一步先只接合并结果。
+     * 核心里**一个可用音源都没有**时不再问核心（那只会等出一个空结果，把
+     * 「还没装音源」变成「搜不到任何东西」），直接用本地演示源撑住界面；
+     * 装好插件后下一次搜索就自动以核心为准。
+     *
+     * 两类都有结果时，用**前端这一份** `groupTracks` 做跨类合并：否则同一首
+     * (标题, 歌手) 会在「核心结果」和「演示结果」里各占一条。核心那份合并只
+     * 覆盖核心自己的源，两者不重叠、也不冲突。
+     *
+     * `signal` 透传给核心：用户换关键词时中止上一轮，避免后台继续打各源。
      */
-    async searchAll(keyword: string): Promise<GroupedTrack[]> {
+    async searchAll(keyword: string, signal?: AbortSignal): Promise<GroupedTrack[]> {
         if (!keyword.trim()) return [];
+        await ensureCoreSources();
 
-        const viaCore = await coreSearch(keyword);
-        if (viaCore) return viaCore.items;
+        const coreIds = coreSourceIds(true);
+        const localSources = listEnabledMusicSources().filter(
+            (plugin) => !isCoreSource(plugin.info.id),
+        );
 
-        return this.aggregate((plugin) => plugin.search(keyword));
+        const [viaCore, localTracks] = await Promise.all([
+            coreIds.length > 0
+                ? coreSearch(keyword, {sources: coreIds, ...(signal ? {signal} : {})})
+                : Promise.resolve(null),
+            this.searchLocal(localSources, keyword),
+        ]);
+
+        if (!viaCore) return groupTracks(localTracks, (source) => this.sourceQualities(source));
+
+        const coreTracks = viaCore.items.flatMap((item) => item.candidates.map((candidate) => candidate.track));
+        if (coreTracks.length === 0 || localTracks.length === 0) return viaCore.items;
+        return groupTracks(
+            [...coreTracks, ...localTracks],
+            (source) => this.sourceQualities(source),
+        );
+    },
+
+    /** 在给定的本地源里并发搜索并摊平结果；单源失败不影响其他源。 */
+    async searchLocal(sources: ReturnType<typeof listEnabledMusicSources>, keyword: string): Promise<Track[]> {
+        if (sources.length === 0) return [];
+        const settled = await Promise.allSettled(sources.map((plugin) => plugin.search(keyword)));
+        const tracks: Track[] = [];
+        settled.forEach((result, index) => {
+            if (result.status === 'fulfilled') tracks.push(...result.value);
+            else console.warn(`[catalog] 音源 ${sources[index].info.id} 搜索失败`, result.reason);
+        });
+        return tracks;
     },
 
     /**
@@ -153,13 +340,17 @@ export const catalogService = {
         sourceId?: string,
     ): Promise<ResolvedSource | null> {
         const id = sourceId ?? track.source;
+        await ensureCoreSources();
 
         // 桌面宿主：核心按候选顺序回退，并返回**回环代理**地址
         // （WebView 的 <audio> 无法设置 Referer/UA/Cookie，必须经代理播放）。
-        // 核心里没有这个音源时返回 null，继续走下面的模拟音源路径。
-        const viaCore = await coreResolveUrl(this.trackRef(id, track), quality);
-        if (viaCore) {
-            return {url: viaCore.url, source: viaCore.source, quality: viaCore.quality as TrackQuality};
+        // 核心认识的源**与本地文件（`local:` 伪源）**都交给核心；
+        // 只有内置演示源走下面的本地实现。
+        if (isCorePlayableSource(id)) {
+            const viaCore = await coreResolveUrl(this.trackRef(id, track), quality);
+            if (viaCore) {
+                return {url: viaCore.url, source: viaCore.source, quality: viaCore.quality as TrackQuality};
+            }
         }
 
         const plugin = getMusicSource(id);

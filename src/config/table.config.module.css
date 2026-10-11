@@ -1,0 +1,31 @@
+/*
+ * 业务列表（数据表格）的标题列样式。
+ *
+ * 标题左边的封面缩略图与播放条 / 榜单 / 歌词页共用 `utils/cover.ts` 的同一套取值优先级
+ * （图片地址 → 渐变 → 标题哈希兜底），因此本地曲目的内嵌封面、插件给的封面、mock 的渐变
+ * 在列表里长得跟别处一致。尺寸全部来自主题 token，不在这里硬编码。
+ */
+
+.title {
+    display: flex;
+    align-items: center;
+    gap: var(--table-cover-gap);
+    min-width: 0;
+}
+
+.cover {
+    flex: none;
+    width: var(--table-cover-size);
+    height: var(--table-cover-size);
+    border-radius: var(--table-cover-radius);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

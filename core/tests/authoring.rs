@@ -7,6 +7,8 @@ use gently_core::plugin::authoring::{
 };
 use gently_core::plugin::parse_index;
 
+mod common;
+
 const GOOD: &str = r#"
 // @id author-source
 // @name 作者源
@@ -19,17 +21,9 @@ async function search(keyword) { return []; }
 async function getMediaSource(track, quality) { return null; }
 "#;
 
-fn temp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "gently-authoring-{tag}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or_default()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn temp_dir(tag: &str) -> std::path::PathBuf {
+    // 唯一性交给 common：时钟粒度 + 并行测试会让两个测试撞同一个目录
+    common::temp_dir(&format!("gently-authoring-{tag}"))
 }
 
 #[test]

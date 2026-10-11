@@ -5,6 +5,8 @@ use gently_core::contract::ErrorCode;
 use gently_core::{AppPaths, CoreContext};
 use serde_json::json;
 
+mod common;
+
 const SOURCE: &str = r#"
 // @id demo-source
 // @name 示例音源
@@ -20,14 +22,7 @@ async function getMediaSource(track, quality) { return null; }
 "#;
 
 fn ctx() -> CoreContext {
-    let dir = std::env::temp_dir().join(format!(
-        "gently-preview-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or_default()
-    ));
+    let dir = common::temp_dir("preview");
     let paths = AppPaths::resolve(dir);
     paths.ensure().expect("建目录");
     CoreContext::new(paths)
@@ -122,18 +117,20 @@ fn invalid_source_returns_details_for_the_ui() {
 }
 
 #[test]
-fn unimplemented_sources_say_so_explicitly() {
+fn every_import_source_kind_is_implemented() {
     let ctx = ctx();
-    // catalog 与 url 已在 M1c 实现（需要网络或数据库，覆盖在 tests/subscription.rs）。
-    // 注意：这里不能用 url 做「未实现」的样例——那会真的发起网络请求。
-    for from in [json!({ "kind": "archive", "path": "C:/tmp/plugin.zip" })] {
-        let value = preview(&ctx, from.clone());
-        assert_eq!(
-            value["error"]["code"],
-            ErrorCode::NotImplemented.as_str(),
-            "{from} 应明确报未实现而不是静默失败：{value}"
-        );
-    }
+    // 四种本地来源（paste / file / dir / archive）都已实现；url 与 catalog 需要网络与数据库，
+    // 覆盖在 tests/subscription.rs 与 tests/plugin_archive.rs。
+    // 这里只锁「来源本身不存在时也要给出带路径的具体错误」，而不是含糊的 not_implemented。
+    let missing = ctx.paths.plugins.join("does-not-exist.zip");
+    let value = preview(&ctx, json!({ "kind": "archive", "path": missing.to_string_lossy() }));
+    assert_ne!(
+        value["error"]["code"],
+        ErrorCode::NotImplemented.as_str(),
+        "压缩包导入已实现，不该再报未实现：{value}"
+    );
+    assert_eq!(value["error"]["code"], ErrorCode::PluginInvalidSource.as_str(), "{value}");
+    assert!(value["error"]["details"]["path"].is_string(), "错误里要带上是哪个路径");
 }
 
 #[test]
@@ -148,5 +145,5 @@ fn too_large_paste_is_rejected() {
 #[test]
 fn preview_is_registered_as_implemented() {
     assert!(is_implemented("plugin.preview"));
-    assert_eq!(implemented_count(), 18);
+    assert_eq!(implemented_count(), 60);
 }

@@ -2,6 +2,8 @@ import type {TFunction} from 'i18next';
 import type {ColumnDef, RowAction} from '../components/ui/data-table';
 import {ActionsCell, BadgeCell, ProgressCell, TextCell} from '../components/ui/data-table';
 import type {Track} from '../types';
+import {trackCoverStyle} from '../utils/cover';
+import styles from './table.config.module.css';
 
 /**
  * 数据表格列定义（配置驱动）。
@@ -22,7 +24,16 @@ export const titleColumn = <T extends Track>(t: TFunction): ColumnDef<T> => ({
     key: 'title',
     title: t('column.title'),
     width: 'minmax(220px, 1.6fr)',
-    render: (value) => <TextCell>{String(value)}</TextCell>,
+    // 标题左边带封面缩略图：本地曲目的内嵌封面（核心给回环地址）、插件给的封面、没有就退回渐变。
+    // 取值优先级与播放条 / 榜单 / 歌词页完全一致（`utils/cover.ts`），列表里不会出现「另一种封面」。
+    render: (value, record) => (
+        <span className={styles.title}>
+            <span aria-hidden="true" className={styles.cover} style={trackCoverStyle(record)} />
+            <TextCell>
+                <span className={styles.text}>{String(value)}</span>
+            </TextCell>
+        </span>
+    ),
 });
 
 export const artistColumn = <T extends Track>(t: TFunction): ColumnDef<T> => ({
@@ -83,7 +94,16 @@ export const actionsColumn = <T,>(
 ): ColumnDef<T> => ({
     key: 'actions',
     title: t('column.actions'),
-    width: '140px',
+    /**
+     * **列宽必须跟着内容走**（`max-content`）。
+     *
+     * 单元格是 `display:flex; justify-content:flex-end` + `overflow:hidden`：内容一旦比列宽，
+     * 溢出的部分被裁在**左侧**——也就是排在最前面的按钮（`播放` / `收藏`）会消失得无影无踪。
+     * 固定 140px 时，本地曲库与歌单这两处（4 个操作）就点不到「播放」（R41 在打包版里量到：
+     * 只剩「在文件夹中显示 / 移除」）。`minmax(140px, max-content)` 让 2 个操作时保持紧凑、
+     * 4 个操作时自动变宽（整张表本来就有横向滚动）。
+     */
+    width: 'minmax(140px, max-content)',
     align: 'right',
     render: (_value, record) => <ActionsCell actions={build(record)}/>,
 });

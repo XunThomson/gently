@@ -29,7 +29,7 @@ const CAPABILITY_NAMES: [&str; 9] = [
 ];
 
 /// 必选函数：缺失时预览给出警告（不作为硬错误——静态扫描可能误判）。
-const REQUIRED_CAPABILITIES: [&str; 2] = ["search", "getMediaSource"];
+pub(crate) const REQUIRED_CAPABILITIES: [&str; 2] = ["search", "getMediaSource"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -115,7 +115,7 @@ impl PluginCapability {
         }
     }
 
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Search => "search",
             Self::GetMediaSource => "getMediaSource",
@@ -196,6 +196,17 @@ pub struct ParsedPlugin {
 pub fn parse_source(source: &str) -> Fallible<ParsedPlugin> {
     let header = parse_header(source);
     build(header, Some(source))
+}
+
+/// 头部是否足以构成清单（四个必填字段齐全）。
+///
+/// 兼容模式的入口判定用它（ADR-0006）：头部不全 = 只能从 `module.exports` 合成清单，
+/// 而那需要用户显式开启兼容模式。
+pub fn header_is_complete(source: &str) -> bool {
+    let header = parse_header(source);
+    ["id", "name", "version", "author"]
+        .iter()
+        .all(|key| header.iter().any(|(k, value)| k == key && !value.is_empty()))
 }
 
 /// 解析目录包的 `plugin.json`。
@@ -409,16 +420,29 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
 
     // ---- 生态兼容性提示 ----
     // 现实中的社区插件大量是 MusicFree / LX Music 风格：CommonJS 模块 + npm 依赖
-    // （require("axios"/"crypto-js"/"dayjs"/"he") + module.exports）。本沙箱刻意不提供模块系统，
-    // 因此这类文件装上也跑不起来——在**预览阶段**就说清楚，而不是让用户装完看到 "require is not defined"。
+    // （require("axios"/"crypto-js"/"dayjs"/"he") + module.exports）。兼容模式（@compat）能跑它们，
+    // 但**模块清单是固定的**——在**预览阶段**就说清楚会缺什么，而不是让用户装完才看到报错。
     if let Some(text) = source {
         let commonjs = text.contains("require(") || text.contains("module.exports") || text.contains("exports.");
         if commonjs {
-            warnings.push(
-                "检测到 CommonJS 模块（require/module.exports）：当前沙箱不提供模块系统与 npm 依赖，\
-                 该插件需要移植为单文件 ABI 才能运行"
-                    .into(),
-            );
+            if !compat {
+                warnings.push(
+                    "检测到 CommonJS 模块（require/module.exports）：需要在文件头加 @compat 开启兼容模式\
+                     （兼容模式可访问任意公网域名，权限弱于自有 ABI）"
+                        .into(),
+                );
+            }
+            let external: Vec<String> = required_modules(text)
+                .into_iter()
+                .filter(|name| !BUILTIN_REQUIRE_MODULES.contains(&name.as_str()))
+                .collect();
+            if !external.is_empty() {
+                warnings.push(format!(
+                    "require 了固定清单之外的模块：{}——兼容模式只内置 {}，安装后会在 require 处报错",
+                    external.join(", "),
+                    BUILTIN_REQUIRE_MODULES.join(" / ")
+                ));
+            }
         }
     }
     // ---- 未知头部字段：提示但不阻断（便于格式演进） ----
@@ -469,6 +493,32 @@ fn invalid_source(message: &str, details: serde_json::Value) -> CoreError {
     CoreError::new(ErrorCode::PluginInvalidSource, message).with_details(details)
 }
 
+/// 兼容模式内置的 `require` 清单（**唯一实现**在 `sandbox/compat.js`，这里只用于预览提示）。
+pub const BUILTIN_REQUIRE_MODULES: [&str; 4] = ["he", "axios", "dayjs", "crypto-js"];
+
+/// 静态扫出 `require("...")` 里的模块名（只用于预览提示，不作安全判断）。
+///
+/// 写法上只认 `require(` + 引号，够覆盖社区插件的实际用法；扫不到的宁可漏报，
+/// 也不猜——真正的判定在运行时（清单外一律抛可执行错误）。
+pub(crate) fn required_modules(text: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    let mut index = 0usize;
+    while let Some(offset) = text[index..].find("require") {
+        let mut rest = &text[index + offset + "require".len()..];
+        index += offset + "require".len();
+        rest = rest.trim_start();
+        let Some(after) = rest.strip_prefix('(') else { continue };
+        let after = after.trim_start();
+        let Some(quote) = after.chars().next().filter(|c| *c == '"' || *c == '\'') else { continue };
+        let Some(end) = after[1..].find(quote) else { continue };
+        let name = &after[1..1 + end];
+        if !name.is_empty() && !found.iter().any(|seen| seen == name) {
+            found.push(name.to_string());
+        }
+    }
+    found
+}
+
 fn is_valid_id(id: &str) -> bool {
     let bytes = id.as_bytes();
     if bytes.len() < 2 || bytes.len() > 32 {
@@ -481,14 +531,17 @@ fn is_valid_id(id: &str) -> bool {
 }
 
 /// 语义化版本：`1.0.0`，允许 `-preview`/`+build` 后缀。
-fn is_valid_version(version: &str) -> bool {
+pub(crate) fn is_valid_version(version: &str) -> bool {
     let core = version.split(['-', '+']).next().unwrap_or_default();
     let parts: Vec<&str> = core.split('.').collect();
     parts.len() >= 3 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
 /// 域名白名单：只接受纯主机名（可带端口），拒绝协议、路径与通配。
-fn is_valid_host(host: &str) -> bool {
+///
+/// 也是 `plugin.compat.confirm`（TOFU 收敛）写白名单前的校验——白名单是安全边界，
+/// 校验只能有一份实现。
+pub fn is_valid_host(host: &str) -> bool {
     if host.is_empty() || host.contains('/') || host.contains(' ') || host.contains("://") || host.contains('*') {
         return false;
     }
@@ -611,16 +664,48 @@ async function getMediaSource(track, quality) { return null; }
     #[test]
     fn commonjs_plugins_get_an_actionable_warning() {
         let cjs = "// @id cjs-source\n// @name CJS\n// @version 1.0.0\n// @author x\nconst axios = require('axios');\nmodule.exports = {async search() { return []; }};\n";
+
+        // 非兼容模式：说清「差一个 @compat」，而不是笼统地说「跑不起来」
         let parsed = parse_source(cjs).expect("头部合法即应解析成功");
         assert!(
-            parsed.warnings.iter().any(|w| w.contains("CommonJS")),
-            "应提示模块系统不兼容：{:?}",
+            parsed.warnings.iter().any(|w| w.contains("CommonJS") && w.contains("@compat")),
+            "应提示需要 @compat：{:?}",
+            parsed.warnings
+        );
+        // axios 在固定清单内 → 不该出现「清单之外」的告警
+        assert!(
+            !parsed.warnings.iter().any(|w| w.contains("清单之外")),
+            "{:?}",
+            parsed.warnings
+        );
+
+        // 兼容模式 + 清单内的依赖：不再有兼容性告警
+        let parsed = parse_source(&format!("{cjs}// @compat\n")).expect("解析成功");
+        assert!(parsed.manifest.compat);
+        assert!(
+            !parsed.warnings.iter().any(|w| w.contains("CommonJS")),
+            "{:?}",
+            parsed.warnings
+        );
+
+        // 清单之外的依赖：预览阶段就要点名
+        let parsed = parse_source(&format!("{cjs}const _ = require('lodash');\n")).expect("解析成功");
+        assert!(
+            parsed.warnings.iter().any(|w| w.contains("lodash") && w.contains("crypto-js")),
+            "应列出清单外的模块与可用清单：{:?}",
             parsed.warnings
         );
 
         // 自有 ABI 的单文件插件不应出现该提示
         let parsed = parse_source(MINIMAL).expect("解析成功");
         assert!(!parsed.warnings.iter().any(|w| w.contains("CommonJS")));
+    }
+
+    #[test]
+    fn required_module_scan_reads_quoted_specifiers() {
+        let text = "const a = require('axios');\nconst b = require(\"crypto-js/md5\");\nconst c = require(variable);\n";
+        assert_eq!(required_modules(text), vec!["axios".to_string(), "crypto-js/md5".to_string()]);
+        assert!(required_modules("const x = 1;").is_empty());
     }
 
     #[test]

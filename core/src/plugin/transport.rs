@@ -33,6 +33,66 @@ pub struct HttpResponse {
 /// 出网通道。
 pub trait HttpTransport: Send + Sync {
     fn send(&self, request: &HttpRequest) -> Fallible<HttpResponse>;
+
+    /// **流式**获取（下载写盘用）：先给一次 `Start`（状态码 + 响应头），再逐块给 `Chunk`；
+    /// `sink` 返回 `false` 表示要求中止。
+    ///
+    /// 为什么单独一个方法：`send` 会把整个响应体读进内存（还有 4 MiB 上限），
+    /// 而下载必须边收边写——用 `send` 实现下载等于把大文件这条路堵死。
+    /// `Start` 必须先于任何 `Chunk`：续传要靠状态码（206 才算续上，200 说明上游忽略了 Range）
+    /// **在写第一个字节之前**决定是追加还是重写。
+    ///
+    /// 默认实现**明确报错**而不是退化成缓冲：避免将来新增传输层时，
+    /// 下载悄悄变成「先全下载进内存再写盘」。
+    fn download(
+        &self,
+        _request: &HttpRequest,
+        _sink: &mut dyn FnMut(DownloadEvent<'_>) -> bool,
+    ) -> Fallible<DownloadOutcome> {
+        Err(CoreError::new(
+            ErrorCode::Internal,
+            "当前出网通道不支持流式下载（只有真实实现与测试假实现需要覆盖 download）",
+        ))
+    }
+}
+
+/// 流式下载过程中交给调用方的事件。
+#[derive(Debug)]
+pub enum DownloadEvent<'a> {
+    /// 响应到达（还没读正文）：续传要在这里决定追加还是重写
+    Start { status: u16, headers: &'a [(String, String)] },
+    /// 一段响应体
+    Chunk(&'a [u8]),
+}
+
+/// 一次流式下载的结果。
+#[derive(Debug, Clone)]
+pub struct DownloadOutcome {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub bytes: u64,
+    /// 调用方要求中止（暂停/取消）：不是错误，进度已经落盘
+    pub aborted: bool,
+}
+
+/// 「必须是公网 HTTPS」的唯一实现（媒体代理与下载共用）。
+///
+/// `what` 只用于错误文案（「媒体地址」「下载地址」），规则本身一处不改：
+/// 仅 HTTPS、不得指向回环/链路本地/私有网段。
+pub fn require_public_https(url: &str, what: &str) -> Fallible<()> {
+    if !url.starts_with("https://") {
+        return Err(CoreError::new(ErrorCode::MediaBlockedAddress, format!("{what}必须是 HTTPS")));
+    }
+    let host = host_of(url)
+        .ok_or_else(|| CoreError::new(ErrorCode::MediaBlockedAddress, format!("无法解析{what}的域名")))?;
+    if crate::plugin::is_private_host(&host) {
+        return Err(CoreError::new(
+            ErrorCode::MediaBlockedAddress,
+            format!("{what}指向回环或内网，已拒绝（可能被用作访问本机的跳板）"),
+        )
+        .with_details(serde_json::json!({ "host": host })));
+    }
+    Ok(())
 }
 
 /// 限制参数（来自 `app.config` / 环境，集中在此便于统一调参）。
@@ -159,6 +219,105 @@ impl HttpTransport for BlockingHttp {
             }
         }
     }
+
+    /// 流式下载：边收边交给 sink；支持 `Range` 续传与手动跟随重定向（每一跳都重新校验）。
+    fn download(
+        &self,
+        request: &HttpRequest,
+        sink: &mut dyn FnMut(DownloadEvent<'_>) -> bool,
+    ) -> Fallible<DownloadOutcome> {
+        let mut current = request.clone();
+        let mut redirects = 0u32;
+        let mut written = 0u64;
+
+        loop {
+            // 每一跳都重新过「公网 HTTPS」校验：地址由插件/上游给出，不能被 302 带去内网
+            require_public_https(&current.url, "下载地址")?;
+
+            let mut call = self.agent.request(&current.method, &current.url);
+            for (key, value) in &current.headers {
+                call = call.set(key, value);
+            }
+            let result = match &current.body {
+                Some(body) => call.send_string(body),
+                None => call.call(),
+            };
+
+            let response = match result {
+                Ok(response) => response,
+                // 4xx/5xx 也是「有响应」：交给调用方按状态码判断（如 416 续传越界）
+                Err(ureq::Error::Status(status, response)) => {
+                    let headers = header_pairs(&response);
+                    // 仍然先给 Start：调用方据此判断「续传越界」等情况，再看到 0 字节
+                    let _ = sink(DownloadEvent::Start { status, headers: &headers });
+                    return Ok(DownloadOutcome { status, headers, bytes: 0, aborted: false });
+                }
+                Err(err) => {
+                    return Err(CoreError::new(
+                        ErrorCode::SourceUpstreamFailed,
+                        format!("下载请求失败：{err}"),
+                    ))
+                }
+            };
+
+            let status = response.status();
+            let headers = header_pairs(&response);
+
+            if (300..400).contains(&status) {
+                let location = headers
+                    .iter()
+                    .find(|(name, _)| name == "location")
+                    .map(|(_, value)| value.clone());
+                match location {
+                    Some(location) if redirects < self.limits.max_redirects => {
+                        redirects += 1;
+                        current.url = resolve_location(&current.url, &location)?;
+                        continue;
+                    }
+                    Some(_) => {
+                        return Err(CoreError::new(ErrorCode::SourceUpstreamFailed, "下载重定向次数超过上限"))
+                    }
+                    None => {}
+                }
+            }
+
+            // 正文之前先报状态：续传要靠它在写第一个字节前决定「追加还是重写」
+            if !sink(DownloadEvent::Start { status, headers: &headers }) {
+                return Ok(DownloadOutcome { status, headers, bytes: 0, aborted: true });
+            }
+
+            let mut reader = response.into_reader();
+            let mut buffer = vec![0u8; 64 * 1024];
+            loop {
+                let read = match reader.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(read) => read,
+                    Err(err) => {
+                        return Err(CoreError::new(
+                            ErrorCode::SourceUpstreamFailed,
+                            format!("读取下载响应失败：{err}"),
+                        ))
+                    }
+                };
+                written += read as u64;
+                if !sink(DownloadEvent::Chunk(&buffer[..read])) {
+                    // 暂停/取消：把已收到的字节数如实带回去（调用方据此落盘进度）
+                    return Ok(DownloadOutcome { status, headers, bytes: written, aborted: true });
+                }
+            }
+
+            return Ok(DownloadOutcome { status, headers, bytes: written, aborted: false });
+        }
+    }
+}
+
+/// 响应头 → `(小写名, 值)` 列表（下载与 `send` 都要，抽出来避免两份写法）。
+fn header_pairs(response: &ureq::Response) -> Vec<(String, String)> {
+    response
+        .headers_names()
+        .into_iter()
+        .filter_map(|name| response.header(&name).map(|value| (name.to_ascii_lowercase(), value.to_string())))
+        .collect()
 }
 
 /// 相对/绝对 Location 解析（只支持绝对 URL，够了）。

@@ -1,6 +1,6 @@
 ---
 status: active
-last_verified: 2026-10-07
+last_verified: 2026-10-10
 owner: gently
 scope: 本机核心开发计划（M0–M5）
 token_budget: 1700
@@ -71,13 +71,13 @@ gently/
 工作量级：**M0 4–6 / M1 10–14 / M2 7–10 / M3 5–8 / M4 5–7 / M5 3–5（合计约 34–50 人日）**；
 M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + 作者自测 CLI）与本地流代理。
 
-### M0 骨架与契约（S，约 4–6 人日）——**已完成**（仅视觉确认待人工）
+### M0 骨架与契约（S，约 4–6 人日）——**已完成**（打包版逐页实图见 `release/screenshots/`）
 
 #### 已完成（本里程碑 Rust 侧）
 - **Cargo workspace**：`core`（不依赖 tauri）+ `src-tauri`（薄适配层）；
   `.cargo/config.toml` 把产物固定在 `src-tauri/target`，复用已有 5 GB 依赖缓存（不重编）。
 - `core/contract`：`CoreResult` 信封（手写 Serialize，输出布尔判别字段 `ok`）、`CoreError`
-  + **26 个错误码**（字符串与文档/TS 三处一致，测试逐个锁定）、`COMMAND_NAMES`（**57 条**）、
+  + **26 个错误码**（字符串与文档/TS 三处一致，测试逐个锁定）、`COMMAND_NAMES`（**59 条**）、
   system 域 DTO。
 - `core/commands`：**命令分发**（见下方偏差说明）；`system.status` / `system.paths` /
   `system.reveal` 真实实现（含 `reveal` 的**受管目录白名单**校验）；其余 54 条返回
@@ -130,7 +130,7 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 > 唯一未验证项：设置页在真实窗口里的**视觉**表现（本环境无法截图）——
 > 启动链路与数据已由日志与 `system.status` 覆盖，外观需人工打开设置页确认。
 
-### M1 插件宿主与分发（L，约 10–14 人日；全计划最大不确定项）——**进行中（M1a 已完成）**
+### M1 插件宿主与分发（L，约 10–14 人日；全计划最大不确定项）——**已完成**（沙箱 / 清单 / 四种导入来源 / 兼容模式 TOFU / 订阅索引，接口与权限在打包版上都实测过）
 
 #### M1a 清单与预览（已完成）
 - `core/src/plugin/manifest.rs`：单文件头部注释（前 60 行 `// @key value`）与目录包 `plugin.json`
@@ -181,10 +181,17 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 
 > **插件格式双轨制**（`docs/adr/0006-plugin-format-dual-track.md`）：自有单文件 ABI 为默认路径；
 > 另设**默认关闭**的兼容模式支持 MusicFree / LX 生态的 CommonJS 插件。兼容模式允许访问任意公网
-> HTTPS 域名（**本机/内网在任何模式下都拒绝**），实际域名记入日志以便后续固化为白名单。
-> 已完成：CommonJS 环境、`module.exports` 探测、`@compat` 与域名策略、缺依赖的可执行报错。
-> 待完成：`require` 垫片（axios/dayjs/crypto-js 子集）、`{isEnd,data}` 形状适配、流程接线与 TOFU 收敛。
-#### M1c 订阅分发（进行中：核心已完成，界面与配套工具待做）
+> HTTPS 域名（**本机/内网在任何模式下都拒绝**），实际域名记入观测台账以便固化为白名单。
+> 已完成：CommonJS 环境、`module.exports` 探测、`@compat` 与域名策略、缺依赖的可执行报错、
+> **`require` 垫片**（固定清单 `he` / `axios` / `dayjs` / `crypto-js`；axios 转宿主 `fetch`、
+> crypto-js 的 MD5/SHA256 由宿主 sha2/md-5 计算，垫片不新增能力）、
+> **返回形状适配**（`[...]` / `{items}` / `{isEnd, data}` / `{isEnd, musicList}`，含 MusicFree 的 `duration` 数字秒）、
+> **流程接线**（`plugin.preview` / `plugin.import` 的 `compat` 开关；无头部元数据时用 `probe` 合成清单，
+> 界面在同意前与已安装列表里都明示权限弱化）、
+> **TOFU 收敛**（观测台账 `plugins/.hosts/<id>.json` + `plugin.compat.observed` / `plugin.compat.confirm`：
+> 用户确认后固化成 `hosts` 白名单并关闭兼容模式，白名单只能来自观测结果）。
+> 待完成：MusicFree 的 `env.getUserVariables()` 接入凭据体系。
+#### M1c 订阅分发——**已完成**（核心索引缓存 + 界面订阅面板；导入来源必须由用户主动提供）
 - 迁移 **0003** `subscriptions` 表；索引原文缓存在 `<data>/subscriptions/<id>.json`（断网可用）；
   订阅 id 由 URL 的 sha256 派生（稳定、无 uuid 依赖）。
 - **索引按不可信输入处理**：`fileName` 必须是纯文件名（拒绝 `..` / 路径分隔符 / `C:`，防目录穿越）、
@@ -205,7 +212,7 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
   示例**不声明任何网络白名单、不索要凭据**，`getMediaSource` 恒返回 `null`（不解析任何真实音源），
   只演示 ABI 与沙箱用法；有测试断言它始终合法且「不联网」（ADR-0005）。
 - **`{kind:'url'}` 导入已实现**：核心下载 URL 直链（仅 HTTPS、非内网、体积受限），
-  预览只读、安装后来源记为 `url`；至此**只剩 `archive`（压缩包）未实现**。
+  预览只读、安装后来源记为 `url`。（`archive` 压缩包在 R15 补上，见 M1 收尾。）
   过程中旧测试暴露出「url 曾被当作未实现」的过期断言，更新后补了带 mock 传输的确定性用例
   （并顺带确认真实传输层可用）。
 - **导入界面**（已完成）：插件页新增「本机核心插件」面板——粘贴文本 / 网络地址两种来源 →
@@ -219,9 +226,23 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 - ⚠️ **已知行为缺口（M2 必须做）**：**应用启动时不会加载已启用插件**——插件状态在库里，但运行时是
   空的，因此重启后必须点一次「重载」才可用。M2 需要在启动时对 `enabled` 的插件逐个 `load`
   （并做失败容忍：单个插件加载失败不影响启动）。
-- 仍待做（M1c 收尾）：
-  1. **OS keyring**（`keyring` crate 未在本地缓存；当前是内存实现，接口已抽好）；
-  2. 压缩包导入 + 原生文件/目录选择器（`tauri-plugin-dialog`）。
+- **M1 收尾（R15）**：`archive`（压缩包）导入已完成——`core/src/plugin/archive.rs`
+  只开 `zip` 的 deflate 后端（离线缓存里只有这些），解压后**归一化成目录包 / 单文件两种既有形态**，
+  因此安装路径没有分叉；防解压攻击的限制（条目数 / 总大小 / 路径穿越 / 符号链接）写在契约里，
+  5 项集成测试锁定（单文件包、目录包 + 拍平、zip-slip 拒绝、zip bomb 拒绝、多入口与空包报错）。
+  前端插件页新增「本机路径」来源（压缩包 / 单文件 / 目录包三选一）。
+- **M1 收尾（R17）**：靠新加的失败日志（dispatch 记错误码）在**打包版实测**中发现并修掉两个
+  真实兼容缺口——`require('x').default` 互操作、MusicFree 函数名别名映射
+  （`getMusicInfo`/`getMusicSheetInfo`/`getTopListDetail`）；修完后真实兼容插件的
+  `catalog.topLists` 返回 `ok=true`。
+- **M1 收尾（R16）**：MusicFree 的**用户变量**接入凭据体系——`module.exports.userVariables`
+  在合成清单时转成凭据字段（并自动补 `credentials` 权限），沙箱提供
+  `env.getUserVariables()` / `env.userVariables` / `env.os` / `env.appVersion` / `process{…,env}`；
+  只回清单声明过的键、只在有凭据权限时回值。**ADR-0006 的待完成清单至此清空。**
+  **仍缺两项**（都不是设计缺口）：
+  1. **macOS / Linux 的凭据库**：Windows 已在 R19 接上系统凭据管理器（`windows-sys` 直调），
+     其它平台 `open()` 返回不支持 → 退回进程内存储，并在 `credentialsBackend` 里如实上报；
+  2. **原生文件/目录选择器**（`tauri-plugin-dialog` 不在离线缓存；界面用「粘贴路径」替代）。
 
 #### 历史：M1 早期剩余项（已完成）
 1. **M1c 订阅分发**：`plugin.subscriptions.*` + `plugin.catalog.list` + 一键安装 +
@@ -259,11 +280,11 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
   超时插件被隔离且不影响其他源；头部元数据缺失的文件被拒并报 `plugin.invalid_source`；
   用户自填订阅可一键安装（含 sha256 校验）；**首次安装前界面无任何预置来源**。
 
-### M2 播放链路垂直切片（M，约 7–10 人日）——**进行中（第一片已完成）**
+### M2 播放链路垂直切片（M，约 7–10 人日）——**已完成**（`playback.resolve` + 回环代理 Range/头部注入/SSRF、SeekBar 拖拽、循环模式、候选回退）
 
 #### M2a 跨源搜索聚合与流式推送（已完成）
 - `core/src/catalog.rs`：`catalog.search` **立即返回 `searchId`**；每个源一个线程并发调用，
-  逐源推 `catalog.search.partial`，协调线程收集后**在核心内合并**并推 `catalog.search.done`
+  逐源推 `catalog:search:partial`，协调线程收集后**在核心内合并**并推 `catalog:search:done`
   （契约承诺：合并只在核心完成）。`catalog.searchCancel` 通过共享 `AtomicBool` 取消。
 - **不信任插件输出**：`source` 强制为插件 id、`id` 规范成 `source:rawId`、缺失字段给兜底值、
   缺 `title` 的条目**丢弃并计数**（`dropped`），整源不会因个别脏数据失败。
@@ -280,15 +301,29 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
   适配成 Promise + 逐源回调，含超时兜底与取消）与 `coreResolveUrl`（只返回 `streamUrl`，并注明
   `originUrl` 不可直接播放）。**无桌面宿主时一律返回 null**，由调用方退回 mock；冒烟测试锁定这两条。
   替换 `catalog.service.ts` 内部实现与视图（流式分源视图）留作下一步——避免同时改动数据形状与渲染逻辑。
-- **仍待做（M2 剩余）**：`catalog.track/album/playlist/lyrics/topLists/topList/recommend`、
-  **本地流代理**（仅回环 + 一次性 token + Range + 请求头注入 + SSRF 防护）与
-  `playback.resolve` 的候选回退链；前端 `services/catalog` + `services/audio` 切到命令层
-  （含流式搜索的分源视图）。
+- **详情类命令（M2b，已完成）**：新增 `core/src/catalog_detail.rs`——`catalog.track{ref}` /
+  `album{source,id}` / `playlist{source,id}` / `topLists{source}` / `topList{source,id,page?}` /
+  `recommend{source}` / `lyrics{ref,withTranslation?}`（已实现命令 20 → **27**）：
+  - 复用搜索那套归一化（`catalog::normalize_track`）与形状适配（`plugin::list_items`），
+    社区形状（`albumItem`/`sheetItem`/`musicList`/`rawLrc`）直接可用；
+  - **能力缺失 → `common.not_implemented`**（UI 隐藏入口）、未安装/已禁用 → `common.not_found`
+    （与搜索的「禁用立即生效」一致）；引用格式错误 → `common.invalid_argument`；
+  - `catalog.track` 的 `id` 强制回到请求里的 `ref`（引用必须稳定），并包成 `GroupedTrack`
+    让视图复用同一套渲染；
+  - `catalog.topList` 用社区协议的 `isEnd` 推导 `hasMore`/`nextPage`，缺字段不猜「还有下一页」；
+  - **缓存到 `cache/catalog/`**（详情 6h、榜单 24h，原子写）：缓存键带齐影响结果的参数
+    （页号、是否要翻译），读坏/过期一律回到插件；`cache/` 按契约可随时整目录删除；
+  - 歌词**不在核心解析成行**：核心只交原文（`{format, content, translated?}`），
+    行解析是纯展示问题，由前端唯一一份 `src/utils/lyrics.ts` 完成（R11 落地：LRC / 纯文本 /
+    译文按时间戳对齐），核心不塞 UI 细节。
+- **M2 剩余**：**已清零**——排行榜按源分类树（R13）、专辑/歌单详情页（R14）、
+  歌词走 `catalog.lyrics`（R11）、`playback.report` 记历史（M3）全部完成。
+  本轮还顺手修掉封面渲染的跨来源差异（`utils/cover.ts`：图片地址 / 渐变 / 空值三条路径）。
 
 ### M2 播放链路垂直切片（原计划范围，供剩余部分对照）
 
-- `catalog.search` **流式**：立即返回 `{searchId}` → `catalog.search.partial` 逐源到达 →
-  `catalog.search.done` 给出跨源合并结果（标题+歌手归一化去重、候选按 `plugin.priority` 排序）；
+- `catalog.search` **流式**：立即返回 `{searchId}` → `catalog:search:partial` 逐源到达 →
+  `catalog:search:done` 给出跨源合并结果（标题+歌手归一化去重、候选按 `plugin.priority` 排序）；
   `catalog.searchCancel` 取消慢源；前端加**分源视图**（合并会误合，必须可见来源）。
 - `catalog.track` / `album` / `playlist` / `lyrics` / `recommend`：归一化 + 缓存到 `cache/`；
   能力缺失时按 `common.not_implemented` 隐藏入口。
@@ -306,45 +341,141 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
   **指向 `127.0.0.1` 的媒体地址被拒并报 `media.blocked_address`**；
   慢源不阻塞首屏——最快源结果先渲染，取消后不再有事件到达。
 
-### M3 本机库与持久化（M，约 5–8 人日；与 M1/M2 可并行）
+### M3 本机库与持久化（M，约 5–8 人日；与 M1/M2 可并行）——**已完成**（SQLite + FTS5、本地扫描与内嵌封面、收藏/歌单/历史、下载管理）
 
+- **M3a 已完成（收藏 / 歌单 / 播放历史）**：迁移 **0004** 建 `favorites` / `playlists` /
+  `playlist_tracks` / `play_history` 四张表；`core/src/store/library.rs` 负责读写、
+  `core/src/library.rs` 负责命令层（已实现命令 27 → **34**）：
+  - **快照存库**（`track` JSON 列）：插件可能被卸载或改接口，列歌单不该依赖插件在线；
+    快照由调用方的 `track` 参数带来，缺了退化成占位曲目（核心不为了补标题去调插件）；
+  - 引用 `source:trackId` 是去重键，参数接受字符串或 `TrackRef` 对象；
+  - 历史**每次播放留一行**（`playCount` 是累计次数）；歌单 `save` 为整体覆盖（顺序 = 传入顺序、
+    重复引用只留一次），`delete` 级联删曲目；
+  - 分页用 `(时间戳, 主键)` 复合游标，`nextCursor` 不透明；`limit` 1~500（缺省 50）。
+- **M3b 已完成（本地曲库）**：迁移 **0005** 建 `local_tracks` + **FTS5**（`trigram` 词元化，中文子串可搜；
+  1~2 字查询退回 LIKE）；`core/src/store/local.rs`（批量写入 + 快速重扫索引 + 检索 + 游标分页）与
+  `core/src/local_library.rs`（`library.local.scan/list/remove`，已实现命令 34 → **37**）：
+  - 扫描只认音频扩展名，**大小没变就不重读标签**（1 万文件重复扫描秒回）；
+    读不到标签的文件照样入库（标题退回文件名）；清理只针对**本次范围内**的路径
+    （非递归扫描不会误删子目录——测试抓到的真 bug）；
+  - 进度经 `library:scan:progress{dir, found, percent}`（先数一遍文件拿总数）；
+  - 检索走 FTS5；`remove` 缺省**只移出曲库**，`deleteFile: true` 才删文件且只接受音频扩展名；
+  - 元数据用 **symphonia**（`lofty` 不在本机 registry 缓存里，离线不可得）。
+- **M3c 已完成（本地播放链路）**：`playback.report`（写播放历史，与 `library.history.push` 同一实现，
+  已实现命令 37 → **38**）；**本地文件改走同一条回环流代理**——`StreamTarget` 分远端/本地，
+  `publish_local` 只接受音频扩展名（白名单与扫描共用一份），代理支持 `Range`/`206`/`416`
+  与按扩展名的 `Content-Type`，响应头不泄漏路径；`playback.resolve` 对 `local:` 引用直接发布文件，
+  文件被删则继续回退。前端因此可以彻底去掉 Blob hack（服务层切换待做）。
+- **M3d 已完成（下载）**：迁移 **0006** `download_tasks` + `core/src/download.rs`（已实现命令 38 → **44**）：
+  六条命令 + 三个事件；建任务立刻返回、后台线程流式写 `.part` → 完成后 rename；
+  **暂停/续传**（`Range`，上游忽略 Range 时从头写）；文件名来自曲目、真实扩展名按媒体地址改写；
+  `remove` 缺省只删记录（文件是用户的资产）；下载地址与播放共用同一套公网 HTTPS/防内网校验。
+  `HttpTransport` 新增 `download`（`Start` + `Chunk` 事件式流式接口，默认实现明确报错）。
+- **M3 剩余**：已清零——下载/本地库/收藏/歌单/历史都走核心，**Blob/`audio/mp4` hack 已在 R11 删除**
+  （`Content-Type` 改由回环代理按扩展名补齐，`effective_content_type` 4 项单测）。
+  **R28 补上一个一直漏掉的东西**：上面这些能力都在核心里做好了，但 `library.local.scan`
+  **没有任何界面入口**——桌面上「本地音乐」页永远是空的（mock 只在浏览器预览出现），
+  用户根本没法把自己的音乐加进来。现在本地音乐页常驻扫描面板（目录手填/粘贴、每行一个、
+  可含子目录、扫描中显示 `library:scan:progress` 进度、结束后显示统计并强制重读列表），
+  扫描失败按错误码说明原因。这条也提醒了一次：**「命令有前端封装」不等于「功能能用」**，
+  契约守卫查得到封装，查不到入口。
+
+### M4 推荐与皮肤（M，约 5–7 人日）——**已完成**（推荐画像零出网；皮肤三层校验 + 导入导出）
+
+- **M4a 已完成（推荐迁入核心）**：迁移 **0008** `recommend_feedback` + `core/src/recommend.rs`
+  （已实现命令 50 → **53**）：画像与打分与旧前端 `src/utils/recommend.ts` 同一套行为
+  （权重、衰减、理由优先级、强度归一化逐条对齐，7 项单测从 TS 断言移植）；
+  **候选只来自本机数据**（本地曲库 / 收藏 / 历史 / 自建歌单）——ADR-0005 把「推荐」列进
+  「用户动作之前零外部请求」，有测试断言 `recommend.home` 期间零出网；源侧推荐仍是显式命令
+  `catalog.recommend{source}`；`recommend.similar` 支持 `TrackRef` 或 `{albumId}` 种子；
+  `recommend.feedback` append-only 落库并在下次打分时消费（like/unlike/skip/complete）。
+- **M4b 已完成（皮肤）**：迁移 **0007** `skins`（整份文档存库）+ `core/src/skin.rs`
+  （已实现命令 44 → **50**）：白名单**唯一来源是 `theme.config.json`**（`include_str!` 编进核心，
+  不在 Rust 里抄令牌名）；三层校验（结构 / 键名 → `skin.token_rejected` 全部列出 / 值类型）；
+  用户皮肤恒 `builtin: false`；激活状态存 `meta.skin.active`；导入 `paste`/`file`/`url`（复用防 SSRF 校验）；
+  导出 `json` / `file`（`<data>/skins/<id>.json`）。`ImportSource` 提升到契约层（插件与皮肤同构）。
+- **前端已接线（R10）**：**删除 `src/utils/recommend.ts`**（打分只剩核心一份，浏览器用
+  `src/mock/recommend.mock.ts` 的预置数据）；`core.skin.ts` + `skin.service.ts` 落地——
+  桌面端导入走 `skin.preview`（校验 + 警告）→ `skin.install`（落盘），失败时列出**被拒的令牌键名**
+  （新增 i18n `skin.importRejected`）；ui 切片的 `loadSkins` / `setThemePreset` / `removeSkin`
+  分别同步 `skin.list` / `skin.setActive` / `skin.remove`，导出用核心落盘原文（浏览器序列化兜底）。
 - 表：`favorites` / `playlists` / `playlist_tracks` / `play_history` / `local_tracks` /
   `plugin_state` / `plugin_config` / `download_tasks` / `skins` / `subscriptions`；
   索引对齐分页游标键；`local_tracks` 建 **FTS5** 索引（标题/歌手/专辑）供本地检索。
-- `library.favorites.*` / `playlists.*` / `history.*` 真实实现；本地扫描
-  （`lofty` 读元数据 + 时长）与 `library.scan.progress` 事件。
-- **本地文件播放走同一条流代理**（`playback.resolve` 的 `streamUrl` 指向本地文件），
-  删除前端现有的 Blob / `audio/mp4` hack（`services/audio.service.ts`）。
-- `download.*`：本地任务、落盘、暂停/恢复、`download.progress|done|error` 事件。
-- 前端：`services/library.service.ts` + 下载切片切换。
-- **退出标准**：扫描目录 → 入库 → 播放 → 收藏/建歌单/记历史 → 重启后数据仍在；
-  下载完成文件落到目标目录且事件驱动 UI 进度；1 万文件扫描 < 10s；
-  本地文件播放经代理可拖动进度且无 Blob 路径残留。
-
-### M4 推荐与皮肤（M，约 5–7 人日）
-
-- **推荐算法迁入 `core/recommend`**：把 `src/utils/recommend.ts` 的口味画像（播放次数取对数、
-  12h 半衰期衰减、收藏/歌手加权）与可解释理由（tag / artist / trending）按**同一套行为**重实现，
-  并把它现有的断言移植为 `cargo test`；前端删除该算法，`src/mock/` 改为预置推荐数据。
-- `recommend.home` / `similar` / `feedback`：Rust 读播放史与候选池打分；反馈写库供下次消费。
-- `skin.*`：实现**令牌键名白名单**校验（`skin.token_rejected` + 列出被拒键名）、
-  导入/导出（文件 / URL / 粘贴）、激活与删除；前端皮肤市场接命令层。
+- **M4c 已完成（R29 端到端接上「会学习的推荐」）**：核心的 `recommend.feedback` 之前**从没被调用**过
+  ——画像只消费播放次数与时间（不看 `playedSec`），「听 5 秒就切」与「完整听完」在画像里没有区别。
+  现在：推荐卡片「不感兴趣」= `skip` + `progress: 0`（立刻从列表移除），
+  播放器在**切歌/停止/播完**时按进度报 `skip(<0.5)` / `complete`（**暂停不算**倾向）；
+  推荐页另加「来自当前音源」一栏（`catalog.recommend`，按源路由，源没实现就不显示）。
+  这一轮同时新增 `scripts/check-reachability.mjs`：**把「界面走不到的能力」做成守卫**，
+  它正是抓出上面那条没接线的工具（见 M5）。
 - **退出标准**：推荐理由可解释且随播放史变化（与旧 TS 实现行为一致，用同一组夹具对比）；
-  从文件与 URL 导入皮肤均可用；含未知令牌键的皮肤被拒并明确列出键名。
+  从文件与 URL 导入皮肤均可用；含未知令牌键的皮肤被拒并明确列出键名。—— 均已满足。
 
-### M5 收口与交付（S，约 3–5 人日）
+### M5 收口与交付——**已完成**（代码侧：`pnpm verify` 五道关卡 + 打包版逐条实测；只剩「联网打 MSI/NSIS」与「人工听一次扬声器」两件环境受限项）
 
-- 设置页「诊断」：版本、路径、计数、日志目录一键打开；日志按天滚动、保留 7 天。
-- 统一错误提示：错误码 → zh/en 文案（i18n 全覆盖，无死键）。
-- `pnpm verify` = typecheck + smoke + `cargo test` + check-commands。
-- 打包验证：`pnpm tauri build` 出包并实测启动、导入插件、播放、扫描。
-- 文档同步：`docs/STATE.md` / `ARCHITECTURE.md` / 契约文档与 ADR 状态更新。
+- **M5a 已完成（插件域收尾）**：`core/src/plugin_admin.rs` 落地最后 6 条命令
+  （`plugin.config.get/put`、`plugin.credentials.set/clear/status`、`plugin.checkUpdate`），
+  **契约 60 条命令全部点亮**：配置乐观并发（冲突带 `details.current`、不改动已存值、64 KiB 上限）；
+  凭据只读写清单声明过的键、`status` 只回「是否已配置」（命令层没有读值出口）；
+  检查更新只比对来源（url 下载比对版本+sha256 / catalog 比对本地索引）**绝不自动更新**。
+  **已知缺口**：凭据落点仍是内存实现（`keyring` crate 不在离线 registry 缓存里）→ 重启失效，
+  已在契约与 STATE 写明。
+- **前端服务层切换（R9–R14，已完成）**：本机库读取与写入切到核心（`core.library.ts` + `library.service`
+  桌面端优先 / 浏览器退回 mock；写入为乐观更新 + 落核心；补了 `library.history.clear` → 契约 **60** 条）；
+  R10 完成下载页、插件管理、皮肤市场、推荐页，并把手写历史的路径从 `library.history.push`
+  换成 `playback.report`（在「放完/切走/暂停/停止」时上报**真实秒数 + 实际播成的音源**，
+  `recordPlay` 只留乐观 UI）；R11 完成歌词（`catalog.lyrics` + `src/utils/lyrics.ts`）与
+  删除 `services/audio.service.ts` 的 Blob/`audio/mp4` hack；R12 完成插件**凭据/配置面板**与
+  **订阅源面板**（订阅内一键安装仍走「预览 → 显式同意 → 安装」）；R13 排行榜按源分类树；
+  R14 专辑/歌单详情页 + 封面渲染收口（`utils/cover.ts`）——**前端服务层切换至此全部完成**。
+- **M5 剩余**（都是收口项，不含新命令）：
+  - ~~统一错误提示：错误码 → zh/en 文案（i18n 全覆盖，无死键）~~ **已完成（R11）**：
+    `errors` 命名空间 26 个码 + `src/i18n/errors.ts` 的 `errorText()`，冒烟守卫「每个码都有翻译」。
+  - ~~`pnpm verify` = typecheck + smoke + `cargo test` + check-commands~~ **已完成（R11）**：
+    `scripts/verify.mjs`，离线默认给 cargo 加 `--offline`。
+  - ~~设置页「诊断」：版本、路径（数据 + 日志）、计数、目录一键打开~~ **已完成（R11）**；
+    **日志按天滚动、保留 7 天已在 R17 真正落地**（`tracing-appender` 写
+    `<data>/logs/gently.log.<日期>` + 启动清理 7 天前，之前只有目录没有写入）。
+  - 打包验证：**R17 完成离线部分**——`pnpm package:portable` 产出便携版 zip（含 SHA256），
+    解压后运行实测：迁移 8 条、UI 挂载即发出真实命令且全 `ok=true`、真实兼容插件按需加载成功。
+    **剩下 MSI/NSIS 安装包**：需要联网下载一次 WiX/NSIS 工具链（本机 `Invoke-WebRequest`
+    与 Tauri CLI 都超时），联网后 `pnpm tauri build` 即可。
+    **R52 把这份交付物又冻结验了一遍**：zip 解到另一个目录 → 内层 exe 哈希与 `.sha256` 一致 →
+    用解出来的 exe 冷启动全新数据库（8 条迁移、`schema_version=8`、凭据后端
+    `windows-credential-manager`）→ `GENTLY_LOG=debug` 下启动命令全 `ok=true` →
+    交付版主题市场里内置卡片不再有「删除皮肤」。即「用户拿到手的那一份」本身就是验过的那一份。
+  - 文档同步：`docs/STATE.md` / `ARCHITECTURE.md` / 契约文档与 ADR 状态更新（每轮都在做）；
+    **README 已在 R17 从 Tauri 模板换成真正的项目入口文档**。
+- **打包版实测驱动的修复（R23–R37）**：真实封面接入（R23）、皮肤裁决收成一处（R24）、
+  假宿主冒烟（R25）、核心单测隔离（R26），以及 **R27 的两个「只有真跑打包版才会暴露」的问题**：
+  ① **事件名带点号被 Tauri 拒绝**（只接受字母数字与 `- / : _`）→ 桌面上 8 个事件全部静默丢失
+  （流式搜索只能等超时、下载进度永远不动；命令返回值正常所以测试全绿）——契约名改成冒号分段，
+  并把字符集约束钉进 Rust 单测 + 契约守卫（事件升为四处比对）+ 冒烟；
+  ② **内置演示源被送去问核心** → 「核心里一个音源都没装」这种正常状态被显示成源故障
+  （`插件未安装：mock`）——改为**按源路由**（`core.sources` + TTL 缓存），核心不认识的源走本地实现，
+  核心回 `common.not_found` 只当「不认识」；`searchIn` 对核心源不再静默退回演示源。
+  之后每轮都是同一条路：**在真实打包版里跑一遍**，把「测试测不到但用户撞得到」的地方补掉
+  （R28 扫描入口、R31 曲目详情、R32 插件链路、R34 本地播放路由、R35 播完结算、R36 播放态复核、
+  R37 本地内嵌封面 + 表格缩略图）。
 - **退出标准**：安装包在干净环境可启动并完成一次完整链路（导入插件 → 播放 → 扫描 → 收藏）。
+  **R20 把这套链路自动化了**（`core/tests/e2e_chain.rs`：走 `dispatch`、真的按 Range 取代理地址、
+  重开库验证持久化）；**R30 又把它在真实打包版上人肉点了一遍并留了截图**
+  （`pnpm ui:capture`：截屏 + 驱动界面，`release/screenshots/`）；
+  **R43 则把「干净环境 + 一次会话」这个前置条件也补上了**：清空数据目录后，一次会话里连着走完
+  启库 → 扫描（`local_tracks=3`）→ 播放本地曲目（回环 206）→ 收藏 → 导入插件 → 流式搜索 →
+  播放插件曲目（详情/歌词/代理）→ 收藏插件曲目，库里最终 `favorites=2`（本地 + 插件各一）、
+  `plugin_state=1`（明细与截图见 `docs/STATE.md` 第四十三轮）。
+  剩下「安装包」与「扬声器真的响」两步仍需联网打包与人工听一次。
 
 ## 3. 横切要求
 
 - **契约一致性**：命令/事件只认 `docs/contracts/local-core-api.md`；改契约必须同步
-  Rust 注册表、`src/api`、文档三处，由 `check-commands` 兜底。
+  Rust 注册表、`src/api`、文档三处，由 `check-commands` 兜底；**事件名一律冒号分段**
+  （Tauri 事件名不接受点号，否则事件整条丢失），事件清单是文档 ↔ Rust ↔ 前端类型 ↔ 前端常量四处比对。
+- **能力可达性**：契约守卫查「有没有前端封装」，`check-reachability` 查「**界面走不走得到**」——
+  两层都要过。有实现有封装却没人调用的能力必须要么接上界面、要么写进脚本白名单并说明理由
+  （R28 的 `library.local.scan`、R29 的 `recommend.feedback` / `catalog.recommend` 都是这条查出来的）。
 - **单一职责**：前端不实现数据处理与算法；核心不碰 UI/样式。**同一算法只允许一份实现**
   （迁移时先搬后删，禁止长期双份）。
 - **前端不可退化**：任何阶段浏览器 mock 模式都要能跑（无核心时 `available: false`）。

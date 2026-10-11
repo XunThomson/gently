@@ -370,20 +370,28 @@
       "hoverLift": "-3px"
     },
 
-    "chart": {
+    "topList": {
       "rankColumnWidth": 34,
       "coverColumnWidth": 44,
       "coverRadius": "10px",
-      "heatColumnWidth": 110,
       "durationColumnWidth": 52,
       "rowPaddingY": 11,
       "rowPaddingX": 18,
-      "heatBarHeight": 4,
       "hoverBg": "{bg.hover}",
       "playingBg": "{brand.soft}",
       "rankFirstColor": "{status.danger}",
       "rankSecondColor": "{status.warning}",
       "rankThirdColor": "{status.success}"
+    },
+
+    "collection": {
+      "coverSize": 140
+    },
+
+    "table": {
+      "coverSize": 28,
+      "coverRadius": "6px",
+      "coverGap": 10
     }
   }
 }

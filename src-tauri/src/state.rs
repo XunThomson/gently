@@ -31,4 +31,7 @@ impl EventSink for TauriEventSink {
 
 pub struct AppState {
     pub core: Arc<CoreContext>,
+    /// 日志写线程的 guard：**必须活到进程结束**（drop 时会把队列里剩下的日志刷完）。
+    /// 不放进这里的话它在 `setup` 结束时就被丢掉了，日志文件会停在启动那一刻。
+    pub _log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
 }

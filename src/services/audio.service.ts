@@ -19,7 +19,6 @@ class AudioEngine {
     private el: HTMLAudioElement | null = null;
     private handlers: AudioHandlers = {};
     private volume = 1;
-    private blobUrl: string | null = null;
 
     setHandlers(handlers: AudioHandlers): void {
         this.handlers = handlers;
@@ -49,54 +48,27 @@ class AudioEngine {
         this.handlers.onTime?.(el.currentTime, duration);
     };
 
-    private emitEnded = () => this.handlers.onEnded?.();
-
-    private emitError = () => {
+    private emitEnded = () => {
+        this.handlers.onEnded?.();
+    };    private emitError = () => {
         const err = this.el?.error;
         this.handlers.onError?.(err ? `code ${err.code}` : 'unknown media error');
     };
 
     /**
-     * 非常规扩展名（如 `.m4s`）在部分宿主下会以 `application/octet-stream` 下发，
-     * 导致 `<audio>` 拒绝解码。此时抓取为 Blob 并强制 `audio/mp4`。
+     * 切换音源；URL 相同时不重新加载，避免打断连续播放。
+     *
+     * 地址一律是核心回环流代理的 `http://127.0.0.1:<port>/m/<token>`：
+     * `Content-Type` 由代理按扩展名补齐（上游给 `application/octet-stream` 时也是），
+     * 因此这里**不需要**再抓成 Blob 强制 `audio/mp4`——M3 的退出标准就是删掉那条路径。
      */
-    private async resolveSrc(url: string): Promise<string> {
-        if (!/\.m4s(\?|#|$)/i.test(url)) return url;
-        if (this.blobUrl && this.el?.dataset.blobSrc === url) return this.blobUrl;
-
-        try {
-            const response = await fetch(url);
-            if (!response.ok) return url;
-
-            const blob = await response.blob();
-            this.releaseBlob();
-            this.blobUrl = URL.createObjectURL(new Blob([blob], {type: 'audio/mp4'}));
-            if (this.el) this.el.dataset.blobSrc = url;
-            return this.blobUrl;
-        } catch {
-            return url;
-        }
-    }
-
-    private releaseBlob() {
-        if (!this.blobUrl) return;
-        URL.revokeObjectURL(this.blobUrl);
-        this.blobUrl = null;
-    }
-
-    /** 切换音源；URL 相同时不重新加载，避免打断连续播放 */
-    async load(url: string): Promise<void> {
+    load(url: string): void {
         const el = this.ensure();
         if (!el) return;
         if (el.dataset.src === url) return;
 
         el.dataset.src = url;
-        const src = await this.resolveSrc(url);
-
-        // 等待期间可能已经切歌
-        if (el.dataset.src !== url) return;
-
-        el.src = src;
+        el.src = url;
         this.safeSetVolume(el);
         el.load();
     }

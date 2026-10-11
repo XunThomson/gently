@@ -104,3 +104,36 @@
     flex-wrap: wrap;
     font-size: var(--font-size-sm);
 }
+
+/* 单个插件的管理面板（凭据 + 配置）：缩进一级，与插件行形成从属关系 */
+.settings {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-4);
+    margin-top: var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+}
+
+/* 凭据一行 = 标签 + 「输入框 + 清除」；窄屏自动换行（权限/凭据名可能很长） */
+.credentialRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.credentialLabel {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+/* 凭据输入框固定在面板里的一小段宽度，避免长 cookie 把行撑开 */
+.credentialRow .input {
+    width: 240px;
+}
