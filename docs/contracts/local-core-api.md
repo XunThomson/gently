@@ -154,9 +154,13 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
   规范化 = `\` → `/` + **折叠重复分隔符** + 去掉末尾分隔符（`paths::normalize_source_path`，
   曲目 id / 库里的 `path` 列 / 封面文件名 / 扫描范围比较四处共用同一份实现）——
   Windows 接受 `C:\\Music` 这种写法，不归一就会把同一个文件收成两行（打包版实测撞到过）；
-- **扫描**：只认音频扩展名（mp3/flac/m4a/mp4/aac/ogg/oga/opus/wav），其余文件连开都不开；
+- **扫描**：只认音频扩展名（mp3/flac/m4a/m4b/m4r/m4s/mp4/aac/ogg/oga/opus/wav），其余文件连开都不开
+  （`m4s` 等 ISO-MP4 副扩展名与 `m4a` 同容器，B 站下载的音频就是 `.m4s`——R53 实测漏了它会让
+  「目录里只有 .m4s」看起来像扫描坏了）；
   - **快速重扫**：文件大小没变就跳过读标签（`skipped`）——重复扫描 1 万文件才够快；
   - 读不到标签的文件**照样入库**（标题退回文件名，计入 `unreadable`），不因个别坏文件漏歌；
+  - 不是音频扩展名的文件计入 `ignored`：`scanned=0` 与「目录是空的」必须能分辨
+    （界面文案里如实显示「非音频文件 N」）；
   - **清理只针对本次范围内的路径**：递归 = 目录前缀（带分隔符比较），非递归 = 只直接位于该目录下的文件
     ——扫 A 目录不会删掉 B 目录的曲目，非递归扫描也不会误删子目录；
   - 元数据用 symphonia 读容器标签与时长（ROADMAP 原写 `lofty`，但它不在本机 registry 缓存里，
@@ -417,12 +421,23 @@ async function getRecommend() {}                   // 可选
 
 - **垫片不新增能力**：`require` 只是形状翻译，出网仍走宿主通道，白名单、域名策略与 SSRF 防线照旧生效；
   `env.getUserVariables()` 与 `credentials.get` 走**同一道权限门**（无 `credentials` 权限时返回空对象）。
-- **两处兼容适配**（都是实测踩到后补的，见 STATE R17）：
+- **兼容适配（三处，都是实测踩到后补的，前两处见 STATE R17、第三处见 R53）**：
   - `require(x).default === require(x)`：转译后的插件普遍写 `axios_1.default.get(...)`
     （TS `esModuleInterop` 产物），MusicFree 也是这么给的（`pkg.default = pkg`）；
   - **函数名别名**：MusicFree 用 `getMusicInfo` / `getMusicSheetInfo` / `getTopListDetail`，
     分别映射到我们的 `getTrackInfo` / `getPlaylistInfo` / `getTopList`（自有 ABI 名优先）；
     `getRecommend` 在 MusicFree 侧是「tag → 歌单」两级，没有对等物，**不映射**（宁可不认也不瞎接）。
+- **参数形状适配（R53 实测补的第三处）**：MusicFree 的详情类函数收**条目对象**
+  （`getMusicInfo(musicItem)` / `getAlbumInfo(albumItem)` / `getMusicSheetInfo(sheetItem, page)` /
+  `getTopListDetail(topListItem, page)` / `getLyric(musicItem)`），我们这边只有 `source:rawId`。
+  两层配合，**自有 ABI 仍然只收字符串 id**：
+  - 核心侧：归一化时把插件**原始条目**按 `source:rawId` 记进**进程内**快照（LRU，不落盘、不上报），
+    详情命令与 `playback.resolve` 对**兼容插件**把这份条目原样交回；没有快照（重启后直接深链进来）
+    时退化成 `{id}`；
+  - 沙箱侧：别名函数（以及兼容模式下的 `getAlbumInfo`）把字符串 `id` 包成 `{id}`。
+  两个实测症状：真实 B 站插件（MusicFree 生态）`getTopListDetail(topListItem)` 拿到字符串 →
+  URL 拼成 `.../x/web-interface/undefined` → 上游 404；`getMediaSource(musicItem)` 拿不到
+  `bvid`/`aid`/`cid` → 拼出 undefined → `plugin.runtime_error`（「能搜、能看榜单，一播就挂」）。
 - **返回形状也做适配**（兼容插件不可能改）：列表接受裸数组 / `{items}`（自有 ABI）、
   `{isEnd?, data}`（搜索、歌手作品、推荐歌单、评论）、`{isEnd?, musicList}`（专辑、歌单、排行榜详情）；
   未在协议里出现的键名（`list` / `result` 等）不猜，形状不认识就丢弃并计数。

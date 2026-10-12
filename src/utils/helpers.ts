@@ -1,4 +1,4 @@
-import {GRADIENTS} from '../mock/base.data.mock.ts';
+import {GRADIENTS} from './gradients';
 
 export const grad = (i: number): string =>
     GRADIENTS[((i % GRADIENTS.length) + GRADIENTS.length) % GRADIENTS.length];

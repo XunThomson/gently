@@ -130,6 +130,116 @@ fn calls(ctx: &CoreContext, id: &str, counter: &str) -> u64 {
         .unwrap_or(0)
 }
 
+/// 播放解析必须把**插件自己产出过的条目**交回插件。
+///
+/// R53 实测的 bug：契约只把 `source:rawId` 交给前端，`playback.resolve` 于是只传
+/// `{id, source}` 的最小对象——真实 MusicFree 插件（B 站）在 `getMediaSource(musicItem)` 里
+/// 读 `bvid`/`aid`/`cid`，全都拿不到 → URL 拼成 undefined → 上游报错 → 「能搜、能看榜单，
+/// 一播就 plugin.runtime_error」。修法：归一化时把原始条目按 `source:rawId` 存进进程内快照，
+/// 播放解析优先用它。
+#[test]
+fn playback_resolve_hands_the_plugin_its_own_raw_item() {
+    const SNAPSHOT_PLUGIN: &str = r#"
+// @id snapshot-source
+// @name 快照源
+// @version 1.0.0
+// @author tester
+// @qualities standard
+// @hosts api.example.com
+async function search() {
+    return [{id: 'BV1', title: '一首歌', artist: '歌手', aid: 42, bvid: 'BV1', cid: 777}];
+}
+async function getTopLists() {
+    return [{title: '榜单', items: [{id: 'hot', title: '热歌榜'}]}];
+}
+async function getTopList() {
+    return [{id: 'BV1', title: '一首歌', artist: '歌手', aid: 42, bvid: 'BV1', cid: 777}];
+}
+async function getMediaSource(track, quality) {
+    // 真实插件就是这么读的：缺任何源内字段就当不可播
+    if (!track || !track.bvid || !track.cid) {
+        throw new Error('缺少源内字段：' + JSON.stringify(track));
+    }
+    return {url: 'https://cdn.example.com/' + track.bvid + '-' + track.cid + '.m4s', quality: quality, mimeType: 'audio/mp4'};
+}
+"#;
+    let (ctx, dir) = temp_ctx("snapshot");
+    install(&ctx, SNAPSHOT_PLUGIN);
+
+    // 榜单详情会记下快照（列表里带 aid/bvid/cid，引用只保留 `source:rawId`）
+    let page = call(&ctx, "catalog.topList", json!({ "source": "snapshot-source", "id": "hot" }));
+    assert_eq!(page["ok"], json!(true), "{page}");
+    let reference = page["data"]["items"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(reference, "snapshot-source:BV1");
+    // 引用里没有 bvid/cid —— 插件能不能播，全看宿主有没有把原始条目交回去
+    assert!(page["data"]["items"][0].get("cid").is_none(), "{page}");
+
+    let resolved = call(&ctx, "playback.resolve", json!({ "ref": reference, "quality": "standard" }));
+    assert_eq!(resolved["ok"], json!(true), "{resolved}");
+    let origin = resolved["data"]["originUrl"].as_str().unwrap_or_default();
+    assert!(
+        origin.contains("BV1-777"),
+        "插件必须收到自己产出过的那个条目（bvid/cid 都在）：{resolved}"
+    );
+    assert!(
+        resolved["data"]["streamUrl"].as_str().unwrap_or_default().starts_with("http://127.0.0.1:"),
+        "对外的播放地址仍是回环代理：{resolved}"
+    );
+
+    // 反向保护：快照里没有的引用 → 插件拿不到源内字段 → 该候选不可播（`data: null`，不弹错）
+    let unknown = call(
+        &ctx,
+        "playback.resolve",
+        json!({ "ref": "snapshot-source:never-seen", "quality": "standard" }),
+    );
+    assert_eq!(unknown["ok"], json!(true), "{unknown}");
+    assert_eq!(unknown["data"], json!(null), "没有原始条目时插件应当拒绝这一候选：{unknown}");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 兼容插件（MusicFree 协议）的详情调用要收到**条目对象**，而且字段要全
+/// （`getAlbumInfo(albumItem)` 里读 `bvid` 的插件不是少数）。
+#[test]
+fn compat_detail_calls_receive_the_remembered_item_object() {
+    const COMPAT_PLUGIN: &str = r#"
+module.exports = {
+    platform: 'compat-snapshot', version: '1.0.0', author: 'tester',
+    async search() { return {isEnd: true, data: []}; },
+    async getMediaSource() { return null; },
+    async getTopLists() { return [{title: 'g', data: [{id: 'hot', title: 'h'}]}]; },
+    async getTopListDetail(topListItem) {
+        return {isEnd: true, musicList: [{id: 'BV1', title: '一首歌', bvid: 'BV1', aid: 42, cid: 7}]};
+    },
+    async getAlbumInfo(albumItem) {
+        // 真实插件就是在这一层读 bvid/aid 的；宿主只给 id 时这里会是 undefined
+        return {isEnd: true, musicList: [{id: 'p1', title: String(albumItem && albumItem.bvid)}]};
+    },
+};
+"#;
+    let (ctx, dir) = temp_ctx("compat-detail-args");
+    let value = call(
+        &ctx,
+        "plugin.import",
+        json!({ "from": { "kind": "paste", "content": COMPAT_PLUGIN }, "consent": true, "compat": true }),
+    );
+    assert_eq!(value["ok"], json!(true), "{value}");
+    let id = value["data"]["plugin"]["id"].as_str().unwrap().to_string();
+
+    // 列表加载时会记下原始条目（引用只保留 id）
+    let page = call(&ctx, "catalog.topList", json!({ "source": id, "id": "hot" }));
+    assert_eq!(page["ok"], json!(true), "{page}");
+
+    let album = call(&ctx, "catalog.album", json!({ "source": id, "id": "BV1" }));
+    assert_eq!(album["ok"], json!(true), "{album}");
+    assert_eq!(
+        album["data"]["tracks"][0]["title"], json!("BV1"),
+        "兼容插件的 getAlbumInfo 必须收到带 bvid 的条目对象：{album}"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 #[test]
 fn track_detail_is_normalized_and_reference_stays_stable() {
     let (ctx, dir) = temp_ctx("track");

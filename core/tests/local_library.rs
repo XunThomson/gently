@@ -729,6 +729,52 @@ fn stored_snapshots_get_a_fresh_local_cover_url() {
 }
 
 #[test]
+fn m4s_container_is_indexed_like_any_other_audio_file() {
+    // R53 用户实测：`D:\Xun\Music` 里只有一个 `.m4s`（B 站下载下来的音频，ISO-MP4 + AAC），
+    // 扫描结果 `scanned=0` → 界面显示「还没有本地音乐」，**看起来像扫描功能坏了**。
+    // `.m4s`/`.m4b`/`.m4r` 与 `.m4a`/`.mp4` 是同一个容器，必须照样入库。
+    let dir = temp_dir("m4s");
+    let music = dir.join("music");
+    std::fs::create_dir_all(&music).unwrap();
+
+    // 仓库自带的那份真音频（`src/assets/README.md` 里登记的播放链路夹具），改成 .m4s 后缀
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../src/assets/yihuik苡慧 - 致你.m4s");
+    std::fs::copy(&fixture, music.join("致你.m4s")).expect("复制 m4s 夹具");
+    write_wav(&music.join("silence.wav"), 2);
+    // 同一个目录里的非音频文件：要被如实地数出来
+    std::fs::write(music.join("desktop.ini"), "[.ShellClassInfo]").unwrap();
+    std::fs::write(music.join("cover.jpg"), b"jpeg").unwrap();
+
+    let paths = AppPaths::resolve(&dir);
+    paths.ensure().unwrap();
+    let sink = Arc::new(RecordingSink::default());
+    let ctx = ctx_at(&paths, sink);
+
+    let scanned = call(&ctx, "library.local.scan", json!({ "dirs": [music.to_string_lossy()] }));
+    assert_eq!(scanned["ok"], json!(true), "{scanned}");
+    let data = &scanned["data"];
+    assert_eq!(data["scanned"], json!(2), "m4s 必须被认出来：{scanned}");
+    assert_eq!(data["added"], json!(2), "{scanned}");
+    assert_eq!(data["unreadable"], json!(0), "m4s 走的是 isomp4 探测，应能读出来：{scanned}");
+    assert_eq!(data["ignored"], json!(2), "ini + jpg 计入 ignored：{scanned}");
+
+    let listed = call(&ctx, "library.local.list", json!({}));
+    let items = listed["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2, "{listed}");
+    let track = items
+        .iter()
+        .find(|item| item["path"].as_str().unwrap().ends_with(".m4s"))
+        .expect("m4s 应在库里");
+    assert_eq!(track["source"], json!("local"));
+    // 没有标签就退回文件名（不去猜）；有标签就用标签——两种都行，但一定要有条目
+    assert!(!track["title"].as_str().unwrap().is_empty(), "{track}");
+    assert!(track["sizeText"].as_str().unwrap().ends_with("MB"), "{track}");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn scan_indexes_audio_and_is_idempotent() {
     let dir = temp_dir("scan");
     let music = dir.join("music");
@@ -753,6 +799,8 @@ fn scan_indexes_audio_and_is_idempotent() {
     assert_eq!(data["removed"], json!(0));
     assert_eq!(data["skipped"], json!(0));
     assert_eq!(data["unreadable"], json!(1), "坏文件照样入库，但计入 unreadable");
+    // 非音频文件如实报数：`scanned=0` 与「目录是空的」必须能分辨（R53 的 `.m4s` 就是栽在这上面）
+    assert_eq!(data["ignored"], json!(1), "notes.txt 计入 ignored：{scanned}");
 
     // 进度事件：契约里的 library:scan:progress
     let progress: Vec<Value> = sink

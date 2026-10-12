@@ -5,7 +5,7 @@ import {Button} from '../../components/ui/button';
 import {UnderlineRadioGroup} from '../../components/ui/radio-group';
 import {BadgeCell, TextCell} from '../../components/ui/data-table';
 import {SUPPORTED_LANGS} from '../../i18n';
-import {getActiveMusicSource} from '../../plugins';
+import {catalogService} from '../../services';
 import {useActions, usePluginState, useSelect} from '../../store';
 import {getThemePreset, useTheme} from '../../theme';
 import type {ThemeMode} from '../../theme';
@@ -23,7 +23,6 @@ export default function SettingView() {
     const {t, i18n} = useTranslation();
     const navigate = useNavigate();
     const {config, mode, setMode, presetId} = useTheme();
-    const source = getActiveMusicSource().info;
     const preset = getThemePreset(presetId);
     const appVersion = __APP_VERSION__;
 
@@ -38,6 +37,11 @@ export default function SettingView() {
 
     /* 可选的优先音源：store 的插件列表（桌面端来自核心），只取已启用的 */
     const activeSources = pluginList.filter((plugin) => plugin.enabled);
+    /**
+     * 当前生效的音源。**必须经服务层拿**（AGENTS 第 5 条），且返回 `null` 是正常状态：
+     * 桌面上一个音源都没装时，这里以前会直接抛异常——应用没有错误边界，整页白屏。
+     */
+    const source = catalogService.activeSource(pluginList);
 
     const currentLang = (i18n.resolvedLanguage ?? 'zh').slice(0, 2);
 
@@ -170,11 +174,18 @@ export default function SettingView() {
                 <div className={styles.field}>
                     <span className={styles.label}>{t('page.setting.activeSource')}</span>
                     <span className={styles.value}>
-                        <TextCell>{source.name}</TextCell>{' '}
-                        <BadgeCell tone="accent">v{source.version}</BadgeCell>
-                        <TextCell tone="muted">
-                            {t('source.count', {count: activeSources.length})}
-                        </TextCell>
+                        {source ? (
+                            <>
+                                <TextCell>{source.name}</TextCell>{' '}
+                                <BadgeCell tone="accent">v{source.version}</BadgeCell>
+                                <TextCell tone="muted">
+                                    {t('source.count', {count: activeSources.length})}
+                                </TextCell>
+                            </>
+                        ) : (
+                            /* 一个音源都没装：如实说「还没有安装任何插件」，不显示假音源 */
+                            <TextCell tone="muted">{t('page.plugin.empty')}</TextCell>
+                        )}
                     </span>
                 </div>
             </section>

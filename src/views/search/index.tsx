@@ -16,7 +16,7 @@ import {
     titleColumn,
 } from '../../config/table.config';
 import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../hooks/useTrackActions';
-import {catalogService} from '../../services';
+import {catalogService, coreAvailable} from '../../services';
 import {useSelect} from '../../store';
 import type {GroupedTrack, Track} from '../../types';
 import {filterGroupsBySource} from '../../utils/track';
@@ -88,6 +88,13 @@ export default function SearchView() {
         [groups, display, sourceFilter],
     );
 
+    /**
+     * 桌面上一个音源都没有时，空结果**不是**「没有找到相关歌曲」——
+     * 那种说法会让用户以为歌不存在，实际是根本没有源可搜。
+     * 演示源只活在浏览器预览里（`demoSourcesEnabled`），所以这里只看核心。
+     */
+    const noSource = coreAvailable() && catalogService.listSources().length === 0;
+
     const columns: ColumnDef<Track>[] = [
         indexColumn<Track>(),
         titleColumn<Track>(t),
@@ -107,7 +114,12 @@ export default function SearchView() {
             {!keyword ? (
                 <EmptyState title={t('page.search.hint')} hint={t('search.placeholder')}/>
             ) : !loading && rows.length === 0 ? (
-                <EmptyState title={t('page.search.empty')}/>
+                /* 没有音源 ≠ 搜不到：如实说明，别让用户以为是关键词的问题 */
+                noSource ? (
+                    <EmptyState title={t('page.search.noSource')} hint={t('page.ranking.noGroupsHint')}/>
+                ) : (
+                    <EmptyState title={t('page.search.empty')}/>
+                )
             ) : (
                 <DataTable
                     columns={columns}
@@ -115,7 +127,7 @@ export default function SearchView() {
                     rowKey="id"
                     loading={loading}
                     loadingText={t('common.loading')}
-                    emptyText={t('page.search.empty')}
+                    emptyText={noSource ? t('page.search.noSource') : t('page.search.empty')}
                     onRowClick={(track) => playRow(track, rows)}
                     activeRowKey={currentId ?? undefined}
                 />

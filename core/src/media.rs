@@ -465,8 +465,11 @@ fn forward(
         .build();
 
     let mut call = agent.get(origin);
-    for (name, value) in headers {
-        call = call.set(name, value);
+    // 与插件出网通道共用同一份「出站头」处理：**我们不解压**，插件却常常照抄浏览器的
+    // `accept-encoding: gzip, deflate, br`（B 站插件给的媒体头里就有）。转发压缩体不只是
+    // 解码不了——`Content-Length` / `Content-Range` 会与实际字节数对不上，Range 拖动直接坏掉。
+    for (name, value) in crate::plugin::outgoing_headers(headers) {
+        call = call.set(&name, &value);
     }
     if let Some(range) = &range {
         call = call.set("range", range);

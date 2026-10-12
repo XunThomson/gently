@@ -73,6 +73,17 @@ require("axios"); require("crypto-js"); require("dayjs"); require("he");
   `{isEnd?, musicList}`（专辑、歌单、排行榜详情）。**不猜**未在协议里出现的键名（`list`、`result` 等）；
   形状不认识就丢弃并计数，由 UI 体现。条目字段同样按协议放宽：MusicFree 的 `duration`
   是**数字秒**（自有 ABI 是 `durationSec` / `"3:05"`），三种写法都认，认不出就是 0（不猜时长）。
+- **函数名与参数形状适配**（R53 补齐第三处，前两处在 R17）：
+  - 别名：MusicFree 的 `getMusicInfo` / `getMusicSheetInfo` / `getTopListDetail`
+    映射到自有 ABI 的 `getTrackInfo` / `getPlaylistInfo` / `getTopList`（自有名优先）；
+  - **参数形状**：MusicFree 的详情/播放函数收的是**条目对象**，我们手上只有 `source:rawId`。
+    核心在归一化时把插件**原始条目**记进**进程内**快照（LRU、不落盘、不上报），
+    对兼容插件把这份条目原样交回（`getAlbumInfo` / `getMusicSheetInfo` / `getMusicInfo` /
+    `getTopListDetail` / `getLyric` / `getMediaSource`），没有快照时退化成 `{id}`；
+    沙箱侧再把字符串 `id` 包成 `{id}` 兜一层。**自有 ABI 一律仍收字符串 id**（有单测锁定）。
+    两个实测症状：`getTopListDetail(topListItem)` 拿到字符串 → URL 拼成
+    `.../x/web-interface/undefined` → 上游 404；`getMediaSource(musicItem)` 拿不到
+    `bvid`/`aid`/`cid` → 拼出 undefined → 「能搜、能看榜单，一播就 plugin.runtime_error」。
 - **流程接线**（`plugin::compat`）：`plugin.preview` / `plugin.import` 都接受 `compat: true`
   （用户显式开启；与头部 `@compat` 并存），头部元数据不全时用 `probe` 只读执行一次源码，
   从 `module.exports` 合成清单：

@@ -248,7 +248,7 @@
       "remove": "Remove",
       "empty": "No local music yet — paste a folder path above and scan",
       "scanTitle": "Scan local folders",
-      "scanHint": "One folder per line. Only audio extensions (mp3/flac/ogg/m4a/wav…) are indexed; files whose size is unchanged are not re-read; files without readable tags are still indexed (title falls back to the file name). Paste the path directly — a native file picker needs an extra desktop plugin that is not in the current dependency set.",
+      "scanHint": "One folder per line. Only audio extensions (mp3/flac/m4a/m4s/mp4/aac/ogg/opus/wav…) are indexed; files whose size is unchanged are not re-read; files without readable tags are still indexed (title falls back to the file name). Paste the path directly — a native file picker needs an extra desktop plugin that is not in the current dependency set.",
       "scanPlaceholder": "D:\\Music\nE:\\Lossless",
       "scanRecursive": "Include subfolders",
       "scanStart": "Scan",
@@ -256,7 +256,7 @@
       "scanPreparing": "Preparing the scan…",
       "scanRunning": "Scanning {{dir}} ({{found}} files found)",
       "scanRunningPercent": "Scanning {{dir}} ({{percent}}% · {{found}} files found)",
-      "scanResult": "Last scan: {{scanned}} files, {{added}} added, {{updated}} updated, {{removed}} removed, {{skipped}} skipped, {{unreadable}} unreadable",
+      "scanResult": "Last scan: {{scanned}} files, {{added}} added, {{updated}} updated, {{removed}} removed, {{skipped}} skipped, {{unreadable}} unreadable, {{ignored}} non-audio",
       "scanNeedsDesktop": "Scanning local folders needs the desktop app (the browser preview shows sample data)."
     },
     "plugin": {
@@ -299,7 +299,7 @@
       "warnings": "Notes",
       "replaces": "This replaces the installed plugin with the same id",
       "installed": "Imported plugins (core)",
-      "installedEmpty": "No plugins imported yet — the built-in demo sources are listed below.",
+      "installedEmpty": "No plugins imported yet — the app ships no built-in sources; import one yourself.",
       "disclaimer": "Plugins are provided by third parties and are unrelated to this software; please make sure you may access their content.",
       "needSource": "Please provide the plugin content or URL first",
       "moveUp": "Move up",
@@ -383,7 +383,8 @@
       "title": "Search results",
       "subtitle": "{{count}} songs for “{{keyword}}”",
       "hint": "Type a keyword to start searching",
-      "empty": "No matching songs"
+      "empty": "No matching songs",
+      "noSource": "No source is installed, so there is nothing to search"
     },
     "playlist": {
       "title": "Playlist",

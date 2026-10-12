@@ -136,18 +136,28 @@ export const libraryService = {
      * 桌面端以**本机核心**为准：核心返回的 `PluginSummary` 与 `PluginInfo` 同形
      * （`builtin` 恒为 false——我们不预置任何插件，ADR-0005），因此不需要额外映射。
      * 同时把核心的这份清单记进 `core.sources` 缓存——`catalogService` 靠它判断
-     * 「这个音源该问核心还是走前端本地实现」（演示源不在核心里）。
+     * 「这个音源该问核心还是走前端本地实现」。
      *
-     * **内置演示源始终留在列表里**：它是前端自己的源（核心不认识），
-     * 在核心里一个可用音源都没有时就是唯一的可用源——不列出来的话，
-     * 界面会出现「列表是空的、却还在按某个源拉数据」这种自相矛盾的状态。
+     * **核心在时只回核心那一份**：内置演示源与占位项（`qqmusic` / `kugou`）都是
+     * 前端 mock（`src/mock/library.mock.ts`），把它们混进桌面端的插件列表就是
+     * 「拿 mock 冒充用户数据」——用户会以为装了这些源，点进去却什么都没有。
+     * 核心读失败时同样如实返回空（并 `console.warn` 说明原因），不退回演示列表。
+     *
+     * 演示列表只在**没有核心**（浏览器预览）时出现。
      */
     async loadPlugins(): Promise<PluginInfo[]> {
         const list = await corePlugin.list();
         if (list.ok && list.data) {
             rememberCoreSources(list.data);
-            const coreIds = new Set(list.data.map((plugin) => plugin.id));
-            return [...list.data, ...getInstalledPlugins().filter((plugin) => !coreIds.has(plugin.id))];
+            return list.data;
+        }
+        if (coreAvailable()) {
+            rememberCoreSources(null);
+            console.warn(
+                '[library] 核心在但 plugin.list 读失败，插件列表按空处理（不退回演示数据）',
+                list.ok ? '未返回数据' : `${list.error.code}：${list.error.message}`,
+            );
+            return [];
         }
         rememberCoreSources(null);
         await delay();

@@ -130,7 +130,8 @@ export function createDownloadSlice(ctx: StoreCtx) {
                 if (result.error.code === 'common.unsupported_platform') return;
                 // 核心**拒绝**建任务（插件未安装 / 解析不到地址）：必须让用户看到原因。
                 // 以前这里 `if (!created) return`——点了下载什么都不发生，也说不清为什么。
-                const totalMb = sizeOf(track.durationSec);
+                // **不编造文件大小**：核心没建任务，就没有真实总量，写「0.0Mb/3.4Mb」
+                // 是拿时长估算冒充事实（失败项本就不显示进度列）。
                 patch({
                     tasks: [
                         {
@@ -138,8 +139,8 @@ export function createDownloadSlice(ctx: StoreCtx) {
                             track,
                             status: 'error',
                             progress: 0,
-                            totalMb,
-                            sizeText: formatSizeMb(0, totalMb),
+                            totalMb: 0,
+                            sizeText: '',
                             errorCode: result.error.code,
                             error: result.error.message,
                         },
@@ -191,9 +192,13 @@ export function createDownloadSlice(ctx: StoreCtx) {
                 return;
             }
 
+            /* 速度只有**浏览器模拟**能编：核心持有的任务由 `download:progress` 事件给真实速度，
+               这里先写一个 `1.0Mb/s` 会让界面在核心还没回报时显示一个假数字（随后被真值覆盖，
+               但那一瞬间是假的；核心报错时更是永远留着假的）。 */
+            const simulated = !coreDownloadsAvailable();
             updateTask(id, (t) =>
                 t.status === 'paused' || t.status === 'error' || t.status === 'pending'
-                    ? {...t, status: 'downloading', speedText: '1.0Mb/s'}
+                    ? {...t, status: 'downloading', ...(simulated ? {speedText: '1.0Mb/s'} : {})}
                     : t,
             );
             void libraryService.resumeDownload(id);

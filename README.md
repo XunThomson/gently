@@ -41,7 +41,7 @@ pnpm tauri dev     # 桌面端：真实核心 + 本地 SQLite + 插件沙箱
 | 命令 | 作用 |
 |---|---|
 | `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm smoke` | 冒烟测试：状态层断言 + 全部组件可渲染 + i18n / CSS token / 契约守卫（296 项；末尾用**假宿主**把「核心优先读 / 演示源路由 / 核心报错 / 下载被拒 / 皮肤裁决」等桌面端分支也跑一遍） |
+| `pnpm smoke` | 冒烟测试：状态层断言 + 全部组件可渲染 + i18n / CSS token / 契约守卫（299 项；末尾用**假宿主**把「核心优先读 / 核心在时不退回 mock / 下载被拒 / 皮肤裁决」等桌面端分支也跑一遍） |
 | `pnpm check:contract` | 契约守卫：文档 ↔ Rust 命令/事件清单 ↔ 前端服务层与事件常量（含事件名字符集，双向） |
 | `pnpm check:reachability` | 界面可达性守卫：每条契约能力是否**真的能从界面走到**（有实现有封装、却没人调用 → 失败；白名单要写理由） |
 | `pnpm verify` | 交付前一次跑完**五道关卡**：typecheck + smoke + check:contract + check:reachability + `cargo test -p gently-core` |
@@ -49,7 +49,7 @@ pnpm tauri dev     # 桌面端：真实核心 + 本地 SQLite + 插件沙箱
 | `pnpm ui:capture` | （仅 Windows）截屏/驱动打包版做视觉走查：`pnpm ui:capture -- -Launch -AssertRendered -Output release/screenshots/boot.png -Kill` |
 | `pnpm package:portable` | **离线可用的分发产物**：便携版 zip（输出在 `release/`） |
 | `pnpm tauri build` | 出 MSI / NSIS 安装包（首次需要联网取打包工具，见下） |
-| `cargo test -p gently-core` | 核心单测（212 项，不依赖 tauri，秒级） |
+| `cargo test -p gently-core` | 核心单测（218 项，不依赖 tauri，秒级） |
 
 ### 离线构建约定
 

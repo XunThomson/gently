@@ -1,4 +1,5 @@
 import {
+    demoSourcesEnabled,
     getActiveMusicSource,
     getMusicSource,
     getMusicSourceQualities,
@@ -19,6 +20,8 @@ import type {
     Track,
     TrackQuality,
 } from '../types';
+import type {MusicSourcePlugin} from '../plugins';
+import {coreAvailable} from './core.bridge';
 import {
     coreAlbum,
     corePlaylist,
@@ -62,6 +65,23 @@ export const catalogService = {
         return listEnabledMusicSources().map((plugin) => ({...plugin.info, enabled: true}));
     },
 
+    /**
+     * 当前生效的音源；**一个可用音源都没有时返回 `null`**。
+     *
+     * `sources` 传「已安装音源清单」（界面的插件列表，桌面端来自核心）时优先看它：
+     * 前端注册表在桌面上是**空的**（内置演示源只在浏览器预览里注册），
+     * 只读注册表会让设置页在核心明明有音源时显示「还没有安装任何插件」。
+     * 缺省退回注册表（浏览器预览，或调用方手上没有清单）。
+     *
+     * 给界面用：视图不得直接依赖 `src/plugins`（AGENTS 第 5 条），而且桌面上
+     * 「还没装音源」是正常状态——返回 `null` 让视图渲染空态，而不是在渲染期
+     * 撞上一个抛出的异常（应用没有错误边界，那会整页白屏）。
+     */
+    activeSource(sources?: PluginInfo[]): PluginInfo | null {
+        if (sources) return sources.find((plugin) => plugin.enabled) ?? sources[0] ?? null;
+        return getActiveMusicSource()?.info ?? null;
+    },
+
     setSourceEnabled(id: string, enabled: boolean): void {
         setMusicSourceEnabled(id, enabled);
     },
@@ -99,7 +119,9 @@ export const catalogService = {
      */
     async fetchTopLists(sourceId?: string): Promise<{groups: TopListGroup[]; error?: CoreError}> {
         await ensureCoreSources();
-        const id = sourceId && sourceId !== 'all' ? sourceId : this.defaultSourceId();
+        const id: string | null = sourceId && sourceId !== 'all' ? sourceId : this.defaultSourceId();
+        // 一个源都没有：如实返回空（界面显示「还没有安装任何音源」），不是故障
+        if (!id) return {groups: []};
 
         if (isCoreSource(id)) {
             /* 用对象持有错误：`let` 变量在闭包里被赋值时 TS 的收窄会把它当成 `null` */
@@ -143,17 +165,21 @@ export const catalogService = {
     },
 
     /**
-     * 聚合模式下「用哪个源」：优先级最高的已启用源。
+     * 聚合模式下「用哪个源」：优先级最高的已启用源；**一个都没有时返回 `null`**。
      *
      * 榜单是**按源**提供的，聚合没有意义（跨源的分类树无法合并），
      * 因此 `all` 只是「让应用替我挑一个源」，而不是真的聚合。
      *
      * 桌面端优先挑**核心认识的源**：内置演示源是兜底，不该盖过核心里真实装好的音源。
+     *
+     * **不再抛异常**：注册表为空（桌面上一个音源都没装）是正常状态，
+     * 以前这里 `getActiveMusicSource()` 会抛，把「还没装音源」变成一条被拒的 Promise，
+     * 调用方只能看到一个没有理由的空列表。返回 `null` 由调用方给诚实的空态。
      */
-    defaultSourceId(): string {
+    defaultSourceId(): string | null {
         const coreId = coreSourceIds(true)[0];
         if (coreId) return coreId;
-        return getActiveMusicSource().info.id;
+        return getActiveMusicSource()?.info.id ?? null;
     },
 
     /* ---------------- 专辑 / 歌单详情 ---------------- */
@@ -164,6 +190,9 @@ export const catalogService = {
      * 核心认识的源由核心调插件的 `getAlbumInfo`；**核心不认识的源（内置演示源）
      * 不问核心**——核心只会回 `common.not_found`，白跑一趟还污染日志——
      * 直接退回浏览器预览的 mock。两条路径返回同一形状 `Album`（含 `tracks`），视图不分支。
+     *
+     * mock 只在 `!coreAvailable()`（浏览器预览）时兜底：桌面上核心查不到就是**没有**，
+     * 拿演示专辑顶上等于把别人的假数据当成用户点开的内容。
      */
     async fetchAlbum(source: string, id: string): Promise<Album | null> {
         await ensureCoreSources();
@@ -171,6 +200,7 @@ export const catalogService = {
             const viaCore = await coreAlbum(source, id);
             if (viaCore) return viaCore;
         }
+        if (coreAvailable()) return null;
         return findAlbum(id);
     },
 
@@ -181,6 +211,7 @@ export const catalogService = {
             const viaCore = await corePlaylist(source, id);
             if (viaCore) return viaCore;
         }
+        if (coreAvailable()) return null;
         return findCuratedPlaylist(id);
     },
 
@@ -216,7 +247,9 @@ export const catalogService = {
      */
     async fetchRecommendFrom(limit: number, sourceId?: string): Promise<Track[]> {
         await ensureCoreSources();
-        const id = sourceId ?? this.defaultSourceId();
+        const id: string | null = sourceId ?? this.defaultSourceId();
+        // 一个源都没有：没有可推荐的东西，如实返回空
+        if (!id) return [];
         if (isCoreSource(id)) {
             const viaCore = await coreRecommend(id);
             return (viaCore ?? []).slice(0, limit);
@@ -231,6 +264,10 @@ export const catalogService = {
      *
      * 核心认识的源**必须**走核心：前端注册表里没有它的实现，不判定就会静默退回
      * 内置演示源——用户以为在搜 A 源，拿到的其实是演示数据（比报错更糟）。
+     *
+     * 没有可用的源 id（桌面上一个音源都没装）时返回**空**：以前这里退回
+     * `getActiveMusicSource()`，注册表为空就会抛，把「还没装音源」变成一条被拒的 Promise；
+     * 就算注册表里有演示源，拿它顶替用户在搜的源同样是冒充。
      */
     async searchIn(keyword: string, sourceId?: string): Promise<Track[]> {
         await ensureCoreSources();
@@ -239,7 +276,8 @@ export const catalogService = {
             // 单源搜索没有跨源合并可言：核心结果里每条只有一个候选，取候选里的曲目即原始条目
             return viaCore ? viaCore.items.flatMap((item) => item.candidates.map((candidate) => candidate.track)) : [];
         }
-        const plugin = (sourceId ? getMusicSource(sourceId) : undefined) ?? getActiveMusicSource();
+        const plugin = sourceId ? getMusicSource(sourceId) : getActiveMusicSource();
+        if (!plugin) return [];
         return plugin.search(keyword);
     },
 
@@ -259,6 +297,10 @@ export const catalogService = {
      * 「还没装音源」变成「搜不到任何东西」），直接用本地演示源撑住界面；
      * 装好插件后下一次搜索就自动以核心为准。
      *
+     * **演示源只在浏览器预览里存在**（`demoSourcesEnabled`，见 `src/plugins/index.ts`）：
+     * 桌面端即使核心里一个源都没装，本地这一路也必须是空的——拿演示数据顶上去，
+     * 用户看到的就是「搜到了歌，点开却播不了」的假结果。
+     *
      * 两类都有结果时，用**前端这一份** `groupTracks` 做跨类合并：否则同一首
      * (标题, 歌手) 会在「核心结果」和「演示结果」里各占一条。核心那份合并只
      * 覆盖核心自己的源，两者不重叠、也不冲突。
@@ -270,9 +312,10 @@ export const catalogService = {
         await ensureCoreSources();
 
         const coreIds = coreSourceIds(true);
-        const localSources = listEnabledMusicSources().filter(
-            (plugin) => !isCoreSource(plugin.info.id),
-        );
+        const localSources =
+            demoSourcesEnabled && !coreAvailable()
+                ? listEnabledMusicSources().filter((plugin) => !isCoreSource(plugin.info.id))
+                : [];
 
         const [viaCore, localTracks] = await Promise.all([
             coreIds.length > 0
@@ -307,7 +350,7 @@ export const catalogService = {
      * 并发请求所有已启用音源并按用户偏好排序候选。
      * 单个音源失败不影响整体（`Promise.allSettled`）。
      */
-    async aggregate(fetchOne: (plugin: ReturnType<typeof getActiveMusicSource>) => Promise<Track[]>): Promise<GroupedTrack[]> {
+    async aggregate(fetchOne: (plugin: MusicSourcePlugin) => Promise<Track[]>): Promise<GroupedTrack[]> {
         const sources = listEnabledMusicSources();
         if (sources.length === 0) return [];
 

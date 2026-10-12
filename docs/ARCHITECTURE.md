@@ -129,10 +129,18 @@ plugins/types.ts        MusicSourcePlugin：info + qualities + fetchTopLists / f
 plugins/registry.ts     注册、启用状态（唯一来源）、音源元数据、按 id 取插件
 plugins/builtin/
   source-factory.ts     用内置数据造一个「行为真实」的模拟源（可设不可播比例 / 延迟）
+  demo-source-info.ts   内置示例源的**元数据**（无 mock 数据依赖，桌面端唯一会进包的部分）
   mock-source.ts        内置示例源：始终可播，作为自动回退兜底
-  alternate-sources.ts  Bilibili（约 1/4 不可播）、网易云（约 1/3 不可播）
-plugins/index.ts        副作用注册全部内置插件
+  alternate-sources.ts  模拟源 B / C（各带不同的不可播比例与延迟，纯本机模拟）
+  demo-sources.ts       三个演示源的集合，**只被动态 import**
+plugins/index.ts        顶层判定 Tauri 宿主：没有宿主才动态注册演示源（`demoSourcesEnabled`）
 ```
+
+> **开发/生产数据隔离（R53）**：演示源只属于**浏览器预览**。`plugins/index.ts` 在模块顶层
+> 判定 `'__TAURI_INTERNALS__' in window`（与 `window.service.isTauri()` 同一条件，**不 import
+> services**，避免 plugins↔services 环），只有没有宿主时才 `import('./builtin/demo-sources')`——
+> 桌面端产物里 `src/mock/**` 与那份随包测试音频因此不在主包，也不会被加载。
+> 服务层一律「**只有没有核心才退回 mock**」（见下），界面不得用演示数据冒充用户数据。
 
 ### 要解决的问题
 
@@ -398,17 +406,23 @@ Rust 本机核心（**已实现**：契约里的 60 条命令 / 8 类事件，`c
 症状是「流式搜索只能等超时、下载进度永远不动」。现在 Rust 单测、契约守卫（四处比对 + 字符集）、
 前端冒烟三层都拦这件事。
 
-**按源路由（核心源 vs 内置演示源）**：桌面上有两类音源并存——核心里真正的插件源
-（`plugin.list` 是权威，只能由 `catalog.*` 命令执行）与只活在前端注册表的**内置演示源**
-（`src/plugins/builtin`，核心完全不认识）。`src/services/core.sources.ts` 缓存核心的插件清单
-（`rememberCoreSources` + TTL 5s 的 `ensureCoreSources`），`catalogService` 按**源**而不是
-「有没有核心」路由：核心认识的源走核心，演示源走本地实现；核心回 `common.not_found` 只当
-「核心不认识这个源」（路由表过期/插件刚卸载），退回本地实现而不是报故障。判定错一次就会
-出现「界面把正常状态显示成故障」或「用户选了 A 源却拿到演示数据」。
+**按源路由（核心源 vs 内置演示源）**：桌面上核心里是真正的插件源（`plugin.list` 是权威，
+只能由 `catalog.*` 命令执行）；**内置演示源只活在浏览器预览里**（`src/plugins/builtin`，
+核心完全不认识，桌面端连注册都不会发生，见上）。`src/services/core.sources.ts` 缓存核心的插件清单
+（`rememberCoreSources` + TTL 5s 的 `ensureCoreSources`），`catalogService` 按**源**路由：
+核心认识的源走核心；浏览器预览里核心不认识的演示源走本地实现；核心回 `common.not_found` 只当
+「核心不认识这个源」（路由表过期/插件刚卸载），退回本地实现而不是报故障
+（`searchAll` 的本地那一路额外要求 `demoSourcesEnabled && !coreAvailable()`）。
+判定错一次就会出现「界面把正常状态显示成故障」或「用户选了 A 源却拿到演示数据」。
 
-**mock 数据的边界**：mock 只在**没有核心**（浏览器预览）时出现（`libraryService` / `catalogService`
-按 `coreAvailable()` 分流）。核心可用却读失败时，门面返回空并如实报错，**绝不退回 mock**——
-否则用户看到的是示例数据冒充自己的收藏、歌单、本地曲库与下载，比空列表糟糕得多。
+**mock 数据的边界**：mock 只在**没有核心**（浏览器预览）时出现（`libraryService` / `catalogService` /
+`recommendService` 按 `coreAvailable()` 分流——插件列表、推荐、专辑/歌单详情、聚合搜索都适用）。
+核心可用却读失败时，门面返回空并如实报错，**绝不退回 mock**——
+否则用户看到的是示例数据冒充自己的收藏、歌单、本地曲库、下载与推荐，比空列表糟糕得多。
+**「一个源都没装」是正常状态，不是故障**：`catalogService.defaultSourceId()` 返回 `null`
+（不抛异常）、`getActiveMusicSource()` 返回 `undefined`，界面渲染诚实的空态
+（搜索页说「还没有安装任何音源」，设置页说「还没有安装任何插件」），
+而不是把 `null` 当异常抛在渲染期（应用没有错误边界，那会整页白屏）。
 写入是乐观更新 + 落库，下一次 `load()` 以核心为准。
 
 **桌面端分支怎么测**：冒烟跑在 Node（没有 Tauri），因此 `pnpm smoke` 里用 `withFakeCore()`

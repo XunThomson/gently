@@ -62,14 +62,15 @@ export function getMusicSourceQualities(id: string): readonly TrackQuality[] {
 }
 
 /**
- * 当前生效的音乐源：第一个已启用的插件。
+ * 当前生效的音乐源：第一个已启用的插件；**一个都没有时返回 `undefined`**。
+ *
+ * 「桌面上一个音源都没装」是**正常状态**，不是异常：以前这里 `throw`，
+ * 调用方（设置页）在渲染期直接抛出，而应用没有错误边界——整页白屏。
+ * 空列表由调用方按空态呈现（设置页显示「还没有安装任何插件」），
+ * 与「源可用」是两条不同的路。
+ *
  * 仅用于「单源」调用（如本地库），聚合场景请使用 `listEnabledMusicSources`。
  */
-export function getActiveMusicSource(): MusicSourcePlugin {
-    const active = listEnabledMusicSources()[0];
-    if (active) return active;
-
-    const fallback = listMusicSources()[0];
-    if (!fallback) throw new Error('[plugins] 没有可用的音乐源');
-    return fallback;
+export function getActiveMusicSource(): MusicSourcePlugin | undefined {
+    return listEnabledMusicSources()[0] ?? listMusicSources()[0];
 }

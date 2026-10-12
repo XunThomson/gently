@@ -259,7 +259,12 @@
     cursor: pointer;
 }
 
-/* ---------- 响应式 ---------- */
+/* ---------- 响应式 ----------
+   窄窗只收**次要**信息，绝不整块砍掉右侧控件：
+   「音源 / 音质 / 循环模式 / 播放队列 / 功能抽屉」在别处都没有入口
+   （R53 实测：默认窗口 916 宽时 `max-width: 900` 把整组 `.right` 藏了，
+   用户看到的是「播放条少了半截」）。音量滑块与秒数可以收——
+   音量仍有键盘 / 抽屉两条路，秒数在进度条上有。 */
 
 @media (max-width: 1180px) {
     .volume,
@@ -268,13 +273,13 @@
     }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
     .row {
-        grid-template-columns: minmax(0, 1fr) auto;
+        gap: var(--space-2);
         padding: 0 var(--space-4);
     }
 
     .right {
-        display: none;
+        gap: var(--space-1);
     }
 }

@@ -32,20 +32,11 @@ export const SONG_POOL: [string, string, string, string][] = [
     ['南下', '林清野', '《南下》', '3:52'],
 ];
 
-export const GRADIENTS: string[] = [
-    'linear-gradient(135deg,#8b6bff,#4a2fd6)',
-    'linear-gradient(135deg,#ff9a8b,#ff5f7e)',
-    'linear-gradient(135deg,#43c6ac,#1a8f8f)',
-    'linear-gradient(135deg,#f7b733,#e08400)',
-    'linear-gradient(135deg,#5b8def,#2b4fc7)',
-    'linear-gradient(135deg,#f0708f,#c7355c)',
-    'linear-gradient(135deg,#59c3a8,#2b8f76)',
-    'linear-gradient(135deg,#7f7fd5,#4a4ab8)',
-    'linear-gradient(135deg,#ff8a65,#e64a19)',
-    'linear-gradient(135deg,#4facfe,#2b6fd6)',
-    'linear-gradient(135deg,#c471f5,#8b3fd6)',
-    'linear-gradient(135deg,#43e97b,#2aa85a)',
-];
+/**
+ * 渐变占位色板**本体在 `src/utils/gradients.ts`**（它不是 mock 数据，桌面端也在用）；
+ * 这里转出一次，让 `mock/**` 内部的既有引用不必改动。
+ */
+export {GRADIENTS} from '../utils/gradients';
 
 /** [标题, 歌手, 专辑] */
 export const RECOMMENDED: [string, string, string][] = [

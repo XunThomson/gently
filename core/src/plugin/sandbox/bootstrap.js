@@ -96,13 +96,46 @@
         getTopList: 'getTopListDetail',
     };
 
+    /**
+     * **参数形状翻译**：MusicFree 的详情类函数收的是**条目对象**，我们这边只有 id 字符串。
+     *
+     * 不透传会怎样（R53 实测，真实 B 站插件）：`getTopListDetail(topListItem)` 里读
+     * `topListItem.id` → 字符串上是 `undefined` → URL 拼成 `.../x/web-interface/undefined`
+     * → 上游 404 → 界面只剩一句 `plugin.runtime_error`。**命令返回成功、日志只有 404**，
+     * 看起来像「插件坏了」，其实是宿主给错了参数形状。
+     *
+     * 判定依据是「这个能力名是不是别名解析来的」：别名 = 那确实是 MusicFree 的函数，
+     * 按 MusicFree 的形状给参；用我们自有 ABI 名实现的插件保持原样（`getTopList(id, page)`
+     * 收字符串 id，`catalog_detail.rs` 的单测盯着这一点）。
+     */
+    const itemArg = (value) => (value !== null && typeof value === 'object' ? value : { id: value });
+
+    /** 别名函数的参数适配：第一个参数是条目对象，后面的原样透传。 */
+    const ALIAS_ARGS = {
+        getTrackInfo: (args) => [itemArg(args[0])],
+        getPlaylistInfo: (args) => [itemArg(args[0]), args[1]],
+        getTopList: (args) => [itemArg(args[0]), args[1]],
+    };
+
+    /**
+     * `getAlbumInfo` 的名字两边一样，无法靠别名判断，改用**兼容模式标记**：
+     * MusicFree 的 `getAlbumInfo(albumItem)` 要对象，自有 ABI 的 `getAlbumInfo(id)` 要字符串。
+     * 判不出来时保持我们的 ABI 形状（自有 ABI 是契约里写死的那一套）。
+     */
+    const compatMode = envInfo.compat === true;
+    if (compatMode) {
+        ALIAS_ARGS.getAlbumInfo = (args) => [itemArg(args[0])];
+    }
+
     globalThis.__collect = function () {
         const names = ['search', 'getMediaSource', 'getTrackInfo', 'getAlbumInfo',
                        'getPlaylistInfo', 'getLyric', 'getTopLists', 'getTopList', 'getRecommend'];
         const out = {};
         const exported = (globalThis.module && globalThis.module.exports) || {};
 
-        // 先按我们自己的 ABI 名找，找不到再试协议别名（自有 ABI 名优先）
+        // 先按我们自己的 ABI 名找，找不到再试协议别名（自有 ABI 名优先）；
+        // 顺便记下「这个名字是不是别名解析来的」，供 `__invoke` 决定参数形状。
+        const viaAlias = {};
         const resolve = (name) => {
             const candidates = [name];
             if (ALIASES[name]) candidates.push(ALIASES[name]);
@@ -114,7 +147,10 @@
                 if (typeof fn !== 'function' && typeof exported[candidate] === 'function') {
                     fn = exported[candidate];
                 }
-                if (typeof fn === 'function') return fn;
+                if (typeof fn === 'function') {
+                    if (candidate !== name) viaAlias[name] = true;
+                    return fn;
+                }
             }
             return undefined;
         };
@@ -124,6 +160,7 @@
             if (typeof fn === 'function') { out[names[i]] = fn; }
         }
         globalThis.__plugin_exports = out;
+        globalThis.__plugin_alias = viaAlias;
         return Object.keys(out);
     };
 
@@ -143,6 +180,11 @@
             globalThis.__gentlyError = 'GENTLY_PLUGIN_ERROR: 调用参数不是合法 JSON';
             return;
         }
+        // 兼容插件（别名函数 / 兼容模式下名字相同的 `getAlbumInfo`）按 MusicFree 的形状收参数；
+        // 兼容插件若实现的是我们自有的名字（`getTopList(id, page)`），就按我们的形状给字符串。
+        const isAlias = (globalThis.__plugin_alias || {})[name] === true;
+        const adapter = ALIAS_ARGS[name];
+        if (adapter && (isAlias || (compatMode && !ALIASES[name]))) args = adapter(args);
         const fail = (err) => {
             globalThis.__gentlyError = 'GENTLY_PLUGIN_ERROR: ' + (err && err.message ? err.message : String(err));
         };

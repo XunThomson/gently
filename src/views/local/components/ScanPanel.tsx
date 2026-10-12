@@ -102,6 +102,7 @@ export function ScanPanel() {
                         removed: scanSummary.removed,
                         skipped: scanSummary.skipped,
                         unreadable: scanSummary.unreadable,
+                        ignored: scanSummary.ignored,
                     })}
                 </p>
             )}

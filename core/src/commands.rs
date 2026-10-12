@@ -51,6 +51,8 @@ pub struct CoreContext {
     pub http: Arc<dyn HttpTransport>,
     /// 流式搜索的取消登记表
     pub searches: Arc<crate::catalog::SearchRegistry>,
+    /// 插件原始条目的进程内快照（播放解析要把插件自己的条目原样交回插件，见 `ItemSnapshots`）
+    pub snapshots: Arc<crate::catalog::ItemSnapshots>,
     /// 下载任务的控制登记表（暂停/取消标志）
     pub downloads: Arc<crate::download::DownloadRegistry>,
     /// 本地流代理（仅回环 + 一次性令牌；契约 §7）
@@ -79,6 +81,7 @@ impl CoreContext {
             plugins,
             http,
             searches: Arc::new(crate::catalog::SearchRegistry::default()),
+            snapshots: Arc::new(crate::catalog::ItemSnapshots::default()),
             downloads: Arc::new(crate::download::DownloadRegistry::default()),
             streams,
             events: Arc::new(NullEventSink),
@@ -1228,8 +1231,15 @@ fn playback_resolve(ctx: &CoreContext, params: serde_json::Value) -> Fallible<se
             continue;
         }
 
-        // 插件看到的曲目对象：优先用前端给的原始字段，否则用引用构造最小对象
-        let track = params.track.clone().unwrap_or_else(|| json!({ "id": raw_id, "source": source }));
+        // 插件看到的曲目对象：优先用**插件自己产出过的原始条目**（归一化时留下的快照，字段最全），
+        // 其次用前端给的快照，最后退化成最小对象。
+        // 为什么快照优先：MusicFree 生态的 `getMediaSource(musicItem)` 要读 bvid/aid/cid 这类
+        // 源内字段，而契约只把 `source:rawId` 交给前端——只传最小对象的话，真实插件一播就报错（R53 实测）。
+        let track = ctx
+            .snapshots
+            .get(source, raw_id)
+            .or_else(|| params.track.clone())
+            .unwrap_or_else(|| json!({ "id": raw_id, "source": source }));
         let args = json!([track, params.quality]).to_string();
 
         let raw = match ctx.plugins.call(source, "getMediaSource", &args) {

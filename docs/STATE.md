@@ -4,17 +4,189 @@ last_verified: 2026-10-11
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 950
-tldr: 第五十九轮（R52）：**交付物冻结后的最终验收**——把 `release/gently-0.1.0-windows-x64.zip` 解到另一个目录、用解出来的那份 exe 冷启动全新数据库：内层 exe 哈希 `37f40a22…c292` 与 `.sha256` 逐字符一致；8 条迁移跑完、`SQLite 就绪 schema_version=8`、凭据后端 `windows-credential-manager`；`GENTLY_LOG=debug` 下 `library.favorites.list / skin.list / system.status / library.playlists.list / plugin.list` **全部 `ok=true`**（默认 info 级别不写 dispatch 行，所以「日志里没有 dispatch」不等于前端没调核心）；点开主题市场 10 张内置卡片只有「应用」/「使用中」、**没有「删除皮肤」**——上一轮的修复确实在交付版里。本轮无源码改动，`pnpm verify` 五道全绿（smoke 296/296、核心 212/212）。此前第五十八轮（R51）：**顺着上一轮刚改过的主题市场看「删除皮肤」这条边，抓到一个真 bug**——每个**内置**预设卡片上都长着「删除皮肤」按钮，点它→确认→界面提示「已删除皮肤「深海蓝」」，而卡片纹丝不动。根因是一条完整的错误链：视图守卫写的是 `!item.builtin`，但 `presets.json` **从来没写过 `builtin` 字段**（`undefined` 让守卫失效）→ 点下去 store 只过滤用户皮肤（无事发生）→ 核心 `skin.remove{id:ocean}` 必然 `skin.not_found`（核心只认识用户导入的皮肤）→ 失败被 `void` 掉 → 视图却无条件提示「已删除」——**成功提示与事实相反**。修法是一处收口：`presets.ts` 里给内置皮肤统一补 `builtin: true`（删除守卫与「导出要不要问核心」读的是同一个标记），冒烟加断言「内置预设全部带 builtin」。打包版实测：内置卡片只剩「应用」，粘贴 JSON 导入的「探针皮肤」卡片带「删除皮肤」，点它→确认→`skin.remove ok=true`、卡片消失、品牌色回默认、`skins` 表 0 行——**导入→应用→删除整条生命周期走通**。`pnpm smoke` 296/296、`pnpm verify` 五道全绿（核心 212/212）；前端有改动已重新打包。此前第五十七轮（R50）：皮肤导入补两条粘贴来源（消除原生选择器盲区）；**把「皮肤导入」补成和插件导入一样可靠**——上一轮查清原生选择器「弹得出来但合成输入驱动不了它」，与其把这条路留在「只能人手点」，不如按插件页早就验证过的做法补两条粘贴来源（核心侧 `skin.preview`/`skin.install` 收的本来就是同一个 `ImportSource`）。改动：服务层加 `skinService.importFromPath`（`{kind:file}`，浏览器预览按路径读不了文件就如实拒绝）；主题市场的「导入皮肤」按钮改成**展开导入面板**（来源标签「粘贴 JSON / 本机路径」+ 右侧仍保留「从文件选择…」），导入成功即应用并收起、失败按「被拒键名 → 错误码文案 → 原因」逐级显示；文案 zh/en 成对补齐；样式第一次提交时用了不存在的 `--card-padding`/`--font-mono`，**被 CSS token 守卫当场拦下**（已改用既有 token）。打包版实测：粘贴 JSON → 日志 `skin.preview ok=true` + `skin.install ok=true`，全站品牌色立刻变成皮肤里的品红，`skins` 表出现 `probe-skin`——**上一轮那条自动化盲区消失**。冒烟 +2 条假宿主断言（paste/file 两条来源都真的走 preview+install）→ 295/295；`pnpm verify` 五道全绿（核心 212/212）。因前端有改动重新打包，exe/zip 已更新。此前第五十六轮（R49）：对话框坐标系修复 + 皮肤导入边界；**修掉上一轮那个工具 bug，再试把皮肤导入走完**。修法：新增 `dialog` / `shotdlg` / `clickdlg` 三步——先把「当前前台窗口」**记成对话框句柄**，之后截图与点击都以它为准，不再跟着会漂移的前台走；配上 `nofocus`，并且用 `IsWindowEnabled(主窗口)` 当「模态窗开没开」的硬判据。复现结果**一半成功、一半卡住**：点「导入皮肤」确实弹出模态的 Win32「打开」对话框，`clickdlg` 到「文件名」再粘贴**能让完整路径落进字段**（截图可见），但**点「打开(O)」与回车都不生效**，对话框一直开着、核心侧始终没有 `skin.preview`——合成输入能进文本框（那个框默认就有焦点），却驱动不了对话框自己的按钮。**如实记为未覆盖**：皮肤导入的产品行为没问题（人手动选一个文件即可），核心链路另有 8 项 `skin.rs` 测试 + 冒烟的服务层断言，只有「选择器 → 读文件文本」这一小段浏览器 API 胶水没能在真机上自动验过，不拿「选择器弹得出来」冒充端到端通过。本轮无产品源码改动，`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第五十五轮（R48）：原生选择器可用性查证 + README 措辞澄清；**把「导入皮肤」这条唯一没验过的用户路径验清楚**——它走的是 WebView 自己的 `<input type=file>` 原生选择器。结论：**原生选择器是有的**（AGENTS 那句「没有原生文件选择器」只对 Tauri 的 dialog 插件成立）：同一行工具栏的「导出」点了会落盘（证明点击有效），点「导入皮肤」后主窗口 `IsWindowEnabled` 从 True 变 **False**（模态窗的铁证），再用新加的 `shotfg:` 截**前台窗口**，拍到的就是标准 Win32「打开」对话框（`skin-file-dialog.png`）——所以这颗按钮不是死按钮。**边界如实记录**：继续用模拟输入驱动那扇对话框时，路径确实进了「文件名」框，但回车/点「打开」都没能让它生效（核心侧没有 `skin.preview`）——大概率是几步之间前台窗口被换走，而 `clickfg` 按当前前台窗口算坐标，前台变成应用窗口时坐标就落空了；端到端没跑通，不粉饰。为此给驱动脚本加了三个能力：`nofocus` / `shotfg` / `clickfg`。本轮无产品源码改动，`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第五十四轮（R47）：交付物 zip 解压验收 + 便携说明纠错；**验收「用户真正拿到的那份东西」**——把 `release/*.zip` 解压到干净目录、跑解压出来的 exe、逐字读它随包的说明。结果抓到一处**交付物里的事实错误**：`README-便携版.txt`（用户解压后第一眼看到的那份）仍在「已知限制」里写「第三方凭据当前存在内存里，重启后需要重新填写」，而 Windows 的凭据管理器早已接上（诊断卡片实测 `windows-credential-manager`「已接入系统凭据库（重启后仍在）」）——改掉打包脚本里的说明模板并重新打包。验收其余项都过：解压目录只有 exe + 两份 README；解压出来的 exe 与打包目录里的**SHA256 完全相同**（`2bb411c8…22ce`）；从解压目录启动照常 `SQLite 就绪 schema_version=8`、迁移 8 条、诊断卡片与仓库构建版**逐像素一致**。本轮无源码改动，`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第五十三轮（R46）：安装包工具链查证 + 浏览器预览实测；**两件收尾**。①「安装包」这条待办查证过：本机没有 candle/light/wix/makensis，也没有 `%LOCALAPPDATA%\tauri` 缓存与 WiX/NSIS 安装目录——打 MSI 确实得先联网取 WiX，环境受限成立（不是想当然）。②顺手发现**交付物里的文档是旧的**：zip 内那份 README 还写着冒烟 287 项、没有内嵌封面那段；`pnpm package:portable` 重新打包后 zip 内 README 已是当前版本，**exe 字节未变**（`2bb411c8…22ce`）。③把**浏览器预览**这条从没在真实浏览器里验过的路走通了：`pnpm build` + `pnpm preview` → 用 Edge 应用窗口打开 → 排行榜/下载管理都正常渲染 mock 数据，设置页诊断卡片如实显示**「浏览器模式」**且不出现核心那一串行（没有拿假信息冒充核心）。为此把驱动脚本升级成通用窗口驱动：新增 `-ProcessName` / `-AppUrl`，并把窗口查找改成**遍历全部同名进程**取最大可见窗口（Edge 是多进程的，以前只取最新进程会直接找不到窗口）。本轮无源码改动，`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第五十二轮（R45）：文档一致性审计；**文档一致性审计**——代码侧验收已通，但文档里的数字与状态已经开始跟不上：①`AGENTS.md` 还写着「当前阶段：UI/前端交付，数据全部为 mock」，实际核心早已实现契约全部 60 条命令（沙箱/本机库/内嵌封面/回环代理/推荐/皮肤/下载/订阅），mock 只是浏览器预览兜底；②AGENTS/README 的冒烟与核心单测数还是 287/207（实测 293/212）；③`ARCHITECTURE.md` 的依赖图还说 mock 是「后续被插件替换」，核心框图写着「规划中」且缺封面缓存/推荐；④`ROADMAP.md` 的 M0–M5 里程碑标题停在「进行中」/无状态，现在逐个标成**已完成**并点名证据（只剩联网打 MSI/NSIS 与人工听感两件环境受限项）；⑤STATE 验证表的冒烟数、刻意留白清单（补上 action `actions.player.stop`）也一并对齐；⑥契约 §11 的性能预算补上 R39 的实测口径与测量入口。顺带扫过：代码里没有 TODO/FIXME 占位，契约三处一致。本轮只改文档，交付物同上轮（exe `2bb411c8…22ce`）；`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第五十一轮（R44）：设置页诊断卡片 + 危险确认开关；**把设置页这块没看过的界面走了一遍，两个点都验到底**。①本机核心诊断卡片里的每一项都与真实环境对得上（核心 v0.1.0 / windows-x86_64 / 数据库已就绪 / 凭据存储 `windows-credential-manager` / 条目统计 0·0·0·0 / 数据与日志目录真实路径），两个「打开目录」按钮点了就是 `system.reveal ok=true`。②「危险操作前二次确认」切到**禁用**后，回本地曲库点「移除」**确实不再弹确认框**——`library.local.remove ok=true` 直接落库、`local_tracks` 3→2，把「设置项 → useConfirm → 危险操作」整条链走通了，而不是只看开关的字面状态。本轮无源码改动，交付物同上轮（exe `2bb411c8…22ce`）；`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。顺带记一条坐标教训：设置页右侧那排「确定/禁用/浅色/深色」是**纯文本按钮，命中区就是字形**，按行中心估会落到两个词中间。此前第五十轮（R43）：干净环境完整链路（退出标准）；**在干净环境里把 ROADMAP 的退出标准跑了一遍**——此前每一环都单独验过，但从没在同一次会话里连着走完。清空数据目录后一次会话依次完成：启动建库（迁移 8 条）→ 扫描本地目录（`local_tracks=3`）→ 播放本地曲目（回环代理 206）→ 收藏它 → 从「本机路径」导入夹具插件（预览权限 → 勾选同意 → `plugin.import`/`plugin.reload`，日志 `插件已加载 probe-source capabilities=[Search, GetMediaSource, GetTrackInfo, GetLyric]`）→ 流式搜索（`catalog.search`，结果带插件封面）→ 播放插件曲目（`catalog.track` + `catalog.lyrics` + `playback.resolve`；离线取不到上游时进度改走模拟时钟）→ 收藏插件曲目（`favorites` 里同时有 `local:…` 与 `probe-source:1`）。结论：退出标准的**代码侧全部满足**，只剩「联网打 MSI/NSIS」与「人工听一次扬声器」两件环境受限的事。本轮无源码改动，交付物同上轮（exe `2bb411c8…22ce`）；`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第四十九轮（R42）：插件链路重新验收 + `getMediaSource` 参数形状写进契约；**改动十几轮之后把插件整条链路重新验收了一遍**：从「本机路径」导入夹具插件（`plugin.preview` 列出权限 + 「将覆盖同 id 插件」提示 → 勾选同意 → `plugin.import`/`plugin.reload`）→ 沙箱流式搜索（`catalog.search`，结果带插件的 data-URI 品红封面、时长按 durationSec 归一化、来源徽标）→ 播放（`playback.resolve` + `catalog.track` + `catalog.lyrics`，回环代理按预期因离线取不到上游）。结论：R37–R43 的改动没碰坏插件链路，插件的 `artwork` 在新封面列里照常渲染。另外把 `getMediaSource(track, quality)` 的坑写进契约：第一个参数是**曲目对象**不是字符串 id（夹具第一版拼出 `probe-[object Object].mp3`，命令全 ok 只有翻上游日志才看得出来；`getTrackInfo/getLyric` 才是字符串 id）。本轮无源码改动，交付物同上轮（exe `2bb411c8…22ce`）；`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第四十八轮（R41）：循环模式 + 主题市场 + 内置预设导出不再问核心；**把循环模式与主题市场这两块没走过的功能面走了一遍**。①循环模式：连点按钮能看到品牌色按下态（`repeat-phases.png` 放大三态对照），先设成 `all` 再放 3 秒的 WAV，日志出现**连续 5 个循环**（每组 `playback.report` + `recommend.feedback complete` + 紧接着新的 `playback.resolve`）——「循环播放全部」确实绕回队首重播；顺带记一条教训：截图很慢，先截图再点按钮会把点击推到曲目播完之后，看起来像「循环没生效」。②主题市场：应用「深海蓝」→ `skin.setActive ok=true` 且全站配色立刻变；导出皮肤真的落盘（Downloads 里 819 字节的合法 JSON），WebView2 下载通道可用。③照出一个「问错对象」：导出**内置预设**会去问核心（核心只有用户皮肤）→ `skin.export not_found 皮肤未安装：ocean` 的误导性告警，然后前端再退回本地序列化；改成内置预设直接前端序列化、用户皮肤才取核心原文（与 R27「演示源不问核心」、R37「本地曲目不问歌词」同一类收口），打包版复测告警消失、文件照常落盘。`pnpm verify` 五道关卡全绿（smoke 293/293、契约一致、可达性通过、核心单测 212/212）。此前第四十七轮（R40）：drag 工具 + SeekBar/音量/详情页 + 两个下载 bug；此前第四十六轮（R39）：截图抓到上一帧 + 行内操作列裁掉「播放/收藏」；此前第四十五轮（R38）：新建歌单静默失败 + 快照封面地址过期；此前第四十四轮（R37）：**本地文件的内嵌封面做完了，而且真的能看见**——核心扫描时把文件里的图落进 `<data>/cache/covers/<源路径哈希>.<ext>`，列表只多一个回环地址 `http://127.0.0.1:<port>/cover/<name>`（媒体代理新增的第三条路由，只服务这个目录、穿越与非法名一律 404）；前端零改动即可显示，顺手给业务列表的标题列加了封面缩略图（新 token `components.table`），六处列表一起受益。过程中照出**三个真 bug**：①扫描侧用文件系统路径（Windows `\`）写、列表侧用库里统一的 `/` 回查 → 哈希对不上，封面永远找不到（负向验证：去掉归一化测试立刻红）；②**symphonia 0.5.5 的 mp3 demuxer 不解析 ID3v2**，标签与封面只在探测的**链式元数据**里 → 之前本地 mp3 的标题/歌手/专辑/封面全都读不到（改为一并读取，用手写 ID3v2.4 夹具端到端钉住）；③粘贴 `C:\\…\\dir`（重复分隔符，Windows 照样认）会把同一个文件收成**两行**，旧行还永远清不掉、清理时顺手删掉活着那行的封面（路径归一化收成一份实现 + 清理前先看有没有活着的同源曲目，正反两向都验过）。封面提取的**两条路径各有离线夹具**：mp3（ID3v2/APIC，链式元数据）与 FLAC（PICTURE 块，容器元数据，夹具里手写了合法音频帧 + 帧头 CRC-8 / 帧尾 CRC-16）。另外本地曲目不再问核心要歌词（此前每次播放都在日志里留一条「插件未安装：local」）。`pnpm verify` 五道关卡全绿（smoke 287/287、契约一致、可达性通过（**无未归档的死动作**）、核心单测 211/211）。打包版实测：扫描三个夹具（mp3 品红封面、FLAC 青色封面、无封面）→ 逐像素核对两种格式的缩略图都是内嵌图原色、无封面那行是渐变；播放后播放条封面也是内嵌图；另外，同一文件按重复分隔符拼写也不会再收成两行（旧重复行会在下次扫描被清掉，且不会顺手删掉封面）。契约 §11 的性能预算也量了：1000 个 WAV 首扫 124 ms / 重扫 21 ms / 检索 P95 1.11 ms（外推 1 万文件首扫 ≈1.2 s，预算 10 s）。此前：R36 播放态复核、R35 播完结算、R34 本地播放路由、R33 假疑点澄清、R32 插件链路真实验收、R31 曲目详情接线、R30 截屏/驱动工具、R29 可达性守卫、R28 本地库扫描入口、R27 事件名与源路由、R26 测试隔离。
+tldr: 第五十三轮（R53）：**用户实测报来四个 bug + 一个插件需求，逐个复现并修掉**。① `D:\Xun\Music` 有文件却扫描为 0：音频扩展名白名单漏了 `.m4s`（B 站下载的音频就是这个后缀，与 `.m4a` 同属 ISO-MP4 容器）→ 补 `m4s`/`m4b`/`m4r`，并新增 `ignored`（非音频文件数），让「有文件但都不是音频」不再和「目录是空的」显示成同一句话。② UI 显示异常：表格列宽**下限合计 832** 撑不进最小窗口的内容区 612（「大小 / 操作」被切到窗口外，只剩横向滚动条与半截表头），窗口又**没有默认宽度**（Tauri 默认 800 被 `minWidth 900` 顶到 900，装完打开的那一刻正好是最窄布局），播放条 `@media (max-width:900px)` 还把右侧整组控件（音源/音质/循环/队列/抽屉）整块 `display:none` → 列下限收到 **610**、窄窗只收音量与秒数、默认窗口改成 **1280×800**。③ 真实 MusicFree 插件 `catalog.topList` 报 404：宿主把**字符串 id** 交给「收条目对象」的 MusicFree 详情函数（`topListItem.id` 是 undefined → URL 拼成 `.../x/web-interface/undefined`），`getMediaSource(musicItem)` 同样拿不到 `bvid`/`aid`/`cid`（「能搜、能看榜单，一播就挂」）→ 核心在归一化时留下**插件原始条目的进程内快照**（LRU、不落盘），详情/播放解析对兼容插件原样交回，沙箱再把字符串包成 `{id}` 兜一层，**自有 ABI 仍只收字符串 id**。④ 生产版不该有 mock 数据（同轮细节见后）。⑤ 按用户那份真实 MusicFree 插件移植出单文件 ABI 插件 `release/plugins/bili-audio.js`（依赖清零、`@hosts` 声明式白名单、`id = <bvid>|<cid>` 自带播放定位），`plugin-tool check` 与真实接口逐条自测通过。**④ 开发/生产数据隔离的细节**：根因是 `src/plugins/index.ts` **无条件**注册了三个假音源（`mock` / `bilibili` / `netease`，数据来自 `src/mock/**`，其中还捆着一份 4.4MB 随包音频当「可播放地址」），且 `libraryService.loadPlugins()` 把「核心那份 + 前端演示源 + `qqmusic`/`kugou` 占位」合并返回。修法：模块顶层判定 Tauri 宿主（与 `window.service.isTauri()` 同一条件），**只在没有宿主时**用动态 `import()` 注册演示源（Vite 因此把它摇成独立 chunk，不进主包）；`loadPlugins` / `suggest` / `fetchAlbum` / `fetchCuratedPlaylist` / `searchAll` 一律只在 `!coreAvailable()` 时退回 mock，核心在却读失败就返回空并如实报错；`getActiveMusicSource()` 不再抛异常（设置页在渲染期调它，应用没有错误边界，会整页白屏），改经新的 `catalogService.activeSource()` 拿 `null` 并显示「还没有安装任何插件」；热搜词、插件「有更新」的假版本号、下载失败项的假大小/假速度同样只在浏览器预览里出现；搜索页在「一个音源都没装」时不再说「没有找到相关歌曲」。`pnpm build` 通过、`pnpm smoke` **299/299**、契约一致、可达性通过（服务节点 141 / 动作 65 / 界面 133）。此前第五十九轮（R52）：**交付物冻结后的最终验收**——把 `release/gently-0.1.0-windows-x64.zip` 解到另一个目录、用解出来的那份 exe 冷启动全新数据库：内层 exe 哈希 `37f40a22…c292` 与 `.sha256` 逐字符一致；8 条迁移跑完、`SQLite 就绪 schema_version=8`、凭据后端 `windows-credential-manager`；`GENTLY_LOG=debug` 下 `library.favorites.list / skin.list / system.status / library.playlists.list / plugin.list` **全部 `ok=true`**（默认 info 级别不写 dispatch 行，所以「日志里没有 dispatch」不等于前端没调核心）；点开主题市场 10 张内置卡片只有「应用」/「使用中」、**没有「删除皮肤」**——上一轮的修复确实在交付版里。本轮无源码改动，`pnpm verify` 五道全绿（smoke 296/296、核心 212/212）。此前第五十八轮（R51）：**顺着上一轮刚改过的主题市场看「删除皮肤」这条边，抓到一个真 bug**——每个**内置**预设卡片上都长着「删除皮肤」按钮，点它→确认→界面提示「已删除皮肤「深海蓝」」，而卡片纹丝不动。根因是一条完整的错误链：视图守卫写的是 `!item.builtin`，但 `presets.json` **从来没写过 `builtin` 字段**（`undefined` 让守卫失效）→ 点下去 store 只过滤用户皮肤（无事发生）→ 核心 `skin.remove{id:ocean}` 必然 `skin.not_found`（核心只认识用户导入的皮肤）→ 失败被 `void` 掉 → 视图却无条件提示「已删除」——**成功提示与事实相反**。修法是一处收口：`presets.ts` 里给内置皮肤统一补 `builtin: true`（删除守卫与「导出要不要问核心」读的是同一个标记），冒烟加断言「内置预设全部带 builtin」。打包版实测：内置卡片只剩「应用」，粘贴 JSON 导入的「探针皮肤」卡片带「删除皮肤」，点它→确认→`skin.remove ok=true`、卡片消失、品牌色回默认、`skins` 表 0 行——**导入→应用→删除整条生命周期走通**。`pnpm smoke` 296/296、`pnpm verify` 五道全绿（核心 212/212）；前端有改动已重新打包。此前第五十七轮（R50）：皮肤导入补两条粘贴来源（消除原生选择器盲区）；**把「皮肤导入」补成和插件导入一样可靠**——上一轮查清原生选择器「弹得出来但合成输入驱动不了它」，与其把这条路留在「只能人手点」，不如按插件页早就验证过的做法补两条粘贴来源（核心侧 `skin.preview`/`skin.install` 收的本来就是同一个 `ImportSource`）。改动：服务层加 `skinService.importFromPath`（`{kind:file}`，浏览器预览按路径读不了文件就如实拒绝）；主题市场的「导入皮肤」按钮改成**展开导入面板**（来源标签「粘贴 JSON / 本机路径」+ 右侧仍保留「从文件选择…」），导入成功即应用并收起、失败按「被拒键名 → 错误码文案 → 原因」逐级显示；文案 zh/en 成对补齐；样式第一次提交时用了不存在的 `--card-padding`/`--font-mono`，**被 CSS token 守卫当场拦下**（已改用既有 token）。打包版实测：粘贴 JSON → 日志 `skin.preview ok=true` + `skin.install ok=true`，全站品牌色立刻变成皮肤里的品红，`skins` 表出现 `probe-skin`——**上一轮那条自动化盲区消失**。冒烟 +2 条假宿主断言（paste/file 两条来源都真的走 preview+install）→ 295/295；`pnpm verify` 五道全绿（核心 212/212）。因前端有改动重新打包，exe/zip 已更新。此前第五十六轮（R49）：对话框坐标系修复 + 皮肤导入边界；**修掉上一轮那个工具 bug，再试把皮肤导入走完**。修法：新增 `dialog` / `shotdlg` / `clickdlg` 三步——先把「当前前台窗口」**记成对话框句柄**，之后截图与点击都以它为准，不再跟着会漂移的前台走；配上 `nofocus`，并且用 `IsWindowEnabled(主窗口)` 当「模态窗开没开」的硬判据。复现结果**一半成功、一半卡住**：点「导入皮肤」确实弹出模态的 Win32「打开」对话框，`clickdlg` 到「文件名」再粘贴**能让完整路径落进字段**（截图可见），但**点「打开(O)」与回车都不生效**，对话框一直开着、核心侧始终没有 `skin.preview`——合成输入能进文本框（那个框默认就有焦点），却驱动不了对话框自己的按钮。**如实记为未覆盖**：皮肤导入的产品行为没问题（人手动选一个文件即可），核心链路另有 8 项 `skin.rs` 测试 + 冒烟的服务层断言，只有「选择器 → 读文件文本」这一小段浏览器 API 胶水没能在真机上自动验过，不拿「选择器弹得出来」冒充端到端通过。本轮无产品源码改动，`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第五十五轮（R48）：原生选择器可用性查证 + README 措辞澄清；**把「导入皮肤」这条唯一没验过的用户路径验清楚**——它走的是 WebView 自己的 `<input type=file>` 原生选择器。结论：**原生选择器是有的**（AGENTS 那句「没有原生文件选择器」只对 Tauri 的 dialog 插件成立）：同一行工具栏的「导出」点了会落盘（证明点击有效），点「导入皮肤」后主窗口 `IsWindowEnabled` 从 True 变 **False**（模态窗的铁证），再用新加的 `shotfg:` 截**前台窗口**，拍到的就是标准 Win32「打开」对话框（`skin-file-dialog.png`）——所以这颗按钮不是死按钮。**边界如实记录**：继续用模拟输入驱动那扇对话框时，路径确实进了「文件名」框，但回车/点「打开」都没能让它生效（核心侧没有 `skin.preview`）——大概率是几步之间前台窗口被换走，而 `clickfg` 按当前前台窗口算坐标，前台变成应用窗口时坐标就落空了；端到端没跑通，不粉饰。为此给驱动脚本加了三个能力：`nofocus` / `shotfg` / `clickfg`。本轮无产品源码改动，`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第五十四轮（R47）：交付物 zip 解压验收 + 便携说明纠错；**验收「用户真正拿到的那份东西」**——把 `release/*.zip` 解压到干净目录、跑解压出来的 exe、逐字读它随包的说明。结果抓到一处**交付物里的事实错误**：`README-便携版.txt`（用户解压后第一眼看到的那份）仍在「已知限制」里写「第三方凭据当前存在内存里，重启后需要重新填写」，而 Windows 的凭据管理器早已接上（诊断卡片实测 `windows-credential-manager`「已接入系统凭据库（重启后仍在）」）——改掉打包脚本里的说明模板并重新打包。验收其余项都过：解压目录只有 exe + 两份 README；解压出来的 exe 与打包目录里的**SHA256 完全相同**（`2bb411c8…22ce`）；从解压目录启动照常 `SQLite 就绪 schema_version=8`、迁移 8 条、诊断卡片与仓库构建版**逐像素一致**。本轮无源码改动，`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第五十三轮（R46）：安装包工具链查证 + 浏览器预览实测；**两件收尾**。①「安装包」这条待办查证过：本机没有 candle/light/wix/makensis，也没有 `%LOCALAPPDATA%\tauri` 缓存与 WiX/NSIS 安装目录——打 MSI 确实得先联网取 WiX，环境受限成立（不是想当然）。②顺手发现**交付物里的文档是旧的**：zip 内那份 README 还写着冒烟 287 项、没有内嵌封面那段；`pnpm package:portable` 重新打包后 zip 内 README 已是当前版本，**exe 字节未变**（`2bb411c8…22ce`）。③把**浏览器预览**这条从没在真实浏览器里验过的路走通了：`pnpm build` + `pnpm preview` → 用 Edge 应用窗口打开 → 排行榜/下载管理都正常渲染 mock 数据，设置页诊断卡片如实显示**「浏览器模式」**且不出现核心那一串行（没有拿假信息冒充核心）。为此把驱动脚本升级成通用窗口驱动：新增 `-ProcessName` / `-AppUrl`，并把窗口查找改成**遍历全部同名进程**取最大可见窗口（Edge 是多进程的，以前只取最新进程会直接找不到窗口）。本轮无源码改动，`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第五十二轮（R45）：文档一致性审计；**文档一致性审计**——代码侧验收已通，但文档里的数字与状态已经开始跟不上：①`AGENTS.md` 还写着「当前阶段：UI/前端交付，数据全部为 mock」，实际核心早已实现契约全部 60 条命令（沙箱/本机库/内嵌封面/回环代理/推荐/皮肤/下载/订阅），mock 只是浏览器预览兜底；②AGENTS/README 的冒烟与核心单测数还是 287/207（实测 293/212）；③`ARCHITECTURE.md` 的依赖图还说 mock 是「后续被插件替换」，核心框图写着「规划中」且缺封面缓存/推荐；④`ROADMAP.md` 的 M0–M5 里程碑标题停在「进行中」/无状态，现在逐个标成**已完成**并点名证据（只剩联网打 MSI/NSIS 与人工听感两件环境受限项）；⑤STATE 验证表的冒烟数、刻意留白清单（补上 action `actions.player.stop`）也一并对齐；⑥契约 §11 的性能预算补上 R39 的实测口径与测量入口。顺带扫过：代码里没有 TODO/FIXME 占位，契约三处一致。本轮只改文档，交付物同上轮（exe `2bb411c8…22ce`）；`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第五十一轮（R44）：设置页诊断卡片 + 危险确认开关；**把设置页这块没看过的界面走了一遍，两个点都验到底**。①本机核心诊断卡片里的每一项都与真实环境对得上（核心 v0.1.0 / windows-x86_64 / 数据库已就绪 / 凭据存储 `windows-credential-manager` / 条目统计 0·0·0·0 / 数据与日志目录真实路径），两个「打开目录」按钮点了就是 `system.reveal ok=true`。②「危险操作前二次确认」切到**禁用**后，回本地曲库点「移除」**确实不再弹确认框**——`library.local.remove ok=true` 直接落库、`local_tracks` 3→2，把「设置项 → useConfirm → 危险操作」整条链走通了，而不是只看开关的字面状态。本轮无源码改动，交付物同上轮（exe `2bb411c8…22ce`）；`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。顺带记一条坐标教训：设置页右侧那排「确定/禁用/浅色/深色」是**纯文本按钮，命中区就是字形**，按行中心估会落到两个词中间。此前第五十轮（R43）：干净环境完整链路（退出标准）；**在干净环境里把 ROADMAP 的退出标准跑了一遍**——此前每一环都单独验过，但从没在同一次会话里连着走完。清空数据目录后一次会话依次完成：启动建库（迁移 8 条）→ 扫描本地目录（`local_tracks=3`）→ 播放本地曲目（回环代理 206）→ 收藏它 → 从「本机路径」导入夹具插件（预览权限 → 勾选同意 → `plugin.import`/`plugin.reload`，日志 `插件已加载 probe-source capabilities=[Search, GetMediaSource, GetTrackInfo, GetLyric]`）→ 流式搜索（`catalog.search`，结果带插件封面）→ 播放插件曲目（`catalog.track` + `catalog.lyrics` + `playback.resolve`；离线取不到上游时进度改走模拟时钟）→ 收藏插件曲目（`favorites` 里同时有 `local:…` 与 `probe-source:1`）。结论：退出标准的**代码侧全部满足**，只剩「联网打 MSI/NSIS」与「人工听一次扬声器」两件环境受限的事。本轮无源码改动，交付物同上轮（exe `2bb411c8…22ce`）；`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第四十九轮（R42）：插件链路重新验收 + `getMediaSource` 参数形状写进契约；**改动十几轮之后把插件整条链路重新验收了一遍**：从「本机路径」导入夹具插件（`plugin.preview` 列出权限 + 「将覆盖同 id 插件」提示 → 勾选同意 → `plugin.import`/`plugin.reload`）→ 沙箱流式搜索（`catalog.search`，结果带插件的 data-URI 品红封面、时长按 durationSec 归一化、来源徽标）→ 播放（`playback.resolve` + `catalog.track` + `catalog.lyrics`，回环代理按预期因离线取不到上游）。结论：R37–R43 的改动没碰坏插件链路，插件的 `artwork` 在新封面列里照常渲染。另外把 `getMediaSource(track, quality)` 的坑写进契约：第一个参数是**曲目对象**不是字符串 id（夹具第一版拼出 `probe-[object Object].mp3`，命令全 ok 只有翻上游日志才看得出来；`getTrackInfo/getLyric` 才是字符串 id）。本轮无源码改动，交付物同上轮（exe `2bb411c8…22ce`）；`pnpm verify` 五道全绿（smoke 293/293、核心 212/212）。此前第四十八轮（R41）：循环模式 + 主题市场 + 内置预设导出不再问核心；**把循环模式与主题市场这两块没走过的功能面走了一遍**。①循环模式：连点按钮能看到品牌色按下态（`repeat-phases.png` 放大三态对照），先设成 `all` 再放 3 秒的 WAV，日志出现**连续 5 个循环**（每组 `playback.report` + `recommend.feedback complete` + 紧接着新的 `playback.resolve`）——「循环播放全部」确实绕回队首重播；顺带记一条教训：截图很慢，先截图再点按钮会把点击推到曲目播完之后，看起来像「循环没生效」。②主题市场：应用「深海蓝」→ `skin.setActive ok=true` 且全站配色立刻变；导出皮肤真的落盘（Downloads 里 819 字节的合法 JSON），WebView2 下载通道可用。③照出一个「问错对象」：导出**内置预设**会去问核心（核心只有用户皮肤）→ `skin.export not_found 皮肤未安装：ocean` 的误导性告警，然后前端再退回本地序列化；改成内置预设直接前端序列化、用户皮肤才取核心原文（与 R27「演示源不问核心」、R37「本地曲目不问歌词」同一类收口），打包版复测告警消失、文件照常落盘。`pnpm verify` 五道关卡全绿（smoke 293/293、契约一致、可达性通过、核心单测 212/212）。此前第四十七轮（R40）：drag 工具 + SeekBar/音量/详情页 + 两个下载 bug；此前第四十六轮（R39）：截图抓到上一帧 + 行内操作列裁掉「播放/收藏」；此前第四十五轮（R38）：新建歌单静默失败 + 快照封面地址过期；此前第四十四轮（R37）：**本地文件的内嵌封面做完了，而且真的能看见**——核心扫描时把文件里的图落进 `<data>/cache/covers/<源路径哈希>.<ext>`，列表只多一个回环地址 `http://127.0.0.1:<port>/cover/<name>`（媒体代理新增的第三条路由，只服务这个目录、穿越与非法名一律 404）；前端零改动即可显示，顺手给业务列表的标题列加了封面缩略图（新 token `components.table`），六处列表一起受益。过程中照出**三个真 bug**：①扫描侧用文件系统路径（Windows `\`）写、列表侧用库里统一的 `/` 回查 → 哈希对不上，封面永远找不到（负向验证：去掉归一化测试立刻红）；②**symphonia 0.5.5 的 mp3 demuxer 不解析 ID3v2**，标签与封面只在探测的**链式元数据**里 → 之前本地 mp3 的标题/歌手/专辑/封面全都读不到（改为一并读取，用手写 ID3v2.4 夹具端到端钉住）；③粘贴 `C:\\…\\dir`（重复分隔符，Windows 照样认）会把同一个文件收成**两行**，旧行还永远清不掉、清理时顺手删掉活着那行的封面（路径归一化收成一份实现 + 清理前先看有没有活着的同源曲目，正反两向都验过）。封面提取的**两条路径各有离线夹具**：mp3（ID3v2/APIC，链式元数据）与 FLAC（PICTURE 块，容器元数据，夹具里手写了合法音频帧 + 帧头 CRC-8 / 帧尾 CRC-16）。另外本地曲目不再问核心要歌词（此前每次播放都在日志里留一条「插件未安装：local」）。`pnpm verify` 五道关卡全绿（smoke 287/287、契约一致、可达性通过（**无未归档的死动作**）、核心单测 211/211）。打包版实测：扫描三个夹具（mp3 品红封面、FLAC 青色封面、无封面）→ 逐像素核对两种格式的缩略图都是内嵌图原色、无封面那行是渐变；播放后播放条封面也是内嵌图；另外，同一文件按重复分隔符拼写也不会再收成两行（旧重复行会在下次扫描被清掉，且不会顺手删掉封面）。契约 §11 的性能预算也量了：1000 个 WAV 首扫 124 ms / 重扫 21 ms / 检索 P95 1.11 ms（外推 1 万文件首扫 ≈1.2 s，预算 10 s）。此前：R36 播放态复核、R35 播完结算、R34 本地播放路由、R33 假疑点澄清、R32 插件链路真实验收、R31 曲目详情接线、R30 截屏/驱动工具、R29 可达性守卫、R28 本地库扫描入口、R27 事件名与源路由、R26 测试隔离。
 ---
 
 # STATE
 
 ## 本轮目标
 
-**交付物冻结后的最终验收（R52）**——把 `release/gently-0.1.0-windows-x64.zip`
-**重新解包到另一个目录**、用解出来的那份 exe 冷启动（全新数据库），
-确认「用户拿到手的就是我们验过的那一份」：哈希对得上、界面渲染、核心命令全部 `ok=true`、
-上一轮修的内置皮肤删除按钮确实不在交付版里。
+**用户实测报来四个 bug + 一个插件需求（R53）**——逐个复现、定位、修掉，并给出证据：
+
+1. `D:\Xun\Music` **有文件却扫描为 0**；
+2. 多处 **UI 显示异常**（表格列被切、播放条少了半截）；
+3. 真实 MusicFree 插件（B 站）报 **`catalog.topList` 404**；
+4. **生产版本不应该存在 mock 数据**（生产与 dev 没有数据隔离）；
+5. 按用户提供的那份真实 MusicFree 插件**生成一个可用的插件**。
+
+## 已完成（第五十三轮）
+
+### 0. 四个 bug 的根因与修法（一句话版）
+
+| # | 根因 | 修法 | 证据 |
+|---|---|---|---|
+| ① | 扫描白名单只有 `mp3/flac/m4a/mp4/aac/ogg/oga/opus/wav`——**没有 `.m4s`**（B 站下载的音频就是这个后缀，ISO-MP4 容器），而 `D:\Xun\Music` 里正好只有它 | 补 `m4s`/`m4b`/`m4r`（同一个容器，symphonia 的 `isomp4` 一视同仁）；新增 `ignored` 计数（**非音频文件数**），让「有文件但都不是音频」不再和「目录是空的」显示成同一句话 | 单测 `m4s_container_is_indexed_like_any_other_audio_file`（真 `.m4s` 夹具入库、`unreadable=0`、`ignored=2`）+ 打包版扫描 `scanned=1 added=1`（`r53-02-local-scan.png`） |
+| ② | 表格列宽**下限合计 832px** ＞ 最小窗口的内容区（900 宽 → 612），且窗口**没有默认宽度**（Tauri 默认 800 被 `minWidth 900` 顶到 900）；播放条 `@media (max-width: 900px)` 又把右侧整组控件（音源/音质/循环/队列/抽屉）**整块 `display:none`** | 列下限收到 **610**（`36+124+80+80+72+80+138`，含单元格左右各 18px 内边距）；播放条窄窗只收音量与秒数、**右侧按钮永不隐藏**；`tauri.conf.json` 给默认窗口 `1280×800`（`minWidth 900` / `minHeight 600` 不变） | 900/1280/1500 三档实图对比（`r53-03-window-900.png` / `r53-11-dark.png`） |
+| ③ | 宿主把**字符串 id** 交给 MusicFree 的详情函数，而它们收的是**条目对象**：`getTopListDetail(topListItem)` 里 `topListItem.id` 是 `undefined` → URL 拼成 `.../x/web-interface/undefined` → 上游 **404**；`getMediaSource(musicItem)` 拿不到 `bvid`/`aid`/`cid` → 拼出 undefined → `plugin.runtime_error`（「能搜、能看榜单，一播就挂」） | 核心归一化时留下**插件原始条目的进程内快照**（LRU、不落盘、不上报），详情/播放解析对**兼容插件**把这份条目原样交回，无快照退化成 `{id}`；沙箱侧再把字符串包成 `{id}` 兜一层；**自有 ABI 仍只收字符串 id** | 单测 `compat_detail_calls_get_the_musicfree_argument_shape`、`our_own_abi_still_receives_plain_string_ids_in_compat_mode`、`playback_resolve_hands_the_plugin_its_own_raw_item`、`compat_detail_calls_receive_the_remembered_item_object`；打包版用**用户那份真实插件**跑排行榜拿到真实数据（`r53-05-compat-ranking.png`） |
+| ④ | 三个假音源（`mock`/`bilibili`/`netease`）**无条件**注册，且 `loadPlugins()` 把「核心那份 + 演示源 + `qqmusic`/`kugou` 占位」合并返回 | 见下面 §1–§5：桌面端只认核心，演示数据一律只在无宿主（浏览器预览）时出现 | `pnpm smoke` 的假宿主断言 + 打包版音源筛选里只有核心插件（`r53-06-sources.png`） |
+
+### 0.5 由真实插件需求倒逼出来的插件（交付附件）
+
+按用户给的那份真实 MusicFree 插件移植出**单文件 ABI** 版本 `release/plugins/bili-audio.js`：
+依赖清零（只用宿主注入的 `fetch`）、权限收成 `@hosts api.bilibili.com` 声明式白名单、
+曲目引用自带播放定位信息（`id = <bvid>|<cid>`）。
+`plugin-tool check` 静态校验通过（6 项能力），并用注入 `fetch` 的方式对真实接口逐条自测：
+搜索 20 条、曲目详情、DASH 播放地址（`audio/mp4` + referer）、合集详情、榜单树（入站必刷 + 14 个分类）、
+榜单内容 96/98 条。**过程里三个真教训**（都写进了文件头注释）：cookie 只按需要带
+（`playurl` 带上指纹 cookie 反而 412）、榜单封面 `http→https`（否则被当混合内容挡掉）、
+「每周必看」近期期数回 `-352` 风控（要 WBI 签名）→ 干脆不给这个入口。
+交付位置：`release/plugins/`（`release/` 整个被 git 忽略，因此**不违反第 16 条**：
+仓库代码与文档里不出现第三方音源地址），附 `README.md` 说明导入与边界。
+
+### 1. 演示源只在没有 Tauri 宿主时注册（且不进桌面端主包）
+
+`src/plugins/index.ts` 原来**无条件**注册 `mock` / `bilibili` / `netease` 三个假音源，
+数据来自 `src/mock/**`，其中还捆着一份 4.4MB 随包音频当「可播放地址」。
+现在模块顶层判定宿主（`'__TAURI_INTERNALS__' in window`，与 `window.service.isTauri()` 同一条件），
+**只有没有宿主时**才用动态 `import('./builtin/demo-sources')` 注册：
+Vite 因此把它摇成独立 chunk，桌面端主包不再包含 mock 链。
+
+### 2. 服务层：核心在时一律不退回 mock
+
+| 位置 | 新行为 |
+|---|---|
+| `libraryService.loadPlugins()` | 核心在 → **只回核心那一份**（不再合并演示源与 `qqmusic`/`kugou` 占位）；核心读失败 → 返回 `[]` 并 `console.warn` 原因 |
+| `recommendService.suggest()` | 核心在且 `recommend.home` 无结果 → **空 bundle**（同形：空画像 + 三个空数组），视图照常显示「多听几首再来」 |
+| `catalogService.fetchAlbum` / `fetchCuratedPlaylist` | `findAlbum` / `findCuratedPlaylist` 只在 `!coreAvailable()` 时兜底 |
+| `catalogService.searchAll` | 前端演示源只在 `demoSourcesEnabled && !coreAvailable()` 时并入 |
+| `catalogService.searchIn` | 没有可用源 id 时返回 `[]`（不再退回 `getActiveMusicSource()`） |
+| `catalogService.defaultSourceId()` | 返回 `string \| null`，**不再抛异常**；调用方（`fetchTopLists` / `fetchRecommendFrom` / 榜单切片 / 推荐切片）给诚实的空态 |
+
+### 3. 不再在渲染期抛异常（设置页白屏）
+
+`getActiveMusicSource()` 以前在注册表为空时 `throw`，而设置页在**渲染期**调用它——
+应用没有错误边界，桌面上「一个音源都没装」会直接白屏。
+现在返回 `MusicSourcePlugin | undefined`，视图改经新的 `catalogService.activeSource(list)`
+（服务层访问器，符合 AGENTS 第 5 条）拿 `PluginInfo | null`，为空时显示既有的
+`page.plugin.empty`（「还没有安装任何插件」）。
+
+### 4. 其余「只在浏览器预览」的假数据
+
+- 标题栏热搜词：`hotWords={coreAvailable() ? [] : HOT_SEARCH_WORDS}`；
+- 插件切片：`patch + 1` 的假版本号只在 `!coreAvailable()` 时出现（核心在且没有可比对来源时什么都不做）；
+- 下载切片：核心拒绝建任务时**不编造** `totalMb` / `sizeText`（`0` / 空串），核心持有的任务不再预写 `1.0Mb/s` 假速度；
+- 搜索页：桌面上一个音源都没装时不再说「没有找到相关歌曲」，改用新增的
+  `page.search.noSource`（zh/en 成对）+ 既有的 `page.ranking.noGroupsHint`；
+- `page.plugin.installedEmpty` 不再提「内置示例源见下方列表」（桌面上没有这份列表了）。
+
+### 5. `GRADIENTS` 搬出 mock
+
+`src/utils/helpers.ts` 原来静态依赖 `src/mock/base.data.mock.ts`（纯配色占位，不是 mock 数据）。
+常量本体移到 `src/utils/gradients.ts`，`base.data.mock.ts` 转出一次保持既有引用不变。
+
+### 6. 详细说明：扫描白名单与「非音频」计数（bug ①）
+
+用户的现象是 `D:\Xun\Music` 里明明有文件却 `scanned=0`，界面只有「还没有本地音乐」。
+实测那个目录里是 `yihuik苡慧 - 致你.m4s`（仓库里同一份文件就是播放链路夹具）——`.m4s` 是
+**ISO-MP4 容器**，与 `.m4a`/`.mp4` 同族，symphonia 的 `isomp4` 本来就能读，只是白名单漏了它。
+两处收口：
+
+- `AUDIO_EXTENSIONS` 补 `m4s`/`m4b`/`m4r`（同一个容器；只列这个构建真能解码的——
+  `wma`/`ape`/`aiff` 没开对应 feature，列进来只会把「读不了」的数字抬高）；
+- 扫描结果新增 **`ignored`**（见到了但不是音频扩展名的文件数），界面文案变成
+  「…跳过 N，读不了 N，**非音频文件 N**」：`scanned=0` 与「目录是空的」从此能分辨。
+
+契约 §5「本机库语义」、`src/api/index.ts` 的 `ScanSummary`、zh/en 文案同步更新；
+单测新增 `.m4s` 入库用例（顺带钉住 `ignored` 计数），冒烟新增一条断言。
+
+### 7. 详细说明：兼容插件的参数形状（bug ③）
+
+`docs/contracts/local-core-api.md` §5.4 现在把这件事写成**第三处兼容适配**（前两处是
+`require(x).default` 与函数名别名）：MusicFree 的详情/播放函数收**条目对象**，我们只有 `source:rawId`。
+两层配合，自有 ABI 仍只收字符串 id：
+
+- 核心：`catalog::ItemSnapshots`（LRU 2000 条、进程内、不落盘）在归一化时按 `source:rawId`
+  记下插件原始条目；`catalog_detail::detail_item_arg()` 对兼容插件把条目原样交回
+  （`getTrackInfo`/`getAlbumInfo`/`getPlaylistInfo`/`getTopList`/`getLyric`），
+  `playback.resolve` 则对**所有**源优先用快照（其次前端快照，最后 `{id, source}`）；
+- 沙箱：`sandbox/bootstrap.js` 里别名函数（以及兼容模式下的 `getAlbumInfo`）把字符串包成 `{id}`，
+  并新增 `env.compat` 标记（宿主在 `__hostEnvInfo` 里传）。
+
+为什么必须有：不这么做，真实插件「能搜、能看榜单，一播就 `plugin.runtime_error`」——
+插件把 `undefined` 的 bvid 拼进 URL，上游回 -400/404，而命令层看起来只是「这个候选不可播」。
+
+**修完 URL 还撞上第二个坑（同一轮实测）**：插件照抄浏览器的
+`accept-encoding: gzip, deflate, br`，而我们这一侧没有解压实现（ureq 没开 gzip/brotli），
+上游于是回压缩体 → `read_to_string` 报「stream did not contain valid UTF-8」→
+命令仍然 `plugin.runtime_error`。修法：`plugin::transport::outgoing_headers()` 统一丢掉调用方
+声明的 `accept-encoding`、按 `identity` 请求；**媒体代理（`media.rs`）复用同一份实现**——
+那里更敏感：转发压缩体还会让 `Content-Length` / `Content-Range` 与实际字节数对不上，
+Range 拖动会直接坏掉。有单测（`plugin_accept_encoding_is_replaced_by_identity`）。
+
+### 8. 详细说明：UI 布局（bug ②）
+
+用户给的四张截图指向同一件事：**默认窗口（900–916 宽）下表格与播放条都放不下**。
+
+- **表格宽度跟着容器走**（`DataTable.module.css`：`width: max-content` → `width: 100%`）——
+  这是真正的病根：`max-content` 让「标题很长」的真实数据（B 站那种
+  「【Hi-Res无损音质】｜《海阔天空》- BEYOND…」）把整张表撑到一两千像素，
+  专辑 / 时长 / 来源 / 操作全被推到窗口外。锁成 100% 后长文本**在自己的列里**省略号截断，
+  其余列照常可见（搜索页实测 7 列全在、无横向滚动条）。
+- 列宽下限：原合计 832px（`52+220+120+120+84+96+140`），而最小窗口的内容区只有
+  `900-232(侧边栏)-56(页面内边距) ≈ 615` → 下限收到 **598**（`40+124+80+80+56+72+146`）。
+- 行内操作放不下时**换行**而不是被裁（`cells.module.css` 的 `.actions` 加 `flex-wrap`）：
+  单元格是 `overflow: hidden` + `justify-content: flex-end`，一行塞不下时被裁掉的正是
+  **最左边**的「播放 / 收藏」（R41 的教训）。最小窗口下本地曲库那一行 4 个操作会排成 2–3 行，
+  行高变高但一个都不少；默认 1280 宽下仍是单行。
+- 播放条：`@media (max-width: 900px)` 把整组右侧控件 `display:none`，而那组里有
+  **音源 / 音质 / 循环 / 队列 / 功能抽屉**——别处没有入口。改成窄窗只收「音量滑块 + 秒数」
+  （音量还有键盘与抽屉两条路），并在 ≤1000px 收窄间距：右侧按钮永不消失。
+- 窗口：`tauri.conf.json` 之前只有 `height: 600` 与 `minWidth: 900`，**没有 `width`**——
+  Tauri 默认 800 被最小宽度顶到 900，于是「装完就打开的那一刻」正好落在最窄的布局上。
+  现在显式 `1280×800`（`minWidth 900` / `minHeight 600`）。
+
+**打包版实测（同一台机器、同一份交付物）**：`1296×809`（新的默认窗口）下本地曲库 7 列全在、
+播放条右侧控件齐全（`r53-02-local-scan.png`）；`916×609`（最小窗口）下同样 7 列全在、
+播放条仍保留「循环 / 队列 / 抽屉」、4 个行内操作换行后一个不少（`r53-03-window-900.png`）；
+浅色主题可读（`r53-04-narrow-light.png`）；搜索页 20 条长标题全部省略号截断、列不再跑出窗口
+（`r53-10-generated-plugin-search.png`）。
+
+### 9. 验证
+
+`pnpm verify` 五道全绿：`pnpm typecheck` 通过、`pnpm build` 通过、`pnpm smoke` **299/299**、
+`pnpm check:contract` 一致（60 命令 / 8 事件 / 26 错误码）、
+`pnpm check:reachability` 通过（服务节点 141 / 动作 65 / 界面 133；有意留白 1 项）、
+`cargo test -p gently-core` **218/218**（比上一轮 +6：`.m4s` 入库、扫描 `ignored`、
+兼容参数形状 ×2、播放解析用原始条目、`accept-encoding` 归一到 identity；另有 2 项 `#[ignore]`）。
+冒烟改动：假宿主下的插件列表断言改为「只有核心那份、不含演示源与占位项」，
+并新增三条诚实规则断言（推荐空 bundle、当前音源读核心清单、扫描统计带非音频文件数），
+无宿主时先 `await demoSourcesReady` 再读注册表（演示源注册是异步的）。
+
+### 10. 打包版实测证据（R53，全部落在交付物本身上）
+
+交付物：`release/gently-0.1.0-windows-x64.zip`（116.0 MB，内层 exe SHA256
+`a0c01dccf425ef8ac5fc217449f81924b98082e595ba0e2ef872cb6ccdf01c3a`），
+用 `pnpm ui:capture`（PrintWindow 驱动）在真实窗口里逐条走：
+
+| 验什么 | 命令/操作 | 证据 |
+|---|---|---|
+| 窗口默认尺寸（bug ②） | 启动即截图 | `1296×809`（配置 1280×800）——不再是 Tauri 默认被顶到 900×600 的最窄布局 |
+| 本地扫描认 `.m4s`（bug ①） | 填 `D:\Xun\Music` → 开始扫描 | 界面「扫描 **1** 个文件，新增 **1** … 非音频文件 **1**」；日志 `本地曲库扫描完成 scanned=1 added=1 ignored=1` + `library.local.scan ok=true`；表格出现该曲目（4.2 MB）——`r53-02-local-scan.png` |
+| 表格/播放条布局（bug ②） | 916×609 与 1296×809 各截一张；浅色再截一张 | 7 列全在（长标题在列内省略号）、4 个行内操作换行后一个不少、播放条右侧「音源/音质/循环/队列/抽屉」都在——`r53-03-window-900.png` / `r53-04-narrow-light.png` |
+| 生产版无 mock（bug ④） | 插件页 + 榜单页 | 插件页「共 **1** 个」且只有核心装的 `bilibili`；榜单页音源筛选只有「全部音源 / B 站音频音源 / bilibili」——没有「内置示例源 / 模拟音源 B/C」——`r53-06-plugin-list.png` |
+| 真实 MusicFree 插件不再 404（bug ③） | 榜单页点「入站必刷」 | 日志从 `catalog.topList ok=false …404` 变成 **`ok=true`**，界面显示真实条目（回村三天… / bvid / 11:28）——`r53-05b-compat-precious.png` |
+| 真实插件能播（bug ③ 第二半） | 点第一行播放 | `playback.resolve ok=true` → 媒体代理 `GET /m/…`；播放条显示真实封面、`0:08 / 11:27`、源 `bilibili`——`r53-05d-compat-playing.png` |
+| 生成的插件端到端 | 插件页「本机路径 → 单文件」导入 `bili-audio.js` → 预览 → 同意 → 安装 | `plugin.preview ok=true`、`插件已安装 id=bili-audio version=1.0.0`、运行时探测 6 项能力；随后它的榜单树/榜单内容/播放都通（`catalog.topList ok=true`、`0:08 / 1:55`）——`r53-07-plugin-preview.png` / `r53-08-plugin-installed.png` / `r53-09b-generated-rank-music.png` |
+| 生成的插件能搜 | 标题栏搜「海阔天空」 | 「搜索结果 [海阔天空] 共 20 首」+ 真实条目（`catalog.search ok=true`）；长标题在列内截断、7 列全在——`r53-10-generated-plugin-search.png` |
+
+**已知边界（不冒充已解决）**：**演示数据仍然会被打进产物**（只是永不被使用）。
+`catalogService` / `libraryService` / `recommendService` / `TitleBar` 目前是**静态** import
+`src/mock/**`（在函数体里由 `coreAvailable()` 门控），因此曲库文案数组仍在主 chunk 里；
+`dist/assets/*.m4s`（4.4MB 演示音频）也仍会被 Vite 输出，只被 `demo-sources` 独立 chunk 引用
+（该 chunk 在宿主存在时**永不 import**，主 chunk 里搜不到曲库文案、只有一行 chunk 引用表）。
+把它们从产物里彻底剔除需要把服务层的 mock 兜底改成动态 `import()`（会改变浏览器预览的
+服务层形状）或动构建配置——本轮未做，避免与在途改动冲突；**运行期行为已经是隔离的**：
+桌面上没有任何演示音源被注册、没有任何 mock 数据被读到界面。
 
 ## 已完成（第五十二轮）
 
@@ -1820,15 +1992,15 @@ catalog.search ok=true → catalog.lyrics ok=true → catalog.track ok=true → 
 | 验证 | 命令 | 结果 |
 |---|---|---|
 | 类型检查 | `pnpm typecheck` | 通过（契约 v0.1 → v0.2 重写后均为 0 错误） |
-| 冒烟测试 | `pnpm smoke` | **296/296 通过**（含「无宿主时门面读返回 null、写是安全空操作」、皮肤门面两条路径同形、歌词解析 5 项、每个错误码都有 zh/en 文案、插件管理面板渲染、榜单分类树 5 项 + 分页切片 4 项、详情门面 3 项 + 封面 4 项 + 详情页 3 种渲染、已中止/中止中的搜索立即收敛、相似推荐两种种子在浏览器下均为空、曲目封面优先级 3 项、皮肤选中裁决 4 项、**事件名传输字符集 1 项**，以及**假宿主下的桌面端分支 45 项**：核心优先读+演示源共存、核心报错不拿 mock 冒充用户数据、错误码如实带出、演示源不问核心、按源搜索不静默换源、`not_found` 兜底、下载被拒要留原因且重试真的重建、**刷新下载列表不丢本机失败任务**、**本地曲目不提供下载入口**、**下载三个事件落到任务上**、**流式搜索 partial/done 兑现 Promise**、**扫描面板的进度/统计/失败**、**歌词只问插件源（本地曲目不问）**、**皮肤导出只对用户皮肤问核心**、**皮肤导入两条来源（paste/file）**、皮肤 active 端到端） |
+| 冒烟测试 | `pnpm smoke` | **299/299 通过**（含「无宿主时门面读返回 null、写是安全空操作」、皮肤门面两条路径同形、歌词解析 5 项、每个错误码都有 zh/en 文案、插件管理面板渲染、榜单分类树 5 项 + 分页切片 4 项、详情门面 3 项 + 封面 4 项 + 详情页 3 种渲染、已中止/中止中的搜索立即收敛、相似推荐两种种子在浏览器下均为空、曲目封面优先级 3 项、皮肤选中裁决 4 项、**事件名传输字符集 1 项**，以及**假宿主下的桌面端分支 48 项**：核心在时只认核心那份（**不合并演示源/占位项**）、核心报错不拿 mock 冒充用户数据、错误码如实带出、演示源不问核心、按源搜索不静默换源、`not_found` 兜底、下载被拒要留原因且重试真的重建、**刷新下载列表不丢本机失败任务**、**本地曲目不提供下载入口**、**下载三个事件落到任务上**、**流式搜索 partial/done 兑现 Promise**、**扫描面板的进度/统计/失败**、**歌词只问插件源（本地曲目不问）**、**皮肤导出只对用户皮肤问核心**、**皮肤导入两条来源（paste/file）**、皮肤 active 端到端、**推荐空 bundle（核心在时不编造）**、**当前音源读核心清单**、**扫描统计带非音频文件数**） |
 | 前端接入 | 设置页「本机核心」诊断卡片 + `core.bridge.ts` | 浏览器显示「浏览器模式」并退回 mock；桌面端显示核心版本/平台/数据库状态/统计/数据目录与日志目录（各自一键打开） |
-| 核心单测 | `cargo test -p gently-core` | **212/212 通过**（连续多次全量运行零失败；测试目录由 `core/tests/common/` 统一提供）（信封、26 错误码、60 命令均被路由、目录白名单、迁移幂等、FTS5、清单解析、`plugin.preview`、插件安装/卸载/状态、压缩包导入 5 项、沙箱 25 项、兼容清单合成 8 项、CommonJS/垫片 9 项、系统凭据库 2 项、日志日期解析 2 项、**事件名传输安全 2 项**、**封面缓存 5 项（命名确定性 / 重复分隔符同键 / 归一化规则 / 穿越与非法名被拒 / 写读删往返）**、兼容模式 28 项、详情 8 项、流式搜索 6 项（含取消后仍收敛）、本机库 9 项、**本地曲库 9 项（mp3 与 FLAC 两条封面提取路径各一个手写夹具端到端、快照封面地址重新签发、重复路径不重复入库、清理重复行不误删封面、扫描幂等、清理范围、检索、移除）**、本地播放 2 项、媒体代理 4 项、下载 5 项、皮肤 8 项、**推荐 13 项**（含专辑种子与多条排除）、插件管理 3 项、整链路端到端 1 项） |
+| 核心单测 | `cargo test -p gently-core` | **218/218 通过**（R53 +6：`.m4s` 入库 / 扫描 `ignored` / 兼容参数形状 ×2 / 播放解析用原始条目 / `accept-encoding` 归一到 identity）（连续多次全量运行零失败；测试目录由 `core/tests/common/` 统一提供）（信封、26 错误码、60 命令均被路由、目录白名单、迁移幂等、FTS5、清单解析、`plugin.preview`、插件安装/卸载/状态、压缩包导入 5 项、沙箱 27 项、兼容清单合成 8 项、CommonJS/垫片 9 项、系统凭据库 2 项、日志日期解析 2 项、**事件名传输安全 2 项**、**封面缓存 5 项（命名确定性 / 重复分隔符同键 / 归一化规则 / 穿越与非法名被拒 / 写读删往返）**、兼容模式 28 项、详情 10 项、流式搜索 6 项（含取消后仍收敛）、本机库 9 项、**本地曲库 10 项（`.m4s` 走 isomp4 入库、mp3 与 FLAC 两条封面提取路径各一个手写夹具端到端、快照封面地址重新签发、重复路径不重复入库、清理重复行不误删封面、扫描幂等、清理范围、检索、移除）**、本地播放 2 项、媒体代理 4 项、下载 5 项、皮肤 8 项、**推荐 13 项**（含专辑种子与多条排除）、插件管理 3 项、整链路端到端 1 项） |
 | **整链路（自动化）** | `cargo test -p gently-core --test e2e_chain` | 通过：导入插件 → 流式搜索（事件）→ 扫描真 WAV → `playback.resolve` 回环代理 → **真 HTTP 取流**（200/206/416 + `audio/wav` + 字节一致）→ 收藏/歌单/历史 → 重开库仍在 |
 | **便携版打包** | `pnpm package:portable` | 通过：`release/gently-0.1.0-windows-x64.zip`（116.0 MB，内含 exe 126.9 MB + README + 便携说明；`release/gently-0.1.0-windows-x64.zip.sha256` 记的是 **exe** 的 sha256，当前 `37f40a22…c292`） |
 | **打包版启动实测** | 解压便携版 → 运行 exe（`GENTLY_LOG=debug`） | `凭据存储已就绪 backend="windows-credential-manager"` → 迁移 8 条 → 数据库就绪 → 命令全 `ok=true`，**0 条警告**（R27 修前每次启动必现两条 `插件未安装：mock`）；事件名走 Tauri 校验字符集（`catalog:search:*` / `library:scan:progress` 等）。**说明**：扫描 / 推荐 / 反馈这些「要人点一下」的路径不进启动日志，它们由假宿主断言 + 核心单测覆盖 |
 | 契约守卫 | `pnpm check:contract` | 文档 ↔ Rust ↔ 前端一致（**60 命令 / 8 事件 / 26 错误码**；事件为**四处**比对：文档 §3 ↔ `events::ALL` ↔ `CoreEventMap` ↔ `CORE_EVENTS`，并校验字符集；服务层 60 项命令名全部在契约内，且契约命令 60/60 都有前端封装） |
 | 交付前验证 | **`pnpm verify`** | 一条命令跑完**五道关卡**（typecheck / smoke / check:contract / **check:reachability** / `cargo test -p gently-core`），全部通过 |
-| **界面可达性守卫** | `pnpm check:reachability` | 通过（服务节点 139 / 动作节点 65 / 界面文件 130）：所有契约能力都能从界面走到；有意不做入口 **2** 项（服务 `library.history.push` + action `actions.player.stop`，理由分别写在脚本的 `DELIBERATE` / `DELIBERATE_ACTIONS` 里且每次打印；白名单条目一旦被接上界面会反过来提醒删掉）。**负向测试**：删掉扫描面板的 `scan(...)` 调用 → 立刻报 `libraryService.scanLocal → library.local.scan` 并退出 1 |
+| **界面可达性守卫** | `pnpm check:reachability` | 通过（服务节点 141 / 动作节点 65 / 界面文件 133）：所有契约能力都能从界面走到；有意不做入口 **2** 项（服务 `library.history.push` + action `actions.player.stop`，理由分别写在脚本的 `DELIBERATE` / `DELIBERATE_ACTIONS` 里且每次打印；白名单条目一旦被接上界面会反过来提醒删掉）。**负向测试**：删掉扫描面板的 `scan(...)` 调用 → 立刻报 `libraryService.scanLocal → library.local.scan` 并退出 1 |
 | **真实应用验收（R30）** | `pnpm ui:capture -- -Launch …` | 通过：`-AssertRendered` 退出码 0（抽样 165 种颜色）；**看着真实打包版**确认深/浅主题、排行榜、本地音乐、插件、推荐、搜索六张图（`release/screenshots/`）；并在界面上手点完整扫描流程：填目录 → 扫描（日志 `library.local.scan ok=true scanned=1 added=1`）→ 表格出现探针曲目 → 删文件再扫 → 「移除 1」回到空态。**同时**是 R27 事件名修复的运行时证据：`library:scan:progress` 推出时日志**无** `事件推送失败` |
 | Rust 构建 | `cargo build -p gently` | 通过（复用既有依赖缓存；产物固定在 `src-tauri/target`） |
 | **打包（release）** | `pnpm tauri build --no-bundle` | 通过，产出 `src-tauri/target/release/gently.exe`（126.8 MB，release profile 0m52s） |

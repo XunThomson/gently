@@ -69,7 +69,7 @@ pub fn track(ctx: &CoreContext, params: Value) -> Fallible<Value> {
         source,
         PluginCapability::GetTrackInfo,
         "getTrackInfo",
-        json!([raw_id]),
+        json!([detail_item_arg(ctx, source, raw_id)]),
         &format!("track:{source}:{raw_id}"),
         DETAIL_TTL_SEC,
     )?;
@@ -82,6 +82,8 @@ pub fn track(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     let Some(mut item) = crate::catalog::normalize_track(source, object, &mut dropped) else {
         return Ok(Value::Null);
     };
+    // 记快照：详情页点播放时用的引用是**请求时那个 ref**，插件返回的 id 可能与它不同
+    ctx.snapshots.remember_raw(source, raw_id, object);
     // 引用必须稳定：插件返回的 id 可能被改写，统一回到请求里的 ref
     item["id"] = json!(params.reference);
     item["sourceCount"] = json!(1);
@@ -101,7 +103,7 @@ pub fn album(ctx: &CoreContext, params: Value) -> Fallible<Value> {
         &params.source,
         PluginCapability::GetAlbumInfo,
         "getAlbumInfo",
-        json!([params.id]),
+        json!([detail_item_arg(ctx, &params.source, &params.id)]),
         &format!("album:{}:{}", params.source, params.id),
         DETAIL_TTL_SEC,
     )?;
@@ -119,7 +121,7 @@ pub fn album(ctx: &CoreContext, params: Value) -> Fallible<Value> {
         "year": pick_u64(&nested, &["year"]).unwrap_or(0),
         "tags": pick_strings(&nested, &["tags"]),
         "source": params.source,
-        "tracks": detail_tracks(&params.source, &value),
+        "tracks": detail_tracks(ctx, &params.source, &value),
     }))
 }
 
@@ -131,7 +133,7 @@ pub fn playlist(ctx: &CoreContext, params: Value) -> Fallible<Value> {
         &params.source,
         PluginCapability::GetPlaylistInfo,
         "getPlaylistInfo",
-        json!([params.id]),
+        json!([detail_item_arg(ctx, &params.source, &params.id)]),
         &format!("playlist:{}:{}", params.source, params.id),
         DETAIL_TTL_SEC,
     )?;
@@ -148,7 +150,7 @@ pub fn playlist(ctx: &CoreContext, params: Value) -> Fallible<Value> {
         "cover": pick_text(&nested, &["cover", "artwork", "pic"]).unwrap_or_default(),
         "tags": pick_strings(&nested, &["tags"]),
         "source": params.source,
-        "tracks": detail_tracks(&params.source, &value),
+        "tracks": detail_tracks(ctx, &params.source, &value),
     }))
 }
 
@@ -212,7 +214,7 @@ pub fn top_list(ctx: &CoreContext, params: Value) -> Fallible<Value> {
         &params.source,
         PluginCapability::GetTopList,
         "getTopList",
-        json!([params.id, page]),
+        json!([detail_item_arg(ctx, &params.source, &params.id), page]),
         &format!("topList:{}:{}:{page}", params.source, params.id),
         LIST_TTL_SEC,
     )?;
@@ -220,7 +222,7 @@ pub fn top_list(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     // `isEnd` 是社区协议的分页标志（不填默认「已到末页」）；缺了就不猜「还有下一页」
     let has_more = value.get("isEnd").and_then(|flag| flag.as_bool()) == Some(false);
     let mut map = serde_json::Map::new();
-    map.insert("items".into(), json!(detail_tracks(&params.source, &value)));
+    map.insert("items".into(), json!(detail_tracks(ctx, &params.source, &value)));
     map.insert("hasMore".into(), json!(has_more));
     if has_more {
         map.insert("nextPage".into(), json!(page + 1));
@@ -240,7 +242,7 @@ pub fn recommend(ctx: &CoreContext, params: Value) -> Fallible<Value> {
         &format!("recommend:{}", params.source),
         LIST_TTL_SEC,
     )?;
-    Ok(json!(detail_tracks(&params.source, &value)))
+    Ok(json!(detail_tracks(ctx, &params.source, &value)))
 }
 
 /// `catalog.lyrics{ref, withTranslation?}`：歌词；**无词返回 `data: null`**（不是错误）。
@@ -253,7 +255,8 @@ pub fn lyrics(ctx: &CoreContext, params: Value) -> Fallible<Value> {
         source,
         PluginCapability::GetLyric,
         "getLyric",
-        json!([raw_id]),
+        // MusicFree 的 `getLyric(musicItem)` 同样收条目对象；自有 ABI 收字符串 id
+        json!([detail_item_arg(ctx, source, raw_id)]),
         &format!("lyrics:{source}:{raw_id}:{}", params.with_translation),
         DETAIL_TTL_SEC,
     )?;
@@ -438,13 +441,39 @@ fn insert_opt(map: &mut serde_json::Map<String, Value>, key: &str, value: Option
     }
 }
 
+/// 详情函数的第一个参数。
+///
+/// **两种协议要的形状不同**（ADR-0006）：
+/// - 自有 ABI：`getAlbumInfo(id)` / `getPlaylistInfo(id)` / `getTrackInfo(id)` / `getTopList(id, page)` 收**字符串 id**；
+/// - MusicFree：`getAlbumInfo(albumItem)` / `getMusicSheetInfo(sheetItem, page)` / `getMusicInfo(musicItem)`
+///   / `getTopListDetail(topListItem, page)` 收**条目对象**，而且常常要读 id 以外的字段
+///   （B 站插件就从 `bvid`/`aid` 里取播放所需的 cid）。
+///
+/// 所以：兼容模式交给插件**归一化时记下的原始条目**（字段最全），没有快照时退化成 `{id}`；
+/// 自有 ABI 一律给字符串。沙箱侧还有一层别名参数适配兜底（`sandbox/bootstrap.js`），
+/// 两层都只做「形状翻译」，不新增任何能力。
+fn detail_item_arg(ctx: &CoreContext, source: &str, id: &str) -> Value {
+    let compat = ctx.plugins.manifest_of(source).is_some_and(|manifest| manifest.compat);
+    if !compat {
+        return json!(id);
+    }
+    ctx.snapshots.get(source, id).unwrap_or_else(|| json!({ "id": id }))
+}
+
 /// 列表形状 → 归一化曲目（复用搜索那套归一化，缺 `title` 的条目丢弃）。
-fn detail_tracks(source: &str, value: &Value) -> Vec<Value> {
+///
+/// 同时把原始条目记进 `ctx.snapshots`：从榜单/专辑点开播放时，插件要拿到**它自己产出过的那个条目**
+/// （`raw_id` 只是引用，字段不够）——少了这一步，真实 MusicFree 插件「榜单能看、一播就报错」。
+fn detail_tracks(ctx: &CoreContext, source: &str, value: &Value) -> Vec<Value> {
     let mut dropped = 0usize;
     list_items(value)
         .unwrap_or(&[])
         .iter()
-        .filter_map(|item| crate::catalog::normalize_track(source, item, &mut dropped))
+        .filter_map(|item| {
+            let track = crate::catalog::normalize_track(source, item, &mut dropped)?;
+            ctx.snapshots.remember(source, item);
+            Some(track)
+        })
         .collect()
 }
 

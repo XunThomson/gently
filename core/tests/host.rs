@@ -567,6 +567,82 @@ fn load_compat(
 }
 
 #[test]
+fn compat_detail_calls_get_the_musicfree_argument_shape() {
+    // R53 实测：真实 B 站插件（MusicFree 生态）的 `getTopListDetail(topListItem)` 读
+    // `topListItem.id`；宿主只传 id 字符串时它是 `undefined` → URL 拼成
+    // `.../x/web-interface/undefined` → 上游 404 → 界面只剩 `plugin.runtime_error`。
+    // 这里让「插件」把收到的第一个参数原样回显，钉住宿主给的形状。
+    let (paths, dir) = temp_paths("compat-args");
+    let host = load_compat(
+        &paths,
+        MockTransport::with("https://api.example.com/", "{}"),
+        r#"
+module.exports = {
+    async search() { return {isEnd: true, data: []}; },
+    async getMediaSource() { return null; },
+    async getMusicInfo(mediaItem) { return {title: typeof mediaItem + ':' + JSON.stringify(mediaItem)}; },
+    async getMusicSheetInfo(sheetItem, page) { return {isEnd: true, musicList: [], got: sheetItem, page: page}; },
+    async getTopListDetail(topListItem, page) {
+        return {isEnd: true, musicList: [{id: String(topListItem && topListItem.id), title: 'ok'}]};
+    },
+    async getAlbumInfo(albumItem) { return {isEnd: true, musicList: [], got: albumItem}; },
+};
+"#,
+    );
+
+    // 别名函数：拿到的是 `{id}` 对象，而不是裸字符串
+    let json = host
+        .call(COMPAT_ID, "getTopList", r#"["popular/series/one?number=1", 2]"#)
+        .expect("别名函数应能调用");
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        value["musicList"][0]["id"], "popular/series/one?number=1",
+        "getTopListDetail 应收到 {{id}} 对象：{value}"
+    );
+
+    let json = host
+        .call(COMPAT_ID, "getTrackInfo", r#"["BV1xx"]"#)
+        .expect("getMusicInfo 应能调用");
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["title"], r#"object:{"id":"BV1xx"}"#, "{value}");
+
+    // 名字相同但语义不同：兼容模式下 `getAlbumInfo` 也要对象（自有 ABI 是字符串，见 catalog_detail.rs）
+    let json = host
+        .call(COMPAT_ID, "getAlbumInfo", r#"["BV1yy"]"#)
+        .expect("getAlbumInfo 应能调用");
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["got"]["id"], "BV1yy", "{value}");
+
+    host.unload(COMPAT_ID);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn our_own_abi_still_receives_plain_string_ids_in_compat_mode() {
+    // 反向保护：兼容插件若实现的是**我们自有的名字**（`getTopList(id, page)`），
+    // 参数必须保持字符串——不能因为「它在兼容模式」就把所有详情调用都改成对象。
+    let (paths, dir) = temp_paths("compat-own-name");
+    let host = load_compat(
+        &paths,
+        MockTransport::with("https://api.example.com/", "{}"),
+        r#"
+module.exports = {
+    async search() { return []; },
+    async getMediaSource() { return null; },
+    async getTopList(id, page) { return {isEnd: true, data: [{id: typeof id + ':' + id, title: 'p' + page}]}; },
+};
+"#,
+    );
+
+    let json = host.call(COMPAT_ID, "getTopList", r#"["hot", 3]"#).expect("应能调用");
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["data"][0]["id"], "string:hot", "{value}");
+
+    host.unload(COMPAT_ID);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn crypto_js_shim_matches_reference_vectors() {
     let (paths, dir) = temp_paths("shim-crypto");
     let host = load_compat(

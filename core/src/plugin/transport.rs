@@ -12,6 +12,10 @@ use std::time::Duration;
 
 use crate::contract::{CoreError, ErrorCode, Fallible};
 
+/// 出网请求里唯一由**传输层**决定的头：我们不实现解压，因此只接受 `identity`
+/// （插件声明的 `gzip, deflate, br` 必须丢掉，否则响应体是压缩字节、读成字符串必失败）。
+const ACCEPT_ENCODING: &str = "accept-encoding";
+
 /// 一次出网请求（由插件通过 `fetch` 发起）。
 #[derive(Debug, Clone)]
 pub struct HttpRequest {
@@ -97,8 +101,7 @@ pub fn require_public_https(url: &str, what: &str) -> Fallible<()> {
 
 /// 限制参数（来自 `app.config` / 环境，集中在此便于统一调参）。
 #[derive(Debug, Clone, Copy)]
-pub struct HttpLimits {
-    pub connect_timeout: Duration,
+pub struct HttpLimits {    pub connect_timeout: Duration,
     pub read_timeout: Duration,
     /// 单次响应体上限（防止插件拉超大文件把内存吃掉）
     pub max_bytes: u64,
@@ -152,8 +155,8 @@ impl HttpTransport for BlockingHttp {
 
         loop {
             let mut call = self.agent.request(&current.method, &current.url);
-            for (key, value) in &current.headers {
-                call = call.set(key, value);
+            for (key, value) in outgoing_headers(&current.headers) {
+                call = call.set(&key, &value);
             }
 
             let result = match &current.body {
@@ -368,6 +371,25 @@ pub fn host_allowed(allowlist: &[String], host: &str) -> bool {
     })
 }
 
+/// 真正发给上游的请求头：**丢掉调用方声明的 `accept-encoding`**，由传输层统一按 `identity` 请求。
+///
+/// 为什么不能照抄插件的：它们（MusicFree 生态尤其）习惯把浏览器的
+/// `accept-encoding: gzip, deflate, br` 一并带上，而我们这一侧没有解压实现——
+/// 上游于是回压缩体，`read_to_string` 直接失败。R53 实测：真实插件榜单 URL 修对之后，
+/// 命令仍然 `plugin.runtime_error`，日志只留一句「stream did not contain valid UTF-8」。
+///
+/// 媒体代理（`media.rs`）复用这一份实现：那里更敏感——转发压缩体还会让
+/// `Content-Length` / `Content-Range` 与实际字节数对不上，Range 拖动直接坏掉。
+pub fn outgoing_headers(headers: &[(String, String)]) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = headers
+        .iter()
+        .filter(|(name, _)| !name.eq_ignore_ascii_case(ACCEPT_ENCODING))
+        .cloned()
+        .collect();
+    out.push((ACCEPT_ENCODING.to_string(), "identity".to_string()));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,6 +400,26 @@ mod tests {
         assert_eq!(host_of("https://api.example.com:8443/x").as_deref(), Some("api.example.com"));
         assert_eq!(host_of("https://user:pw@api.example.com/x").as_deref(), Some("api.example.com"));
         assert_eq!(host_of("not a url"), None);
+    }
+
+    #[test]
+    fn plugin_accept_encoding_is_replaced_by_identity() {
+        // 插件照抄浏览器的写法（B 站插件里就有这一行）
+        let headers = vec![
+            ("user-agent".to_string(), "Mozilla/5.0".to_string()),
+            ("Accept-Encoding".to_string(), "gzip, deflate, br".to_string()),
+            ("referer".to_string(), "https://example.com/".to_string()),
+        ];
+        let out = outgoing_headers(&headers);
+        assert!(
+            !out.iter().any(|(name, value)| name.eq_ignore_ascii_case("accept-encoding")
+                && value != "identity"),
+            "不能把插件的压缩偏好透传给上游：{out:?}"
+        );
+        // 其余头原样保留
+        assert!(out.iter().any(|(name, value)| name == "user-agent" && value == "Mozilla/5.0"));
+        assert!(out.iter().any(|(name, _)| name.eq_ignore_ascii_case("accept-encoding")));
+        assert_eq!(out.len(), 3, "替换而不是追加：{out:?}");
     }
 
     #[test]

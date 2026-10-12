@@ -491,6 +491,13 @@ export interface LocalScanResult {
     skipped: number;
     /** 读不到标签（照样入库，标题退回文件名） */
     unreadable: number;
+    /**
+     * 见到了、但扩展名不是认得的音频格式的文件数（`desktop.ini` / `.jpg` / `.txt`…）。
+     *
+     * 用来把「这个目录里一个音频都没有」和「目录是空的」区分开：只报 `scanned=0` 时，
+     * 界面看起来和「功能坏了」一模一样（R53 实测：目录里只有 `.m4s`）。
+     */
+    ignored: number;
 }
 
 export interface RecommendApi {

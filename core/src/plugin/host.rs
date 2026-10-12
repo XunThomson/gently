@@ -616,7 +616,11 @@ fn install_host_functions(
     // ---- 运行环境信息（`env.os` / `env.appVersion` / `process.platform`） ----
     // MusicFree 的插件常按 `env.os === 'android'` 分支；我们如实报当前桌面平台，
     // 而不是假装成安卓——插件若因此拒绝运行，用户看到的提示才是真的原因。
+    //
+    // `compat` 一并交给垫片：**兼容插件按 MusicFree 协议收参数**（详情类函数要的是
+    // 「条目对象」而不是 id 字符串），垫片据此做形状翻译（见 `sandbox/bootstrap.js`）。
     {
+        let compat = manifest.compat;
         globals
             .set(
                 "__hostEnvInfo",
@@ -626,6 +630,7 @@ fn install_host_functions(
                         "platform": std::env::consts::OS,
                         "appVersion": env!("CARGO_PKG_VERSION"),
                         "lang": "zh-CN",
+                        "compat": compat,
                     })
                     .to_string()
                 }),

@@ -46,7 +46,9 @@ export default function LocalView() {
         {
             key: 'sizeText',
             title: t('column.size'),
-            width: '96px',
+            // 与 `table.config.tsx` 里的列宽下限同一套账：7 列合计必须放得进最小窗口的
+            // 内容区（900 宽 → 约 615）。这里 80px 是「4.2 MB」这种文本 + 左右内边距的下限。
+            width: '80px',
             align: 'center',
             render: (value) => <TextCell tone="muted">{String(value)}</TextCell>,
         },

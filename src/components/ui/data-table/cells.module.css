@@ -107,6 +107,12 @@
     align-items: center;
     justify-content: flex-end;
     gap: var(--table-action-gap);
+    /* 放不下就**换行**，不要被单元格裁掉：单元格是 `overflow: hidden`，而这里是
+       `justify-content: flex-end`——一行塞不下时被裁掉的是**最左边**那几个，
+       也就是「播放 / 收藏」（R41 在打包版里量到过：只剩「在文件夹中显示 / 移除」）。
+       窗口最小 900 时本地曲库这一行有 4 个操作，换行比「点不到播放」可接受得多。 */
+    flex-wrap: wrap;
+    row-gap: var(--table-action-gap);
 }
 
 .action {

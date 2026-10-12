@@ -248,7 +248,7 @@
       "remove": "移除",
       "empty": "还没有本地音乐——在上面填入音乐目录并扫描",
       "scanTitle": "扫描本地目录",
-      "scanHint": "每行一个目录。只认音频扩展名（mp3/flac/ogg/m4a/wav…）；大小没变的文件不会重读标签；读不到标签的文件照样入库（标题退回文件名）。路径直接粘贴即可——原生文件选择器需要额外的桌面插件，当前依赖里没有。",
+      "scanHint": "每行一个目录。只认音频扩展名（mp3/flac/m4a/m4s/mp4/aac/ogg/opus/wav…）；大小没变的文件不会重读标签；读不到标签的文件照样入库（标题退回文件名）。路径直接粘贴即可——原生文件选择器需要额外的桌面插件，当前依赖里没有。",
       "scanPlaceholder": "D:\\Music\nE:\\无损",
       "scanRecursive": "包含子目录",
       "scanStart": "开始扫描",
@@ -256,7 +256,7 @@
       "scanPreparing": "正在准备扫描…",
       "scanRunning": "正在扫描 {{dir}}（已发现 {{found}} 个文件）",
       "scanRunningPercent": "正在扫描 {{dir}}（{{percent}}% · 已发现 {{found}} 个文件）",
-      "scanResult": "上次扫描：扫描 {{scanned}} 个文件，新增 {{added}}，更新 {{updated}}，移除 {{removed}}，跳过 {{skipped}}，读不了 {{unreadable}}",
+      "scanResult": "上次扫描：扫描 {{scanned}} 个文件，新增 {{added}}，更新 {{updated}}，移除 {{removed}}，跳过 {{skipped}}，读不了 {{unreadable}}，非音频文件 {{ignored}}",
       "scanNeedsDesktop": "扫描本地目录需要桌面端（浏览器预览展示的是示例数据）。"
     },
     "plugin": {
@@ -299,7 +299,7 @@
       "warnings": "提示",
       "replaces": "将覆盖同 id 的已安装插件",
       "installed": "已导入的插件（核心）",
-      "installedEmpty": "还没有导入任何插件；内置示例源见下方列表。",
+      "installedEmpty": "还没有导入任何插件；应用不预置任何音源，需要你自己导入。",
       "disclaimer": "插件由第三方提供，与本软件无关；请自行确认你有权访问相应内容。",
       "needSource": "请先填写插件内容或地址",
       "moveUp": "上移",
@@ -383,7 +383,8 @@
       "title": "搜索结果",
       "subtitle": "「{{keyword}}」共 {{count}} 首",
       "hint": "输入关键词开始搜索",
-      "empty": "没有找到相关歌曲"
+      "empty": "没有找到相关歌曲",
+      "noSource": "还没有安装任何音源，无法搜索"
     },
     "playlist": {
       "title": "歌单",

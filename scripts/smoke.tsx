@@ -17,7 +17,7 @@ import {activeUserSkinId, resolveActivePreset} from '../src/theme';
 import {DEFAULT_PRESET_ID} from '../src/theme';
 import {store, useActions} from '../src/store';
 import {buildCssVars, themeConfig} from '../src/theme/tokens';
-import {getActiveMusicSource, listMusicSources} from '../src/plugins';
+import {demoSourcesEnabled, demoSourcesReady, getActiveMusicSource, listMusicSources} from '../src/plugins';
 import {catalogService, fileService, libraryService, recommendService, skinService} from '../src/services';
 import zh from '../src/i18n/locales/zh.json';
 import en from '../src/i18n/locales/en.json';
@@ -360,6 +360,13 @@ function checkCssTokens(): void {
 }
 
 async function main(): Promise<void> {
+    /* 演示源（`mock` / `bilibili` / `netease`）**只在没有 Tauri 宿主时注册**，而且是
+       动态 `import()`（这样桌面端产物里不会留下 mock 数据）。冒烟的运行环境没有宿主，
+       因此这里必须等注册完成再断言——打包器把动态 import 编译成异步 require，
+       注册落在下一个微任务里，不等就会看到「一个源都没有」的假象。 */
+    await demoSourcesReady;
+    check('plugins: 无宿主时才注册演示源', demoSourcesEnabled && listMusicSources().length > 0);
+
     /* ---------------- i18n ---------------- */
     checkI18n();
 
@@ -1299,7 +1306,7 @@ async function main(): Promise<void> {
                 }
                 return new Promise((resolve) =>
                     setTimeout(
-                        () => resolve(envelope({scanned: 12, added: 3, updated: 1, removed: 1, skipped: 7, unreadable: 0})),
+                        () => resolve(envelope({scanned: 12, added: 3, updated: 1, removed: 1, skipped: 7, unreadable: 0, ignored: 2})),
                         50,
                     ),
                 );
@@ -1421,19 +1428,32 @@ async function main(): Promise<void> {
                 collectionFallback.favorites.length === 0 && collectionFallback.playlists.length === 0,
             );
 
-            /* 1. 插件列表 = 核心那份 + 前端内置演示源（演示源核心不认识，但它是可用的源） */
+            /* 1. 插件列表**只有核心那一份**：内置演示源与占位项是前端 mock，
+               核心在的时候绝不能被合并进去（否则用户以为装了这些源，点进去什么都没有）。
+               注意假宿主是在本文件加载**之后**才装上的，前端注册表里那三个演示源仍在——
+               因此这里同时钉住「按注册表列出」与「按核心列出」两条路。 */
             const plugins = await libraryService.loadPlugins();
+            const demoIds = ['mock', 'bilibili', 'netease'];
             check(
-                'fake: 插件列表含核心插件（不是只有 mock）',
-                plugins.some((plugin) => plugin.id === 'core-source' && !plugin.builtin),
+                'fake: 插件列表只有核心那份（含核心插件、不含内置演示源）',
+                plugins.some((plugin) => plugin.id === 'core-source' && !plugin.builtin) &&
+                    !plugins.some((plugin) => demoIds.includes(plugin.id)),
+                plugins.map((plugin) => plugin.id).join(', '),
             );
             check(
-                'fake: 内置演示源仍在列表里且标为内置',
-                plugins.some((plugin) => plugin.id === 'mock' && plugin.builtin),
+                'fake: 核心在时插件列表不含占位项（qqmusic / kugou）',
+                !plugins.some((plugin) => plugin.id === 'qqmusic' || plugin.id === 'kugou'),
             );
             check(
                 'fake: 插件列表无重复 id',
                 new Set(plugins.map((plugin) => plugin.id)).size === plugins.length,
+            );
+            /* 界面的「当前音源」走服务层（AGENTS 第 5 条），且读的是**核心那份清单**：
+               前端注册表在桌面上是空的，只读注册表会让设置页误报「还没有安装任何插件」。 */
+            check(
+                'fake: 当前音源读核心清单（不看前端注册表）',
+                catalogService.activeSource(plugins)?.id === 'core-source',
+                `active=${catalogService.activeSource(plugins)?.id}`,
             );
 
             /* 2. 核心认识的源走核心：核心报错如实呈现（R18 的行为），不悄悄退回 mock */
@@ -1469,11 +1489,17 @@ async function main(): Promise<void> {
             const demoOnly = await catalogService.searchIn('晚风', 'mock');
             check('fake: 演示源的按源搜索照常返回本地结果', demoOnly.length > 0);
 
-            /* 5. 「预期内的失败」保持安静：核心说「没实现」时应退回 mock，而不是报错（`catalog.album` 没有预设 → not_implemented） */
-            const fallbackAlbum = await catalogService.fetchAlbum('mock', 'album:林清野');
+            /* 5. **核心在时的诚实空态**（本轮的新规则）：`recommend.home` 报「未实现」
+               时必须返回**空 bundle**（画像为空 → 界面显示「多听几首再来」），
+               而不是 `src/mock/recommend.mock.ts` 里那批预置曲目——那是别人的假数据。 */
+            const emptyBundle = await recommendService.suggest({recent: [], favorites: []});
             check(
-                'fake: 核心报未实现时退回 mock 兜底（不算故障）',
-                !!fallbackAlbum && fallbackAlbum.source === 'mock',
+                'fake: 核心在时推荐为空 bundle 而不是 mock 预置曲目',
+                emptyBundle.tracks.length === 0 &&
+                    emptyBundle.albums.length === 0 &&
+                    emptyBundle.playlists.length === 0 &&
+                    emptyBundle.profile.sampleSize === 0,
+                `tracks=${emptyBundle.tracks.length} albums=${emptyBundle.albums.length}`,
             );
 
             /* 6. 皮肤裁决走完整路径（R24 的修复）：核心标了 active 就用核心那套 */
@@ -1696,6 +1722,13 @@ async function main(): Promise<void> {
                 libraryAfterScan.scanSummary?.added === 3 &&
                     libraryAfterScan.scanSummary?.removed === 1 &&
                     libraryAfterScan.scanSummary?.skipped === 7,
+                JSON.stringify(libraryAfterScan.scanSummary),
+            );
+            /* 非音频文件数（R53）：`scanned=0` 与「目录是空的」必须能分辨——
+               用户的 `D:\Xun\Music` 里只有一个 `.m4s`，旧版界面只能显示「还没有本地音乐」 */
+            check(
+                'fake: 扫描统计带上非音频文件数（不再把「有文件但都不是音频」显示成空目录）',
+                libraryAfterScan.scanSummary?.ignored === 2,
                 JSON.stringify(libraryAfterScan.scanSummary),
             );
             check('fake: 扫描结束后不再显示进行中', libraryAfterScan.scanning === false);

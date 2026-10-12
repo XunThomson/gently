@@ -45,7 +45,6 @@ pub use subscription::{
     SubscriptionSourceEntry,
 };
 pub use transport::{
-    host_allowed, host_of, require_public_https, BlockingHttp, DownloadEvent, DownloadOutcome,
-    HttpLimits,
-    HttpRequest, HttpResponse, HttpTransport,
+    host_allowed, host_of, outgoing_headers, require_public_https, BlockingHttp, DownloadEvent,
+    DownloadOutcome, HttpLimits, HttpRequest, HttpResponse, HttpTransport,
 };

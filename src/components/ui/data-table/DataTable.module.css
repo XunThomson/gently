@@ -14,9 +14,13 @@
 .table {
     display: flex;
     flex-direction: column;
-    /* 容器足够宽时铺满；内容过长时由外层滚动 */
-    min-width: 100%;
-    width: max-content;
+    /* **列宽跟着容器走，而不是跟着内容走**（R53 实测）：
+       原来写的是 `width: max-content`，于是「标题很长」的真实数据会把整张表撑到
+       一两千像素——专辑 / 时长 / 大小 / 操作 全被推到窗口外，只剩一条横向滚动条和
+       半截表头（用户看到的「UI 显示异常」就是这个）。列定义里的 `minmax(…, Nfr)`
+       本来就是为「分掉多余空间」准备的：宽度锁在 100% 后，长标题在**自己的列里**
+       省略号截断（单元格已有 overflow/text-overflow），其余列照常可见。 */
+    width: 100%;
 }
 
 .headerRow,

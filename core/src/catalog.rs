@@ -152,6 +152,7 @@ pub fn search(
         let tx = tx.clone();
         let plugins = Arc::clone(&ctx.plugins);
         let events = Arc::clone(&ctx.events);
+        let snapshots = Arc::clone(&ctx.snapshots);
         let cancel = Arc::clone(&cancel);
         let search_id = search_id.clone();
         let id = id.clone();
@@ -170,7 +171,7 @@ pub fn search(
                 match plugins.call(&id, "search", &args) {
                     Ok(raw) => {
                         let mut dropped = 0usize;
-                        let tracks = normalize_tracks(&id, &raw, limit, &mut dropped);
+                        let tracks = normalize_tracks(&id, &raw, limit, &mut dropped, Some(&snapshots));
                         if dropped > 0 {
                             tracing::debug!(plugin = %id, dropped, "搜索结果的非法条目已丢弃");
                         }
@@ -258,7 +259,16 @@ pub fn cancel(ctx: &CoreContext, search_id: &str) -> Fallible<()> {
 ///
 /// 规则：`source` 强制为插件 id；`id` 为 `source:rawId`；缺 `title` 的条目丢弃。
 /// 列表形状交给 `plugin::list_items`（兼容 MusicFree 的 `{isEnd, data}` / `{isEnd, musicList}`）。
-fn normalize_tracks(source: &str, raw: &str, limit: usize, dropped: &mut usize) -> Vec<Value> {
+///
+/// 归一化时顺手把**插件原始条目**记进 `snapshots`（见 [`ItemSnapshots`]）：播放解析要把它原样
+/// 交回插件，而前端手上只有 `source:rawId`。
+fn normalize_tracks(
+    source: &str,
+    raw: &str,
+    limit: usize,
+    dropped: &mut usize,
+    snapshots: Option<&ItemSnapshots>,
+) -> Vec<Value> {
     let parsed: Value = match serde_json::from_str(raw) {
         Ok(value) => value,
         Err(_) => {
@@ -275,9 +285,114 @@ fn normalize_tracks(source: &str, raw: &str, limit: usize, dropped: &mut usize) 
 
     array
         .iter()
-        .filter_map(|item| normalize_track(source, item, dropped))
+        .filter_map(|item| {
+            let track = normalize_track(source, item, dropped)?;
+            if let Some(store) = snapshots {
+                store.remember(source, item);
+            }
+            Some(track)
+        })
         .take(limit)
         .collect()
+}
+
+/// 插件原始条目的**进程内**快照（LRU，不落盘、不上报、不跨进程）。
+///
+/// 为什么需要这一层：MusicFree 生态的 `getMediaSource(musicItem)` 收的是**插件自己产出过的那个
+/// 条目**（bilibili 这类源要从里面读 `bvid` / `aid` / `cid` 才能拿到播放地址），而我们的契约
+/// 只把 `source:rawId` 交给前端。归一化时把原始条目按 `source:rawId` 记下来，播放解析时原样回给插件——
+/// **不猜字段、不写「每源适配表」**，插件产出过的任何字段都还在。
+///
+/// R53 实测：没有这一层，真实 MusicFree 插件（B 站）能搜、能出榜单，但一播就
+/// `plugin.runtime_error`（插件把 `undefined` 的 bvid 拼进 URL，上游回 -400）。
+pub struct ItemSnapshots {
+    items: Mutex<HashMap<String, Value>>,
+    /// 淘汰顺序：队首最旧，命中后移到队尾（近似 LRU）
+    order: Mutex<std::collections::VecDeque<String>>,
+    limit: usize,
+}
+
+impl Default for ItemSnapshots {
+    fn default() -> Self {
+        Self::new(2_000)
+    }
+}
+
+impl ItemSnapshots {
+    pub fn new(limit: usize) -> Self {
+        Self {
+            items: Mutex::new(HashMap::new()),
+            order: Mutex::new(std::collections::VecDeque::new()),
+            limit: limit.max(1),
+        }
+    }
+
+    /// 记下一条插件原始条目（键就是它将来被引用时用的 `source:rawId`）。
+    pub fn remember(&self, source: &str, item: &Value) {
+        let Some(raw_id) = raw_id_of(item) else { return };
+        // 标题为空的条目会被归一化丢弃 → 永远不会被引用，不必记
+        let titled = item
+            .get("title")
+            .and_then(|value| value.as_str())
+            .is_some_and(|title| !title.trim().is_empty());
+        if !titled {
+            return;
+        }
+        self.remember_raw(source, &raw_id, item);
+    }
+
+    /// 按**指定的** raw id 记（详情命令用：插件返回的 id 可能与请求的引用不同，
+    /// 而播放时用的键是请求时那个引用）。
+    pub fn remember_raw(&self, source: &str, raw_id: &str, item: &Value) {
+        let key = format!("{source}:{raw_id}");
+        let Ok(mut items) = self.items.lock() else { return };
+        if items.insert(key.clone(), item.clone()).is_none() {
+            if let Ok(mut order) = self.order.lock() {
+                order.push_back(key);
+                while order.len() > self.limit {
+                    if let Some(oldest) = order.pop_front() {
+                        items.remove(&oldest);
+                    }
+                }
+            }
+        }
+    }
+
+    /// 取回插件原始条目（`raw_id` 是引用里 `source:` 之后的那一段）。
+    pub fn get(&self, source: &str, raw_id: &str) -> Option<Value> {
+        let key = format!("{source}:{raw_id}");
+        let items = self.items.lock().ok()?;
+        let found = items.get(&key).cloned();
+        drop(items);
+        if found.is_some() {
+            if let Ok(mut order) = self.order.lock() {
+                if let Some(position) = order.iter().position(|item| item == &key) {
+                    order.remove(position);
+                    order.push_back(key);
+                }
+            }
+        }
+        found
+    }
+}
+
+/// 条目在源内的原始 id：契约里 `id` 允许是字符串或数字，缺失时退回标题
+/// （与 `normalize_track` 完全同一套规则——两处不一致就会出现「记下了却取不回」）。
+fn raw_id_of(item: &Value) -> Option<String> {
+    let object = item.as_object()?;
+    object
+        .get("id")
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+        .or_else(|| object.get("id").and_then(|value| value.as_i64()).map(|n| n.to_string()))
+        .or_else(|| {
+            object
+                .get("title")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|title| !title.is_empty())
+                .map(str::to_string)
+        })
 }
 
 pub(crate) fn normalize_track(source: &str, item: &Value, dropped: &mut usize) -> Option<Value> {
@@ -295,12 +410,8 @@ pub(crate) fn normalize_track(source: &str, item: &Value, dropped: &mut usize) -
         return None;
     }
 
-    let raw_id = object
-        .get("id")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-        .or_else(|| object.get("id").and_then(|v| v.as_i64()).map(|n| n.to_string()))
-        .unwrap_or_else(|| title.to_string());
+    // 与 `raw_id_of` 共用同一套规则：两处若不一致，快照就会「记下了却按 ref 取不回」
+    let raw_id = raw_id_of(item).unwrap_or_else(|| title.to_string());
 
     let duration_sec = read_duration_sec(object);
 

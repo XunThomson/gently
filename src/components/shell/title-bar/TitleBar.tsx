@@ -2,7 +2,7 @@ import {useCallback, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
 import {useActions, useSelect} from '../../../store';
-import {catalogService, isTauri, windowService} from '../../../services';
+import {catalogService, coreAvailable, isTauri, windowService} from '../../../services';
 import {HOT_SEARCH_WORDS} from '../../../mock/search.mock';
 import {useTheme} from '../../../theme';
 import {SearchBox, type SearchSuggestion} from '../../ui/search-box';
@@ -51,7 +51,8 @@ export function TitleBar() {
                 <SearchBox
                     value={searchQuery}
                     suggestions={fetchSuggestions}
-                    hotWords={HOT_SEARCH_WORDS}
+                    /* 热搜词是**演示内容**（`src/mock/search.mock.ts`）：桌面上不出现 */
+                    hotWords={coreAvailable() ? [] : HOT_SEARCH_WORDS}
                     placeholder={t('search.placeholder')}
                     submitText={t('search.submit')}
                     historyKey={searchBox.historyKey}

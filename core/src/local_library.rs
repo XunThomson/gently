@@ -34,8 +34,17 @@ use crate::events::events;
 use crate::store::{normalize_limit, LocalTrackInput};
 
 /// 认得的音频扩展名（小写比较）。其余文件不读、不入库。
-const AUDIO_EXTENSIONS: [&str; 9] =
-    ["mp3", "flac", "m4a", "mp4", "aac", "ogg", "oga", "opus", "wav"];
+///
+/// **`m4s` / `m4b` / `m4r` 必须在这里**：它们和 `m4a` / `mp4` 是同一个 ISO-MP4 容器
+/// （音轨是 AAC/ALAC），symphonia 的 `isomp4` 一视同仁——`.m4s` 正是「B 站下载下来的音频」
+/// 的格式，用户库里很常见。R53 实测：`D:\Xun\Music` 里只有一个 `.m4s`，
+/// 扫描结果是 `scanned=0`，界面显示「还没有本地音乐」，看起来**像功能坏了**。
+///
+/// 只列这个构建真能解码的：`wma` / `ape` / `aiff` 等 symphonia 未开对应 feature，
+/// 列进来只会把「读不了」的数字抬高（`unreadable`），并不会真的入库。
+const AUDIO_EXTENSIONS: [&str; 12] = [
+    "mp3", "flac", "m4a", "m4b", "m4r", "m4s", "mp4", "aac", "ogg", "oga", "opus", "wav",
+];
 
 /// 每处理多少个文件推一次进度事件（太密会淹掉前端）。
 const PROGRESS_EVERY: usize = 25;
@@ -89,6 +98,11 @@ pub fn scan(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     let mut scanned = 0usize;
     let mut skipped = 0usize;
     let mut unreadable = 0usize;
+    // 见到了但不是音频扩展名的文件数（`desktop.ini`、`.jpg`、`.txt`…）。
+    // 为什么要报这个数：目录里明明有文件却是 `scanned=0` 时，界面只能显示「还没有本地音乐」——
+    // 用户会以为扫描坏了（R53 的 `.m4s` 就是这个现象）。把这个数如实报出来，
+    // 「一个都不是音频」与「目录是空的」就不再是同一句话。
+    let mut ignored = 0usize;
 
     for root in &roots {
         let walker = WalkDir::new(root)
@@ -101,6 +115,7 @@ pub fn scan(ctx: &CoreContext, params: Value) -> Fallible<Value> {
             }
             let path = entry.path();
             if !is_audio_path(path) {
+                ignored += 1;
                 continue;
             }
             scanned += 1;
@@ -170,7 +185,7 @@ pub fn scan(ctx: &CoreContext, params: Value) -> Fallible<Value> {
         }
     }
 
-    tracing::info!(scanned, added = outcome.added, updated = outcome.updated, removed, "本地曲库扫描完成");
+    tracing::info!(scanned, added = outcome.added, updated = outcome.updated, removed, ignored, "本地曲库扫描完成");
     Ok(json!({
         "scanned": scanned,
         "added": outcome.added,
@@ -178,6 +193,7 @@ pub fn scan(ctx: &CoreContext, params: Value) -> Fallible<Value> {
         "removed": removed,
         "skipped": skipped,
         "unreadable": unreadable,
+        "ignored": ignored,
     }))
 }
 

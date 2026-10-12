@@ -56,6 +56,9 @@ export function createRecommendSlice(ctx: StoreCtx) {
      * 源可能没有 `getRecommend`（能力探测回 `common.not_implemented`）或直接跑挂——
      * 两种都只是「这个源没有推荐」，退回空列表、不打扰用户
      * （`fetchRecommendFrom` 与 `coreRecommend` 已经这么约定；界面按空态呈现）。
+     *
+     * `defaultSourceId()` 现在**一个源都没有时返回 `null`**：那种情况下没有「源侧推荐」
+     * 可言，直接收空态，不要拿 null 去问门面（以前它会抛，界面卡在 loading）。
      */
     const loadSource = async (force = false) => {
         const current = ctx.getState().recommend;
@@ -63,6 +66,11 @@ export function createRecommendSlice(ctx: StoreCtx) {
         if (current.sourceLoaded && !force) return;
 
         const sourceId = catalogService.defaultSourceId();
+        if (!sourceId) {
+            patch({sourceTracks: [], sourceId: null, sourceLoading: false, sourceLoaded: true});
+            return;
+        }
+
         patch({sourceLoading: true, sourceId});
         try {
             const tracks = await catalogService.fetchRecommendFrom(appConfig.list.recommendSourceLimit, sourceId);

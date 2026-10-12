@@ -66,10 +66,32 @@ export function createRankingSlice(ctx: StoreCtx) {
 
             const {sourceFilter} = ctx.getState().ui;
             const enabled = ctx.getState().plugin.list.filter((plugin) => plugin.enabled);
-            const sourceId =
+            const sourceId: string | null =
                 sourceFilter === 'all'
                     ? (enabled[0]?.id ?? catalogService.defaultSourceId())
                     : sourceFilter;
+
+            /**
+             * **一个源都没有**：不再往下走。
+             *
+             * `defaultSourceId()` 现在返回 `null`（以前是抛异常），视图据此显示
+             * 「还没有安装任何音源」——继续拉数据只会在空源上报错，把「没装音源」
+             * 说成「源跑挂了」。
+             */
+            if (!sourceId) {
+                patch({
+                    loading: false,
+                    loaded: true,
+                    sourceId: null,
+                    groups: [],
+                    rows: [],
+                    selectedId: null,
+                    hasMore: false,
+                    nextPage: undefined,
+                    error: null,
+                });
+                return;
+            }
 
             // 同一个源已经加载过就不再重复拉（视图在挂载 / 筛选变化时都会调用）
             const current = ctx.getState().ranking;

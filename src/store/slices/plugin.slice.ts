@@ -1,4 +1,4 @@
-import {catalogService, libraryService} from '../../services';
+import {catalogService, coreAvailable, libraryService} from '../../services';
 import type {PluginActions, PluginState, StoreCtx} from '../types';
 
 /**
@@ -45,8 +45,11 @@ export function createPluginSlice(ctx: StoreCtx) {
         },
 
         /**
-         * 检查更新：桌面端与**来源**比对（URL / 订阅索引），只报告不自动更新；
-         * 浏览器预览没有来源可比，沿用 mock 的「补丁位 +1」行为以保持界面可演示。
+         * 检查更新：桌面端与**来源**比对（URL / 订阅索引），只报告不自动更新。
+         *
+         * 浏览器预览没有来源可比，沿用 mock 的「补丁位 +1」行为以保持界面可演示；
+         * **核心在时绝不编造版本号**——那会让用户以为「有更新」，点下去却没有任何来源可更新。
+         * 没有可比对的来源就什么都不做（按钮点了没反应，好过谎报有新版本）。
          */
         async update(id) {
             const checked = await libraryService.checkPluginUpdate(id);
@@ -54,6 +57,7 @@ export function createPluginSlice(ctx: StoreCtx) {
                 update(id, (p) => ({...p, version: checked.latest}));
                 return;
             }
+            if (coreAvailable()) return;
 
             update(id, (p) => {
                 const [major, minor, patchNo] = p.version.split('.').map(Number);
