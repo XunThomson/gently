@@ -67,6 +67,7 @@ import SettingView from '../src/views/setting';
 import ThemeView from '../src/views/theme';
 import FavoritesView from '../src/views/favorites';
 import {SourceFavorites} from '../src/views/favorites/components/source-favorites';
+import {DownloadMark} from '../src/components/ui/download-mark';
 import PlaylistView from '../src/views/playlist';
 import CollectionView from '../src/views/collection';
 import NowPlayingView from '../src/views/now-playing';
@@ -1073,6 +1074,21 @@ async function main(): Promise<void> {
     check('store: 加入下载队列', s().download.tasks.some((t) => t.track.id === dlTrack.id));
     actions.download.add(dlTrack);
     check('store: 重复加入下载队列不产生重复项', s().download.tasks.length === tasksBefore + 1);
+
+    /* 下载标记（列表里的「已下载 / 下载中」）——用户报「只能在下载页看，业务列表看不出」 */
+    {
+        const plain = {...s().library.local[5], id: 'no-task-track'};
+        check(
+            'download-mark: 没有任务时不渲染任何东西（不写「未下载」那种噪声）',
+            renderToString(<DownloadMark track={plain}/>) === '',
+        );
+        const running = renderToString(<DownloadMark track={dlTrack}/>);
+        check(
+            'download-mark: 有任务时显示下载中与进度',
+            running.includes('下载中') && running.includes('data-status="downloading"'),
+            running,
+        );
+    }
 
     const addedTask = s().download.tasks.find((t) => t.track.id === dlTrack.id)!;
     /* 有空闲并发槽时直接开始（与桌面端一致；满槽才会显示「等待中」） */

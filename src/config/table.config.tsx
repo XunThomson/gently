@@ -1,6 +1,7 @@
 import type {TFunction} from 'i18next';
 import type {ColumnDef, RowAction} from '../components/ui/data-table';
 import {ActionsCell, BadgeCell, ProgressCell, TextCell} from '../components/ui/data-table';
+import {DownloadMark} from '../components/ui/download-mark';
 import type {Track} from '../types';
 import {trackCoverStyle} from '../utils/cover';
 import styles from './table.config.module.css';
@@ -36,9 +37,14 @@ export const titleColumn = <T extends Track>(t: TFunction): ColumnDef<T> => ({
     render: (value, record) => (
         <span className={styles.title}>
             <span aria-hidden="true" className={styles.cover} style={trackCoverStyle(record)} />
-            <TextCell>
-                <span className={styles.text}>{String(value)}</span>
-            </TextCell>
+            {/* 文本包一层：`TextCell` 本身是 flex 项，不设 min-width 时会顶开下载标记 */}
+            <span className={styles.titleText}>
+                <TextCell>
+                    <span className={styles.text}>{String(value)}</span>
+                </TextCell>
+            </span>
+            {/* 下载状态带进列表本身：用户不必再去下载页确认「这首下过没有」 */}
+            <DownloadMark track={record}/>
         </span>
     ),
 });

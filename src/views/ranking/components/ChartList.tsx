@@ -1,4 +1,5 @@
 import {EmptyState} from '../../../components/ui/empty-state';
+import {DownloadMark} from '../../../components/ui/download-mark';
 import {useTranslation} from 'react-i18next';
 import {IconMusic} from '../../../components/ui/icon';
 import type {Track} from '../../../types';
@@ -61,7 +62,11 @@ export function ChartList({rows, currentTitle, loading = false, onSelect}: Chart
                         </div>
 
                         <div className={styles.meta}>
-                            <div className={styles.title}>{track.title}</div>
+                            <div className={styles.title}>
+                                {track.title}
+                                {/* 榜单也是业务列表：下过没有要能一眼看到（与 DataTable 的标题列一致） */}
+                                <DownloadMark track={track}/>
+                            </div>
                             <div className={styles.artist}>{track.artist}</div>
                         </div>
 

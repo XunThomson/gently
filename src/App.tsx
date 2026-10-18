@@ -26,6 +26,8 @@ export default function App() {
     const {titleBar, sidebar, playerBar} = config.components;
     const {load: loadCollection} = useActions().collection;
     const {load: loadPlugins} = useActions().plugin;
+    /* 下载任务也要在启动时加载：业务列表的「已下载」标记依赖它，不能等用户先点开下载页 */
+    const {load: loadDownloads} = useActions().download;
 
     useAudioEngine();
     usePlayerEngine();
@@ -37,7 +39,8 @@ export default function App() {
     useEffect(() => {
         void loadCollection();
         void loadPlugins();
-    }, [loadCollection, loadPlugins]);
+        void loadDownloads();
+    }, [loadCollection, loadPlugins, loadDownloads]);
 
     /* 启动即探测本机核心：UI 据此判断是否运行在桌面宿主（浏览器预览时为不可用，退回 mock） */
     useEffect(() => {

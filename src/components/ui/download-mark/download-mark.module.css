@@ -1,0 +1,29 @@
+/* 列表里的下载标记：小徽标，颜色全部来自主题 token（深浅色都可读） */
+.mark {
+    flex: none;
+    padding: 0 var(--space-1);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-tight);
+    color: var(--text-tertiary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+}
+
+/* 已完成 = 品牌色（最需要一眼看到的状态） */
+.mark[data-status='done'] {
+    color: var(--brand);
+    border-color: var(--brand-soft);
+}
+
+/* 进行中的进度用强调色，暂停弱化、失败警示 */
+.mark[data-status='downloading'],
+.mark[data-status='pending'] {
+    color: var(--brand);
+    border-color: var(--brand);
+}
+
+.mark[data-status='error'] {
+    color: var(--danger);
+    border-color: var(--danger);
+}

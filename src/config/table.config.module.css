@@ -23,6 +23,14 @@
     background-repeat: no-repeat;
 }
 
+/* 标题文本的收缩边界：允许省略号，同时给右侧的下载标记留出位置 */
+.titleText {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    overflow: hidden;
+}
+
 .text {
     min-width: 0;
     overflow: hidden;
