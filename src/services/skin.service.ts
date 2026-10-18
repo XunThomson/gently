@@ -35,10 +35,29 @@ function rejectedKeysOf(details: unknown): string[] | undefined {
     return Array.isArray(value) ? value.map(String) : undefined;
 }
 
+/**
+ * 核心回来的皮肤文档 → 界面可直接渲染的皮肤。
+ *
+ * 核心只校验**令牌**（颜色/尺寸/圆角…的键名与类型），`swatches` / `description` / `author`
+ * 这类展示字段它不管。缺了 `swatches` 的皮肤（合法文档）会让主题市场在
+ * `item.swatches.map(...)` 上抛错、整页变成错误边界（R68 真机实测踩到）。
+ * 所以「补齐界面依赖的字段」收在这一个地方，`load` / 两种导入路径都过它。
+ */
+function toThemeSkin(skin: ThemeSkin): ThemeSkin {
+    return {
+        ...skin,
+        description: skin.description ?? '',
+        author: skin.author ?? 'imported',
+        swatches: Array.isArray(skin.swatches) ? skin.swatches : [],
+        builtin: false,
+    };
+}
+
 export const skinService = {
     /** 已安装的**用户皮肤**（桌面端来自核心；浏览器返回 `null` → 用本地持久化的那份）。 */
-    load(): Promise<ThemeSkin[] | null> {
-        return coreSkins();
+    async load(): Promise<ThemeSkin[] | null> {
+        const skins = await coreSkins();
+        return skins ? skins.map(toThemeSkin) : null;
     },
 
     /**
@@ -68,7 +87,7 @@ export const skinService = {
                 };
             }
 
-            return {ok: true, skin: installed.data, warnings: preview.data?.warnings ?? []};
+            return {ok: true, skin: toThemeSkin(installed.data), warnings: preview.data?.warnings ?? []};
         }
 
         // 浏览器预览：本地解析（宽松版，只保证形状可用）
@@ -110,7 +129,7 @@ export const skinService = {
                 code: installed.ok ? undefined : installed.error.code,
             };
         }
-        return {ok: true, skin: installed.data, warnings: preview.data?.warnings ?? []};
+        return {ok: true, skin: toThemeSkin(installed.data), warnings: preview.data?.warnings ?? []};
     },
 
     /** 删除用户皮肤（内置预设不可删，视图已经挡掉）。 */
@@ -137,5 +156,20 @@ export const skinService = {
         const viaCore = await coreSkinExport(skin.id, 'json');
         if (viaCore.ok && viaCore.data?.json) return viaCore.data.json;
         return serializeSkin(getThemeSkin(skin.id, [skin]));
+    },
+
+    /**
+     * 把用户皮肤**写到磁盘**并返回路径（`skin.export{format:'file'}` → `<data>/skins/<id>.json`）。
+     *
+     * 为什么导出要走核心落盘：桌面宿主没有浏览器那套下载处理器，`<a download>` 点了没反应
+     * （R68 用户报的「导出按钮没反应」就是这条）。核心本来就有 `file` 格式，直接用它写文件、
+     * 再用 `system.reveal` 在资源管理器里选中，用户能立刻拿到文件。
+     *
+     * 内置预设没有落盘文件（`skin.list` 只含用户皮肤），返回 `null` 由调用方退回「复制 JSON」。
+     */
+    async exportToFile(id: string): Promise<string | null> {
+        if (!coreAvailable()) return null;
+        const viaCore = await coreSkinExport(id, 'file');
+        return viaCore.ok && viaCore.data?.path ? viaCore.data.path : null;
     },
 };

@@ -25,6 +25,7 @@ import {CORE_ERROR_CODES} from '../src/api';
 import {CORE_EVENTS, EVENT_NAME_PATTERN} from '../src/services/core.events';
 import {filterGroupsBySource, groupTracks} from '../src/utils/track';
 import {toLyricLines} from '../src/utils/lyrics';
+import {errorText} from '../src/i18n/errors';
 import {coverStyle, trackCoverStyle} from '../src/utils/cover';
 import type {Track, TrackQuality} from '../src/types';
 import type {PluginSummary} from '../src/api';
@@ -82,6 +83,7 @@ import DownloadedView from '../src/views/download/downloaded';
 import LocalView from '../src/views/local';
 import {ScanPanel} from '../src/views/local/components/ScanPanel';
 import PluginView from '../src/views/plugin';
+import {kindFromPath} from '../src/views/plugin/components/import-panel';
 import {PluginSettings} from '../src/views/plugin/components/plugin-settings';
 import RecentView from '../src/views/recent';
 import SettingView from '../src/views/setting';
@@ -355,6 +357,27 @@ function checkI18n(): void {
         untranslated.length === 0,
         `缺翻译 ${untranslated.join(', ')}`,
     );
+
+    /* 插件抛出的错：文案必须带上**插件作者写的说明**，否则用户只看到「插件执行出错」
+       （R68：B 站收藏夹缺 Cookie 时那句「需要登录：…」被吞掉，用户无从下手） */
+    {
+        const t = i18n.getFixedT('zh');
+        const withMessage = errorText(t, {
+            code: 'plugin.runtime_error',
+            message: '需要登录：在插件设置里填写 Cookie 后重试',
+        });
+        check(
+            'i18n: 插件错误的说明会拼进文案（不再只剩通用提示）',
+            withMessage.includes('需要登录') && withMessage.includes(t('errors.plugin_runtime_error')),
+            withMessage,
+        );
+        const plainNotFound = errorText(t, {code: 'common.not_found', message: 'track:probe'});
+        check(
+            'i18n: 非插件码不把开发者说明塞给用户',
+            plainNotFound === t('errors.common_not_found') && !plainNotFound.includes('track:probe'),
+            plainNotFound,
+        );
+    }
 }
 
 /* ---------------- CSS token 检查 ---------------- */
@@ -874,6 +897,17 @@ async function main(): Promise<void> {
         check('lyrics: 行进度在开始前为 0、结束后为 1', lyricLineProgress(10, 20, 5) === 0 && lyricLineProgress(10, 20, 25) === 1);
         check('lyrics: 退化区间（同一时间戳）不会算出负数', lyricLineProgress(10, 10, 9) === 0 && lyricLineProgress(10, 10, 11) === 1);
         check('lyrics: 非法输入一律 0', lyricLineProgress(Number.NaN, 20, 15) === 0);
+    }
+
+    /* 本机路径导入的形态默认值：按扩展名猜（R68 之前默认「压缩包」，导入单文件直接报格式不合法） */
+    {
+        check(
+            'plugin: 路径形态按扩展名猜（.zip → 压缩包，其余 → 单文件）',
+            kindFromPath('C:\\x\\bili-audio.js') === 'file' &&
+                kindFromPath('D:/a/Plugin.ZIP') === 'archive' &&
+                kindFromPath('  release\\plugins\\x.js  ') === 'file',
+            `${kindFromPath('a.zip')},${kindFromPath('a.js')}`,
+        );
     }
 
     /* 歌词工具抽屉：方向键微调（纯函数）+ 同步参数缓存 */
@@ -1618,6 +1652,10 @@ async function main(): Promise<void> {
     /* 皮肤门面：桌面端由**核心**校验（结构 + 令牌键名白名单）；浏览器预览退回本地解析。
        两条路径返回同一形状，视图因此不需要分支。 */
     check('skin: 浏览器下核心皮肤列表为 null', (await skinService.load()) === null);
+    check(
+        'skin: 无核心时「导出到文件」返回 null（调用方退回复制 JSON）',
+        (await skinService.exportToFile('probe-skin')) === null,
+    );
     const imported = await skinService.importFromText(
         JSON.stringify({id: 'facade-skin', name: '门面皮肤', palette: {brand: '#0a0a0a'}}),
     );
@@ -1932,6 +1970,8 @@ async function main(): Promise<void> {
     const skinExportCalls: Record<string, unknown>[] = [];
     const skinImportCalls: Record<string, unknown>[] = [];
     const cacheClearCalls: Record<string, unknown>[] = [];
+    /** `system.reveal` 收到的路径（导出皮肤后要在资源管理器里定位它） */
+    const revealCalls: string[] = [];
     const resolveCalls: Record<string, unknown>[] = [];
     const reportCalls: Record<string, unknown>[] = [];
     await withFakeCore(
@@ -2086,6 +2126,10 @@ async function main(): Promise<void> {
                 }
                 return failure('common.not_found', `插件未安装：${String(params.ref ?? '')}`);
             }
+            if (command === 'system.reveal') {
+                revealCalls.push(String((params as {path?: unknown}).path ?? ''));
+                return envelope(null);
+            }
             if (command === 'system.cacheStatus') {
                 return envelope({
                     mediaBytes: 2048,
@@ -2144,17 +2188,21 @@ async function main(): Promise<void> {
             }
             if (command === 'skin.install') {
                 skinImportCalls.push(params);
+                /* 核心**只校验令牌**：`swatches` 这类展示字段可以整块缺失（R68 真机导入
+                   一份只有 palette 的皮肤，主题市场在 `swatches.map` 上崩成错误边界）。
+                   这里就按核心的真实形状回，逼前端在服务层补齐。 */
                 return envelope({
                     id: 'probe-skin',
                     name: '探针皮肤',
-                    description: '',
-                    author: 'probe',
-                    swatches: ['#ff00ff'],
                     builtin: false,
                 });
             }
             if (command === 'skin.export') {
                 skinExportCalls.push(params);
+                /* `format:'file'` 时核心写 `<data>/skins/<id>.json` 并回路径（R68 导出按钮走这条） */
+                if (params.format === 'file') {
+                    return envelope({path: `F:/data/skins/${String(params.id)}.json`});
+                }
                 return envelope({json: '{"fromCore":true}'});
             }
             if (command === 'catalog.topLists') {
@@ -2316,6 +2364,26 @@ async function main(): Promise<void> {
                 JSON.stringify(skinExportCalls),
             );
 
+            /* 6c. 导出到**文件**：桌面宿主没有下载处理器，必须用核心的 `format:'file'` 落盘，
+               再把路径交给 `system.reveal` 定位（R68 用户报的「导出按钮没反应」） */
+            skinExportCalls.length = 0;
+            const exportedPath = await skinService.exportToFile('user-skin');
+            check(
+                'fake: 导出到文件用核心 file 格式并带回落盘路径',
+                exportedPath === 'F:/data/skins/user-skin.json' &&
+                    skinExportCalls.length === 1 &&
+                    skinExportCalls[0].format === 'file' &&
+                    skinExportCalls[0].id === 'user-skin',
+                JSON.stringify({exportedPath, calls: skinExportCalls}),
+            );
+            revealCalls.length = 0;
+            await coreSystem.reveal(exportedPath ?? '');
+            check(
+                'fake: 导出后能用 system.reveal 在资源管理器里定位该文件',
+                revealCalls.includes('F:/data/skins/user-skin.json'),
+                JSON.stringify(revealCalls),
+            );
+
             /* 6d. 缓存管理：状态与清理都走核心；清理后界面会重新读一次状态 */
             const cacheStatus = await coreSystem.cacheStatus();
             check(
@@ -2368,6 +2436,14 @@ async function main(): Promise<void> {
                     skinImportCalls.length === 2 &&
                     (skinImportCalls[0].from as {kind?: string}).kind === 'paste',
                 JSON.stringify(skinImportCalls.map((call) => call.from)),
+            );
+            check(
+                'fake: 核心回来的皮肤缺展示字段时在服务层补齐（缺 swatches 会崩掉主题市场）',
+                Array.isArray(byText.skin?.swatches) &&
+                    byText.skin?.swatches.length === 0 &&
+                    byText.skin?.description === '' &&
+                    byText.skin?.author === 'imported',
+                JSON.stringify(byText.skin),
             );
 
             skinImportCalls.length = 0;

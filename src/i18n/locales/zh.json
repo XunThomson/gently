@@ -156,6 +156,10 @@
   "skin": {
     "import": "导入皮肤",
     "export": "导出当前皮肤",
+    "exportedToFile": "已导出「{{name}}」并在文件夹中显示",
+    "exportCopied": "已复制「{{name}}」的皮肤 JSON 到剪贴板",
+    "exportCopyFailed": "复制失败：已把皮肤 JSON 填进导入面板，请手动复制",
+    "exportedDownload": "已下载「{{name}}」的皮肤文件",
     "importFailed": "皮肤文件无效：{{reason}}",
     "importRejected": "皮肤含未允许的令牌键名：{{keys}}",
     "imported": "已导入皮肤「{{name}}」",

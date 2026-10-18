@@ -156,6 +156,10 @@
   "skin": {
     "import": "Import skin",
     "export": "Export current skin",
+    "exportedToFile": "Exported “{{name}}” and revealed it in the file manager",
+    "exportCopied": "Copied the skin JSON for “{{name}}” to the clipboard",
+    "exportCopyFailed": "Copy failed — the skin JSON was filled into the import panel, please copy it manually",
+    "exportedDownload": "Downloaded the skin file for “{{name}}”",
     "importFailed": "Invalid skin file: {{reason}}",
     "importRejected": "Skin uses token keys that are not allowed: {{keys}}",
     "imported": "Imported skin “{{name}}”",

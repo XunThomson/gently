@@ -23,6 +23,17 @@ type SourceMode = 'paste' | 'url' | 'path';
 type PathKind = 'file' | 'dir' | 'archive';
 
 /**
+ * 按扩展名猜形态（纯函数，冒烟里断言）。
+ *
+ * `.zip` 一定是压缩包；`.js` / `.json` 等其余文本按单文件；目录认不出来（没有扩展名时保持单文件，
+ * 用户自己切「目录包」）。猜错的代价只是再点一次单选框，比「默认压缩包 + 单文件路径」
+ * 直接报「格式不合法」友好得多。
+ */
+export function kindFromPath(value: string): PathKind {
+    return /\.zip$/i.test(value.trim()) ? 'archive' : 'file';
+}
+
+/**
  * 本机核心插件面板：导入（粘贴 / 地址 / 本机路径）→ 权限确认 → 安装。
  *
  * 三条硬约束体现在这里：
@@ -42,7 +53,7 @@ export function ImportPanel() {
     const [mode, setMode] = useState<SourceMode>('paste');
     const [text, setText] = useState('');
     const [url, setUrl] = useState('');
-    const [pathKind, setPathKind] = useState<PathKind>('archive');
+    const [pathKind, setPathKind] = useState<PathKind>('file');
     const [path, setPath] = useState('');
     /** 兼容模式（ADR-0006）：默认关闭，只有用户显式勾选才会请求核心开启 */
     const [compat, setCompat] = useState(false);
@@ -242,7 +253,10 @@ export function ImportPanel() {
 
                     {mode === 'path' && (
                         <>
-                            {/* 形态必须由用户选：单文件 / 目录包 / 压缩包在核心里是三条不同的解析路径 */}
+                            {/* 形态必须由用户确认：单文件 / 目录包 / 压缩包在核心里是三条不同的解析路径。
+                                默认值按扩展名猜（`.zip` → 压缩包，其余 → 单文件），用户仍可手动改——
+                                R68 实测：默认是「压缩包」，导入单文件 `.js` 时直接报「插件文件格式不合法」
+                                （核心那边是「不是可读的 zip」），与界面给的路径提示也对不上。 */}
                             <UnderlineRadioGroup
                                 name="plugin-path-kind"
                                 value={pathKind}
@@ -264,7 +278,9 @@ export function ImportPanel() {
                                     value={path}
                                     placeholder={t('page.plugin.pathPlaceholder')}
                                     onChange={(event) => {
-                                        setPath(event.target.value);
+                                        const value = event.target.value;
+                                        setPath(value);
+                                        setPathKind(kindFromPath(value));
                                         setPreview(null);
                                     }}
                                 />

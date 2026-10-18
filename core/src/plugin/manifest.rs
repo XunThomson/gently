@@ -16,7 +16,13 @@ pub const HEADER_SCAN_LINES: usize = 60;
 /// 单文件插件的大小上限：插件是脚本，超过这个体量基本可以确定有问题。
 pub const MAX_SOURCE_BYTES: u64 = 1024 * 1024;
 
-const CAPABILITY_NAMES: [&str; 9] = [
+/// ABI 函数名清单（**唯一一份**）。
+///
+/// 三处消费它：安装期的静态预扫描（`scan_capabilities`）、运行时的能力探测
+/// （`host::collect_capabilities`）、以及 `PluginCapability::name()` 的往返校验测试。
+/// R68 之前有两份：这里停在 9 项（少了 `getFavorites` / `getFavoriteCollections`），
+/// 结果插件预览与 `plugin-tool check` 说「不支持收藏夹」、装完运行时探测又能用。
+pub(crate) const CAPABILITY_FUNCTION_NAMES: [&str; 11] = [
     "search",
     "getMediaSource",
     "getTrackInfo",
@@ -26,6 +32,8 @@ const CAPABILITY_NAMES: [&str; 9] = [
     "getTopLists",
     "getTopList",
     "getRecommend",
+    "getFavorites",
+    "getFavoriteCollections",
 ];
 
 /// 必选函数：缺失时预览给出警告（不作为硬错误——静态扫描可能误判）。
@@ -106,7 +114,7 @@ pub enum PluginCapability {
 }
 
 impl PluginCapability {
-    fn from_name(name: &str) -> Option<Self> {
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
         match name {
             "search" => Some(Self::Search),
             "getMediaSource" => Some(Self::GetMediaSource),
@@ -781,7 +789,7 @@ fn parse_credential(value: &str) -> Result<CredentialField, serde_json::Value> {
 
 /// 静态预扫描：只认顶层 `function <name>` / `async function <name>` 声明。
 fn scan_capabilities(source: &str) -> Vec<PluginCapability> {
-    CAPABILITY_NAMES
+    CAPABILITY_FUNCTION_NAMES
         .iter()
         .filter(|name| {
             source.contains(&format!("function {name}(")) || source.contains(&format!("function {name} ("))
@@ -816,9 +824,28 @@ async function getMediaSource(track, quality) { return null; }
         assert!(parsed.manifest.capabilities.contains(&PluginCapability::GetMediaSource));
     }
 
+    /// 名字清单、`from_name()` 与 `name()` 必须一一对应。
+    ///
+    /// R68 的教训：清单漏了两项（`getFavorites` / `getFavoriteCollections`），于是
+    /// 「静态预扫描说这个源不支持收藏夹、运行时探测说能用」——同一件事两套结论。
     #[test]
-    fn missing_required_field_is_invalid_source() {
-        let err = parse_source("// @name 没有 id\n").unwrap_err();
+    fn capability_name_list_matches_enum() {
+        assert_eq!(CAPABILITY_FUNCTION_NAMES.len(), 11);
+        for name in CAPABILITY_FUNCTION_NAMES {
+            let capability =
+                PluginCapability::from_name(name).expect("清单里的名字必须能解析成能力");
+            assert_eq!(capability.name(), name, "name() 与清单不一致");
+        }
+
+        let scanned = scan_capabilities(
+            "async function getFavorites(page, collectionId) {}\nasync function getFavoriteCollections() {}\n",
+        );
+        assert!(scanned.contains(&PluginCapability::GetFavorites));
+        assert!(scanned.contains(&PluginCapability::GetFavoriteCollections));
+    }
+
+    #[test]
+    fn missing_required_field_is_invalid_source() {        let err = parse_source("// @name 没有 id\n").unwrap_err();
         assert_eq!(err.code, ErrorCode::PluginInvalidSource);
         let details = err.details.unwrap();
         assert!(details["missing"].as_array().unwrap().iter().any(|v| v == "id"));

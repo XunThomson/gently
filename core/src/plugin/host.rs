@@ -72,19 +72,18 @@ impl Default for HostLimits {
     }
 }
 
-const CAPABILITY_NAMES: [(&str, PluginCapability); 11] = [
-    ("search", PluginCapability::Search),
-    ("getMediaSource", PluginCapability::GetMediaSource),
-    ("getTrackInfo", PluginCapability::GetTrackInfo),
-    ("getAlbumInfo", PluginCapability::GetAlbumInfo),
-    ("getPlaylistInfo", PluginCapability::GetPlaylistInfo),
-    ("getLyric", PluginCapability::GetLyric),
-    ("getTopLists", PluginCapability::GetTopLists),
-    ("getTopList", PluginCapability::GetTopList),
-    ("getRecommend", PluginCapability::GetRecommend),
-    ("getFavorites", PluginCapability::GetFavorites),
-    ("getFavoriteCollections", PluginCapability::GetFavoriteCollections),
-];
+/// ABI 函数名 → 能力。
+///
+/// **名字列表只有一份**（`manifest::CAPABILITY_FUNCTION_NAMES`）：静态预扫描、这里的运行时探测
+/// 与 `PluginCapability::name()` 三处必须一致。R68 就栽在这上面——静态扫描那份清单停在 9 项，
+/// 少了 `getFavorites` / `getFavoriteCollections`，于是插件预览与 `plugin-tool check` 都显示
+/// 「这个源不支持收藏夹」，装完之后运行时探测又能用（两套结论打架）。
+fn capability_of(function: &str) -> Option<PluginCapability> {
+    super::manifest::CAPABILITY_FUNCTION_NAMES
+        .iter()
+        .find(|name| **name == function)
+        .and_then(|name| PluginCapability::from_name(name))
+}
 
 /// 已加载插件：外部只见句柄（清单 + 能力 + 与插件线程通信的通道）。
 pub struct PluginHandle {
@@ -244,10 +243,7 @@ impl PluginHost {
             let handle = handles
                 .get(id)
                 .ok_or_else(|| CoreError::not_found(format!("插件未加载：{id}")))?;
-            let capability = CAPABILITY_NAMES
-                .iter()
-                .find(|(name, _)| *name == function)
-                .map(|(_, capability)| *capability);
+            let capability = capability_of(function);
             (handle.tx.clone(), capability)
         };
 
@@ -893,12 +889,7 @@ fn collect_capabilities(context: &Context) -> Fallible<Vec<PluginCapability>> {
             .map_err(|err| describe_js_error(&err, "能力探测失败"))?;
         Ok(names
             .iter()
-            .filter_map(|name| {
-                CAPABILITY_NAMES
-                    .iter()
-                    .find(|(candidate, _)| candidate == name)
-                    .map(|(_, capability)| *capability)
-            })
+            .filter_map(|name| capability_of(name))
             .collect())
     })
 }

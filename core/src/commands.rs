@@ -437,17 +437,22 @@ fn reveal_in_file_manager(ctx: &CoreContext, raw: &str) -> Fallible<()> {
 
 #[cfg(target_os = "windows")]
 fn platform_reveal(path: &std::path::Path) -> std::io::Result<()> {
+    use std::os::windows::process::CommandExt;
     use std::process::Command;
     // 目录直接打开；文件用 /select 在父目录里高亮。
     //
-    // 两个必须踩准的点（R66 修的就是它们）：
+    // 三个必须踩准的点（R66 修了前两个，R68 修第三个）：
     // 1. **分隔符必须是反斜杠**：`system.paths` 回给前端的路径是 `F:/a/b`（正斜杠，见
     //    `paths::to_dto`），前端原样传回来；`explorer "F:/a/b"` 会解析失败并**默默打开
     //    默认文件夹**（用户看到的症状是「打开的不是数据目录」）；
     // 2. `/select,` 后面的路径**要带引号**：带空格的路径（`C:\Users\Xun\AppData\...`）很常见，
-    //    不加引号会被 explorer 截断。
+    //    不加引号会被 explorer 截断；
+    // 3. 拼好的这**一个**参数必须用 `raw_arg` 原样塞进命令行。用 `arg` 的话 Rust 会按 CRT
+    //    规则再补一层引号，`/select,"<路径>"` 变成「被引号包住的带引号字符串」，explorer
+    //    解析失败后同样默默打开默认文件夹（R68 实测：点「导出皮肤」跳出来的是「桌面」）。
+    //    目录那种不带引号的参数碰不到这条，所以 R66 的目录用例一直是通的。
     let arg = reveal_arg(path.is_dir(), &path.to_string_lossy());
-    Command::new("explorer").arg(arg).spawn()?;
+    Command::new("explorer").raw_arg(arg).spawn()?;
     Ok(())
 }
 

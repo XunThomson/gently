@@ -538,6 +538,12 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
   桌面歌词推送补 `lyricsOffset` 依赖（暂停时校正即时生效）。新增 `utils/lyricsSyncCache.ts`
   按曲目记住手动挑的词来路与搜索关键词，重播先按来路取词（归一化 `rawTrackIdOf`，避免拼出
   `src:src:id` 取不到词）。`pnpm smoke` 390。
+- **R69 导出按钮 + 收藏夹插件能力**：主题市场「导出当前皮肤」改走核心 `skin.export{format:'file'}`
+  落盘 + `system.reveal` 定位（原来的 Blob/`a.click` 在桌面宿主里没有下载处理器，点了没反应）；
+  `system.reveal` 的文件参数改用 `raw_arg`（`arg` 会再补引号 → explorer 默默打开「桌面」）；
+  服务层补齐皮肤展示字段（缺 `swatches` 的合法皮肤会把主题市场打成错误边界）。
+  `release/plugins/bili-audio.js` 增加 `getFavoriteCollections` / `getFavorites`（登录 Cookie 走
+  `@credentials`），并把插件能力名单收敛成**一份**（静态预扫描漏过收藏夹两项）。核心单测 246、smoke 397。
 - **退出标准**：安装包在干净环境可启动并完成一次完整链路（导入插件 → 播放 → 扫描 → 收藏）。
   **R20 把这套链路自动化了**（`core/tests/e2e_chain.rs`：走 `dispatch`、真的按 Range 取代理地址、
   重开库验证持久化）；**R30 又把它在真实打包版上人肉点了一遍并留了截图**

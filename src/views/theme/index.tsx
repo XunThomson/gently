@@ -8,9 +8,10 @@ import {EmptyState} from '../../components/ui/empty-state';
 import {IconTrash} from '../../components/ui/icon';
 import {useConfirm} from '../../hooks/useConfirm';
 import {errorText} from '../../i18n/errors';
-import {skinService} from '../../services';
+import {coreSystem, isTauri, skinService} from '../../services';
 import {useTheme} from '../../theme';
 import type {ThemeSkin} from '../../theme';
+import {copyText} from '../../utils/clipboard';
 import {matchesQuery} from '../../utils/helpers';
 import styles from './theme.module.css';
 
@@ -125,15 +126,51 @@ export default function ThemeView() {
         applyOutcome(await skinService.importFromText(await file.text()));
     };
 
+    /**
+     * 导出当前皮肤。
+     *
+     * 桌面端**必须走核心落盘**：宿主没有浏览器的下载处理器，`<a download>` 点了没有任何反应
+     * （R68 用户报的「导出按钮没反应」）。顺序：
+     * 1. 用户皮肤 → `skin.export{format:'file'}` 写 `<data>/skins/<id>.json`，再 `system.reveal`
+     *    在资源管理器里选中它；
+     * 2. 内置预设（核心不认识它们）或落盘失败 → 复制 JSON 到剪贴板，并如实提示；
+     * 3. 连剪贴板都失败 → 把 JSON 摊进导入面板的文本框，用户自己复制（不假装成功）。
+     */
     const handleExport = async () => {
         const json = await exportSkin();
-        const blob = new Blob([json], {type: 'application/json'});
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${skin.id}.gently-skin.json`;
-        link.click();
-        URL.revokeObjectURL(url);
+
+        /* 浏览器预览没有核心：锚点下载在浏览器里是可行的，保留这条路 */
+        if (!isTauri()) {
+            const url = URL.createObjectURL(new Blob([json], {type: 'application/json'}));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${skin.id}.json`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            /* 立即 revoke 会把下载掐断，推到下一拍 */
+            window.setTimeout(() => URL.revokeObjectURL(url), 0);
+            setStatus(t('skin.exportedDownload', {name: skin.name}));
+            return;
+        }
+
+        const path = skin.builtin === false ? await skinService.exportToFile(skin.id) : null;
+        if (path) {
+            await coreSystem.reveal(path);
+            setStatus(t('skin.exportedToFile', {name: skin.name}));
+            return;
+        }
+
+        if (await copyText(json)) {
+            setStatus(t('skin.exportCopied', {name: skin.name}));
+            return;
+        }
+
+        /* 最后的兜底：把内容摊开（导入面板的文本框）让用户手动复制 */
+        setSourceMode('json');
+        setSourceText(json);
+        setImporting(true);
+        setStatus(t('skin.exportCopyFailed'));
     };
 
     const handleRemove = (target: ThemeSkin) => {
@@ -274,7 +311,8 @@ export default function ThemeView() {
                                     .join(' ')}
                             >
                                 <div className={styles.preview}>
-                                    {item.swatches.map((color, index) => (
+                                    {/* 缺色卡的用户皮肤（合法文档）不该把整页打成错误边界 */}
+                                    {(item.swatches ?? []).map((color, index) => (
                                         <span
                                             key={`${item.id}-${index}`}
                                             className={styles.swatch}
