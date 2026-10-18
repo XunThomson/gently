@@ -659,7 +659,11 @@ fn call_detail(
 ///
 /// 缺能力 → `common.not_implemented`（社区插件能力参差是常态，UI 据此隐藏入口）；
 /// 未安装/已禁用 → `common.not_found`（与搜索的「禁用立即生效」一致）。
-fn ready_source(ctx: &CoreContext, source: &str, capability: PluginCapability) -> Fallible<()> {
+pub(crate) fn ready_source(
+    ctx: &CoreContext,
+    source: &str,
+    capability: PluginCapability,
+) -> Fallible<()> {
     crate::catalog::ensure_loaded(ctx)?;
 
     let store = ctx

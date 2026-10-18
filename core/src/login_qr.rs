@@ -32,7 +32,7 @@ struct PollParams {
 /// `key` 是后续轮询用的会话标识，`tip` 是插件给的提示语（可选，界面原样展示）。
 pub fn login_qr(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     let params: QrParams = parse_params(params)?;
-    ready_source(ctx, &params.source)?;
+    crate::catalog_detail::ready_source(ctx, &params.source, PluginCapability::LoginQr)?;
 
     let raw = ctx
         .plugins
@@ -72,7 +72,7 @@ pub fn login_qr(ctx: &CoreContext, params: Value) -> Fallible<Value> {
 /// 必须是清单声明过的凭据键；否则按 `plugin.permission_denied` 拒绝。
 pub fn login_qr_poll(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     let params: PollParams = parse_params(params)?;
-    ready_source(ctx, &params.source)?;
+    crate::catalog_detail::ready_source(ctx, &params.source, PluginCapability::LoginQr)?;
     if params.key.trim().is_empty() {
         return Err(CoreError::invalid_argument("登录会话标识（key）不能为空"));
     }
@@ -137,17 +137,6 @@ fn normalize_state(state: &str) -> &'static str {
     }
 }
 
-/// 前置条件：源已加载、已启用、并且实现了二维码登录（缺能力 → `not_implemented`）
-fn ready_source(ctx: &CoreContext, source: &str) -> Fallible<()> {
-    let capabilities = ctx
-        .plugins
-        .capabilities(source)
-        .ok_or_else(|| CoreError::not_found(format!("插件未加载：{source}")))?;
-    if !capabilities.contains(&PluginCapability::LoginQr) {
-        return Err(CoreError::not_implemented(&format!("{source}.loginQr")));
-    }
-    Ok(())
-}
 
 /// 插件清单里**声明过的凭据键**（未声明的一律不许写）
 fn declared_credential_keys(ctx: &CoreContext, source: &str) -> Fallible<Vec<String>> {
