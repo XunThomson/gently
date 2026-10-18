@@ -57,6 +57,8 @@ pub struct CoreContext {
     pub downloads: Arc<crate::download::DownloadRegistry>,
     /// 播放缓存补全的登记表（防重复下载同一首、限制并发）
     pub cache_fills: Arc<crate::cache::CacheRegistry>,
+    /// 第三方授权流程的登记表（进行中的回调监听，便于取消）
+    pub oauth: Arc<crate::oauth::AuthRegistry>,
     /// 本地流代理（仅回环 + 一次性令牌；契约 §7）
     pub streams: Arc<crate::media::StreamRegistry>,
     pub events: Arc<dyn EventSink>,
@@ -65,12 +67,16 @@ pub struct CoreContext {
 impl CoreContext {
     pub fn new(paths: AppPaths) -> Self {
         let http: Arc<dyn HttpTransport> = Arc::new(BlockingHttp::new(HttpLimits::default()));
-        let plugins = Arc::new(PluginHost::new(
-            paths.clone(),
-            Arc::clone(&http),
-            Arc::new(MemoryCredentialStore::new()),
-            HostLimits::default(),
-        ));
+        let credentials: Arc<dyn CredentialStore> = Arc::new(MemoryCredentialStore::new());
+        let plugins = Arc::new(
+            PluginHost::new(
+                paths.clone(),
+                Arc::clone(&http),
+                Arc::clone(&credentials),
+                HostLimits::default(),
+            )
+            .with_oauth_token(crate::oauth::token_provider(credentials, Arc::clone(&http))),
+        );
         // 内嵌封面缓存目录：扫描时把图片落在这里，列表给回环地址（`/cover/<name>`）
         let covers_dir = paths.cache.join("covers");
         let streams = Arc::new(crate::media::StreamRegistry::default());
@@ -86,6 +92,7 @@ impl CoreContext {
             snapshots: Arc::new(crate::catalog::ItemSnapshots::default()),
             downloads: Arc::new(crate::download::DownloadRegistry::default()),
             cache_fills: Arc::new(crate::cache::CacheRegistry::default()),
+            oauth: Arc::new(crate::oauth::AuthRegistry::default()),
             streams,
             events: Arc::new(NullEventSink),
         }
@@ -115,12 +122,16 @@ impl CoreContext {
     /// 所以入口做成方法而不是裸字段赋值）。
     pub fn with_http(mut self, http: Arc<dyn HttpTransport>) -> Self {
         self.http = Arc::clone(&http);
-        self.plugins = Arc::new(PluginHost::new(
-            self.paths.clone(),
-            http,
-            Arc::new(MemoryCredentialStore::new()),
-            HostLimits::default(),
-        ));
+        let credentials: Arc<dyn CredentialStore> = Arc::new(MemoryCredentialStore::new());
+        self.plugins = Arc::new(
+            PluginHost::new(
+                self.paths.clone(),
+                Arc::clone(&http),
+                Arc::clone(&credentials),
+                HostLimits::default(),
+            )
+            .with_oauth_token(crate::oauth::token_provider(credentials, Arc::clone(&http))),
+        );
         self
     }
 
@@ -131,12 +142,15 @@ impl CoreContext {
     pub fn with_credentials(mut self, credentials: Arc<dyn CredentialStore>) -> Self {
         // 与 `with_http` 同因：宿主是单独构造的，换存储必须重建宿主
         let http = Arc::clone(&self.http);
-        self.plugins = Arc::new(PluginHost::new(
-            self.paths.clone(),
-            http,
-            Arc::clone(&credentials),
-            HostLimits::default(),
-        ));
+        self.plugins = Arc::new(
+            PluginHost::new(
+                self.paths.clone(),
+                Arc::clone(&http),
+                Arc::clone(&credentials),
+                HostLimits::default(),
+            )
+            .with_oauth_token(crate::oauth::token_provider(credentials, http)),
+        );
         self
     }
 }
@@ -216,6 +230,10 @@ pub fn dispatch(
         "plugin.credentials.set" => crate::plugin_admin::credentials_set(ctx, params),
         "plugin.credentials.clear" => crate::plugin_admin::credentials_clear(ctx, params),
         "plugin.credentials.status" => crate::plugin_admin::credentials_status(ctx, params),
+        "auth.status" => crate::oauth::status(ctx, params),
+        "auth.begin" => crate::oauth::begin(ctx, params),
+        "auth.cancel" => crate::oauth::cancel(ctx, params),
+        "auth.signOut" => crate::oauth::sign_out(ctx, params),
         "catalog.search" => catalog_search(ctx, params),
         "catalog.searchCancel" => catalog_search_cancel(ctx, params),
         "playback.resolve" => playback_resolve(ctx, params),
@@ -295,6 +313,10 @@ const IMPLEMENTED: &[&str] = &[
     "plugin.credentials.set",
     "plugin.credentials.clear",
     "plugin.credentials.status",
+    "auth.status",
+    "auth.begin",
+    "auth.cancel",
+    "auth.signOut",
     "catalog.search",
     "catalog.searchCancel",
     "catalog.track",
@@ -501,6 +523,8 @@ fn plugin_preview(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serd
     to_json(serde_json::json!({
         // `compat` 单独给一份：界面必须明示「权限弱于自有 ABI」，不能只靠 warnings 里的中文
         "compat": manifest.compat,
+        // 第三方授权同样单独给：同意安装前要让用户看到「浏览器会被带去哪个域名」
+        "oauth": manifest.oauth,
         "manifest": manifest,
         "permissions": manifest.permissions,
         "credentials": manifest.credentials,

@@ -11,6 +11,7 @@
 //! - [`paths`]：本机数据目录布局；
 //! - [`store`]：SQLite 访问层与迁移（ADR-0004）；
 //! - [`cache`]：播放缓存（播放过的远端曲目落本地，离线优先）；
+//! - [`oauth`]：第三方授权（通用 OAuth 2.0 授权码 + PKCE，端点由插件清单声明）；
 //! - [`logging`]：tracing 初始化。
 
 pub mod cache;
@@ -25,6 +26,7 @@ pub mod library;
 pub mod local_library;
 pub mod logging;
 pub mod media;
+pub mod oauth;
 pub mod paths;
 pub mod plugin;
 pub mod plugin_admin;

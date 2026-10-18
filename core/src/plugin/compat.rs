@@ -174,6 +174,9 @@ fn synthesize(source: &str, transport: Arc<dyn HttpTransport>) -> Fallible<Parse
             permissions,
             hosts: Vec::new(),
             credentials,
+            // 兼容插件的登录态走 `env.getUserVariables()` 里的 cookie / token：
+            // 清单是从 `module.exports` 合成的，没有可信的授权端点声明，因此不认 @oauth
+            oauth: None,
             min_core_version: None,
             tags: Vec::new(),
             capabilities,

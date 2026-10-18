@@ -416,7 +416,7 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 
 - **M5a 已完成（插件域收尾）**：`core/src/plugin_admin.rs` 落地最后 6 条命令
   （`plugin.config.get/put`、`plugin.credentials.set/clear/status`、`plugin.checkUpdate`），
-  **契约 60 条命令全部点亮**（R54 新增 `catalog.lyricsSearch`、R56 新增两条缓存命令，现为 63 条）：配置乐观并发（冲突带 `details.current`、不改动已存值、64 KiB 上限）；
+  **契约 60 条命令全部点亮**（R54 新增 `catalog.lyricsSearch`、R56 新增两条缓存命令、R59 新增四条授权命令，现为 67 条）：配置乐观并发（冲突带 `details.current`、不改动已存值、64 KiB 上限）；
   凭据只读写清单声明过的键、`status` 只回「是否已配置」（命令层没有读值出口）；
   检查更新只比对来源（url 下载比对版本+sha256 / catalog 比对本地索引）**绝不自动更新**。
   **已知缺口**：凭据落点仍是内存实现（`keyring` crate 不在离线 registry 缓存里）→ 重启失效，
@@ -489,6 +489,16 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
   窗口服务（显示时摆到屏幕底部居中）；跨窗口用 `gently:lyrics:update` / `gently:lyrics:closed`
   事件同步当前行 / 下一行 / 播放态 / 歌词来源 / 主题模式（行变化立即推 + 1s 心跳）；歌词窗口支持
   A−/A+ 字号、拖动、关闭，复用 `activeLyricIndex`。`pnpm smoke` 326。
+- **R58 版本规划 + pet 接口预留**：新增 `docs/adr/0007-versioning-and-pet-extension.md`（0.x 开发线 →
+  1.0.0 门槛 → 1.x 只修不扩 → 2.0 才进宠物，版本号**未动**）；`src/pet/` 预留 `PetDefinition` /
+  `PetContext` / 注册表 / `PetHost`（无宠物渲染 null、不发请求）；`activeLyricIndex` 收敛为一份实现；
+  下载列表补「在文件夹中显示」。`pnpm smoke` 332。
+- **R59 第三方授权（通用 OAuth 2.0）**：清单新增 `@oauth`（端点 / client / scope 全部由插件声明，
+  应用不内置任何第三方地址，ADR-0005）；新增 `core/src/oauth.rs`——本机回环回调 + `state` 校验 +
+  授权码换令牌 + PKCE(S256) + 过期自动续期；令牌只进系统凭据库（保留键 `__oauth_token`，插件读不到），
+  沙箱新增 `oauth.getAccessToken()`；新增 4 条命令（`auth.status/begin/cancel/signOut`）与
+  `auth:changed` 事件，插件管理面板新增「第三方授权」卡片；契约 **67 命令 / 9 事件**。
+  `pnpm smoke` 341、核心单测 236（`core/tests/oauth.rs` 用本机回环模拟授权服务器跑完整链路）。
 - **退出标准**：安装包在干净环境可启动并完成一次完整链路（导入插件 → 播放 → 扫描 → 收藏）。
   **R20 把这套链路自动化了**（`core/tests/e2e_chain.rs`：走 `dispatch`、真的按 Range 取代理地址、
   重开库验证持久化）；**R30 又把它在真实打包版上人肉点了一遍并留了截图**
@@ -512,8 +522,8 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 | 3. 下载相关逻辑 | 目录 / 默认音质 / 缺档策略 / 并发上限已完成（R54）；余下见下 |
 | 4. 桌面歌词 | **第一版完成**（R57）：独立置顶窗口、跨窗口同步、字号/拖动/关闭、主题跟随 |
 | 5. 版本规划与 pet 接口 | **完成**（R58）：ADR-0007 + `src/pet/` 预留接口 + `PetHost` |
-| 6. OAuth2 第三方授权 | **未开始**：先做授权抽象，再落 B 站收藏夹（不同第三方策略） |
-| 7. 主题控制面板 | **待拍板**：是否提供、性能预算；未拍板前不动手 |
+| 6. OAuth2 第三方授权 | **抽象已完成**（R59）：通用 OAuth 2.0（授权码 + PKCE + 回环回调），端点由插件清单声明；B 站收藏夹等**具体源**由用户装的插件自己实现（沿用「抽象 + 具体源」分工） |
+| 7. 主题控制面板 | **已拍板：不做**（用户决定）：只保留主题市场与明暗切换，`theme.config.json` 仍是唯一入口；ADR-0007 记为「明确不做」 |
 
 **2.x 宠物（已预留，不在 1.x 实现）**：`src/pet/` 的 `PetDefinition` / `PetContext` / `PetHost`
 已在 R58 落地，当前没有内置宠物；接口约束（纯本地、只读播放快照、无商店、性能预算）

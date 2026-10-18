@@ -34,7 +34,7 @@ const EVENTS_TS = 'src/services/core.events.ts';
 const TRANSPORT_SAFE = /^[A-Za-z0-9\-/:_]+$/;
 
 /** 命令名的域前缀（用于过滤文档里的非命令反引号 token，如 `common.conflict`） */
-const DOMAINS = new Set(['system', 'plugin', 'catalog', 'library', 'recommend', 'playback', 'download', 'skin']);
+const DOMAINS = new Set(['system', 'plugin', 'auth', 'catalog', 'library', 'recommend', 'playback', 'download', 'skin']);
 
 /** 形如文件名而不是命令名的 token（文档里会提到 plugin.json 等） */
 const FILE_LIKE = /\.(json|js|ts|toml|md|sql|db)$/;
@@ -164,7 +164,7 @@ function diff(label, documented, implemented, hint) {
  * 参数出现。把「域前缀的点号字面量」全部收集起来，再减去事件名与错误码，剩下的就必须是
  * 契约里的命令——拼错或用了过期名字会立刻失败。
  */
-const SERVICE_LITERAL = /'((?:system|plugin|catalog|library|recommend|playback|download|skin)\.[a-zA-Z0-9.]+)'/g;
+const SERVICE_LITERAL = /'((?:system|plugin|auth|catalog|library|recommend|playback|download|skin)\.[a-zA-Z0-9.]+)'/g;
 
 function frontendCommandNames() {
     const dir = join(root, 'src/services');

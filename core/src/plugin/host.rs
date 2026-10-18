@@ -111,6 +111,8 @@ pub struct PluginHost {
     paths: AppPaths,
     /// 兼容模式下实际访问过的域名（TOFU 收敛的依据，ADR-0006）
     ledger: Arc<HostLedger>,
+    /// 第三方授权令牌的提供者（`oauth.getAccessToken()` 的实现；默认一律为 `None`）
+    oauth_token: Arc<crate::oauth::OAuthTokenFn>,
 }
 
 impl PluginHost {
@@ -122,7 +124,24 @@ impl PluginHost {
     ) -> Self {
         // 台账放在 plugins 目录下的隐藏子目录：卸载插件时一并清掉
         let ledger = Arc::new(HostLedger::new(paths.plugins.join(".hosts")));
-        Self { handles: Mutex::new(HashMap::new()), transport, credentials, limits, paths, ledger }
+        Self {
+            handles: Mutex::new(HashMap::new()),
+            transport,
+            credentials,
+            limits,
+            paths,
+            ledger,
+            oauth_token: Arc::new(|_, _, _| None),
+        }
+    }
+
+    /// 接上第三方授权令牌的提供者（`CoreContext` 在构造时注入）。
+    ///
+    /// 单独一个 setter 而不是构造参数：令牌读取需要凭据库 + 出网（刷新），
+    /// 而这两者都是宿主自己持有的——注入一个闭包比把这些又当参数传一遍更清楚。
+    pub fn with_oauth_token(mut self, provider: Arc<crate::oauth::OAuthTokenFn>) -> Self {
+        self.oauth_token = provider;
+        self
     }
 
     /// 凭据读写句柄（命令层用）。
@@ -162,11 +181,12 @@ impl PluginHost {
         let (ready_tx, ready_rx) = mpsc::channel::<Fallible<Vec<PluginCapability>>>();
         let thread_manifest = manifest.clone();
         let ledger = Arc::clone(&self.ledger);
+        let oauth_token = Arc::clone(&self.oauth_token);
 
         thread::Builder::new()
             .name(format!("gently-plugin-{id}"))
             .spawn(move || {
-                runtime_thread(thread_manifest, source, limits, transport, credentials, kv_path, ledger, rx, ready_tx);
+                runtime_thread(thread_manifest, source, limits, transport, credentials, oauth_token, kv_path, ledger, rx, ready_tx);
             })
             .map_err(|err| CoreError::internal(format!("创建插件线程失败：{err}")))?;
 
@@ -266,6 +286,7 @@ fn runtime_thread(
     limits: HostLimits,
     transport: Arc<dyn HttpTransport>,
     credentials: Arc<dyn CredentialStore>,
+    oauth_token: Arc<crate::oauth::OAuthTokenFn>,
     kv_path: PathBuf,
     ledger: Arc<HostLedger>,
     jobs: mpsc::Receiver<Job>,
@@ -314,6 +335,7 @@ fn runtime_thread(
             &manifest,
             Arc::clone(&transport),
             Arc::clone(&credentials),
+            Arc::clone(&oauth_token),
             kv_path,
             Some(Arc::clone(&ledger)),
         )?;
@@ -431,6 +453,7 @@ fn install_host_functions(
     manifest: &PluginManifest,
     transport: Arc<dyn HttpTransport>,
     credentials: Arc<dyn CredentialStore>,
+    oauth_token: Arc<crate::oauth::OAuthTokenFn>,
     kv_path: PathBuf,
     ledger: Option<Arc<HostLedger>>,
 ) -> Fallible<()> {
@@ -580,7 +603,31 @@ fn install_host_functions(
                     if !allowed {
                         return None;
                     }
+                    // `__` 前缀是宿主保留键（第三方令牌就在里面）：插件不能绕过
+                    // `oauth.getAccessToken()` 直接把它读出来
+                    if key.starts_with("__") {
+                        return None;
+                    }
                     store.get(&plugin_id, &key)
+                }),
+            )
+            .map_err(host_setup_error)?;
+    }
+
+    // ---- 第三方授权令牌（只读；`__` 保留键插件不可直接读） ----
+    // 令牌**只**通过这个函数交给插件，而且只有声明了 `@oauth` 的插件才有值；
+    // 不给 `credentials.get` 留后门：`__` 前缀的键在那边一律拒绝（见上）。
+    {
+        let plugin_id = plugin_id.clone();
+        let oauth = manifest.oauth.clone();
+        let hosts = manifest.hosts.clone();
+        let token_callback = Arc::clone(&oauth_token);
+        globals
+            .set(
+                "__hostOauthToken",
+                Function::new(ctx.clone(), move || -> Option<String> {
+                    let oauth = oauth.as_ref()?;
+                    token_callback(&plugin_id, oauth, &hosts)
                 }),
             )
             .map_err(host_setup_error)?;
@@ -754,6 +801,7 @@ pub fn probe(source: &str, limits: HostLimits, transport: Arc<dyn HttpTransport>
         permissions: Vec::new(),
         hosts: Vec::new(),
         credentials: Vec::new(),
+        oauth: None,
         min_core_version: None,
         tags: Vec::new(),
         capabilities: Vec::new(),
@@ -772,6 +820,7 @@ pub fn probe(source: &str, limits: HostLimits, transport: Arc<dyn HttpTransport>
             &manifest,
             transport,
             Arc::new(super::credentials::MemoryCredentialStore::new()),
+            Arc::new(|_, _, _| None),
             std::path::PathBuf::new(),
             None,
         )?;

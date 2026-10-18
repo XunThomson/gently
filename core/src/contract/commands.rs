@@ -38,6 +38,11 @@ pub const COMMAND_NAMES: &[&str] = &[
     "plugin.subscriptions.remove",
     "plugin.subscriptions.refresh",
     "plugin.catalog.list",
+    // auth：第三方授权（4）——通用 OAuth 2.0（授权码 + PKCE），端点由插件清单声明（ADR-0005）
+    "auth.status",
+    "auth.begin",
+    "auth.cancel",
+    "auth.signOut",
     // catalog（10）
     "catalog.search",
     "catalog.searchCancel",

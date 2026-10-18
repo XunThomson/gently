@@ -8,6 +8,12 @@ import {BadgeCell, TextCell} from '../../../components/ui/data-table';
 import {useConfirm} from '../../../hooks/useConfirm';
 import {coreAvailable, corePlugin, libraryService} from '../../../services';
 import {PERMISSION_LABEL} from '../permissions';
+
+/** 授权地址里的域名（只用于展示「浏览器会被带去哪个域名」） */
+function oauthHost(url: string): string {
+    const rest = url.replace(/^https?:\/\//, '');
+    return rest.split(/[/?#]/)[0] || url;
+}
 import {PluginSettings} from './plugin-settings';
 import styles from '../plugin.module.css';
 
@@ -330,6 +336,20 @@ export function ImportPanel() {
                                                 {credential.required ? `（${t('page.plugin.required')}）` : ''}
                                             </li>
                                         ))}
+                                    </ul>
+                                </>
+                            )}
+
+                            {/* 第三方授权必须在同意前说清楚：用户会被告知「这个插件会把你带去哪个域名」 */}
+                            {preview.oauth && (
+                                <>
+                                    <span className={styles.label}>{t('page.plugin.oauthTitle')}</span>
+                                    <ul className={styles.list}>
+                                        <li>· {t('page.plugin.oauthHost', {host: oauthHost(preview.oauth.authorizeUrl)})}</li>
+                                        {preview.oauth.scopes.length > 0 && (
+                                            <li>· {t('page.plugin.authScopes', {scopes: preview.oauth.scopes.join(' ')})}</li>
+                                        )}
+                                        {!preview.oauth.pkce && <li>· {t('page.plugin.authNoPkceHint')}</li>}
                                     </ul>
                                 </>
                             )}

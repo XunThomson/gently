@@ -137,3 +137,12 @@
 .credentialRow .input {
     width: 240px;
 }
+
+/* 第三方授权：与凭据/配置同属一个插件面板，用上边框分组而不是再套一层卡片 */
+.oauth {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+}

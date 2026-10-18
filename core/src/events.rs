@@ -35,6 +35,8 @@ pub mod events {
     pub const PLUGIN_HEALTH: &str = "plugin:health";
     pub const PLUGIN_IMPORT_PROGRESS: &str = "plugin:import:progress";
     pub const LIBRARY_SCAN_PROGRESS: &str = "library:scan:progress";
+    /// 第三方授权状态变化（`auth.begin` 之后回调线程换到令牌 / 被取消 / 失败）
+    pub const AUTH_CHANGED: &str = "auth:changed";
 
     /// 契约中声明的事件总数（与 `scripts/check-commands.mjs` 的文档比对一致）。
     pub const ALL: &[&str] = &[
@@ -46,6 +48,7 @@ pub mod events {
         PLUGIN_HEALTH,
         PLUGIN_IMPORT_PROGRESS,
         LIBRARY_SCAN_PROGRESS,
+        AUTH_CHANGED,
     ];
 }
 

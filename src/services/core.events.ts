@@ -24,6 +24,7 @@ export const CORE_EVENTS = {
     'plugin:health': 'plugin:health',
     'plugin:import:progress': 'plugin:import:progress',
     'library:scan:progress': 'library:scan:progress',
+    'auth:changed': 'auth:changed',
 } as const satisfies Record<CoreEventName, CoreEventName>;
 
 /** 事件名允许的字符集（与 Tauri 的事件名校验、`core/src/events.rs` 的测试一致）。 */

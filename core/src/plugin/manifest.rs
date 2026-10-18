@@ -147,6 +147,45 @@ fn default_secret() -> bool {
     true
 }
 
+/// 第三方授权声明（OAuth 2.0 授权码 + PKCE），端点由**插件作者**提供，核心侧不内置任何地址
+/// （`docs/adr/0005-neutral-third-party.md`）。
+///
+/// 单文件插件的头部写法（参数之间用逗号分隔，值里不能有逗号）：
+///
+/// ```text
+/// // @oauth authorize=https://id.example.com/authorize,token=https://id.example.com/api/token,client=demo-client,scopes=fav+read,port=0
+/// ```
+///
+/// 目录包的 `plugin.json` 等价写法：
+///
+/// ```json
+/// "oauth": {"authorizeUrl": "...", "tokenUrl": "...", "clientId": "...", "scopes": ["fav"], "pkce": true}
+/// ```
+///
+/// 约束：
+/// - 两个端点必须是 **HTTPS**（测试用的本机回环 `http://127.0.0.1` 例外），
+///   且域名必须写进 `@hosts`——授权端点和普通出网走同一道白名单，不额外开口子；
+/// - 声明了 `@oauth` 会**自动**补上 `network` + `credentials` 权限（令牌存在凭据库里）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthConfig {
+    pub authorize_url: String,
+    pub token_url: String,
+    pub client_id: String,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// PKCE（S256）：默认开启；老式公共客户端可写 `nopkce` 关闭（安全性下降，预览里会提示）
+    #[serde(default = "default_true")]
+    pub pkce: bool,
+    /// 本机回调监听端口；0 = 随机端口（推荐，避免端口冲突）
+    #[serde(default)]
+    pub redirect_port: u16,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 /// 插件清单：单文件头部注释与目录包 `plugin.json` 共用。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -171,6 +210,9 @@ pub struct PluginManifest {
     pub hosts: Vec<String>,
     #[serde(default)]
     pub credentials: Vec<CredentialField>,
+    /// 第三方授权声明（`@oauth`）：端点由插件提供，核心只跑通用流程
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<OAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_core_version: Option<String>,
     #[serde(default)]
@@ -295,6 +337,31 @@ fn header_from_json(raw: &serde_json::Value) -> Fallible<Header> {
         }
     }
 
+    if let Some(oauth) = object.get("oauth").and_then(|v| v.as_object()) {
+        // 归一化成与头部相同的 `key=value` 片段，解析只有一份实现
+        if let Some(value) = oauth.get("authorizeUrl").and_then(|v| v.as_str()) {
+            header.push(("oauth".into(), format!("authorize={value}")));
+        }
+        if let Some(value) = oauth.get("tokenUrl").and_then(|v| v.as_str()) {
+            header.push(("oauth".into(), format!("token={value}")));
+        }
+        if let Some(value) = oauth.get("clientId").and_then(|v| v.as_str()) {
+            header.push(("oauth".into(), format!("client={value}")));
+        }
+        if let Some(scopes) = oauth.get("scopes").and_then(|v| v.as_array()) {
+            let scopes: Vec<String> =
+                scopes.iter().filter_map(|scope| scope.as_str().map(str::to_string)).collect();
+            header.push(("oauth".into(), format!("scopes={}", scopes.join(" "))));
+        }
+        if let Some(port) = oauth.get("redirectPort").and_then(|v| v.as_u64()) {
+            header.push(("oauth".into(), format!("port={port}")));
+        }
+        // 默认就是开 PKCE：只有显式 `pkce: false` 才关
+        if oauth.get("pkce").and_then(|v| v.as_bool()) == Some(false) {
+            header.push(("oauth".into(), "nopkce".into()));
+        }
+    }
+
     Ok(header)
 }
 
@@ -388,6 +455,9 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
         }
     }
 
+    // ---- 第三方授权（@oauth）：端点由插件声明，核心只跑通用 OAuth 流程 ----
+    let oauth = parse_oauth(&many("oauth"), &hosts, &mut invalid);
+
     // 头部出现 `@compat` 即开启兼容模式（不需要值，避免 @compat=true 这类歧义）
     let compat = header.iter().any(|(key, _)| key == "compat");
 
@@ -402,6 +472,15 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
     }
     if !credentials.is_empty() && !permissions.contains(&PluginPermission::Credentials) {
         permissions.push(PluginPermission::Credentials);
+    }
+    // 第三方授权：令牌存凭据库（credentials），流程本身要出网（network）——声明即生效，
+    // 否则作者漏写 @permissions 时授权会在权限检查处被拒，而界面只会看到一句「失败」。
+    if oauth.is_some() {
+        for permission in [PluginPermission::Network, PluginPermission::Credentials] {
+            if !permissions.contains(&permission) {
+                permissions.push(permission);
+            }
+        }
     }
 
     // ---- 能力预扫描（仅用于预览提示） ----
@@ -446,9 +525,9 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
         }
     }
     // ---- 未知头部字段：提示但不阻断（便于格式演进） ----
-    const KNOWN: [&str; 15] = [
+    const KNOWN: [&str; 16] = [
         "id", "name", "version", "author", "description", "homepage", "url", "entry", "qualities",
-        "permissions", "hosts", "credentials", "mincoreversion", "tags", "compat",
+        "permissions", "hosts", "credentials", "oauth", "mincoreversion", "tags", "compat",
     ];
     let unknown: Vec<String> = header
         .iter()
@@ -480,6 +559,7 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
             permissions,
             hosts,
             credentials,
+            oauth,
             min_core_version: single("mincoreversion"),
             tags: many("tags"),
             capabilities,
@@ -491,6 +571,102 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
 
 fn invalid_source(message: &str, details: serde_json::Value) -> CoreError {
     CoreError::new(ErrorCode::PluginInvalidSource, message).with_details(details)
+}
+
+/// 解析 `@oauth` 的 `key=value` 片段（目录包走 `header_from_json` 归一化成同一形状）。
+///
+/// 返回 `None` = 没声明；`Some` = 声明合法（或至少能构造出来），非法项进 `invalid`。
+fn parse_oauth(
+    pieces: &[String],
+    hosts: &[String],
+    invalid: &mut Vec<serde_json::Value>,
+) -> Option<OAuthConfig> {
+    if pieces.is_empty() {
+        return None;
+    }
+
+    let mut config = OAuthConfig {
+        authorize_url: String::new(),
+        token_url: String::new(),
+        client_id: String::new(),
+        scopes: Vec::new(),
+        pkce: true,
+        redirect_port: 0,
+    };
+
+    for piece in pieces {
+        let (key, value) = match piece.split_once('=') {
+            Some((key, value)) => (key.trim().to_ascii_lowercase(), value.trim().to_string()),
+            // 无值片段（`pkce` / `nopkce`）也要认
+            None => (piece.trim().to_ascii_lowercase(), String::new()),
+        };
+        match key.as_str() {
+            "authorize" | "authorizeurl" => config.authorize_url = value,
+            "token" | "tokenurl" => config.token_url = value,
+            "client" | "clientid" => config.client_id = value,
+            "scopes" | "scope" => {
+                config.scopes = value.split([' ', '+']).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect();
+            }
+            "port" | "redirectport" => match value.parse::<u16>() {
+                Ok(port) => config.redirect_port = port,
+                Err(_) => invalid.push(serde_json::json!({
+                    "field": "oauth",
+                    "value": piece,
+                    "expect": "port 必须是 0~65535 的整数（0 = 随机端口）",
+                })),
+            },
+            "pkce" => config.pkce = value.is_empty() || value.eq_ignore_ascii_case("true"),
+            "nopkce" => config.pkce = false,
+            _ => invalid.push(serde_json::json!({
+                "field": "oauth",
+                "value": piece,
+                "expect": "authorize= / token= / client= / scopes= / port= / pkce / nopkce",
+            })),
+        }
+    }
+
+    for (field, value) in [
+        ("authorize", &config.authorize_url),
+        ("token", &config.token_url),
+        ("client", &config.client_id),
+    ] {
+        if value.trim().is_empty() {
+            invalid.push(serde_json::json!({
+                "field": "oauth",
+                "value": format!("{field}="),
+                "expect": "第三方授权至少需要 authorize= / token= / client= 三项",
+            }));
+        }
+    }
+
+    // 端点白名单：授权端点与令牌端点都要能过普通出网那一关（不额外开口子）。
+    // 回环地址不需要声明主机名——它只用于本机/测试，不构成对外访问。
+    for (what, url) in [("authorize", &config.authorize_url), ("token", &config.token_url)] {
+        if url.trim().is_empty() || is_loopback_http(url) {
+            continue;
+        }
+        let allowed_https = url.starts_with("https://")
+            && super::transport::host_of(url)
+                .is_some_and(|host| super::transport::host_allowed(hosts, &host));
+        if !allowed_https {
+            invalid.push(serde_json::json!({
+                "field": "oauth",
+                "value": format!("{what}={url}"),
+                "expect": "授权端点必须是 HTTPS，且域名写进 @hosts（本机回环 http 除外）",
+            }));
+        }
+    }
+
+    Some(config)
+}
+
+/// 本机回环的 `http://` 地址（只有它允许明文：测试与本地授权页）。
+fn is_loopback_http(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("http://") else { return false };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority.rsplit('@').next().unwrap_or(authority);
+    let host = host.split(':').next().unwrap_or(host);
+    matches!(host, "127.0.0.1" | "localhost" | "[::1]")
 }
 
 /// 兼容模式内置的 `require` 清单（**唯一实现**在 `sandbox/compat.js`，这里只用于预览提示）。
@@ -659,6 +835,81 @@ async function getMediaSource(track, quality) { return null; }
         assert!(first.required && first.secret);
         assert!(!parsed.manifest.credentials[1].secret);
         assert!(parsed.manifest.permissions.contains(&PluginPermission::Credentials));
+    }
+
+    #[test]
+    fn oauth_header_is_parsed_with_pkce_default_on() {
+        let source = format!(
+            "{MINIMAL}// @hosts id.example.com\n// @oauth authorize=https://id.example.com/authorize,token=https://id.example.com/token,client=demo,scopes=fav read\n"
+        );
+        let parsed = parse_source(&source).unwrap();
+        let oauth = parsed.manifest.oauth.expect("应解析出 @oauth");
+        assert_eq!(oauth.authorize_url, "https://id.example.com/authorize");
+        assert_eq!(oauth.token_url, "https://id.example.com/token");
+        assert_eq!(oauth.client_id, "demo");
+        assert_eq!(oauth.scopes, vec!["fav".to_string(), "read".to_string()]);
+        assert!(oauth.pkce, "默认开 PKCE");
+        assert_eq!(oauth.redirect_port, 0);
+        // 声明 @oauth 即隐含 network + credentials 权限
+        assert!(parsed.manifest.permissions.contains(&PluginPermission::Network));
+        assert!(parsed.manifest.permissions.contains(&PluginPermission::Credentials));
+    }
+
+    #[test]
+    fn oauth_endpoint_host_must_be_declared_and_https() {
+        // 端点域名没写进 @hosts → 拒绝（授权端点不额外开口子）
+        let missing = parse_source(&format!(
+            "{MINIMAL}// @hosts api.example.com\n// @oauth authorize=https://id.example.com/authorize,token=https://id.example.com/token,client=demo\n"
+        ))
+        .unwrap_err();
+        assert_eq!(missing.code, ErrorCode::PluginInvalidSource);
+        let details = missing.details.unwrap();
+        assert!(details["invalid"].as_array().unwrap().iter().any(|item| item["field"] == "oauth"));
+
+        // 明文 http 到公网 → 拒绝
+        let plain = parse_source(&format!(
+            "{MINIMAL}// @hosts id.example.com\n// @oauth authorize=http://id.example.com/authorize,token=https://id.example.com/token,client=demo\n"
+        ))
+        .unwrap_err();
+        assert_eq!(plain.code, ErrorCode::PluginInvalidSource);
+
+        // 本机回环 http 允许（测试 / 本地授权页），且不必写进 @hosts
+        let loopback = parse_source(&format!(
+            "{MINIMAL}// @oauth authorize=http://127.0.0.1:9/authorize,token=http://127.0.0.1:9/token,client=demo,nopkce\n"
+        ))
+        .expect("回环端点应允许");
+        let oauth = loopback.manifest.oauth.unwrap();
+        assert!(!oauth.pkce, "nopkce 应关闭 PKCE");
+    }
+
+    #[test]
+    fn oauth_missing_required_pieces_is_invalid() {
+        let err = parse_source(&format!("{MINIMAL}// @hosts id.example.com\n// @oauth authorize=https://id.example.com/authorize\n"))
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::PluginInvalidSource);
+        let details = err.details.unwrap();
+        let invalid = details["invalid"].as_array().unwrap();
+        assert!(invalid.iter().filter(|item| item["field"] == "oauth").count() >= 2, "{invalid:?}");
+    }
+
+    #[test]
+    fn oauth_can_be_declared_in_plugin_json() {
+        let json = r#"{
+            "id": "demo-source", "name": "Demo", "version": "1.0.0", "author": "someone",
+            "hosts": ["id.example.com"],
+            "oauth": {
+                "authorizeUrl": "https://id.example.com/authorize",
+                "tokenUrl": "https://id.example.com/token",
+                "clientId": "demo",
+                "scopes": ["fav"],
+                "pkce": false
+            }
+        }"#;
+        let parsed = parse_manifest_json(json, None).unwrap();
+        let oauth = parsed.manifest.oauth.expect("目录包也应能声明授权");
+        assert_eq!(oauth.client_id, "demo");
+        assert_eq!(oauth.scopes, vec!["fav".to_string()]);
+        assert!(!oauth.pkce);
     }
 
     #[test]

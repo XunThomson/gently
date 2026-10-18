@@ -110,6 +110,33 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 | `plugin.subscriptions.refresh{id}` | 重新拉取索引并本地缓存；失败保留旧索引并报 `subscription.fetch_failed` |
 | `plugin.catalog.list{subscriptionId?, query?, tags?}` | 订阅内可安装条目（带 `installed` / `updateAvailable`） |
 
+### auth：第三方授权（4）
+
+**通用** OAuth 2.0 授权码 + PKCE：端点、client id、scope 全部来自**插件清单**的 `@oauth` 声明
+（`docs/adr/0005-neutral-third-party.md`：应用不内置任何第三方地址）；核心只实现与厂商无关的那一段。
+
+| 命令 | 说明 |
+|---|---|
+| `auth.status{pluginId}` | `{pluginId, declared, authorized, expiresAt, scopes, declaredScopes, pending, backend}`。**只有状态，没有任何令牌字段**——命令层没有「读令牌」的出口 |
+| `auth.begin{pluginId}` | 绑定 `127.0.0.1` 的临时端口等回调，返回 `{pluginId, authorizeUrl, redirectUri, state, expiresAt}`；**授权页由前端交给系统浏览器**（应用内不嵌 WebView，用户能在地址栏确认真实域名）。未声明 `@oauth` → `common.invalid_argument`；插件未安装 → `common.not_found` |
+| `auth.cancel{pluginId}` | 放弃正在等待的授权（关掉回调监听）；没有进行中的授权是空操作 |
+| `auth.signOut{pluginId}` | 删除凭据库里的令牌（未授权时是幂等空操作） |
+
+流程与约束：
+
+- 回调路径 `http://127.0.0.1:<port>/callback`，**校验 `state`**（不匹配 → 400 页面且绝不换令牌）；
+  等待上限 180s，超时/取消都会释放端口与线程；
+- 换令牌是核心自己发起的 `POST application/x-www-form-urlencoded`（`grant_type=authorization_code`，
+  PKCE 时带 `code_verifier`），端点域名必须已在 `@hosts` 白名单里、且只允许 HTTPS
+  （**本机回环 `http://127.0.0.1` 例外**，只用于本地/测试）；
+- 令牌只存进 `CredentialStore`（Windows 凭据管理器，目标名 `gently:<pluginId>:__oauth_token`），
+  **永不落库、永不进日志**；过期且有 `refresh_token` 时在对插件取用的那一刻就地续期；
+- 插件通过沙箱里的 `oauth.getAccessToken()` 取令牌（见 §5.2）；`credentials.get('__…')` 一律拒绝，
+  保留键不给插件直接读；
+- 换令牌失败按语义报码：400/401 或缺 `access_token` → `source.auth_expired`（界面提示重新授权），
+  其它上游失败 → `source.upstream_failed`；
+- 状态变化推 `auth:changed`（§3）。
+
 ### catalog（10）
 | 命令 | 说明 |
 |---|---|
@@ -307,6 +334,7 @@ type PluginOrigin =
 | `plugin:health` | `PluginInfo` | 标记源不可用并触发回退 |
 | `plugin:import:progress` | `{phase, percent?}` | 导入进度 |
 | `library:scan:progress` | `{dir, found, percent?}` | 扫描进度 |
+| `auth:changed` | `{pluginId, authorized, expiresAt?}` | 第三方授权状态变化（回调线程换到令牌 / 取消 / 换令牌失败）；界面据此刷新「已授权」，不必轮询 |
 
 搜索流程：`invoke('catalog.search')` → 立刻拿到 `searchId` → 前端订阅事件增量渲染 →
 `catalog:search:done` 收敛出「跨源合并后的候选列表」。合并始终在核心完成（单一职责）。
@@ -350,7 +378,20 @@ type PluginOrigin =
 // @credentials apiKey:API Key:required      // key:label[:required][:plain]
 // @minCoreVersion 0.1.0
 // @compat                    // 兼容模式：来自 MusicFree/LX 生态、不声明 @hosts（见 §5.4）
+// @oauth authorize=https://id.example.com/authorize,token=https://id.example.com/token,client=demo,scopes=fav
+                             // 第三方授权（可选）：端点由作者提供，域名必须在 @hosts 里；
+                             // 参数用逗号分隔，值里不能有逗号；可选 port=<n>（0 = 随机回环端口）、pkce / nopkce
 ```
+
+目录包的 `plugin.json` 里同一份声明写成对象（字段与上面一一对应）：
+
+```json
+"oauth": {"authorizeUrl": "https://id.example.com/authorize", "tokenUrl": "https://id.example.com/token",
+          "clientId": "demo", "scopes": ["fav"], "pkce": true, "redirectPort": 0}
+```
+
+声明 `@oauth` 会**自动补上** `network` + `credentials` 权限（流程要出网、令牌进凭据库）；
+没有声明就没有授权入口——应用不会凭空提供任何第三方登录。
 
 ### 5.2 插件函数（顶层函数声明；自有 ABI 不需要模块系统）
 
@@ -375,8 +416,12 @@ async function getRecommend() {}                   // 可选
 - **能力探测**：函数不存在时，对应命令返回 `common.not_implemented`（UI 隐藏入口），
   而不是报错——社区插件能力参差是常态；
 - **宿主注入**（白名单，无 `fs`/`process`/原生模块）：`fetch`（仅 `@hosts` 域名、仅 HTTPS）、
-  `console`、插件私有 `storage`、`credentials.get(key)`；
+  `console`、插件私有 `storage`、`credentials.get(key)`、`oauth.getAccessToken()`；
   CommonJS 插件另有 `module` / `exports` / `require`（见 §5.4，仅兼容模式 + 固定模块清单）；
+- **`oauth.getAccessToken()`**：只在清单声明了 `@oauth` 时返回令牌（否则 `undefined`）；过期会在
+  取用时自动用 `refresh_token` 续期，续不上就返回 `undefined`——插件必须按「未登录」处理，
+  不要假设它一直存在，也不要把它写进 `storage`。`credentials.get('__…')` 一律返回 `undefined`：
+  `__` 前缀是宿主保留键（令牌就存在那里）；
 - **限制**：单次调用超时（8s）、内存上限、调用频率；违规 → `plugin.permission_denied`，
   异常/超时 → `plugin.runtime_error` 并计入健康度；
 - **运行时**：每个插件一个独立 QuickJS 实例；`reload` 重建。引擎通过内部 `JsRuntime` 接口封装，
@@ -607,6 +652,7 @@ cache/
 | 新增 `library.history.clear`（60 条命令） | 界面一直有「清空播放记录」入口；历史成为核心的事实来源后，没有这条命令等于该功能静默失效 |
 | 新增 `catalog.lyricsSearch`（61 条命令） | 歌词与歌曲分离：源不给词、各源同名歌曲名称不一致、自动歌词与音频对不上——用户需要自己跨源挑一份并看到来源（R54） |
 | 新增 `system.cacheStatus` / `system.cacheClear`（63 条命令） | 离线可用：只缓存播放过的曲目、命中缓存优先于插件解析；用户需要看到占用并能清理（R56） |
+| 新增 `auth.*`（67 条命令）与 `auth:changed`（9 事件） | 第三方收藏夹等能力需要登录，但应用**不内置任何第三方地址**（ADR-0005）：端点由插件清单的 `@oauth` 声明，核心只跑通用 OAuth 2.0 授权码 + PKCE，令牌只进系统凭据库、只经 `oauth.getAccessToken()` 交给声明它的那个插件（R59） |
 | 本地曲目新增 `artwork`（内嵌封面 → 回环 `/cover/<name>` 路由） | 本地列表只有哈希渐变；封面缓存按源路径哈希命名，不改表结构，前端只多一个「列表缩略图」消费点 |
 | 本地标签改为**合并「链式元数据 + 容器元数据」** | symphonia 0.5.5 的 mp3 demuxer 不解析 ID3v2：只读 `format.metadata()` 会让最常见的 mp3 丢掉全部标签与内嵌封面（实测确认） |
 | 本地路径统一归一化（折叠重复分隔符，四处共用一份实现） | 用户粘贴 `C:\\Music` 这种路径时 Windows 照样认，但同一个文件会被收成两行、封面哈希也算不到一起 |

@@ -13,6 +13,7 @@ import {
     corePluginCredentialStatus,
 } from '../../../services/core.plugin';
 import styles from '../plugin.module.css';
+import {PluginAuth} from './plugin-auth';
 
 /**
  * 单个插件的**管理面板**：凭据 + 配置（契约 `plugin.credentials.*` / `plugin.config.*`）。
@@ -147,6 +148,9 @@ export function PluginSettings({plugin}: {plugin: PluginSummary}) {
 
     return (
         <div className={styles.settings}>
+            {/* 第三方授权（只有声明了 @oauth 的插件才出现） */}
+            <PluginAuth plugin={plugin} />
+
             {/* 凭据 */}
             <span className={styles.label}>{t('page.plugin.credentialTitle')}</span>
             {credentials === null ? (

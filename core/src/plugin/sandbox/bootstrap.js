@@ -10,6 +10,7 @@
     const hostStorageSet = globalThis.__hostStorageSet;
     const hostStorageDelete = globalThis.__hostStorageDelete;
     const hostCredentialGet = globalThis.__hostCredentialGet;
+    const hostOauthToken = globalThis.__hostOauthToken;
     const hostUserVariables = globalThis.__hostUserVariables;
     const hostEnvInfo = globalThis.__hostEnvInfo;
 
@@ -56,6 +57,16 @@
     globalThis.credentials = {
         get(key) {
             const value = hostCredentialGet(String(key));
+            return value === null || value === undefined ? undefined : value;
+        },
+    };
+
+    // 第三方授权令牌（OAuth 2.0，端点由插件清单 `@oauth` 声明）。
+    // 值由宿主从 OS 凭据库取（过期会就地刷新）；未授权/刷新失败一律返回 undefined，
+    // 插件据此按「未登录」处理——不要指望它存在，也不要把它写进 storage。
+    globalThis.oauth = {
+        getAccessToken() {
+            const value = hostOauthToken();
             return value === null || value === undefined ? undefined : value;
         },
     };
@@ -207,6 +218,7 @@
     delete globalThis.__hostStorageSet;
     delete globalThis.__hostStorageDelete;
     delete globalThis.__hostCredentialGet;
+    delete globalThis.__hostOauthToken;
     delete globalThis.__hostUserVariables;
     delete globalThis.__hostEnvInfo;
 })();

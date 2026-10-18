@@ -178,6 +178,49 @@ export interface PluginCredentialField {
     secret: boolean;
 }
 
+/**
+ * 插件声明的第三方授权配置（`@oauth` / `plugin.json` 的 `oauth`）。
+ *
+ * **端点来自插件**，应用不预置任何第三方地址（ADR-0005）；核心只做通用流程。
+ */
+export interface OAuthConfig {
+    authorizeUrl: string;
+    tokenUrl: string;
+    clientId: string;
+    scopes: string[];
+    /** PKCE（S256）；插件写 `nopkce` 时为 false（安全性下降，界面应提示） */
+    pkce: boolean;
+    /** 本机回调端口；0 = 随机 */
+    redirectPort: number;
+}
+
+/** `auth.status`：只有状态，**没有任何令牌字段** */
+export interface OAuthStatus {
+    pluginId: string;
+    /** 插件是否声明了 `@oauth`（没声明就不该显示授权入口） */
+    declared: boolean;
+    authorized: boolean;
+    /** 毫秒时间戳；上游没给 `expires_in` 时可能是 null */
+    expiresAt: number | null;
+    /** 实际拿到的 scope（来自令牌响应，缺省回落为声明值） */
+    scopes: string[];
+    declaredScopes: string[];
+    /** 是否有一轮授权正在等浏览器回调 */
+    pending: boolean;
+    /** 令牌落点：`windows-credential-manager` 或 `memory`（后者重启即失效） */
+    backend: string;
+}
+
+/** `auth.begin`：把 `authorizeUrl` 交给系统浏览器打开即可 */
+export interface OAuthBeginResult {
+    pluginId: string;
+    authorizeUrl: string;
+    redirectUri: string;
+    state: string;
+    /** 等回调的截止时间（毫秒时间戳）；过了就自动放弃 */
+    expiresAt: number;
+}
+
 /** 插件来源（用于审计与更新判断） */
 export type PluginOrigin =
     | {kind: 'file'; path: string}
@@ -202,6 +245,11 @@ export interface PluginManifest {
     /** 网络白名单：只允许访问这些域名（仅 HTTPS） */
     hosts: string[];
     credentials: PluginCredentialField[];
+    /**
+     * 第三方授权声明（`@oauth`）：端点由插件提供，核心只跑通用 OAuth 2.0 流程。
+     * **应用不内置任何第三方地址**（ADR-0005）——没有声明就是没有。
+     */
+    oauth?: OAuthConfig;
     minCoreVersion?: string;
     tags: string[];
     /**
@@ -277,6 +325,11 @@ export interface PluginImportPreview {
      * 来源可能是作者的 `@compat` 标记，也可能是用户在导入时显式开启。
      */
     compat: boolean;
+    /**
+     * 第三方授权声明（清单里有 `@oauth` 时出现）：同意安装前就要让用户看到
+     * **会把浏览器带去哪个域名**、要哪些 scope、有没有关掉 PKCE。
+     */
+    oauth?: OAuthConfig;
 }
 
 export interface PluginCredentialStatus {
@@ -659,6 +712,27 @@ export interface PluginApi {
     };
 }
 
+/**
+ * 第三方授权（契约 §2 的 `auth.*`）。
+ *
+ * 核心只做与厂商无关的那一段：起本机回环回调、校验 `state`、用授权码换令牌、把令牌存进
+ * 系统凭据库。**授权页由系统浏览器打开**（前端用 opener 打开 `begin` 返回的地址）——
+ * 应用不内置任何第三方地址，端点全部来自插件清单的 `@oauth` 声明。
+ */
+export interface OAuthApi {
+    /** 只回状态：是否已授权、过期时间、scope。**没有任何命令能读回令牌** */
+    status(input: {pluginId: string}): Promise<CoreResult<OAuthStatus>>;
+    /**
+     * 发起授权：核心绑定 `127.0.0.1` 的临时端口等回调，返回要交给系统浏览器的地址。
+     * 浏览器回到 `/callback` 后，核心自己换令牌并推 `auth:changed`。
+     */
+    begin(input: {pluginId: string}): Promise<CoreResult<OAuthBeginResult>>;
+    /** 放弃正在等待的授权（关闭回调监听） */
+    cancel(input: {pluginId: string}): Promise<CoreResult<void>>;
+    /** 退出登录：删除凭据库里的令牌（未授权时是幂等的空操作） */
+    signOut(input: {pluginId: string}): Promise<CoreResult<void>>;
+}
+
 export interface DownloadApi {
     list(input?: {status?: DownloadStatus}): Promise<CoreResult<DownloadTask[]>>;
     /**
@@ -725,6 +799,11 @@ export interface CoreEventMap {
     'plugin:health': PluginInfo;
     'plugin:import:progress': {phase: 'fetch' | 'extract' | 'validate' | 'install'; percent?: number};
     'library:scan:progress': {dir: string; found: number; percent?: number};
+    /**
+     * 第三方授权状态变化：回调线程换到令牌 / 用户取消 / 换令牌失败时推送。
+     * 界面据此刷新「已授权 / 未授权」——没有这条事件就只能靠轮询。
+     */
+    'auth:changed': {pluginId: string; authorized: boolean; expiresAt?: number | null};
 }
 
 export type CoreEventName = keyof CoreEventMap;

@@ -18,7 +18,7 @@ import {DEFAULT_PRESET_ID} from '../src/theme';
 import {store, useActions} from '../src/store';
 import {buildCssVars, themeConfig} from '../src/theme/tokens';
 import {demoSourcesEnabled, demoSourcesReady, getActiveMusicSource, listMusicSources} from '../src/plugins';
-import {catalogService, coreSystem, fileService, libraryService, recommendService, skinService} from '../src/services';
+import {catalogService, coreSystem, fileService, libraryService, oauthBegin, oauthCancel, oauthListen, oauthSignOut, oauthStatus, recommendService, skinService} from '../src/services';
 import zh from '../src/i18n/locales/zh.json';
 import en from '../src/i18n/locales/en.json';
 import {CORE_ERROR_CODES} from '../src/api';
@@ -1308,6 +1308,65 @@ async function main(): Promise<void> {
         />,
     );
 
+    /* 第三方授权（浏览器模式）：没有核心 → 状态未知、发起授权直接失败，
+       而不是挂在那里等一个永远不来的回调 */
+    {
+        check('auth: 浏览器下状态为 null（不伪造「已授权」）', (await oauthStatus('smoke-oauth')) === null);
+        const begin = await oauthBegin('smoke-oauth');
+        check(
+            'auth: 浏览器下发起授权如实失败（unsupported_platform）',
+            !begin.ok && begin.error.code === 'common.unsupported_platform',
+            begin.ok ? '意外成功' : begin.error.code,
+        );
+
+        /* 声明了 @oauth 的插件：授权卡片出现；没声明的面板里不该有它 */
+        const oauthPlugin = {
+            id: 'smoke-oauth',
+            name: '授权源',
+            version: '1.0.0',
+            author: 'test',
+            description: 'oauth render',
+            builtin: false,
+            enabled: true,
+            priority: 10,
+            compat: false,
+            origin: {kind: 'paste' as const},
+            manifest: {
+                id: 'smoke-oauth',
+                name: '授权源',
+                version: '1.0.0',
+                author: 'test',
+                description: 'oauth render',
+                qualities: ['standard' as const],
+                permissions: [],
+                hosts: ['id.example.com'],
+                credentials: [],
+                oauth: {
+                    authorizeUrl: 'https://id.example.com/authorize',
+                    tokenUrl: 'https://id.example.com/token',
+                    clientId: 'demo',
+                    scopes: ['fav'],
+                    pkce: true,
+                    redirectPort: 0,
+                },
+                tags: [],
+                capabilities: ['search' as const],
+            },
+        };
+        const withOauth = renderToString(<PluginSettings plugin={oauthPlugin}/>);
+        const withoutOauth = renderToString(
+            <PluginSettings plugin={{...oauthPlugin, manifest: {...oauthPlugin.manifest, oauth: undefined}}}/>,
+        );
+        check(
+            'auth: 声明 @oauth 的插件出现授权入口（含声明的 scope）',
+            withOauth.includes('OAuth') && withOauth.includes('fav'),
+        );
+        check(
+            'auth: 没声明 @oauth 的插件不显示授权入口',
+            !withoutOauth.includes('OAuth'),
+        );
+    }
+
     /* 歌曲详情：先恢复播放，确保歌词面板也有内容可渲染 */
     actions.player.play(s().library.local[2], s().library.local);
     await new Promise((resolve) => setTimeout(resolve, 220));
@@ -1363,7 +1422,7 @@ async function main(): Promise<void> {
     const eventNames = Object.values(CORE_EVENTS);
     check(
         'core: 事件名都在 Tauri 接受的字符集内（无点号）',
-        eventNames.length === 8 && eventNames.every((name) => EVENT_NAME_PATTERN.test(name)),
+        eventNames.length === 9 && eventNames.every((name) => EVENT_NAME_PATTERN.test(name)),
         eventNames.filter((name) => !EVENT_NAME_PATTERN.test(name)).join(', '),
     );
 
@@ -2314,6 +2373,97 @@ async function main(): Promise<void> {
     );
     check('fake: 撤离假宿主后回到浏览器模式', !coreAvailable());
     check('fake: 撤离后门面重新返回 null', (await coreLoadPlaylists()) === null);
+
+    /* 第三方授权（假宿主 = 桌面端分支）：命令名与参数对不对、授权地址是否真的交给
+       系统浏览器、取消是否收尾、事件能否刷新界面。 */
+    {
+        const calls: {command: string; params: Record<string, unknown>}[] = [];
+        const opened: string[] = [];
+        const STATUS = {
+            pluginId: 'auth-source',
+            declared: true,
+            authorized: false,
+            expiresAt: null,
+            scopes: [],
+            declaredScopes: ['fav'],
+            pending: false,
+            backend: 'windows-credential-manager',
+        };
+        await withFakeCore(
+            (command, params) => {
+                calls.push({command, params});
+                if (command === 'plugin:opener|open_url') {
+                    opened.push(String((params as {url?: string}).url ?? ''));
+                    return envelope(null);
+                }
+                switch (command) {
+                    case 'auth.status':
+                        return envelope(STATUS);
+                    case 'auth.begin':
+                        return envelope({
+                            pluginId: 'auth-source',
+                            authorizeUrl:
+                                'https://id.example.com/authorize?response_type=code&client_id=demo&code_challenge_method=S256',
+                            redirectUri: 'http://127.0.0.1:51234/callback',
+                            state: 'a'.repeat(32),
+                            expiresAt: Date.now() + 180_000,
+                        });
+                    case 'auth.cancel':
+                    case 'auth.signOut':
+                        return envelope(null);
+                    default:
+                        return failure('common.not_found', `未预置：${command}`);
+                }
+            },
+            async (host) => {
+                const status = await oauthStatus('auth-source');
+                check(
+                    'fake: 授权状态走核心（已声明 + 未授权 + 凭据库落点）',
+                    status?.declared === true &&
+                        status.authorized === false &&
+                        status.backend === 'windows-credential-manager' &&
+                        calls.some((call) => call.command === 'auth.status' && call.params.pluginId === 'auth-source'),
+                    JSON.stringify(status),
+                );
+
+                const begin = await oauthBegin('auth-source');
+                check(
+                    'fake: 发起授权把插件声明的地址交给系统浏览器',
+                    begin.ok &&
+                        opened.length === 1 &&
+                        opened[0].startsWith('https://id.example.com/authorize') &&
+                        calls.some((call) => call.command === 'auth.begin'),
+                    begin.ok ? `opened=${opened.join(',')}` : begin.error.code,
+                );
+
+                const cancelled = await oauthCancel('auth-source');
+                check(
+                    'fake: 取消授权走核心',
+                    cancelled.ok && calls.some((call) => call.command === 'auth.cancel'),
+                );
+
+                const signedOut = await oauthSignOut('auth-source');
+                check(
+                    'fake: 退出登录走核心',
+                    signedOut.ok && calls.some((call) => call.command === 'auth.signOut'),
+                );
+
+                // 事件链路：回调线程换到令牌 → 界面应收到 `auth:changed`
+                let received: {pluginId: string; authorized: boolean} | null = null;
+                const unlisten = await oauthListen((payload) => {
+                    received = payload;
+                });
+                host.emit('auth:changed', {pluginId: 'auth-source', authorized: true, expiresAt: 1_800_000_000_000});
+                await new Promise((resolve) => setTimeout(resolve, 20));
+                unlisten();
+                check(
+                    'fake: auth:changed 事件能刷新授权状态',
+                    received !== null && (received as {authorized: boolean}).authorized === true,
+                    JSON.stringify(received),
+                );
+            },
+        );
+    }
 
     /* 路由表与核心不一致时的**兜底**：核心说「这个源不存在」不算故障。
        真实场景：路由表还没刷新（用户直接进搜索页）、或插件刚被卸载。

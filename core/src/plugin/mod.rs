@@ -35,7 +35,7 @@ pub use install::{
     DEFAULT_PRIORITY, ENTRY_FILE, MAX_PLUGIN_BYTES,
 };
 pub use manifest::{
-    is_valid_host, parse_manifest_json, parse_source, CredentialField, ParsedPlugin,
+    is_valid_host, parse_manifest_json, parse_source, CredentialField, OAuthConfig, ParsedPlugin,
     PluginCapability, PluginManifest, PluginPermission, TrackQuality, BUILTIN_REQUIRE_MODULES,
     HEADER_SCAN_LINES, MAX_SOURCE_BYTES,
 };

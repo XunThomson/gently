@@ -268,6 +268,31 @@ URL 是 `index.html?window=desktop-lyrics`；`main.tsx` 按 query 决定挂载�
 覆盖窗口、默认 `pointer-events: none` 的容器由宠物自己挂 DOM。接口边界（纯本地、只读、
 无商店、性能预算）见 `docs/adr/0007-versioning-and-pet-extension.md`；当前版本没有任何内置宠物。
 
+### 第三方授权（OAuth 2.0，端点由插件声明）
+
+「用某站的收藏夹」= 用户装一个声明了该站授权端点的插件；应用**不内置任何第三方地址**
+（ADR-0005 / ADR-0008）。
+
+```
+插件清单 @oauth（authorize / token / client / scopes / pkce / port）
+  ↓
+UI：插件管理 →「第三方授权」卡片
+  ↓ auth.begin{pluginId}
+核心 core/src/oauth.rs：绑 127.0.0.1:<随机口> 等回调 + 生成 state / PKCE(S256)
+  ↓ 返回 {authorizeUrl, redirectUri, state, expiresAt}
+前端 services/core.oauth.ts → fileService.openExternal（系统浏览器）
+  ↓ 用户在授权页同意 → 302 到 http://127.0.0.1:<port>/callback?code=&state=
+核心：校验 state → POST 换令牌 → 写 CredentialStore（键 `__oauth_token`）→ 推 `auth:changed`
+  ↓
+插件沙箱：oauth.getAccessToken()（过期就地续期）；命令层没有读令牌的出口
+```
+
+- **令牌不出核心**：`auth.status` 只回「是否已授权 / 过期时间 / scope」；凭据库的 `__` 前缀是
+  宿主保留键，`credentials.get` 对插件一律返回 `undefined`。
+- **回调只在本机**：`state` 不匹配 → 400 且不换令牌；等待上限 180s，端口与线程随后释放。
+- **端点仍在白名单内**：授权/令牌域名必须写进插件 `@hosts`、只允许 HTTPS（回环 `127.0.0.1` 例外）。
+- 机密客户端（client_secret）不支持；刷新令牌走 `refresh_token` 授权，不重开浏览器。
+
 ### 音频播放链路
 
 ```
@@ -394,7 +419,7 @@ play_history 表 → 最近播放视图 / 推荐画像输入
 ```
 React（UI / store / services）
    │  invoke(command) / listen(event)      ← 无 HTTP、无端口、无 CORS、无 JWT
-Rust 本机核心（**已实现**：契约里的 63 条命令 / 8 类事件，`cargo test -p gently-core` 220 项）
+Rust 本机核心（**已实现**：契约里的 67 条命令 / 9 类事件，`cargo test -p gently-core` 236 项）
    ├─ 插件宿主（内嵌 QuickJS + 权限白名单）与订阅索引缓存
    ├─ 曲库聚合（流式搜索、跨源去重、候选排序、播放回退）与缓存
    ├─ 本地曲库（symphonia 读标签/时长/内嵌封面）+ 封面缓存 + FTS5 检索
@@ -408,7 +433,7 @@ Rust 本机核心（**已实现**：契约里的 63 条命令 / 8 类事件，`c
 
 契约两处，且只有两处：
 
-1. `docs/contracts/local-core-api.md`——规范正文：63 条命令 + 8 类事件、错误码表、
+1. `docs/contracts/local-core-api.md`——规范正文：67 条命令 + 9 类事件、错误码表、
    多音源策略、插件与皮肤模型、本机存储布局、安全与信任模型；
 2. `src/api/index.ts`——上述契约的前端类型（只有类型，无实现）。
 

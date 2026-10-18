@@ -13,6 +13,8 @@ export {
     DESKTOP_LYRICS_EVENTS,
 } from './window.service';
 export {coreAvailable, corePlugin, coreSystem, describeError, invokeCore, probeCore} from './core.bridge';
+export {oauthBegin, oauthCancel, oauthListen, oauthSignOut, oauthStatus} from './core.oauth';
+export type {OAuthChangedPayload} from './core.oauth';
 export {
     coreAlbum,
     coreCancelSearch,
