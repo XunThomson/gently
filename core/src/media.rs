@@ -36,6 +36,9 @@ const MAX_HEADER_BYTES: usize = 8 * 1024;
 /// 上游连接超时（读取不设总时限：媒体流本来就是长连接）。
 const UPSTREAM_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// 允许跟随的上游跳转次数（302 → CDN 是常态；Ring 用不上更多）
+const MAX_UPSTREAM_REDIRECTS: u32 = 3;
+
 /// 一条流令牌指向什么。
 ///
 /// 远端（插件的 `getMediaSource` 给的地址）与本地文件（本地曲库）走**同一条代理**：
@@ -461,7 +464,11 @@ fn forward(
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(UPSTREAM_TIMEOUT)
         .timeout_read(UPSTREAM_TIMEOUT)
-        .redirects(0)
+        // 上游常常是「302 到 CDN」：网易云的外链就 302 到 http 的 m70x.music.126.net。
+        // 以前这里是 redirects(0)，302 被原样转给 WebView，而页面在 tauri://localhost 里，
+        // 跟去 http CDN 属于混合内容 → 直接被拦，表现成「播放条在走但没声音」。
+        // 改由代理自己跟（次数有上限），浏览器就只跟回环代理打交道。
+        .redirects(MAX_UPSTREAM_REDIRECTS)
         .build();
 
     let mut call = agent.get(origin);
@@ -713,6 +720,65 @@ mod tests {
         assert_eq!(content_type_of(Path::new("a.opus")), "audio/ogg");
         assert_eq!(content_type_of(Path::new("a.txt")), OCTET_STREAM);
         assert_eq!(content_type_of(Path::new("noext")), OCTET_STREAM);
+    }
+
+    /// **代理自己跟 302**：上游先回 302 指向另一台「CDN」，代理要把后者的音频字节
+    /// （206 + Content-Range）转给客户端，而不是把 302 丢给 WebView——那样在 `tauri://`
+    /// 页面里跟去 http CDN 会被当混合内容拦掉，表现成「播放条在走、没有声音」。
+    #[test]
+    fn follows_upstream_redirect_and_forwards_range_bytes() {
+        use std::io::{Read, Write};
+        use std::net::{TcpListener, TcpStream};
+        use std::thread;
+
+        // 「CDN」：真的回 206 + 一小段音频
+        let cdn = TcpListener::bind("127.0.0.1:0").expect("bind cdn");
+        let cdn_url = format!("http://{}/x.mp3", cdn.local_addr().expect("cdn addr"));
+        let cdn_thread = thread::spawn(move || {
+            let (mut socket, _) = cdn.accept().expect("accept cdn");
+            let mut buffer = [0u8; 1024];
+            let _ = socket.read(&mut buffer);
+            let body = b"AUDIOBYTES";
+            let head = format!(
+                "HTTP/1.1 206 Partial Content\r\nContent-Type: audio/mpeg\r\nContent-Range: bytes 0-9/100\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = socket.write_all(head.as_bytes());
+            let _ = socket.write_all(body);
+        });
+
+        // 「上游」：只回 302
+        let origin = TcpListener::bind("127.0.0.1:0").expect("bind origin");
+        let origin_url =
+            format!("http://{}/song/media/outer/url?id=1.mp3", origin.local_addr().expect("origin addr"));
+        let origin_thread = thread::spawn(move || {
+            let (mut socket, _) = origin.accept().expect("accept origin");
+            let mut buffer = [0u8; 1024];
+            let _ = socket.read(&mut buffer);
+            let head = format!(
+                "HTTP/1.1 302 Found\r\nLocation: {cdn_url}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            let _ = socket.write_all(head.as_bytes());
+        });
+
+        // 客户端：拿一条真实 socket，让代理往里写
+        let client = TcpListener::bind("127.0.0.1:0").expect("bind client");
+        let client_port = client.local_addr().expect("client addr").port();
+        let writer = TcpStream::connect(("127.0.0.1", client_port)).expect("connect client");
+        let (reader, _) = client.accept().expect("accept client");
+
+        forward(&writer, &origin_url, &[], Some("bytes=0-9".into())).expect("forward ok");
+        drop(writer);
+
+        let mut response = Vec::new();
+        (&reader).read_to_end(&mut response).expect("read response");
+        let text = String::from_utf8_lossy(&response).to_string();
+        origin_thread.join().expect("origin joined");
+        cdn_thread.join().expect("cdn joined");
+
+        assert!(text.starts_with("HTTP/1.1 206"), "应当转发上游的 206：{text}");
+        assert!(text.contains("AUDIOBYTES"), "应当转发 CDN 的音频字节：{text}");
+        assert!(!text.contains("302 Found"), "302 不该原样转给客户端：{text}");
     }
 }
 
