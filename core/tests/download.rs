@@ -17,6 +17,7 @@ use gently_core::commands::dispatch;
 use gently_core::contract::{ErrorCode, Fallible};
 use gently_core::events::EventSink;
 use gently_core::plugin::{DownloadEvent, DownloadOutcome, HttpRequest, HttpResponse, HttpTransport};
+use gently_core::store::NewDownload;
 use gently_core::{AppPaths, CoreContext, Store};
 use serde_json::{json, Value};
 
@@ -416,6 +417,60 @@ fn remove_clears_partial_files_and_only_deletes_finished_files_when_asked() {
     let cleared = call(&ctx, "download.clearFinished", json!({}));
     assert_eq!(cleared["data"]["removed"], json!(1), "{cleared}");
     assert_eq!(call(&ctx, "download.list", json!({}))["data"], json!([]));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 上次进程被杀/崩溃留下的 `downloading` / `pending` 任务：`download.list` 要**自愈**成 `paused`。
+///
+/// 不自愈的后果（真实用户会看到）：任务永远停在「下载中」，进度不动、点「暂停」被拒、
+/// 点「继续」又被当成已经在跑——只能删掉重下。
+#[test]
+fn interrupted_tasks_are_recovered_as_paused_on_list() {
+    let (ctx, _sink, dir) = setup("recover", FakeTransport::new(4096));
+
+    let store = ctx.store.as_ref().unwrap();
+    let insert = |id: &str, status: &str| {
+        store
+            .insert_download(&NewDownload {
+                id: id.to_string(),
+                reference: format!("dl-source:{id}"),
+                source: "dl-source".to_string(),
+                quality: "standard".to_string(),
+                track: json!({"id": id, "title": "恢复测试", "artist": "歌手"}),
+                path: String::new(),
+            })
+            .unwrap();
+        store.set_download_status(id, status).unwrap();
+    };
+    insert("dl-interrupted", "downloading");
+    insert("dl-queued", "pending");
+    insert("dl-paused", "paused");
+    insert("dl-done", "done");
+
+    let listed = call(&ctx, "download.list", json!({}));
+    let tasks = listed["data"].as_array().unwrap();
+    let status_of = |id: &str| {
+        tasks
+            .iter()
+            .find(|task| task["id"] == json!(id))
+            .map(|task| task["status"].as_str().unwrap_or_default().to_string())
+            .unwrap_or_default()
+    };
+    assert_eq!(status_of("dl-interrupted"), "paused", "{listed}");
+    assert_eq!(status_of("dl-queued"), "paused", "{listed}");
+    assert_eq!(status_of("dl-paused"), "paused", "已暂停的不动：{listed}");
+    assert_eq!(status_of("dl-done"), "done", "已完成的不动：{listed}");
+
+    // 已经落库：下次再列仍然还是 paused（不是每次列表都“看起来”暂停）
+    let again = call(&ctx, "download.list", json!({}));
+    let interrupted = again["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|task| task["id"] == json!("dl-interrupted"))
+        .unwrap();
+    assert_eq!(interrupted["status"], json!("paused"), "{again}");
 
     std::fs::remove_dir_all(&dir).ok();
 }

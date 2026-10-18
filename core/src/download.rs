@@ -144,10 +144,26 @@ struct RemoveParams {
 }
 
 /// `download.list{status?}`：全部任务（可按状态过滤）。
+///
+/// **顺带自愈**：库里状态是 `downloading` / `pending`、但进程里没有对应下载线程的任务，
+/// 说明上次是**被杀/崩溃**结束的（线程随着进程一起没了）。不修正的话，界面上它会永远停在
+/// 「下载中」：进度不动、点「暂停」得到 `invalid_argument`、点「继续」又被当成已经在跑。
+/// 这里就地改成 `paused` 并落库——用户点「继续」即可按已收字节续传。
 pub fn list(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     let params: ListParams = parse_params(params)?;
     let store = require_store(ctx)?;
-    let rows = store.list_downloads()?;
+    let mut rows = store.list_downloads()?;
+
+    for row in rows.iter_mut() {
+        let interrupted = matches!(row.status.as_str(), STATUS_DOWNLOADING | STATUS_PENDING);
+        if interrupted && ctx.downloads.existing(&row.id).is_none() {
+            if store.set_download_status(&row.id, STATUS_PAUSED).is_ok() {
+                tracing::info!(id = %row.id, from = %row.status, "恢复到上次中断的下载任务（标记为暂停）");
+                row.status = STATUS_PAUSED.to_string();
+            }
+        }
+    }
+
     let items: Vec<Value> = rows
         .iter()
         .filter(|row| match params.status.as_deref() {
