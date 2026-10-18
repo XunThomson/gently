@@ -37,6 +37,7 @@ import {Sidebar} from '../src/components/shell/sidebar';
 import {PlayerBar, shouldOpenNowPlaying} from '../src/components/shell/player-bar';
 import {DesktopLyricsApp, type DesktopLyricsPayload} from '../src/widgets/desktop-lyrics';
 import {desktopLyricsPayload} from '../src/hooks/useDesktopLyricsBridge';
+import {clearPets, listPets, PetHost, petPlaybackSnapshot, registerPet} from '../src/pet';
 import {QueuePanel} from '../src/components/shell/player-bar/QueuePanel';
 import {ActionsPanel} from '../src/components/shell/player-bar/ActionsPanel';
 import {SourcePicker} from '../src/components/shell/player-bar/SourcePicker';
@@ -780,6 +781,46 @@ async function main(): Promise<void> {
             shifted.line === '第三句' && shifted.next === '',
             JSON.stringify(shifted),
         );
+    }
+
+    /* 2.x 宠物接口（当前无内置宠物）：宿主零成本、注册表与只读快照可用 */
+    {
+        check('pet: 未注册宠物时宿主不渲染任何东西', renderToString(<PetHost/>) === '');
+
+        const pet = {
+            id: 'smoke-pet',
+            name: '冒烟宠物',
+            version: '0.1.0',
+            mount: () => ({dispose: () => undefined}),
+        };
+        const unregister = registerPet(pet);
+        check(
+            'pet: 注册后宿主出现容器',
+            listPets().length === 1 && renderToString(<PetHost/>).includes('data-pet-host'),
+        );
+        const unregisterReplacement = registerPet({...pet, name: '冒烟宠物（覆盖）'});
+        check('pet: 同 id 覆盖而不是重复', listPets().length === 1 && listPets()[0].name === '冒烟宠物（覆盖）');
+        // 旧注册返回的注销函数不应误删「覆盖后」的新宠物
+        unregister();
+        check('pet: 旧的注销函数不会删掉覆盖后的注册', listPets().length === 1);
+        unregisterReplacement();
+        check('pet: 注销后注册表清空', listPets().length === 0);
+
+        actions.player.play(first, s().library.local);
+        await new Promise((resolve) => setTimeout(resolve, 220));
+        actions.player.setProgress(20, 200);
+        const snapshot = petPlaybackSnapshot();
+        check(
+            'pet: 只读快照含曲目 / 播放态 / 歌词行 / 主题',
+            snapshot.track?.title === first.title &&
+                snapshot.playing &&
+                snapshot.duration === 200 &&
+                snapshot.lyric !== null &&
+                (snapshot.theme === 'light' || snapshot.theme === 'dark'),
+            JSON.stringify(snapshot),
+        );
+        actions.player.stop();
+        clearPets();
     }
 
     /* 歌词解析：核心只交付原文，行数组由前端解析（只有这一份解析器） */

@@ -6,6 +6,7 @@ import {ConfirmHost} from "./components/ui/dialog";
 import {TitleBar} from "./components/shell/title-bar";
 import {Sidebar} from "./components/shell/sidebar";
 import {PlayerBar} from "./components/shell/player-bar";
+import {PetHost} from "./pet";
 import {appRoutes, buildMenuRoutes} from "./router/meta.tsx";
 import {usePlayerEngine} from "./hooks/usePlayerEngine";
 import {useAudioEngine} from "./hooks/useAudioEngine";
@@ -74,6 +75,9 @@ export default function App() {
 
             {/* 全局二次确认（危险操作）：由 useConfirm() 触发 */}
             <ConfirmHost/>
+
+            {/* 2.x 桌面宠物预留宿主：没有注册宠物时渲染 null */}
+            <PetHost/>
         </div>
     );
 }

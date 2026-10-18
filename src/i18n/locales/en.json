@@ -241,7 +241,8 @@
         "done": "Done",
         "error": "Failed"
       },
-      "empty": "No download tasks"
+      "empty": "No download tasks",
+      "reveal": "Reveal in folder"
     },
     "local": {
       "title": "Local Music",

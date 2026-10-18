@@ -4,6 +4,7 @@ import {BadgeCell, DataTable, TextCell, type ColumnDef} from '../../../component
 import {actionsColumn, indexColumn} from '../../../config/table.config';
 import {usePlayRow, useTrackActions} from '../../../hooks/useTrackActions';
 import {useConfirm} from '../../../hooks/useConfirm';
+import {fileService} from '../../../services';
 import {useActions, useDownloadState} from '../../../store';
 import type {DownloadTask} from '../../../types';
 import {ClearFinishedButton} from '../components/ClearFinishedButton';
@@ -68,6 +69,17 @@ export default function DownloadedView() {
             buildActions(task.track, {
                 queue: tracks,
                 extra: [
+                    /* 已下载的文件是用户资产：给一条「在文件夹中显示」的路，
+                       否则用户只能自己猜核心把文件放到了哪 */
+                    ...(task.path
+                        ? [
+                            {
+                                key: 'reveal',
+                                label: t('page.download.reveal'),
+                                onClick: () => void fileService.revealInDir(task.path as string),
+                            },
+                        ]
+                        : []),
                     {
                         key: 'remove',
                         label: t('common.delete'),

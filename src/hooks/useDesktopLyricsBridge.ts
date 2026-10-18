@@ -1,5 +1,5 @@
 import {useEffect, useRef} from 'react';
-import {activeLyricIndex} from '../components/ui/lyrics';
+import {activeLyricIndex} from '../utils/lyrics';
 import {DESKTOP_LYRICS_EVENTS, isTauri} from '../services';
 import {useActions, usePlayerState, useSelect} from '../store';
 import type {PlayerState} from '../store/types';

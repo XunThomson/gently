@@ -2,6 +2,18 @@ import type {Lyrics} from '../api';
 import type {LyricLine} from '../types';
 
 /**
+ * 当前应高亮的行：最后一行满足 `line.time <= elapsed`；早于所有行时返回 -1。
+ *
+ * 歌词页、桌面歌词与（2.x）宠物共用同一份实现——高亮判断只允许一份。
+ */
+export function activeLyricIndex(lines: LyricLine[], elapsed: number): number {
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+        if (lines[i].time <= elapsed) return i;
+    }
+    return -1;
+}
+
+/**
  * 歌词解析：把核心给的**原文**（契约 `Lyrics{format, content, translated?}`）转成
  * 视图要的行数组（`{time, text, translation?}`）。
  *

@@ -1,6 +1,7 @@
 import {useEffect, useRef} from 'react';
 import {useTranslation} from 'react-i18next';
 import type {LyricLine} from '../../../types';
+import {activeLyricIndex} from '../../../utils/lyrics';
 import styles from './Lyrics.module.css';
 
 export interface LyricsProps {
@@ -13,21 +14,8 @@ export interface LyricsProps {
 }
 
 /**
- * 高亮行 = 最后一行满足 line.time <= elapsed（findLastIndex 语义，按数组下标取最后匹配项）；
- * elapsed 早于所有行时为 -1。
- *
- * 导出是因为**桌面歌词窗口**也要用同一套高亮判断——同一算法只留一份实现。
- */
-export function activeLyricIndex(lines: LyricLine[], elapsed: number): number {
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
-        if (lines[i].time <= elapsed) return i;
-    }
-    return -1;
-}
-
-/**
- * 歌词列表：纯展示组件。
- * 数据与跳转行为由调用方注入；滚动定位只在 effect 中触碰 DOM（兼容 SSR 冒烟测试）。
+ * 高亮行算法在 `utils/lyrics.ts`（`activeLyricIndex`）：桌面歌词与 2.x 宠物也用它，
+ * 这里只负责渲染与滚动。
  */
 export function Lyrics({lines, elapsed, onSeek, className}: LyricsProps) {
     const {t} = useTranslation();

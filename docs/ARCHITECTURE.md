@@ -261,6 +261,13 @@ URL 是 `index.html?window=desktop-lyrics`；`main.tsx` 按 query 决定挂载�
 - 事件名用冒号分段（Tauri 字符集约束）；窗口权限在 `capabilities/default.json` 同时授予
   两个窗口（`allow-show` / `allow-hide` / `allow-set-position` / `allow-start-dragging` 等）。
 
+### 桌面宠物扩展点（2.x 预留，当前为空）
+
+`src/pet/` 定义 `PetDefinition`（`mount` / `dispose`）与只读的 `PetContext`
+（播放快照 + 订阅）；`PetHost` 挂在外壳里——没有注册宠物时渲染 `null`，注册后给一个
+覆盖窗口、默认 `pointer-events: none` 的容器由宠物自己挂 DOM。接口边界（纯本地、只读、
+无商店、性能预算）见 `docs/adr/0007-versioning-and-pet-extension.md`；当前版本没有任何内置宠物。
+
 ### 音频播放链路
 
 ```

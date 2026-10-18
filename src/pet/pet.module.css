@@ -1,0 +1,7 @@
+/* 宠物宿主：覆盖窗口但默认不拦截鼠标；宠物自己的可交互元素把 pointer-events 打开即可。 */
+.host {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    pointer-events: none;
+}
