@@ -78,9 +78,20 @@ async function getRecommend() {
     return {isEnd: false, data: [{id: 'r1', title: '推荐曲', artist: '歌手'}]};
 }
 
-async function getFavorites(page) {
+async function getFavorites(page, collection) {
     bump('favorites');
-    return {isEnd: page >= 2, data: [{id: 'f' + page, title: '收藏第 ' + page + ' 页', artist: '歌手'}]};
+    // 第二个参数是「选中的收藏夹/歌单」：不传就是默认列表（插件可以只实现默认列表）
+    const scope = collection ? '/' + collection : '';
+    return {isEnd: page >= 2, data: [{id: 'f' + page, title: '收藏第 ' + page + ' 页' + scope, artist: '歌手'}]};
+}
+
+async function getFavoriteCollections() {
+    bump('collections');
+    return [
+        {id: 'default', title: '默认收藏夹', count: 12},
+        {id: 'fav-anime', title: '动画收藏夹', mediaCount: 3},
+        {title: '缺 id 的收藏夹'},
+    ];
 }
 
 async function getLyric(id) {
@@ -549,6 +560,60 @@ fn favorites_are_normalized_paged_and_never_cached() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// 收藏夹选择（「不同第三方不同策略」的落点）：
+/// 有多个收藏夹的源先列出收藏夹，选中后 `catalog.favorites` 把 id 交给插件的第二个参数。
+#[test]
+fn favorite_collections_are_listed_and_scope_the_favorites_call() {
+    let (ctx, dir) = temp_ctx("favorites-collections");
+    let id = install(&ctx, DETAIL_PLUGIN);
+
+    let collections = call(&ctx, "catalog.favoriteCollections", json!({ "source": "detail-source" }));
+    assert_eq!(collections["ok"], json!(true), "{collections}");
+    let items = collections["data"]["items"].as_array().unwrap();
+    // 缺 id 的收藏夹被丢弃（选中了也取不到内容）
+    assert_eq!(items.len(), 2, "{items:?}");
+    assert_eq!(items[0]["id"], json!("default"));
+    assert_eq!(items[0]["title"], json!("默认收藏夹"));
+    assert_eq!(items[0]["count"], json!(12));
+    assert_eq!(items[1]["count"], json!(3), "mediaCount 归一化成 count");
+    assert_eq!(calls(&ctx, &id, "collections"), 1);
+
+    // 不缓存：再问一次仍然调插件
+    let _ = call(&ctx, "catalog.favoriteCollections", json!({ "source": "detail-source" }));
+    assert_eq!(calls(&ctx, &id, "collections"), 2);
+
+    // 选中收藏夹：第二个参数传进插件，标题里能看出作用域生效
+    let scoped = call(
+        &ctx,
+        "catalog.favorites",
+        json!({ "source": "detail-source", "collectionId": "fav-anime" }),
+    );
+    assert_eq!(scoped["ok"], json!(true), "{scoped}");
+    assert_eq!(scoped["data"]["collectionId"], json!("fav-anime"));
+    assert_eq!(scoped["data"]["items"][0]["title"], json!("收藏第 1 页/fav-anime"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 只有 search 能力的源：收藏夹列表返回**空数组**而不是错误——
+/// 「该源只有一份默认收藏」是正常情况，界面据此隐藏选择器。
+#[test]
+fn favorite_collections_are_empty_when_the_source_does_not_support_them() {
+    let (ctx, dir) = temp_ctx("favorites-collections-empty");
+
+    install(&ctx, SEARCH_ONLY);
+    let value = call(&ctx, "catalog.favoriteCollections", json!({ "source": "search-only" }));
+    assert_eq!(value["ok"], json!(true), "{value}");
+    assert_eq!(value["data"]["items"], json!([]));
+
+    // 未安装的源同样不报错（界面可能拿着旧列表来问）
+    let unknown = call(&ctx, "catalog.favoriteCollections", json!({ "source": "ghost-source" }));
+    assert_eq!(unknown["ok"], json!(true), "{unknown}");
+    assert_eq!(unknown["data"]["items"], json!([]));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// 没有 `getFavorites` 的源：`common.not_implemented`（界面据此隐藏入口），而不是报故障。
 #[test]
 fn favorites_require_the_capability_and_an_enabled_plugin() {
@@ -573,7 +638,8 @@ fn favorites_require_the_capability_and_an_enabled_plugin() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// 缓存写入必须是原子的：坏掉的缓存比没有缓存更糟（会一直读到半截 JSON）。#[test]
+/// 缓存写入必须是原子的：坏掉的缓存比没有缓存更糟（会一直读到半截 JSON）。
+#[test]
 fn broken_cache_entry_falls_back_to_the_plugin() {
     let (ctx, dir) = temp_ctx("broken-cache");
     let id = install(&ctx, DETAIL_PLUGIN);

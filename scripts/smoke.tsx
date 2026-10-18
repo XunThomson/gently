@@ -1507,6 +1507,7 @@ async function main(): Promise<void> {
     const lyricsCalls: Record<string, unknown>[] = [];
     const lyricSearchCalls: Record<string, unknown>[] = [];
     const favoritesCalls: Record<string, unknown>[] = [];
+    const favoriteCollectionCalls: Record<string, unknown>[] = [];
     const savePlaylistCalls: Record<string, unknown>[] = [];
     const skinExportCalls: Record<string, unknown>[] = [];
     const skinImportCalls: Record<string, unknown>[] = [];
@@ -1564,6 +1565,20 @@ async function main(): Promise<void> {
                     failedSources: [],
                     skippedSources: ['search-only'],
                     timedOutSources: [],
+                });
+            }
+            if (command === 'catalog.favoriteCollections') {
+                favoriteCollectionCalls.push(params);
+                // 多收藏夹的源：界面据此显示选择器；只有一份默认收藏的源返回空数组
+                if (params.source !== 'core-source') {
+                    return envelope({source: params.source, items: []});
+                }
+                return envelope({
+                    source: params.source,
+                    items: [
+                        {id: 'default', title: '默认收藏夹', count: 12},
+                        {id: 'fav-anime', title: '动画收藏夹'},
+                    ],
                 });
             }
             if (command === 'catalog.favorites') {
@@ -2337,6 +2352,34 @@ async function main(): Promise<void> {
                     'fake: 源不支持收藏夹时如实带出 not_implemented（不是空列表）',
                     noCapability?.error?.code === 'common.not_implemented' && noCapability.items.length === 0,
                     JSON.stringify(noCapability),
+                );
+
+                /* 收藏夹选择（「不同第三方不同策略」）：先列出来，选中后把 id 交给核心 */
+                favoriteCollectionCalls.length = 0;
+                const collectionList = await catalogService.fetchFavoriteCollections('core-source');
+                check(
+                    'fake: 源的可选收藏夹来自核心（含数量）',
+                    favoriteCollectionCalls.length === 1 &&
+                        collectionList.length === 2 &&
+                        collectionList[0].id === 'default' &&
+                        collectionList[0].count === 12,
+                    JSON.stringify({calls: favoriteCollectionCalls, collectionList}),
+                );
+
+                favoritesCalls.length = 0;
+                const scopedPage = await catalogService.fetchFavoritesFrom('core-source', 1, 'fav-anime');
+                check(
+                    'fake: 选中收藏夹时把 collectionId 交给核心',
+                    favoritesCalls.length === 1 &&
+                        favoritesCalls[0].collectionId === 'fav-anime' &&
+                        scopedPage?.items.length === 1,
+                    JSON.stringify({calls: favoritesCalls, scopedPage}),
+                );
+
+                const noCollections = await catalogService.fetchFavoriteCollections('no-favorites-source');
+                check(
+                    'fake: 只有一份默认收藏的源返回空收藏夹列表（不报错）',
+                    noCollections.length === 0,
                 );
             }
 

@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import type {CoreError, PluginSummary} from '../../../api';
+import type {CoreFavoriteCollection} from '../../../services/core.catalog';
 import {Button} from '../../../components/ui/button';
 import {DataTable, TextCell, type ColumnDef} from '../../../components/ui/data-table';
 import {EmptyState} from '../../../components/ui/empty-state';
@@ -44,6 +45,9 @@ export function SourceFavorites() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<CoreError | null>(null);
     const [loadedOnce, setLoadedOnce] = useState(false);
+    /** 该源的可选收藏夹/歌单：空 = 只有一份默认收藏（不显示选择器） */
+    const [collections, setCollections] = useState<CoreFavoriteCollection[]>([]);
+    const [collection, setCollection] = useState<string>('');
 
     /** 只列出「已启用且实现了 getFavorites」的源：其余源根本没有这个入口 */
     useEffect(() => {
@@ -67,8 +71,26 @@ export function SourceFavorites() {
         };
     }, []);
 
+    /** 切源：重新问一次「这个源有哪些收藏夹」，并把选中项重置到第一个 */
+    useEffect(() => {
+        if (!selected) {
+            setCollections([]);
+            setCollection('');
+            return;
+        }
+        let cancelled = false;
+        void catalogService.fetchFavoriteCollections(selected).then((items) => {
+            if (cancelled) return;
+            setCollections(items);
+            setCollection(items[0]?.id ?? '');
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [selected]);
+
     const load = useCallback(
-        async (sourceId: string, nextPage: number, append: boolean) => {
+        async (sourceId: string, nextPage: number, append: boolean, collectionId?: string) => {
             if (!sourceId) {
                 setRows([]);
                 setHasMore(false);
@@ -77,7 +99,7 @@ export function SourceFavorites() {
             }
             setLoading(true);
             setError(null);
-            const result = await catalogService.fetchFavoritesFrom(sourceId, nextPage);
+            const result = await catalogService.fetchFavoritesFrom(sourceId, nextPage, collectionId);
             setLoading(false);
             setLoadedOnce(true);
             if (!result) {
@@ -102,8 +124,8 @@ export function SourceFavorites() {
 
     useEffect(() => {
         if (!selected) return;
-        void load(selected, 1, false);
-    }, [selected, load]);
+        void load(selected, 1, false, collection || undefined);
+    }, [selected, collection, load]);
 
     const columns: ColumnDef<Track>[] = useMemo(
         () => [
@@ -134,10 +156,33 @@ export function SourceFavorites() {
                     onChange={(value) => setSelected(value)}
                     options={sources.map((source) => ({value: source.id, label: source.name}))}
                 />
-                <Button size="sm" variant="ghost" disabled={loading} onClick={() => void load(selected, 1, false)}>
+                <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={loading}
+                    onClick={() => void load(selected, 1, false, collection || undefined)}
+                >
                     {t('common.refresh')}
                 </Button>
             </div>
+
+            {/* 收藏夹/歌单选择器：只有该源真的有多份收藏时才出现（单份收藏的源不打扰用户） */}
+            {collections.length > 1 && (
+                <div className={styles.sourceBar}>
+                    <UnderlineRadioGroup
+                        name="favorites-collection"
+                        value={collection}
+                        onChange={(value) => setCollection(value)}
+                        options={collections.map((entry) => ({
+                            value: entry.id,
+                            label:
+                                entry.count === undefined
+                                    ? entry.title
+                                    : `${entry.title}（${entry.count}）`,
+                        }))}
+                    />
+                </div>
+            )}
 
             {error ? (
                 <TextCell tone="danger">{errorText(t, error)}</TextCell>
@@ -162,7 +207,12 @@ export function SourceFavorites() {
 
             {hasMore && (
                 <div className={styles.more}>
-                    <Button size="sm" variant="ghost" disabled={loading} onClick={() => void load(selected, page + 1, true)}>
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={loading}
+                        onClick={() => void load(selected, page + 1, true, collection || undefined)}
+                    >
                         {t('page.favorites.loadMore')}
                     </Button>
                 </div>

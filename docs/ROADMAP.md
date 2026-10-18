@@ -416,7 +416,7 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 
 - **M5a 已完成（插件域收尾）**：`core/src/plugin_admin.rs` 落地最后 6 条命令
   （`plugin.config.get/put`、`plugin.credentials.set/clear/status`、`plugin.checkUpdate`），
-  **契约 60 条命令全部点亮**（R54 新增 `catalog.lyricsSearch`、R56 新增两条缓存命令、R59 新增四条授权命令、R60 新增 `catalog.favorites`，现为 68 条）：配置乐观并发（冲突带 `details.current`、不改动已存值、64 KiB 上限）；
+  **契约 60 条命令全部点亮**（R54 新增 `catalog.lyricsSearch`、R56 新增两条缓存命令、R59 新增四条授权命令、R60/R61 新增收藏夹相关两条，现为 69 条）：配置乐观并发（冲突带 `details.current`、不改动已存值、64 KiB 上限）；
   凭据只读写清单声明过的键、`status` 只回「是否已配置」（命令层没有读值出口）；
   检查更新只比对来源（url 下载比对版本+sha256 / catalog 比对本地索引）**绝不自动更新**。
   **已知缺口**：凭据落点仍是内存实现（`keyring` crate 不在离线 registry 缓存里）→ 重启失效，
@@ -504,6 +504,11 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
   `hasMore` 只认 `isEnd:false`，**刻意不缓存**（用户自己的状态随时会变）；前端「我的收藏」拆成
   本机收藏 / 源收藏两个 tab（存在哪儿要分清），源收藏按源切换、刷新、加载更多，错误按码说清楚。
   `pnpm smoke` 346、核心单测 237。
+- **R61 收藏夹选择（不同第三方不同策略）**：ABI 新增可选 `getFavoriteCollections()` 与
+  `getFavorites(page, collectionId?)`；新命令 `catalog.favoriteCollections`（契约 **69 条命令**）。
+  缺能力返回**空数组而不是错误**（只有一份默认收藏的源很常见）；每家怎么列收藏夹留在插件里。
+  前端源收藏面板在该源有多份收藏时出现第二个选择器。顺带修掉一个 `#[test]` 被注释吞掉、
+  **测试从未运行**的静默问题（核心单测 237 → 240）。`pnpm smoke` 349。
 - **退出标准**：安装包在干净环境可启动并完成一次完整链路（导入插件 → 播放 → 扫描 → 收藏）。
   **R20 把这套链路自动化了**（`core/tests/e2e_chain.rs`：走 `dispatch`、真的按 Range 取代理地址、
   重开库验证持久化）；**R30 又把它在真实打包版上人肉点了一遍并留了截图**

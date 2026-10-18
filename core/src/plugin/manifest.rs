@@ -100,6 +100,9 @@ pub enum PluginCapability {
     /// 源侧「我收藏的歌曲」（需要登录：配合 `@oauth` 或插件自带的 cookie/凭据）
     #[serde(rename = "getFavorites")]
     GetFavorites,
+    /// 源侧**可选的收藏夹/歌单**列表（有多个收藏夹的第三方必须实现它，用户才能选中）
+    #[serde(rename = "getFavoriteCollections")]
+    GetFavoriteCollections,
 }
 
 impl PluginCapability {
@@ -115,6 +118,7 @@ impl PluginCapability {
             "getTopList" => Some(Self::GetTopList),
             "getRecommend" => Some(Self::GetRecommend),
             "getFavorites" => Some(Self::GetFavorites),
+            "getFavoriteCollections" => Some(Self::GetFavoriteCollections),
             _ => None,
         }
     }
@@ -131,6 +135,7 @@ impl PluginCapability {
             Self::GetTopList => "getTopList",
             Self::GetRecommend => "getRecommend",
             Self::GetFavorites => "getFavorites",
+            Self::GetFavoriteCollections => "getFavoriteCollections",
         }
     }
 }

@@ -21,9 +21,11 @@ import type {
     TrackQuality,
 } from '../types';
 import type {MusicSourcePlugin} from '../plugins';
+import type {CoreFavoriteCollection} from './core.catalog';
 import {coreAvailable} from './core.bridge';
 import {
     coreAlbum,
+    coreFavoriteCollections,
     coreFavorites,
     coreLyricsSearch,
     corePlaylist,
@@ -262,6 +264,21 @@ export const catalogService = {
     },
 
     /**
+     * 源侧可选的收藏夹/歌单（`catalog.favoriteCollections`）。
+     *
+     * 空数组 = 该源只有一份默认收藏（或没有这个能力）——界面据此隐藏选择器，不报错。
+     */
+    async fetchFavoriteCollections(sourceId: string): Promise<CoreFavoriteCollection[]> {
+        if (!isCoreSource(sourceId)) return [];
+        const result = await coreFavoriteCollections(sourceId);
+        if (result.error) {
+            console.warn('[catalog] 读取收藏夹列表失败', result.error.code);
+            return [];
+        }
+        return result.items;
+    },
+
+    /**
      * 源侧「我收藏的歌曲」（`catalog.favorites`）。
      *
      * 只对**核心认识的源**有意义：`hasFavorites` 是插件运行时探测出的能力，浏览器预览里
@@ -270,6 +287,7 @@ export const catalogService = {
     async fetchFavoritesFrom(
         sourceId: string,
         page = 1,
+        collectionId?: string,
     ): Promise<{
         items: Track[];
         hasMore: boolean;
@@ -277,7 +295,7 @@ export const catalogService = {
         error?: CoreError;
     } | null> {
         if (!isCoreSource(sourceId)) return null;
-        const result = await coreFavorites(sourceId, page);
+        const result = await coreFavorites(sourceId, page, collectionId);
         if (!result.page) return {items: [], hasMore: false, ...(result.error ? {error: result.error} : {})};
         return {
             items: result.page.items,

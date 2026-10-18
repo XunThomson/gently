@@ -64,10 +64,19 @@ struct SourcePageParams {
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct SourceOnlyParams {
+    source: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SourcePageOnlyParams {
     source: String,
     #[serde(default)]
     page: Option<u32>,
+    /// 选中的收藏夹 / 歌单 id（插件没实现 `getFavoriteCollections` 时留空 = 默认列表）
+    #[serde(default)]
+    collection_id: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -295,7 +304,13 @@ pub fn favorites(ctx: &CoreContext, params: Value) -> Fallible<Value> {
 
     // 页码从 1 开始（与 `getTopList` 一致）；0 或非法值按第一页处理
     let page = params.page.filter(|page| *page > 0).unwrap_or(1);
-    let raw = ctx.plugins.call(&params.source, "getFavorites", &json!([page]).to_string())?;
+    // 收藏夹/歌单是「不同第三方不同策略」的落点：插件可以只实现默认列表（不传第二个参数），
+    // 也可以先给出一组可选的收藏夹，由用户选中后带上 id
+    let args = match params.collection_id.as_deref().filter(|id| !id.is_empty()) {
+        Some(collection) => json!([page, collection]),
+        None => json!([page]),
+    };
+    let raw = ctx.plugins.call(&params.source, "getFavorites", &args.to_string())?;
     let value: Value = serde_json::from_str(&raw).map_err(|err| {
         CoreError::new(ErrorCode::PluginRuntimeError, format!("getFavorites 返回的不是合法 JSON：{err}"))
             .with_details(json!({ "source": params.source }))
@@ -306,10 +321,63 @@ pub fn favorites(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     let has_more = value.get("isEnd").and_then(|flag| flag.as_bool()) == Some(false);
     Ok(json!({
         "source": params.source,
+        "collectionId": params.collection_id,
         "items": tracks,
         "hasMore": has_more,
         "nextPage": has_more.then_some(page + 1),
     }))
+}
+
+/// `catalog.favoriteCollections{source}`：源侧**可选的收藏夹/歌单**（第 69 条命令）。
+///
+/// 为什么需要它：不同第三方的「收藏」不是一个东西——有的一家只有一份收藏列表，
+/// 有的是多个收藏夹（视频站的收藏夹/媒体列表）、有的是用户自建的多个歌单。卡片式
+/// 单一列表满足不了后者：用户必须能**选中**自己要看的那一个。
+///
+/// 插件实现 `getFavoriteCollections()` 时返回 `[{id, title, count?}]`；**不实现也能用**
+/// （`catalog.favorites` 直接用默认列表）——因此缺这个能力时这里返回空数组而不是报错，
+/// 界面据此隐藏「收藏夹」选择器。同样**不缓存**（收藏夹名字与数量随时会变）。
+pub fn favorite_collections(ctx: &CoreContext, params: Value) -> Fallible<Value> {
+    let params: SourceOnlyParams = parse_params(params)?;
+
+    // 能力缺失 ≠ 故障：这是「该源只有一份默认收藏」，界面不该弹错误
+    if !has_capability(ctx, &params.source, PluginCapability::GetFavoriteCollections)? {
+        return Ok(json!({ "source": params.source, "items": [] }));
+    }
+
+    let raw = ctx.plugins.call(&params.source, "getFavoriteCollections", "[]")?;
+    let value: Value = serde_json::from_str(&raw).map_err(|err| {
+        CoreError::new(
+            ErrorCode::PluginRuntimeError,
+            format!("getFavoriteCollections 返回的不是合法 JSON：{err}"),
+        )
+        .with_details(json!({ "source": params.source }))
+    })?;
+
+    let items: Vec<Value> = list_items(&value)
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|item| {
+            // id 是必需的：没有 id 的收藏夹选中了也没法取内容
+            let id = pick_text(&[item], &["id", "key", "folderId", "mediaId"])?;
+            let mut map = serde_json::Map::new();
+            map.insert("id".into(), json!(id));
+            map.insert(
+                "title".into(),
+                json!(pick_text(&[item], &["title", "name"]).unwrap_or_else(|| id.clone())),
+            );
+            if let Some(count) = item
+                .get("count")
+                .or_else(|| item.get("mediaCount"))
+                .and_then(Value::as_u64)
+            {
+                map.insert("count".into(), json!(count));
+            }
+            Some(Value::Object(map))
+        })
+        .collect();
+
+    Ok(json!({ "source": params.source, "items": items }))
 }
 
 /// `catalog.lyrics{ref, withTranslation?}`：歌词；**无词返回 `data: null`**（不是错误）。
@@ -611,6 +679,26 @@ fn ready_source(ctx: &CoreContext, source: &str, capability: PluginCapability) -
             json!({ "source": source, "capability": function_of(capability) }),
         )),
     }
+}
+
+/// 「这个源现在有某能力吗」——**不报错**的版本，用于「可选能力」的探测
+/// （缺能力是常态：不是每个源都有收藏夹/收藏夹列表）。
+fn has_capability(
+    ctx: &CoreContext,
+    source: &str,
+    capability: PluginCapability,
+) -> Fallible<bool> {
+    // 能力来自**运行时探测**：没加载就没有能力表（搜索/详情命令都会先走这一步）
+    crate::catalog::ensure_loaded(ctx)?;
+    let Some(store) = ctx.store.as_ref() else { return Ok(false) };
+    let Some(record) = store.get_plugin(source)? else { return Ok(false) };
+    if !record.enabled {
+        return Ok(false);
+    }
+    Ok(ctx
+        .plugins
+        .capabilities(source)
+        .is_some_and(|capabilities| capabilities.contains(&capability)))
 }
 
 fn function_of(capability: PluginCapability) -> &'static str {

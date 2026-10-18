@@ -291,9 +291,34 @@ export async function coreRecommend(source: string): Promise<Track[] | null> {
 /** 源侧收藏夹的一页（`catalog.favorites`）：`hasMore` 来自插件的 `isEnd`。 */
 export interface CoreFavoritesPage {
     source: string;
+    collectionId?: string | null;
     items: Track[];
     hasMore: boolean;
     nextPage?: number | null;
+}
+
+/** 源侧一个可选收藏夹 / 歌单（`catalog.favoriteCollections`）。 */
+export interface CoreFavoriteCollection {
+    id: string;
+    title: string;
+    count?: number;
+}
+
+/**
+ * 源侧可选收藏夹/歌单。
+ *
+ * **不支持时是空数组，不是错误**：只有一份默认收藏的源很常见，界面据此隐藏选择器。
+ * 与收藏列表一样**不缓存**（收藏夹名字与数量随时会变）。
+ */
+export async function coreFavoriteCollections(
+    source: string,
+): Promise<{items: CoreFavoriteCollection[]; error?: CoreError}> {
+    if (!coreAvailable()) return {items: []};
+    const result = await invokeCore<{source: string; items: CoreFavoriteCollection[]}>(
+        'catalog.favoriteCollections',
+        {source},
+    );
+    return result.ok ? {items: result.data.items} : {items: [], error: result.error};
 }
 
 /**
@@ -303,14 +328,20 @@ export interface CoreFavoritesPage {
  * `source.auth_expired` 要变成「需要登录」——都返回 null 的话，界面只能给出
  * 一句「拿不到」，用户不知道该去授权还是该换个源。
  *
+ * `collectionId` 是用户选中的收藏夹/歌单（来自 `coreFavoriteCollections`）；不传 = 默认列表。
  * **不缓存**：收藏是用户自己的状态，缓存会显示已经取消的收藏（核心侧同理）。
  */
 export async function coreFavorites(
     source: string,
     page = 1,
+    collectionId?: string,
 ): Promise<{page: CoreFavoritesPage | null; error?: CoreError}> {
     if (!coreAvailable()) return {page: null};
-    const result = await invokeCore<CoreFavoritesPage>('catalog.favorites', {source, page});
+    const result = await invokeCore<CoreFavoritesPage>('catalog.favorites', {
+        source,
+        page,
+        ...(collectionId ? {collectionId} : {}),
+    });
     return result.ok ? {page: result.data} : {page: null, error: result.error};
 }
 

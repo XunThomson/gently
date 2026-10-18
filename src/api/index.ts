@@ -272,7 +272,9 @@ export type PluginCapability =
     | 'getTopList'
     | 'getRecommend'
     /** 源侧收藏夹（需要登录的源才有；`catalog.favorites` 读它） */
-    | 'getFavorites';
+    | 'getFavorites'
+    /** 源侧可选收藏夹/歌单列表（有多个收藏夹的第三方才需要） */
+    | 'getFavoriteCollections';
 
 /** 已安装插件的完整信息 */
 export interface PluginSummary extends PluginInfo {
@@ -539,6 +541,38 @@ export interface CatalogApi {
     lyrics(input: {ref: string; withTranslation?: boolean}): Promise<CoreResult<Lyrics | null>>;
     /** 跨源按关键词找歌词（手动选择用：带来源与候选曲目信息） */
     lyricsSearch(input: {query: string; limit?: number}): Promise<CoreResult<LyricSearchResult>>;
+    /**
+     * 源侧可选收藏夹/歌单（`getFavoriteCollections`）。**不支持时返回空数组**，不是错误：
+     * 只有一份默认收藏的源很常见，界面据此隐藏选择器。
+     */
+    favoriteCollections(input: {source: string}): Promise<CoreResult<FavoriteCollectionsResult>>;
+    /**
+     * 源侧收藏夹的一页。`collectionId` 来自 `favoriteCollections`；不传 = 源自己的默认列表。
+     * **不缓存**：收藏随时会在别处变动。
+     */
+    favorites(input: {source: string; page?: number; collectionId?: string})
+        : Promise<CoreResult<SourceFavoritesPage>>;
+}
+
+/** 源侧一个可选收藏夹 / 歌单 */
+export interface FavoriteCollection {
+    id: string;
+    title: string;
+    count?: number;
+}
+
+export interface FavoriteCollectionsResult {
+    source: string;
+    items: FavoriteCollection[];
+}
+
+/** 源侧收藏夹的一页（`hasMore` 来自插件的 `isEnd`） */
+export interface SourceFavoritesPage {
+    source: string;
+    collectionId?: string | null;
+    items: Track[];
+    hasMore: boolean;
+    nextPage?: number | null;
 }
 
 export interface LibraryApi {
