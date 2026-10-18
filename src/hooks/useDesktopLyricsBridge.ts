@@ -104,11 +104,21 @@ export function useDesktopLyricsBridge(): void {
         };
     }, [setDesktopLyricsOpen]);
 
-    /* 行 / 曲目 / 播放态变化时立即推一次，不等到下一次心跳 */
+    /* 行 / 曲目 / 播放态变化时立即推一次，不等到下一次心跳。
+       偏移也算：暂停时调偏移，`active` 可能不变，但桌上那行必须马上跟着挪（否则要等 1s 心跳，
+       用户会以为「校正没生效」）。 */
     useEffect(() => {
         if (!isTauri()) return;
         void events().then(({emit}) => {
             void emit(DESKTOP_LYRICS_EVENTS.update, payloadRef.current);
         });
-    }, [currentId, active, player.playing, player.lyrics.length, source, themeMode]);
+    }, [
+        currentId,
+        active,
+        player.playing,
+        player.lyrics.length,
+        player.lyricsOffset,
+        source,
+        themeMode,
+    ]);
 }

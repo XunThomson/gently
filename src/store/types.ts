@@ -65,6 +65,13 @@ export interface LyricSourceInfo {
     /** 这份歌词对应的曲目标题 / 歌手（各源同名歌曲可能不一致，界面要能区分） */
     title: string;
     artist: string;
+    /**
+     * 该插件内的曲目 id（手动挑选时才带）。
+     *
+     * 有了它才能拼出 `source:trackId` 的歌词引用、把「手动挑的来路」按曲目记住
+     * （`utils/lyricsSyncCache.ts`）——下次播放同一首时先按这条来路取词。
+     */
+    trackId?: string;
 }
 
 export interface PlayerState {
@@ -305,8 +312,22 @@ export interface PlayerActions {
      * 会覆盖自动加载的歌词；在本次播放内不再被自动加载覆盖。
      */
     applyLyrics: (lines: LyricLine[], source: LyricSourceInfo) => void;
+    /**
+     * 忘掉手动挑的歌词来路，回到「源自动给的词」。
+     *
+     * 校正过的偏移**保留**：它仍可能适用于源给的词（同一首、同一版本），
+     * 由用户自己决定要不要一起归零。
+     */
+    restoreAutoLyrics: () => void;
     /** 设置歌词时间轴偏移（秒，正 = 歌词比音频晚）；按当前曲目持久化 */
     setLyricsOffset: (seconds: number) => void;
+    /**
+     * 在当前偏移上增减（秒）。
+     *
+     * 校正按钮与方向键都走这里：连点时每次都读到**最新**偏移，而不是闭包里那份旧值
+     * （连续点 5 下 +0.1 只加一次 0.1 是这类 UI 最常见的坑）。
+     */
+    nudgeLyricsOffset: (delta: number) => void;
     /* ---- 队列控制 ---- */
     /** 从队列移除（当前曲目不可移除） */
     removeFromQueue: (trackId: string) => void;

@@ -13,8 +13,20 @@ const MAX_ENTRIES = 500;
 
 /** 偏移上限（秒）：超过这个范围基本是选错了歌词，而不是对不齐 */
 export const LYRICS_OFFSET_LIMIT_SEC = 30;
-/** 校正按钮的步长（秒）：0.5s 足够跟上常见的前奏/延迟差异 */
+/** 粗调步长（秒）：0.5s 足够跟上常见的前奏/延迟差异 */
 export const LYRICS_OFFSET_STEP_SEC = 0.5;
+/** 细调步长（秒）：0.5s 调不准时（逐字/短句）再走 0.1s —— 存储本来就保留 1 位小数 */
+export const LYRICS_OFFSET_FINE_STEP_SEC = 0.1;
+
+/**
+ * 方向键微调：`→` 让歌词**更晚**、`←` 更早（Shift = 粗调）。
+ * 返回 `null` 表示这个键不归歌词校正管（调用方不要拦它）。
+ */
+export function lyricsOffsetForKey(key: string, shiftKey: boolean): number | null {
+    if (key !== 'ArrowLeft' && key !== 'ArrowRight') return null;
+    const step = shiftKey ? LYRICS_OFFSET_STEP_SEC : LYRICS_OFFSET_FINE_STEP_SEC;
+    return key === 'ArrowRight' ? step : -step;
+}
 
 /** 把任意输入钳成合法偏移（保留 1 位小数） */
 export function clampLyricsOffset(seconds: number): number {

@@ -462,11 +462,20 @@
       "useLyrics": "使用",
       "lyricsSourceAuto": "自动匹配（当前曲目的源）",
       "lyricsSourceTrack": "{{source}} · {{title}}",
-      "lyricsOffset": "歌词偏移",
-      "lyricsOffsetHint": "歌词比声音早或晚时，用 ±0.5 秒校正；每首歌各自记住。",
+      "lyricsOffsetHint": "歌词比声音早或晚时，先用 0.1 秒细调、再用 0.5 秒粗调；每首歌各自记住。",
       "lyricsOffsetReset": "归零",
       "lyricsOffsetValue": "{{value}} 秒",
-      "lyricsApplied": "已使用「{{title}}」的歌词"
+      "lyricsApplied": "已使用「{{title}}」的歌词",
+      "toolsToggle": "歌词工具",
+      "syncTitle": "时间轴校正",
+      "syncRemembered": "只对这一首生效，已记住",
+      "syncEarlier": "− 更早",
+      "syncLater": "＋ 更晚",
+      "syncKeys": "← → 微调 0.1 秒，按住 Shift 调 0.5 秒",
+      "sourceTitle": "歌词来源",
+      "sourceManual": "这份歌词是你手动挑的，已记住：下次播放这首会自动使用。",
+      "sourceAutoHint": "用的是这首曲目自己的源；下面的搜索可以换一份。",
+      "restoreAuto": "改回源歌词"
     },
     "setting": {
       "title": "设置",

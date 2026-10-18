@@ -118,7 +118,7 @@
     color: var(--text-secondary);
 }
 
-/* 标题 + 来源 + 「搜索歌词」按钮同一行；来源过长时省略，不把按钮挤出卡片 */
+/* 标题 + 「歌词工具」按钮同一行；标题过长时省略，不把按钮挤出卡片 */
 .lyricsHeader {
     display: flex;
     align-items: center;
@@ -127,33 +127,105 @@
     flex-wrap: wrap;
 }
 
-.headerActions {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    min-width: 0;
-}
+/* ---------- 工具抽屉（默认收起，首次展开才挂载） ---------- */
 
-.sourceChip {
-    max-width: 260px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: var(--font-size-xs);
-    color: var(--text-tertiary);
-}
-
-/* ---------- 歌词搜索面板 ---------- */
-
-.searchPanel {
+.drawer {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: var(--space-3);
+    /* 卡片高度固定，抽屉自己滚动：展开时把歌词区挤小，而不是把内容顶出卡片。
+       「搜索」那格要放下输入框 + 说明 + 结果列表，所以上限给到 66%（歌词区留 ~100px） */
+    flex: none;
+    max-height: min(430px, 66%);
+    overflow-y: auto;
     padding: var(--space-3);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
     background: var(--bg-surface-alt);
 }
+
+/* 收起时只是「藏起来」，不卸载：刚搜到的结果与关键词留着 */
+.drawer[hidden] {
+    display: none;
+}
+
+/* 分格：每格一屏放得下（竖排三段会把搜索挤到要滚动才看得见的地方） */
+.tabs {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex-wrap: wrap;
+}
+
+.tab {
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--text-tertiary);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.tab:hover {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+}
+
+.tab[data-active='true'] {
+    background: var(--bg-surface);
+    border-color: var(--border-default);
+    color: var(--text-primary);
+    font-weight: var(--font-weight-medium);
+}
+
+.block[hidden] {
+    display: none;
+}
+
+.block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.block + .block {
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-subtle);
+}
+
+.blockHead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.blockTitle {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+}
+
+.blockHint {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.toolsChevron {
+    display: inline-flex;
+    transition: transform var(--motion-fast);
+}
+
+.toolsChevron[data-open='true'] {
+    transform: rotate(180deg);
+}
+
+/* ---------- 歌词搜索面板 ---------- */
 
 .searchForm {
     display: flex;
@@ -188,7 +260,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-    max-height: 150px;
+    max-height: 132px;
     overflow-y: auto;
     margin: 0;
     padding: 0;
@@ -256,8 +328,19 @@
     color: var(--text-tertiary);
 }
 
-.syncLabel {
-    color: var(--text-secondary);
+.syncLegend {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.syncKeys {
+    color: var(--text-tertiary);
+    opacity: 0.85;
 }
 
 .offsetValue {
@@ -265,6 +348,31 @@
     text-align: center;
     font-family: var(--font-mono);
     color: var(--text-primary);
+}
+
+/* 没校正过时压低对比度：一眼看出「这首还没调」 */
+.offsetValue[data-zero='true'] {
+    color: var(--text-tertiary);
+}
+
+.sourceLine {
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+}
+
+.manualRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.manualHint {
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+    color: var(--text-tertiary);
 }
 
 .syncHint {
@@ -279,7 +387,7 @@
 /* 歌词滚动区：占满剩余高度（固定高度的卡片里必须能收缩，否则会把工具行挤出去） */
 .lyricsBody {
     flex: 1;
-    min-height: 0;
+    min-height: 96px;
 }
 
 @media (max-width: 900px) {

@@ -185,6 +185,21 @@ export const libraryService = {
         return makeLyrics(track);
     },
 
+    /**
+     * 按**引用**取歌词（`source:rawId`，可以不是当前曲目自己的源）。
+     *
+     * 用于恢复用户手动挑过的那一份歌词（`utils/lyricsSyncCache.ts` 的 `appliedLyricsRef`）。
+     * 取不到就返回 `null`——插件被卸载、源不再给词、或根本没有核心，都由调用方退回
+     * 「源自动给的词」，而不是把空歌词当成「这首没有词」写进播放状态。
+     */
+    async loadLyricsFrom(reference: string): Promise<LyricLine[] | null> {
+        if (!coreAvailable() || !reference.includes(':')) return null;
+        const viaCore = await coreLyrics(reference, true);
+        if (!viaCore) return null;
+        const lines = toLyricLines(viaCore);
+        return lines.length > 0 ? lines : null;
+    },
+
     /* ---------------- 写入（桌面端落核心；浏览器端安全空操作） ---------------- */
 
     /** 收藏/取消收藏（带上曲目快照，插件被卸载后收藏列表仍能显示） */

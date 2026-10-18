@@ -27,6 +27,8 @@ import {filterGroupsBySource, groupTracks} from '../src/utils/track';
 import {toLyricLines} from '../src/utils/lyrics';
 import {coverStyle, trackCoverStyle} from '../src/utils/cover';
 import type {Track, TrackQuality} from '../src/types';
+import type {PluginSummary} from '../src/api';
+import {rememberCoreSources as rememberCoreSourceList} from '../src/services/core.sources';
 import {canDownload} from '../src/hooks/useTrackActions';
 import {pickQuality, pickQualityWithFallback} from '../src/utils/quality';
 import {getThemeSkin, parseSkin, resolveTheme as resolveSkin, serializeSkin} from '../src/theme';
@@ -43,6 +45,19 @@ import {
     placeLyrics,
 } from '../src/utils/lyricsWindowPosition';
 import {lyricLineProgress} from '../src/utils/lyrics';
+import {
+    LYRICS_OFFSET_FINE_STEP_SEC,
+    LYRICS_OFFSET_STEP_SEC,
+    lyricsOffsetForKey,
+} from '../src/utils/lyricsOffset';
+import {
+    appliedLyricsRef,
+    clearLyricsChoice,
+    rawTrackIdOf,
+    readLyricsSync,
+    saveLyricsChoice,
+    saveLyricsQuery,
+} from '../src/utils/lyricsSyncCache';
 import {
     LYRICS_SETTINGS_KEY,
     readLyricsWindowSettings,
@@ -77,6 +92,7 @@ import {DownloadMark} from '../src/components/ui/download-mark';
 import PlaylistView from '../src/views/playlist';
 import CollectionView from '../src/views/collection';
 import NowPlayingView from '../src/views/now-playing';
+import {LyricsToolsDrawer} from '../src/views/now-playing/components/LyricsToolsDrawer';
 import SearchView from '../src/views/search';
 import {
     coreAlbum,
@@ -744,6 +760,21 @@ async function main(): Promise<void> {
     actions.player.setLyricsOffset(999);
     check('store: 歌词偏移被钳到上限（不产生荒谬值）', s().player.lyricsOffset === 30);
     actions.player.setLyricsOffset(0);
+
+    /* 连续微调：每次都基于**最新**偏移累加（闭包里的旧值会让连点 5 下只生效 1 下） */
+    {
+        actions.player.nudgeLyricsOffset(LYRICS_OFFSET_FINE_STEP_SEC);
+        actions.player.nudgeLyricsOffset(LYRICS_OFFSET_FINE_STEP_SEC);
+        actions.player.nudgeLyricsOffset(-LYRICS_OFFSET_STEP_SEC);
+        check(
+            'store: 连续微调按最新值累加',
+            Math.abs(s().player.lyricsOffset - (LYRICS_OFFSET_FINE_STEP_SEC * 2 - LYRICS_OFFSET_STEP_SEC)) < 1e-9,
+            String(s().player.lyricsOffset),
+        );
+        actions.player.nudgeLyricsOffset(999);
+        check('store: 连续微调也被钳在上限内', s().player.lyricsOffset === 30);
+        actions.player.setLyricsOffset(0);
+    }
     check(
         'store: 切歌后读回该曲目的偏移（默认 0）',
         (() => {
@@ -843,6 +874,190 @@ async function main(): Promise<void> {
         check('lyrics: 行进度在开始前为 0、结束后为 1', lyricLineProgress(10, 20, 5) === 0 && lyricLineProgress(10, 20, 25) === 1);
         check('lyrics: 退化区间（同一时间戳）不会算出负数', lyricLineProgress(10, 10, 9) === 0 && lyricLineProgress(10, 10, 11) === 1);
         check('lyrics: 非法输入一律 0', lyricLineProgress(Number.NaN, 20, 15) === 0);
+    }
+
+    /* 歌词工具抽屉：方向键微调（纯函数）+ 同步参数缓存 */
+    {
+        check(
+            'lyrics: 方向键微调（→ 更晚 / ← 更早，Shift 粗调，其它键不接管）',
+            lyricsOffsetForKey('ArrowRight', false) === LYRICS_OFFSET_FINE_STEP_SEC &&
+                lyricsOffsetForKey('ArrowLeft', false) === -LYRICS_OFFSET_FINE_STEP_SEC &&
+                lyricsOffsetForKey('ArrowRight', true) === LYRICS_OFFSET_STEP_SEC &&
+                lyricsOffsetForKey('ArrowUp', false) === null &&
+                lyricsOffsetForKey('a', true) === null,
+        );
+
+        const globalScope = globalThis as unknown as {localStorage?: Storage};
+        const backup = globalScope.localStorage;
+        const values = new Map<string, string>();
+        globalScope.localStorage = {
+            getItem: (key: string) => values.get(key) ?? null,
+            setItem: (key: string, value: string) => void values.set(key, String(value)),
+            removeItem: (key: string) => void values.delete(key),
+            clear: () => values.clear(),
+            key: (index: number) => [...values.keys()][index] ?? null,
+            get length() {
+                return values.size;
+            },
+        } as Storage;
+
+        const choice = {
+            source: 'src-a',
+            trackId: '42',
+            sourceName: '源 A',
+            title: '那首歌',
+            artist: '那个人',
+        };
+        saveLyricsChoice('local:42', choice);
+        check(
+            'lyrics sync: 记住手动挑的歌词来路',
+            readLyricsSync('local:42').applied?.sourceName === '源 A' &&
+                readLyricsSync('local:42').applied?.trackId === '42',
+            JSON.stringify(readLyricsSync('local:42')),
+        );
+        check('lyrics sync: 来路能拼成歌词引用', appliedLyricsRef(choice) === 'src-a:42');
+        /* 核心给的 `track.id` 已经是 `source:rawId`：原样存进来也必须拼成同一条引用，
+           否则会拼出 `src-a:src-a:42` 这种永远取不到词的引用（R68 实测踩过） */
+        check(
+            'lyrics sync: 完整引用形态也能拼对（不重复加前缀）',
+            appliedLyricsRef({...choice, trackId: 'src-a:42'}) === 'src-a:42' &&
+                rawTrackIdOf('src-a', 'src-a:42') === '42' &&
+                rawTrackIdOf('src-a', '42') === '42',
+            appliedLyricsRef({...choice, trackId: 'src-a:42'}),
+        );
+
+        saveLyricsQuery('local:42', '  海阔天空  ');
+        check(
+            'lyrics sync: 关键词去掉首尾空白后记住，且不覆盖来路',
+            readLyricsSync('local:42').query === '海阔天空' && readLyricsSync('local:42').applied?.source === 'src-a',
+            JSON.stringify(readLyricsSync('local:42')),
+        );
+
+        clearLyricsChoice('local:42');
+        check(
+            'lyrics sync: 忘掉来路但保留关键词',
+            readLyricsSync('local:42').applied === undefined && readLyricsSync('local:42').query === '海阔天空',
+            JSON.stringify(readLyricsSync('local:42')),
+        );
+
+        values.set('gently:lyrics-sync', '{坏的 JSON');
+        check('lyrics sync: 坏数据按空处理（不抛异常）', Object.keys(readLyricsSync('local:42')).length === 0);
+        values.set(
+            'gently:lyrics-sync',
+            JSON.stringify({'local:42': {applied: {source: 'x'}, query: '  '}}),
+        );
+        check(
+            'lyrics sync: 字段不全的来路与空关键词被丢弃',
+            readLyricsSync('local:42').applied === undefined && readLyricsSync('local:42').query === undefined,
+        );
+
+        if (backup === undefined) delete globalScope.localStorage;
+        else globalScope.localStorage = backup;
+    }
+
+    /* 记住的来路要真的用上：播放同一首时先按这条来路取词，而不是源自动给的词 */
+    {
+        const cached = {...s().library.local[0], id: 'zz-cached:777', source: 'zz-cached'};
+        const refs: string[] = [];
+        const globalScope = globalThis as unknown as {localStorage?: Storage};
+        const backup = globalScope.localStorage;
+        const values = new Map<string, string>();
+        globalScope.localStorage = {
+            getItem: (key: string) => values.get(key) ?? null,
+            setItem: (key: string, value: string) => void values.set(key, String(value)),
+            removeItem: (key: string) => void values.delete(key),
+            clear: () => values.clear(),
+            key: (index: number) => [...values.keys()][index] ?? null,
+            get length() {
+                return values.size;
+            },
+        } as Storage;
+        saveLyricsChoice('zz-cached:777', {
+            source: 'remembered-src',
+            /* 故意用**完整引用**形态：核心给的 `item.track.id` 就是这样，必须归一化后再拼 */
+            trackId: 'remembered-src:remembered-track',
+            sourceName: '记住的源',
+            title: '记住的标题',
+            artist: '记住的歌手',
+        });
+        /* 让「自动歌词」这条路真的会问核心：核心要认得这个源（`isCoreSource` 的判定依据） */
+        rememberCoreSourceList([{id: 'zz-cached', enabled: true} as unknown as PluginSummary]);
+
+        await withFakeCore(
+            (command, params) => {
+                if (command === 'catalog.lyrics') {
+                    refs.push(String((params as {ref?: string}).ref ?? ''));
+                    return envelope({format: 'lrc', content: '[00:01.00]记住的那一句'});
+                }
+                return failure('common.not_found', `未预置：${command}`);
+            },
+            async () => {
+                actions.player.play(cached, [cached]);
+                await new Promise((resolve) => setTimeout(resolve, 60));
+                check(
+                    'store: 播放时先按记住的来路取词（而不是源自动的词）',
+                    refs.includes('remembered-src:remembered-track') &&
+                        s().player.lyrics[0]?.text === '记住的那一句' &&
+                        s().player.lyricsSource?.sourceName === '记住的源',
+                    JSON.stringify({refs, lines: s().player.lyrics, source: s().player.lyricsSource}),
+                );
+
+                actions.player.restoreAutoLyrics();
+                await new Promise((resolve) => setTimeout(resolve, 60));
+                check(
+                    'store: 「改回源歌词」清掉缓存并回到源自动的词',
+                    readLyricsSync('zz-cached:777').applied === undefined &&
+                        refs.some((ref) => ref === 'zz-cached:777'),
+                    JSON.stringify(refs),
+                );
+                actions.player.stop();
+            },
+        );
+
+        /* 撤离时把「核心认识的源」也清掉，后面的用例仍按浏览器模式跑 */
+        rememberCoreSourceList(null);
+        if (backup === undefined) delete globalScope.localStorage;
+        else globalScope.localStorage = backup;
+    }
+
+    /* 歌词页：工具抽屉默认**不挂载**（惰性），展开后才出现搜索框与校正按钮 */
+    {
+        actions.player.play(first, s().library.local);
+        const page = renderToString(
+            <MemoryRouter>
+                <ThemeProvider>
+                    <NowPlayingView/>
+                </ThemeProvider>
+            </MemoryRouter>,
+        );
+        check(
+            'now-playing: 默认收起时工具抽屉不挂载（歌词页只有封面 + 歌词）',
+            !page.includes('type="text"') && page.includes(first.title.slice(0, 1)),
+            page.length.toString(),
+        );
+
+        const closed = renderToString(<LyricsToolsDrawer open={false}/>);
+        const opened = renderToString(<LyricsToolsDrawer open/>);
+        check(
+            'now-playing: 抽屉收起时只隐藏不卸载',
+            closed.includes('hidden') && !opened.includes('hidden'),
+            JSON.stringify({closedHidden: closed.includes('hidden')}),
+        );
+        check(
+            'now-playing: 抽屉默认只挂「时间轴校正」一格（搜索那格惰性挂载）',
+            opened.includes('role="tablist"') &&
+                (opened.match(/role="tab"/g) ?? []).length === 3 &&
+                !opened.includes('type="text"'),
+            String((opened.match(/role="tab"/g) ?? []).length),
+        );
+
+        /* 校正按钮的步长：细调 0.1 / 粗调 0.5 都在（文案随语言，按 aria-label 断） */
+        check(
+            'now-playing: 抽屉里同时有细调与粗调按钮',
+            opened.includes(`aria-label="-${LYRICS_OFFSET_FINE_STEP_SEC}"`) &&
+                opened.includes(`aria-label="+${LYRICS_OFFSET_STEP_SEC}"`),
+            opened.length.toString(),
+        );
     }
 
     /* 桌面歌词显示设置：默认值保守（不透明 / 关闭逐字），坏数据退回默认 */

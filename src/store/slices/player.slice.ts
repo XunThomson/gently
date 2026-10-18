@@ -2,6 +2,13 @@ import {appConfig} from '../../config/app.config';
 import {audioEngine, catalogService, libraryService} from '../../services';
 import type {GroupedTrack, NowPlaying, Track, TrackCandidate} from '../../types';
 import {clampLyricsOffset, readLyricsOffset, writeLyricsOffset} from '../../utils/lyricsOffset';
+import {
+    appliedLyricsRef,
+    clearLyricsChoice,
+    readLyricsSync,
+    saveLyricsChoice,
+    type AppliedLyricsChoice,
+} from '../../utils/lyricsSyncCache';
 import type {LyricSourceInfo, PlayerActions, PlayerState, StoreCtx} from '../types';
 
 let playSeq = 0;
@@ -75,20 +82,51 @@ export function createPlayerSlice(ctx: StoreCtx) {
         artist: track.artist,
     });
 
-    /** 异步加载歌词；切歌后丢弃过期结果，手动选过的歌词不被覆盖 */
+    /** 缓存里的来路 → 播放状态里的来路 */
+    const rememberedSource = (choice: AppliedLyricsChoice): LyricSourceInfo => ({
+        source: choice.source,
+        sourceName: choice.sourceName,
+        title: choice.title,
+        artist: choice.artist,
+        trackId: choice.trackId,
+    });
+
+    /**
+     * 异步加载歌词；切歌后丢弃过期结果，手动选过的歌词不被覆盖。
+     *
+     * 顺序：**手动挑过的来路优先**（`utils/lyricsSyncCache.ts`）——用户校准过的偏移是对着那份词量的，
+     * 回来播放同一首却换成源给的词，等于把上次的校正作废。来路取不到（插件卸载 / 源不再给词）
+     * 才退回源自动给的词，并**不清掉**缓存：插件装回来时仍然生效。
+     */
     const loadLyrics = async (track: Track, playId: number) => {
+        const stillWanted = () =>
+            ctx.getState().player.current?.playId === playId && manualLyricsPlayId !== playId;
+
+        const remembered = readLyricsSync(track.id).applied;
+        if (remembered) {
+            try {
+                const cached = await libraryService.loadLyricsFrom(appliedLyricsRef(remembered));
+                if (!stillWanted()) return;
+                if (cached) {
+                    patch({lyrics: cached, lyricsSource: rememberedSource(remembered)});
+                    return;
+                }
+            } catch (err) {
+                console.warn('[player] 记住的歌词来路取词失败，退回源歌词', err);
+                if (!stillWanted()) return;
+            }
+        }
+
         try {
             const lyrics = await libraryService.loadLyrics(track);
-            if (ctx.getState().player.current?.playId !== playId) return;
-            if (manualLyricsPlayId === playId) return;
+            if (!stillWanted()) return;
             patch({
                 lyrics,
                 lyricsSource: lyrics.length > 0 ? autoLyricSource(track) : null,
             });
         } catch (err) {
             console.warn('[player] 歌词加载失败', err);
-            if (ctx.getState().player.current?.playId !== playId) return;
-            if (manualLyricsPlayId === playId) return;
+            if (!stillWanted()) return;
             patch({lyrics: [], lyricsSource: null});
         }
     };
@@ -395,11 +433,39 @@ export function createPlayerSlice(ctx: StoreCtx) {
             if (!current) return;
             manualLyricsPlayId = current.playId;
             patch({lyrics: lines, lyricsSource: source});
+            /* 记住「这首曲目的词是从哪挑来的」：下次播放同一首先按这条来路取词，
+               否则用户校准好的偏移会跟着源给的词一起失效 */
+            if (source.trackId) {
+                saveLyricsChoice(current.id, {
+                    source: source.source,
+                    trackId: source.trackId,
+                    sourceName: source.sourceName,
+                    title: source.title,
+                    artist: source.artist,
+                });
+            }
+        },
+
+        restoreAutoLyrics() {
+            const {current} = ctx.getState().player;
+            if (!current) return;
+            clearLyricsChoice(current.id);
+            manualLyricsPlayId = null;
+            patch({lyrics: [], lyricsSource: null});
+            void loadLyrics(current, current.playId);
         },
 
         setLyricsOffset(seconds) {
             const {current} = ctx.getState().player;
             const value = clampLyricsOffset(seconds);
+            patch({lyricsOffset: value});
+            if (current) writeLyricsOffset(current.id, value);
+        },
+
+        nudgeLyricsOffset(delta) {
+            const {current, lyricsOffset} = ctx.getState().player;
+            const value = clampLyricsOffset(lyricsOffset + delta);
+            if (value === lyricsOffset) return;
             patch({lyricsOffset: value});
             if (current) writeLyricsOffset(current.id, value);
         },

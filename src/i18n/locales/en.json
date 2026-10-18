@@ -462,11 +462,20 @@
       "useLyrics": "Use",
       "lyricsSourceAuto": "Auto-matched (current track's source)",
       "lyricsSourceTrack": "{{source}} · {{title}}",
-      "lyricsOffset": "Lyrics offset",
-      "lyricsOffsetHint": "If the lyrics run early or late, correct by ±0.5 s; remembered per track.",
+      "lyricsOffsetHint": "If the lyrics run early or late, fine-tune by 0.1 s first, then 0.5 s; remembered per track.",
       "lyricsOffsetReset": "Reset",
       "lyricsOffsetValue": "{{value}} s",
-      "lyricsApplied": "Using lyrics for “{{title}}”"
+      "lyricsApplied": "Using lyrics for “{{title}}”",
+      "toolsToggle": "Lyrics tools",
+      "syncTitle": "Timeline sync",
+      "syncRemembered": "This track only · remembered",
+      "syncEarlier": "− Earlier",
+      "syncLater": "＋ Later",
+      "syncKeys": "← / → fine-tune 0.1 s, hold Shift for 0.5 s",
+      "sourceTitle": "Lyrics source",
+      "sourceManual": "You picked these lyrics by hand — remembered for this track next time.",
+      "sourceAutoHint": "Using this track's own source; search below to switch.",
+      "restoreAuto": "Back to source lyrics"
     },
     "setting": {
       "title": "Settings",
