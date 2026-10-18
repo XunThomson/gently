@@ -72,7 +72,7 @@ impl Default for HostLimits {
     }
 }
 
-const CAPABILITY_NAMES: [(&str, PluginCapability); 9] = [
+const CAPABILITY_NAMES: [(&str, PluginCapability); 10] = [
     ("search", PluginCapability::Search),
     ("getMediaSource", PluginCapability::GetMediaSource),
     ("getTrackInfo", PluginCapability::GetTrackInfo),
@@ -82,6 +82,7 @@ const CAPABILITY_NAMES: [(&str, PluginCapability); 9] = [
     ("getTopLists", PluginCapability::GetTopLists),
     ("getTopList", PluginCapability::GetTopList),
     ("getRecommend", PluginCapability::GetRecommend),
+    ("getFavorites", PluginCapability::GetFavorites),
 ];
 
 /// 已加载插件：外部只见句柄（清单 + 能力 + 与插件线程通信的通道）。

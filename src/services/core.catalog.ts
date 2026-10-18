@@ -288,6 +288,32 @@ export async function coreRecommend(source: string): Promise<Track[] | null> {
     return (await detail<Track[]>('catalog.recommend', {source})) ?? null;
 }
 
+/** 源侧收藏夹的一页（`catalog.favorites`）：`hasMore` 来自插件的 `isEnd`。 */
+export interface CoreFavoritesPage {
+    source: string;
+    items: Track[];
+    hasMore: boolean;
+    nextPage?: number | null;
+}
+
+/**
+ * 源侧「我收藏的歌曲」（需要登录的源才有）。
+ *
+ * 返回**错误**（不只是 null）：`common.not_implemented` 要变成「这个源没有收藏夹」、
+ * `source.auth_expired` 要变成「需要登录」——都返回 null 的话，界面只能给出
+ * 一句「拿不到」，用户不知道该去授权还是该换个源。
+ *
+ * **不缓存**：收藏是用户自己的状态，缓存会显示已经取消的收藏（核心侧同理）。
+ */
+export async function coreFavorites(
+    source: string,
+    page = 1,
+): Promise<{page: CoreFavoritesPage | null; error?: CoreError}> {
+    if (!coreAvailable()) return {page: null};
+    const result = await invokeCore<CoreFavoritesPage>('catalog.favorites', {source, page});
+    return result.ok ? {page: result.data} : {page: null, error: result.error};
+}
+
 /** 歌词：无词返回 `null`（不是错误），调用方据此显示「暂无歌词」。 */
 export function coreLyrics(reference: string, withTranslation = false): Promise<Lyrics | null> {
     return detail<Lyrics>('catalog.lyrics', {

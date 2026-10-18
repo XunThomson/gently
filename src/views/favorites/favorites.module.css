@@ -1,0 +1,31 @@
+/* 我的收藏：本机 / 源侧两个视图共用的小布局（只用主题 token，不写死尺寸颜色） */
+.tabs {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-4);
+}
+
+.sourceBar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-3);
+}
+
+.more {
+    display: flex;
+    justify-content: center;
+    margin-top: var(--space-3);
+}
+
+.hint {
+    margin: var(--space-3) 0 0;
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+    color: var(--text-tertiary);
+}

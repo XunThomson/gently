@@ -43,7 +43,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "auth.begin",
     "auth.cancel",
     "auth.signOut",
-    // catalog（10）
+    // catalog（11）
     "catalog.search",
     "catalog.searchCancel",
     "catalog.track",
@@ -52,6 +52,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "catalog.topLists",
     "catalog.topList",
     "catalog.recommend",
+    "catalog.favorites",
     "catalog.lyrics",
     "catalog.lyricsSearch",
     // library（10）

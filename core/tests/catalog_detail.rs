@@ -78,6 +78,11 @@ async function getRecommend() {
     return {isEnd: false, data: [{id: 'r1', title: '推荐曲', artist: '歌手'}]};
 }
 
+async function getFavorites(page) {
+    bump('favorites');
+    return {isEnd: page >= 2, data: [{id: 'f' + page, title: '收藏第 ' + page + ' 页', artist: '歌手'}]};
+}
+
 async function getLyric(id) {
     bump('lyric');
     return {rawLrc: '[00:01.00]第一句\n[00:05.50]第二句', translation: '[00:01.00]first line'};
@@ -510,8 +515,65 @@ fn recommend_returns_normalized_tracks() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// 缓存写入必须是原子的：坏掉的缓存比没有缓存更糟（会一直读到半截 JSON）。
+/// `catalog.favorites`：源侧收藏夹。
+///
+/// 三个点：**归一化**（社区形状进来）、**分页**（`isEnd:false` 才给 `hasMore`/`nextPage`）、
+/// **不缓存**（收藏是用户自己的状态，缓存会显示已经取消的收藏 —— 这里靠插件自己的调用计数钉住）。
 #[test]
+fn favorites_are_normalized_paged_and_never_cached() {
+    let (ctx, dir) = temp_ctx("favorites");
+    let id = install(&ctx, DETAIL_PLUGIN);
+
+    let first = call(&ctx, "catalog.favorites", json!({ "source": "detail-source" }));
+    assert_eq!(first["ok"], json!(true), "{first}");
+    assert_eq!(first["data"]["source"], json!("detail-source"));
+    assert_eq!(first["data"]["hasMore"], json!(true));
+    assert_eq!(first["data"]["nextPage"], json!(2));
+    let items = first["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0]["id"], json!("detail-source:f1"));
+    assert_eq!(items[0]["title"], json!("收藏第 1 页"));
+    assert_eq!(calls(&ctx, &id, "favorites"), 1);
+
+    // 不缓存：同样的请求再来一次，插件仍被调用一次
+    let again = call(&ctx, "catalog.favorites", json!({ "source": "detail-source" }));
+    assert_eq!(again["ok"], json!(true));
+    assert_eq!(calls(&ctx, &id, "favorites"), 2, "收藏夹不缓存");
+
+    // 第二页：isEnd=true → 没有下一页
+    let second = call(&ctx, "catalog.favorites", json!({ "source": "detail-source", "page": 2 }));
+    assert_eq!(second["data"]["hasMore"], json!(false));
+    assert_eq!(second["data"]["nextPage"], json!(null));
+    assert_eq!(second["data"]["items"][0]["id"], json!("detail-source:f2"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 没有 `getFavorites` 的源：`common.not_implemented`（界面据此隐藏入口），而不是报故障。
+#[test]
+fn favorites_require_the_capability_and_an_enabled_plugin() {
+    let (ctx, dir) = temp_ctx("favorites-missing");
+
+    install(&ctx, SEARCH_ONLY);
+    let missing = call(&ctx, "catalog.favorites", json!({ "source": "search-only" }));
+    assert_eq!(missing["ok"], json!(false), "{missing}");
+    assert_eq!(missing["error"]["code"], json!("common.not_implemented"));
+
+    // 未安装 → not_found
+    let unknown = call(&ctx, "catalog.favorites", json!({ "source": "ghost-source" }));
+    assert_eq!(unknown["error"]["code"], json!("common.not_found"));
+
+    // 已禁用 → not_found（与搜索一致：禁用立即生效）
+    let id = install(&ctx, DETAIL_PLUGIN);
+    let disabled = call(&ctx, "plugin.setEnabled", json!({ "id": id, "enabled": false }));
+    assert_eq!(disabled["ok"], json!(true), "{disabled}");
+    let value = call(&ctx, "catalog.favorites", json!({ "source": id }));
+    assert_eq!(value["error"]["code"], json!("common.not_found"), "{value}");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 缓存写入必须是原子的：坏掉的缓存比没有缓存更糟（会一直读到半截 JSON）。#[test]
 fn broken_cache_entry_falls_back_to_the_plugin() {
     let (ctx, dir) = temp_ctx("broken-cache");
     let id = install(&ctx, DETAIL_PLUGIN);

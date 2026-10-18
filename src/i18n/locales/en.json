@@ -41,6 +41,7 @@
     "theme": "Theme Market"
   },
   "common": {
+    "refresh": "Refresh",
     "play": "Play",
     "pause": "Pause",
     "prev": "Previous",
@@ -399,7 +400,14 @@
     "favorites": {
       "title": "Favorites",
       "subtitle": "{{count}} songs",
-      "empty": "No favorites yet"
+      "empty": "No favorites yet",
+      "tabLocal": "On this machine",
+      "tabSource": "From sources",
+      "sourceSubtitle": "Favorites in a source account (if the source supports it)",
+      "sourceEmpty": "This source returned no favorite songs",
+      "sourceHint": "Source favorites come from a plugin (sign-in is up to that source). They are not cached locally: each visit fetches them again.",
+      "noSourceFavorites": "No enabled source provides favorites (a plugin must implement getFavorites and be signed in).",
+      "loadMore": "Load more"
     },
     "search": {
       "title": "Search results",

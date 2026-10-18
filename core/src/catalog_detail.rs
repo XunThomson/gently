@@ -64,6 +64,14 @@ struct SourcePageParams {
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct SourcePageOnlyParams {
+    source: String,
+    #[serde(default)]
+    page: Option<u32>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct LyricsParams {
     #[serde(rename = "ref")]
     reference: String,
@@ -270,6 +278,38 @@ pub fn recommend(ctx: &CoreContext, params: Value) -> Fallible<Value> {
         LIST_TTL_SEC,
     )?;
     Ok(json!(detail_tracks(ctx, &params.source, &value)))
+}
+
+/// `catalog.favorites{source, page?}`：源侧「我收藏的歌曲」（第 68 条命令）。
+///
+/// 为什么**不缓存**：收藏是用户自己的状态，随时会被他在别处改动——缓存一分钟都可能显示
+/// 已经取消的收藏。列表类详情（榜单/推荐）缓存 24 小时是合理的，这条不是。
+///
+/// 权限：源必须已安装、已启用、且实现了 `getFavorites`；缺能力 → `common.not_implemented`
+/// （界面据此隐藏入口），未安装/已禁用 → `common.not_found`（与搜索一致「禁用立即生效」）。
+/// 登录由插件自己负责：`@oauth` 插件的令牌经沙箱 `oauth.getAccessToken()` 取，cookie 类插件
+/// 用清单声明的凭据字段——核心不掺和具体源的鉴权细节（ADR-0005 / ADR-0008）。
+pub fn favorites(ctx: &CoreContext, params: Value) -> Fallible<Value> {
+    let params: SourcePageOnlyParams = parse_params(params)?;
+    ready_source(ctx, &params.source, PluginCapability::GetFavorites)?;
+
+    // 页码从 1 开始（与 `getTopList` 一致）；0 或非法值按第一页处理
+    let page = params.page.filter(|page| *page > 0).unwrap_or(1);
+    let raw = ctx.plugins.call(&params.source, "getFavorites", &json!([page]).to_string())?;
+    let value: Value = serde_json::from_str(&raw).map_err(|err| {
+        CoreError::new(ErrorCode::PluginRuntimeError, format!("getFavorites 返回的不是合法 JSON：{err}"))
+            .with_details(json!({ "source": params.source }))
+    })?;
+
+    let tracks = detail_tracks(ctx, &params.source, &value);
+    // `isEnd: false` 才认为还有下一页（社区协议；缺了这个字段不猜「还有更多」）
+    let has_more = value.get("isEnd").and_then(|flag| flag.as_bool()) == Some(false);
+    Ok(json!({
+        "source": params.source,
+        "items": tracks,
+        "hasMore": has_more,
+        "nextPage": has_more.then_some(page + 1),
+    }))
 }
 
 /// `catalog.lyrics{ref, withTranslation?}`：歌词；**无词返回 `data: null`**（不是错误）。

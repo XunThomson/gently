@@ -137,7 +137,7 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
   其它上游失败 → `source.upstream_failed`；
 - 状态变化推 `auth:changed`（§3）。
 
-### catalog（10）
+### catalog（11）
 | 命令 | 说明 |
 |---|---|
 | `catalog.search{keyword, sources?, limit?}` | **流式**：立即返回 `{searchId}`，结果通过事件分批到达（§3） |
@@ -147,6 +147,7 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 | `catalog.topLists{source}` | 榜单与分类树（**源自定义分类**，不是固定 hot/new/rise） |
 | `catalog.topList{source, id, page?}` | 某个榜单/分类的内容 |
 | `catalog.recommend{source}` | 源侧推荐 |
+| `catalog.favorites{source, page?}` | 源侧「我收藏的歌曲」（第 68 条命令）：源必须已启用且实现 `getFavorites`（缺能力 → `common.not_implemented`，界面据此隐藏入口；未安装/已禁用 → `common.not_found`）。返回 `{source, items, hasMore, nextPage?}`，`hasMore` 来自插件的 `isEnd`（缺字段不猜「还有下一页」）。**不缓存**：收藏是用户自己的状态，随时会在别处变动。登录由插件自己负责（`@oauth` 令牌或清单声明的凭据），核心不掺和 |
 | `catalog.lyrics{ref, withTranslation?}` | 歌词；无词返回 `data: null`。返回 `{format:'lrc'\|'plain', content, translated?}`——**只交原文**，解析成行（含译文按时间戳对齐）是纯展示问题，由前端唯一一份 `src/utils/lyrics.ts` 完成 |
 | `catalog.lyricsSearch{query, limit?}` | **按关键词跨源找歌词**（歌词与歌曲分离时的兜底入口）：每个已启用且同时有 `search`+`getLyric` 的源各起一个线程，先 `search` 再取前 `limit`（1~5，缺省 2）个条目问歌词；没词的条目跳过，单源失败不影响其它源。返回 `{items, searchedSources, failedSources, skippedSources, timedOutSources}`：`items[]` 为 `{source, sourceName, track, lyrics}`；整体最多等 12s，`timedOutSources` 里的源**不阻塞已拿到的结果**。歌词按 `lyrics:<source>:<rawId>:false` 缓存（与 `catalog.lyrics` 同键） |
 
@@ -405,7 +406,12 @@ async function getLyric(id) {}                     // 可选 → {format, conten
 async function getTopLists() {}                    // 可选 → 分类树
 async function getTopList(id, page) {}             // 可选
 async function getRecommend() {}                   // 可选
+async function getFavorites(page) {}               // 可选 → 源侧收藏夹（需要登录；`catalog.favorites` 调它）
 ```
+
+- **`getFavorites(page)`**：返回 `Track[]` 或 `{isEnd, data}`；`isEnd: false` 表示还有下一页。
+  登录态由插件自己取（`@oauth` 插件用沙箱 `oauth.getAccessToken()`，cookie 类插件用清单声明的凭据），
+  核心**不参与**具体源的鉴权；拿不到登录态时返回空数组即可（应用侧没有「已登录」的概念）。
 
 - **`getMediaSource` 的第一个参数是「曲目快照对象」，不是字符串 id**：核心优先把**前端手上的那份 Track**
   传进去（`{id, source, title, artist, …}` 都有），只有前端没给快照时才退化成 `{id, source}` 的最小对象；
@@ -658,6 +664,7 @@ cache/
 | 本地路径统一归一化（折叠重复分隔符，四处共用一份实现） | 用户粘贴 `C:\\Music` 这种路径时 Windows 照样认，但同一个文件会被收成两行、封面哈希也算不到一起 |
 | 下发快照时重新签发本地封面地址 | 快照存的是当时的回环端口，端口每次启动都变：原样下发会让收藏/历史/歌单显示不出封面（本地页却有）——打包版实测撞到过 |
 | 内嵌封面两条提取路径各有夹具（mp3 链式 / FLAC 容器） | 合并逻辑的两半都可能是「真实用户唯一的封面来源」，只测一半等于另一半静默失效也没人知道；`.m4a/.ogg` 同理但容器夹具成本高，如实记为未覆盖 |
+| 新增 `catalog.favorites`（68 条命令）与 ABI `getFavorites(page)` | 登录之后要有用处：源侧收藏夹是**账号里**的数据（与「本机收藏」是两回事），混在一个列表里会让人分不清存在哪、为什么某首歌不见了；「不缓存」也是这条决定的另一半（R60） |
 | 明确「前端 `src/plugins/**` 不是插件 ABI」 | 避免把 mock 兜底接口误当协议 |
 
 ## 11. 非功能性

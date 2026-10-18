@@ -41,6 +41,7 @@
     "theme": "主题市场"
   },
   "common": {
+    "refresh": "刷新",
     "play": "播放",
     "pause": "暂停",
     "prev": "上一首",
@@ -399,7 +400,14 @@
     "favorites": {
       "title": "我的收藏",
       "subtitle": "共 {{count}} 首",
-      "empty": "还没有收藏的歌曲"
+      "empty": "还没有收藏的歌曲",
+      "tabLocal": "本机收藏",
+      "tabSource": "源收藏",
+      "sourceSubtitle": "音源账号里的收藏（需要该源支持）",
+      "sourceEmpty": "这个源没有返回任何收藏歌曲",
+      "sourceHint": "源收藏来自插件（需要登录，登录方式由该源决定）；本机不缓存它，每次打开都会重新取。",
+      "noSourceFavorites": "没有已启用的音源提供收藏夹（插件需要实现 getFavorites 并完成登录）。",
+      "loadMore": "加载更多"
     },
     "search": {
       "title": "搜索结果",

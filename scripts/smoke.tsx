@@ -61,6 +61,7 @@ import RecentView from '../src/views/recent';
 import SettingView from '../src/views/setting';
 import ThemeView from '../src/views/theme';
 import FavoritesView from '../src/views/favorites';
+import {SourceFavorites} from '../src/views/favorites/components/source-favorites';
 import PlaylistView from '../src/views/playlist';
 import CollectionView from '../src/views/collection';
 import NowPlayingView from '../src/views/now-playing';
@@ -1260,6 +1261,12 @@ async function main(): Promise<void> {
     render('SettingView', <SettingView/>);
     render('ThemeView', <ThemeView/>);
     render('FavoritesView', <FavoritesView/>);
+    /* 源收藏：浏览器里没有核心 → 不出现任何源，只给一句说明（不拿演示数据冒充收藏夹） */
+    render('SourceFavorites（浏览器模式）', <SourceFavorites/>);
+    check(
+        'favorites: 非核心源没有源收藏入口（返回 null 而不是空列表）',
+        (await catalogService.fetchFavoritesFrom('demo-source')) === null,
+    );
     render('PlaylistView', <PlaylistView/>);
     /* 专辑 / 精选歌单详情：路由参数来自 mock 的 id（含 `:`，所以路径里要编码） */
     render('CollectionView（专辑）', <CollectionView/>, '/collection/album/mock/album%3A%E6%9E%97%E6%B8%85%E9%87%8E');
@@ -1499,6 +1506,7 @@ async function main(): Promise<void> {
     const detailCalls: Record<string, unknown>[] = [];
     const lyricsCalls: Record<string, unknown>[] = [];
     const lyricSearchCalls: Record<string, unknown>[] = [];
+    const favoritesCalls: Record<string, unknown>[] = [];
     const savePlaylistCalls: Record<string, unknown>[] = [];
     const skinExportCalls: Record<string, unknown>[] = [];
     const skinImportCalls: Record<string, unknown>[] = [];
@@ -1510,6 +1518,7 @@ async function main(): Promise<void> {
             if (command === 'plugin.list') {
                 return envelope([
                     {id: 'core-source', name: '核心音源', version: '9.0.0', enabled: true, builtin: false},
+                    {id: 'no-favorites-source', name: '没有收藏夹的源', version: '1.0.0', enabled: true, builtin: false},
                 ]);
             }
             if (command === 'playback.resolve') {
@@ -1555,6 +1564,19 @@ async function main(): Promise<void> {
                     failedSources: [],
                     skippedSources: ['search-only'],
                     timedOutSources: [],
+                });
+            }
+            if (command === 'catalog.favorites') {
+                favoritesCalls.push(params);
+                // 源收藏：分页形状来自核心（`hasMore` 由插件的 isEnd 决定），出错走真实错误码
+                if (params.source === 'no-favorites-source') {
+                    return failure('common.not_implemented', '该源没有 getFavorites');
+                }
+                return envelope({
+                    source: params.source,
+                    items: fakeDownloadSeed ? [fakeDownloadSeed] : [],
+                    hasMore: params.page === undefined || params.page === 1,
+                    nextPage: params.page === undefined || params.page === 1 ? 2 : null,
                 });
             }
             if (command === 'recommend.feedback') {
@@ -2285,6 +2307,36 @@ async function main(): Promise<void> {
                         outcome.data.items[0].sourceName === '核心音源' &&
                         outcome.data.items[0].track.id === fakeDownloadSeed?.id,
                     JSON.stringify({calls: lyricSearchCalls, outcome}),
+                );
+
+                /* 源收藏：核心命令 `catalog.favorites` + 分页形状 + 「该源没有收藏夹」的错误码 */
+                favoritesCalls.length = 0;
+                const firstPage = await catalogService.fetchFavoritesFrom('core-source');
+                check(
+                    'fake: 源收藏走核心并带回分页信息',
+                    favoritesCalls.length === 1 &&
+                        favoritesCalls[0].source === 'core-source' &&
+                        firstPage?.items.length === 1 &&
+                        firstPage.hasMore === true &&
+                        firstPage.nextPage === 2,
+                    JSON.stringify({calls: favoritesCalls, firstPage}),
+                );
+
+                const secondPage = await catalogService.fetchFavoritesFrom('core-source', 2);
+                check(
+                    'fake: 源收藏翻页把页码交给核心，且末页没有下一页',
+                    favoritesCalls.length === 2 &&
+                        favoritesCalls[1].page === 2 &&
+                        secondPage?.hasMore === false &&
+                        secondPage.nextPage === null,
+                    JSON.stringify({calls: favoritesCalls, secondPage}),
+                );
+
+                const noCapability = await catalogService.fetchFavoritesFrom('no-favorites-source');
+                check(
+                    'fake: 源不支持收藏夹时如实带出 not_implemented（不是空列表）',
+                    noCapability?.error?.code === 'common.not_implemented' && noCapability.items.length === 0,
+                    JSON.stringify(noCapability),
                 );
             }
 

@@ -97,6 +97,9 @@ pub enum PluginCapability {
     GetTopList,
     #[serde(rename = "getRecommend")]
     GetRecommend,
+    /// 源侧「我收藏的歌曲」（需要登录：配合 `@oauth` 或插件自带的 cookie/凭据）
+    #[serde(rename = "getFavorites")]
+    GetFavorites,
 }
 
 impl PluginCapability {
@@ -111,6 +114,7 @@ impl PluginCapability {
             "getTopLists" => Some(Self::GetTopLists),
             "getTopList" => Some(Self::GetTopList),
             "getRecommend" => Some(Self::GetRecommend),
+            "getFavorites" => Some(Self::GetFavorites),
             _ => None,
         }
     }
@@ -126,6 +130,7 @@ impl PluginCapability {
             Self::GetTopLists => "getTopLists",
             Self::GetTopList => "getTopList",
             Self::GetRecommend => "getRecommend",
+            Self::GetFavorites => "getFavorites",
         }
     }
 }

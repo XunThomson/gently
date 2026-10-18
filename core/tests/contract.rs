@@ -83,7 +83,7 @@ fn not_implemented_carries_command_name() {
 /// 命令清单不变量：数量、唯一性、命名前缀合法。
 #[test]
 fn command_manifest_is_well_formed() {
-    assert_eq!(command_count(), 67, "契约命令数变化时必须同步文档与前端类型");
+    assert_eq!(command_count(), 68, "契约命令数变化时必须同步文档与前端类型");
 
     let mut seen = std::collections::HashSet::new();
     for name in COMMAND_NAMES {

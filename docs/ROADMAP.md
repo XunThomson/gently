@@ -416,7 +416,7 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 
 - **M5a 已完成（插件域收尾）**：`core/src/plugin_admin.rs` 落地最后 6 条命令
   （`plugin.config.get/put`、`plugin.credentials.set/clear/status`、`plugin.checkUpdate`），
-  **契约 60 条命令全部点亮**（R54 新增 `catalog.lyricsSearch`、R56 新增两条缓存命令、R59 新增四条授权命令，现为 67 条）：配置乐观并发（冲突带 `details.current`、不改动已存值、64 KiB 上限）；
+  **契约 60 条命令全部点亮**（R54 新增 `catalog.lyricsSearch`、R56 新增两条缓存命令、R59 新增四条授权命令、R60 新增 `catalog.favorites`，现为 68 条）：配置乐观并发（冲突带 `details.current`、不改动已存值、64 KiB 上限）；
   凭据只读写清单声明过的键、`status` 只回「是否已配置」（命令层没有读值出口）；
   检查更新只比对来源（url 下载比对版本+sha256 / catalog 比对本地索引）**绝不自动更新**。
   **已知缺口**：凭据落点仍是内存实现（`keyring` crate 不在离线 registry 缓存里）→ 重启失效，
@@ -499,6 +499,11 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
   沙箱新增 `oauth.getAccessToken()`；新增 4 条命令（`auth.status/begin/cancel/signOut`）与
   `auth:changed` 事件，插件管理面板新增「第三方授权」卡片；契约 **67 命令 / 9 事件**。
   `pnpm smoke` 341、核心单测 236（`core/tests/oauth.rs` 用本机回环模拟授权服务器跑完整链路）。
+- **R60 源侧收藏夹**：ABI 新增可选 `getFavorites(page)`，核心新增 `catalog.favorites`（契约 **68 条命令**）——
+  源必须已启用且运行时探测到该能力（缺能力 → `not_implemented`，未安装/禁用 → `not_found`），
+  `hasMore` 只认 `isEnd:false`，**刻意不缓存**（用户自己的状态随时会变）；前端「我的收藏」拆成
+  本机收藏 / 源收藏两个 tab（存在哪儿要分清），源收藏按源切换、刷新、加载更多，错误按码说清楚。
+  `pnpm smoke` 346、核心单测 237。
 - **退出标准**：安装包在干净环境可启动并完成一次完整链路（导入插件 → 播放 → 扫描 → 收藏）。
   **R20 把这套链路自动化了**（`core/tests/e2e_chain.rs`：走 `dispatch`、真的按 Range 取代理地址、
   重开库验证持久化）；**R30 又把它在真实打包版上人肉点了一遍并留了截图**
@@ -522,7 +527,7 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 | 3. 下载相关逻辑 | 目录 / 默认音质 / 缺档策略 / 并发上限已完成（R54）；余下见下 |
 | 4. 桌面歌词 | **第一版完成**（R57）：独立置顶窗口、跨窗口同步、字号/拖动/关闭、主题跟随 |
 | 5. 版本规划与 pet 接口 | **完成**（R58）：ADR-0007 + `src/pet/` 预留接口 + `PetHost` |
-| 6. OAuth2 第三方授权 | **抽象已完成**（R59）：通用 OAuth 2.0（授权码 + PKCE + 回环回调），端点由插件清单声明；B 站收藏夹等**具体源**由用户装的插件自己实现（沿用「抽象 + 具体源」分工） |
+| 6. OAuth2 第三方授权 + 源收藏 | **完成**（R59 抽象 + R60 收藏夹）：通用 OAuth 2.0（授权码 + PKCE + 回环回调，端点由插件声明）+ `catalog.favorites` / ABI `getFavorites`；B 站等**具体源**由用户装的插件实现 |
 | 7. 主题控制面板 | **已拍板：不做**（用户决定）：只保留主题市场与明暗切换，`theme.config.json` 仍是唯一入口；ADR-0007 记为「明确不做」 |
 
 **2.x 宠物（已预留，不在 1.x 实现）**：`src/pet/` 的 `PetDefinition` / `PetContext` / `PetHost`

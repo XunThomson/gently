@@ -270,7 +270,9 @@ export type PluginCapability =
     | 'getLyric'
     | 'getTopLists'
     | 'getTopList'
-    | 'getRecommend';
+    | 'getRecommend'
+    /** 源侧收藏夹（需要登录的源才有；`catalog.favorites` 读它） */
+    | 'getFavorites';
 
 /** 已安装插件的完整信息 */
 export interface PluginSummary extends PluginInfo {

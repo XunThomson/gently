@@ -24,6 +24,7 @@ import type {MusicSourcePlugin} from '../plugins';
 import {coreAvailable} from './core.bridge';
 import {
     coreAlbum,
+    coreFavorites,
     coreLyricsSearch,
     corePlaylist,
     coreRecommend,
@@ -258,6 +259,31 @@ export const catalogService = {
         const plugin = getMusicSource(id);
         if (!plugin) return [];
         return plugin.fetchRecommend(limit);
+    },
+
+    /**
+     * 源侧「我收藏的歌曲」（`catalog.favorites`）。
+     *
+     * 只对**核心认识的源**有意义：`hasFavorites` 是插件运行时探测出的能力，浏览器预览里
+     * 的演示源没有这个概念，因此这里不退回任何 mock——`null` 就是「这个源没有收藏夹入口」。
+     */
+    async fetchFavoritesFrom(
+        sourceId: string,
+        page = 1,
+    ): Promise<{
+        items: Track[];
+        hasMore: boolean;
+        nextPage?: number | null;
+        error?: CoreError;
+    } | null> {
+        if (!isCoreSource(sourceId)) return null;
+        const result = await coreFavorites(sourceId, page);
+        if (!result.page) return {items: [], hasMore: false, ...(result.error ? {error: result.error} : {})};
+        return {
+            items: result.page.items,
+            hasMore: result.page.hasMore,
+            nextPage: result.page.nextPage ?? null,
+        };
     },
 
     /**
