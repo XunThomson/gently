@@ -525,6 +525,8 @@
       "cacheCatalog": "歌词与详情",
       "cacheCovers": "内嵌封面",
       "cacheLimit": "容量上限",
+      "cacheLimitHint": "超出上限时核心按「最久没播」自动删除旧缓存；调小后立即生效。只缓存播放过的曲目，不会预先占满磁盘。",
+      "cacheLimitSaved": "缓存上限已更新（并按新上限清理了一次）",
       "cacheUsage": "{{size}} · {{count}} 个文件",
       "cacheRefresh": "刷新",
       "cacheClearMedia": "清理播放缓存",

@@ -460,3 +460,64 @@ async function getMediaSource() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// 缓存上限可配（`system.cacheConfig`）：越界被拒、设置**存盘**（清缓存不会重置）、
+/// 调小之后**立刻**按新上限淘汰。
+#[test]
+fn cache_limit_is_configurable_and_enforced_immediately() {
+    let dir = common::temp_dir("media-cache-limit");
+    let paths = AppPaths::resolve(&dir);
+    paths.ensure().unwrap();
+
+    // 默认 1 GiB
+    let status = gently_core::cache::status(&paths);
+    assert_eq!(status["limitBytes"], json!(1024u64 * 1024 * 1024), "{status}");
+
+    // 越界：太小 / 太大都拒绝，而且**不改动**已存的值
+    for bad in [1u64, 64 * 1024 * 1024, 64 * 1024 * 1024 * 1024] {
+        let err = gently_core::cache::set_limit(&paths, bad).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidArgument, "{bad}");
+    }
+    assert_eq!(
+        gently_core::cache::media_limit(&paths),
+        1024u64 * 1024 * 1024,
+        "越界写入不得改动设置"
+    );
+
+    // 合法值：生效并返回最新状态
+    let updated = gently_core::cache::set_limit(&paths, 256 * 1024 * 1024).unwrap();
+    assert_eq!(updated["limitBytes"], json!(256u64 * 1024 * 1024), "{updated}");
+    assert_eq!(gently_core::cache::media_limit(&paths), 256 * 1024 * 1024);
+
+    // 设置写在 data/ 而不是 cache/：清缓存不该把用户设置一起清掉
+    let cleared = gently_core::cache::clear(&paths, "all").unwrap();
+    assert!(cleared["removedFiles"].is_u64(), "{cleared}");
+    assert_eq!(
+        gently_core::cache::media_limit(&paths),
+        256 * 1024 * 1024,
+        "清缓存后上限仍然是用户设的值"
+    );
+
+    // 调小后立刻淘汰：塞两个文件，再把上限压到最低，最旧的那个必须消失
+    let media = paths.cache.join("media");
+    std::fs::create_dir_all(&media).unwrap();
+    let write_entry = |name: &str, bytes: usize, at: u64| {
+        let path = media.join(name);
+        std::fs::write(&path, vec![0u8; bytes]).unwrap();
+        std::fs::write(
+            media.join(format!("{name}.json")),
+            serde_json::json!({"reference": name, "at": at}).to_string().as_bytes(),
+        )
+        .unwrap();
+    };
+    write_entry("old.mp3", 80 * 1024 * 1024, 1);
+    write_entry("new.mp3", 80 * 1024 * 1024, 2);
+    assert_eq!(gently_core::cache::status(&paths)["mediaCount"], json!(2));
+
+    // 128 MiB 上限：两个 80 MiB 放不下，最旧的被删掉
+    gently_core::cache::set_limit(&paths, gently_core::cache::MIN_LIMIT_BYTES).unwrap();
+    assert!(!media.join("old.mp3").exists(), "最旧的应被淘汰");
+    assert!(media.join("new.mp3").exists(), "较新的应留下");
+
+    std::fs::remove_dir_all(&dir).ok();
+}

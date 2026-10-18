@@ -525,6 +525,8 @@
       "cacheCatalog": "Lyrics & details",
       "cacheCovers": "Embedded covers",
       "cacheLimit": "Size limit",
+      "cacheLimitHint": "When the cache exceeds this limit the core evicts the least recently played tracks. Lowering it takes effect immediately. Only tracks you have played are cached — the disk is never pre-filled.",
+      "cacheLimitSaved": "Size limit updated (and the cache was trimmed to it)",
       "cacheUsage": "{{size}} · {{count}} files",
       "cacheRefresh": "Refresh",
       "cacheClearMedia": "Clear playback cache",

@@ -80,6 +80,8 @@ export const coreSystem = {
     cacheStatus: () => invokeCore<CacheStatusDto>('system.cacheStatus'),
     cacheClear: (kind: CacheClearKind = 'all') =>
         invokeCore<CacheClearResultDto>('system.cacheClear', {kind}),
+    /** 改播放缓存上限；核心立即按新上限淘汰并返回最新状态 */
+    cacheConfig: (limitBytes: number) => invokeCore<CacheStatusDto>('system.cacheConfig', {limitBytes}),
 };
 
 let probed: Promise<CoreResult<SystemStatusDto>> | null = null;

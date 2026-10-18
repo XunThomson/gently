@@ -176,6 +176,7 @@ pub fn dispatch(
         "system.reveal" => reveal(ctx, params),
         "system.cacheStatus" => cache_status(ctx, params),
         "system.cacheClear" => cache_clear(ctx, params),
+        "system.cacheConfig" => cache_config(ctx, params),
         "plugin.preview" => plugin_preview(ctx, params),
         "plugin.import" => plugin_import(ctx, params),
         "plugin.list" => plugin_list(ctx),
@@ -269,6 +270,7 @@ const IMPLEMENTED: &[&str] = &[
     "system.reveal",
     "system.cacheStatus",
     "system.cacheClear",
+    "system.cacheConfig",
     "plugin.preview",
     "plugin.import",
     "plugin.list",
@@ -390,6 +392,20 @@ struct CacheClearParams {
     /// `media` / `catalog`（歌词与详情）/ `covers` / `all`（缺省）
     #[serde(default)]
     kind: Option<String>,
+}
+
+/// `system.cacheConfig{limitBytes}`：设置播放缓存的总量上限（第 70 条命令）。
+///
+/// 为什么单独一条命令而不是塞进 `cacheStatus`：**读**与**写**必须分开——
+/// 界面每次刷新都调 status，如果它能写，一次参数错误就能改掉用户的设置。
+fn cache_config(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct CacheConfigParams {
+        limit_bytes: u64,
+    }
+    let params: CacheConfigParams = parse_params(params)?;
+    crate::cache::set_limit(&ctx.paths, params.limit_bytes)
 }
 
 /// `system.cacheClear{kind?}`：删除缓存（缓存可随时整目录删除，契约 §9）。

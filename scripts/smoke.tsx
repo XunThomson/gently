@@ -1508,6 +1508,7 @@ async function main(): Promise<void> {
     const lyricSearchCalls: Record<string, unknown>[] = [];
     const favoritesCalls: Record<string, unknown>[] = [];
     const favoriteCollectionCalls: Record<string, unknown>[] = [];
+    const cacheConfigCalls: Record<string, unknown>[] = [];
     const savePlaylistCalls: Record<string, unknown>[] = [];
     const skinExportCalls: Record<string, unknown>[] = [];
     const skinImportCalls: Record<string, unknown>[] = [];
@@ -1675,11 +1676,32 @@ async function main(): Promise<void> {
                     coversBytes: 512,
                     coversCount: 1,
                     limitBytes: 1024 * 1024 * 1024,
+                    limitMinBytes: 128 * 1024 * 1024,
+                    limitMaxBytes: 32 * 1024 * 1024 * 1024,
                 });
             }
             if (command === 'system.cacheClear') {
                 cacheClearCalls.push(params);
                 return envelope({removedBytes: 2048, removedFiles: 2});
+            }
+            if (command === 'system.cacheConfig') {
+                cacheConfigCalls.push(params);
+                const limitBytes = Number(params.limitBytes ?? 0);
+                // 越界：核心会拒（界面据此显示错误，而不是以为设置成功）
+                if (limitBytes < 128 * 1024 * 1024) {
+                    return failure('common.invalid_argument', '缓存上限太小');
+                }
+                return envelope({
+                    mediaBytes: 1024 * 1024,
+                    mediaCount: 2,
+                    catalogBytes: 4096,
+                    catalogCount: 3,
+                    coversBytes: 512,
+                    coversCount: 1,
+                    limitBytes,
+                    limitMinBytes: 128 * 1024 * 1024,
+                    limitMaxBytes: 32 * 1024 * 1024 * 1024,
+                });
             }
             if (command === 'skin.list') {
                 return envelope([
@@ -1895,6 +1917,25 @@ async function main(): Promise<void> {
                     cacheClearCalls[0].kind === 'media' &&
                     cleared.data.removedFiles === 2,
                 JSON.stringify({calls: cacheClearCalls, cleared}),
+            );
+
+            /* 缓存上限：改它是一条独立命令（读用 cacheStatus、写用 cacheConfig），
+               越界必须被核心拒绝——界面据此显示错误，而不是以为设置成功 */
+            cacheConfigCalls.length = 0;
+            const limited = await coreSystem.cacheConfig(2 * 1024 * 1024 * 1024);
+            check(
+                'fake: 缓存上限走核心并回带新上限',
+                limited.ok &&
+                    cacheConfigCalls.length === 1 &&
+                    cacheConfigCalls[0].limitBytes === 2 * 1024 * 1024 * 1024 &&
+                    limited.data.limitBytes === 2 * 1024 * 1024 * 1024,
+                JSON.stringify({calls: cacheConfigCalls, limited}),
+            );
+            const rejected = await coreSystem.cacheConfig(1024);
+            check(
+                'fake: 越界的缓存上限被核心拒绝（不静默改设置）',
+                !rejected.ok && rejected.error.code === 'common.invalid_argument',
+                JSON.stringify(rejected),
             );
 
             /* 6c. 皮肤导入的两条来源（粘贴 JSON / 粘贴本机路径）都要走核心的 `skin.preview` + `skin.install`：

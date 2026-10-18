@@ -33,6 +33,9 @@ use crate::plugin::{DownloadEvent, HttpRequest, HttpTransport};
 
 /// 媒体缓存总量上限（1 GiB）：超出后按最旧删除。
 pub const MEDIA_LIMIT_BYTES: u64 = 1024 * 1024 * 1024;
+/// 用户可配的总量上限范围（设置页给的是几档固定值，这里再挡一次越界）。
+pub const MIN_LIMIT_BYTES: u64 = 128 * 1024 * 1024;
+pub const MAX_LIMIT_BYTES: u64 = 32 * 1024 * 1024 * 1024;
 /// 单个缓存文件上限（256 MiB）：超大的文件不缓存（避免一条长音频吃掉整个预算）。
 pub const MAX_FILE_BYTES: u64 = 256 * 1024 * 1024;
 /// 同时进行的缓存补全线程数（播放本身不能被下载抢占）。
@@ -281,6 +284,7 @@ fn fill(
 
 /// 总量上限：按 `at`（最后写入）从旧到新删，直到回到预算内。
 fn enforce_limit(paths: &crate::AppPaths) {
+    let limit = media_limit(paths);
     let dir = media_dir(paths);
     let Ok(entries) = fs::read_dir(&dir) else { return };
 
@@ -299,13 +303,13 @@ fn enforce_limit(paths: &crate::AppPaths) {
         total += meta.len();
         items.push((at, meta.len(), path));
     }
-    if total <= MEDIA_LIMIT_BYTES {
+    if total <= limit {
         return;
     }
 
     items.sort_by_key(|(at, _, _)| *at);
     for (_, size, path) in items {
-        if total <= MEDIA_LIMIT_BYTES {
+        if total <= limit {
             break;
         }
         let sidecar = with_json_suffix(&path);
@@ -314,6 +318,56 @@ fn enforce_limit(paths: &crate::AppPaths) {
             total = total.saturating_sub(size);
         }
     }
+}
+
+/// 用户设置文件的路径。
+///
+/// **刻意放在 `data/` 而不是 `cache/`**：`system.cacheClear{kind:"all"}` 会清空缓存目录，
+/// 而「用户设的缓存上限」属于设置，不该被「清缓存」顺手重置。
+fn settings_path(paths: &crate::AppPaths) -> PathBuf {
+    paths.data.join("cache-settings.json")
+}
+
+/// 当前生效的总量上限：设置文件里的值（越界或读不出来 → 默认 1 GiB）。
+pub fn media_limit(paths: &crate::AppPaths) -> u64 {
+    fs::read_to_string(settings_path(paths))
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|value| value.get("mediaLimitBytes").and_then(Value::as_u64))
+        .map(|bytes| bytes.clamp(MIN_LIMIT_BYTES, MAX_LIMIT_BYTES))
+        .unwrap_or(MEDIA_LIMIT_BYTES)
+}
+
+/// `system.cacheConfig{limitBytes}`：改总量上限并存盘，**立即**按新上限淘汰一次。
+///
+/// 存盘用「临时文件 + rename」：写到一半崩掉不该让设置变成半个文件（那会被当成
+/// 「读不出来」而悄悄回落到默认值）。
+pub fn set_limit(paths: &crate::AppPaths, limit_bytes: u64) -> Fallible<Value> {
+    if !(MIN_LIMIT_BYTES..=MAX_LIMIT_BYTES).contains(&limit_bytes) {
+        return Err(CoreError::invalid_argument(format!(
+            "缓存上限必须在 {} ~ {} 字节之间",
+            MIN_LIMIT_BYTES, MAX_LIMIT_BYTES
+        ))
+        .with_details(json!({
+            "limitBytes": limit_bytes,
+            "min": MIN_LIMIT_BYTES,
+            "max": MAX_LIMIT_BYTES,
+        })));
+    }
+
+    let path = settings_path(paths);
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let payload = json!({ "mediaLimitBytes": limit_bytes }).to_string();
+    let temp = path.with_extension("json.part");
+    fs::write(&temp, payload.as_bytes())?;
+    fs::rename(&temp, &path)?;
+
+    // 调小上限时立刻生效：否则用户把 1 GiB 调到 128 MiB 之后，得等下一次写入才会瘦身
+    enforce_limit(paths);
+    tracing::info!(limit_bytes, "缓存上限已更新");
+    Ok(status(paths))
 }
 
 /// `system.cacheStatus`：媒体 / 歌词与详情 / 封面三块的占用。
@@ -332,7 +386,9 @@ pub fn status(paths: &crate::AppPaths) -> Value {
         "catalogCount": catalog_count,
         "coversBytes": covers_bytes,
         "coversCount": covers_count,
-        "limitBytes": MEDIA_LIMIT_BYTES,
+        "limitBytes": media_limit(paths),
+        "limitMinBytes": MIN_LIMIT_BYTES,
+        "limitMaxBytes": MAX_LIMIT_BYTES,
     })
 }
 

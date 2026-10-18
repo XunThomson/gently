@@ -15,6 +15,21 @@ import {getThemePreset, useTheme} from '../../theme';
 import type {ThemeMode} from '../../theme';
 import type {DownloadQualityFallback, SourceDisplayMode, SourceFilterStyle, TrackQuality} from '../../types';
 import {formatBytes} from '../../utils/helpers';
+
+/**
+ * 缓存上限的几档固定值（256 MiB ~ 8 GiB）。
+ *
+ * 为什么不做「任意输入」：一个手滑填成 0 或 100 GB 的设置，用户自己很难判断影响；
+ * 给几档够用且都在核心的合法区间（`minBytes`~`maxBytes`）内。
+ */
+const CACHE_LIMIT_OPTIONS = [
+    256 * 1024 * 1024,
+    512 * 1024 * 1024,
+    1024 * 1024 * 1024,
+    2 * 1024 * 1024 * 1024,
+    4 * 1024 * 1024 * 1024,
+    8 * 1024 * 1024 * 1024,
+];
 import {QUALITIES_DESC, qualityLabelKey} from '../../utils/quality';
 import {DiagnosticsCard} from './components/diagnostics-card';
 import styles from './setting.module.css';
@@ -110,6 +125,24 @@ export default function SettingView() {
             });
         },
         [requestConfirm, refreshCache, t],
+    );
+
+    /** 改缓存上限：核心立即按新上限淘汰，返回最新占用 */
+    const changeLimit = useCallback(
+        async (limitBytes: number) => {
+            if (!cacheAvailable) return;
+            setCacheBusy(true);
+            const result = await coreSystem.cacheConfig(limitBytes);
+            setCacheBusy(false);
+            if (result.ok) {
+                setCache(result.data);
+                setCacheError(null);
+                setCacheNotice(t('page.setting.cacheLimitSaved'));
+            } else {
+                setCacheError(errorText(t, result.error));
+            }
+        },
+        [cacheAvailable, t],
     );
 
     const cacheTotal = cache ? cache.mediaBytes + cache.catalogBytes + cache.coversBytes : 0;
@@ -388,11 +421,19 @@ export default function SettingView() {
                             </span>
                         </div>
 
+                        {/* 上限可选：给几档固定值，避免「随便填一个数字」把缓存配成 0 或 100 GB */}
                         <div className={styles.field}>
                             <span className={styles.label}>{t('page.setting.cacheLimit')}</span>
-                            <span className={styles.value}>
-                                {cache ? formatBytes(cache.limitBytes) : '—'}
-                            </span>
+                            <UnderlineRadioGroup
+                                name="cache-limit"
+                                value={String(cache?.limitBytes ?? '')}
+                                onChange={(value) => void changeLimit(Number(value))}
+                                options={CACHE_LIMIT_OPTIONS.map((bytes) => ({
+                                    value: String(bytes),
+                                    label: formatBytes(bytes),
+                                }))}
+                            />
+                            <p className={styles.hint}>{t('page.setting.cacheLimitHint')}</p>
                         </div>
 
                         <div className={styles.cacheActions}>

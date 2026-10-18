@@ -499,6 +499,11 @@ export interface SystemApi {
     cacheStatus(): Promise<CoreResult<CacheStatusDto>>;
     /** 清理缓存；缺省 kind = all */
     cacheClear(input?: {kind?: CacheClearKind}): Promise<CoreResult<CacheClearResultDto>>;
+    /**
+     * 改播放缓存的总量上限（字节）。核心会**立即**按新上限淘汰一次，返回最新状态。
+     * 越界 → `common.invalid_argument`（`details` 里有 min/max）。
+     */
+    cacheConfig(input: {limitBytes: number}): Promise<CoreResult<CacheStatusDto>>;
 }
 
 export type CacheClearKind = 'media' | 'catalog' | 'covers' | 'all';
@@ -515,6 +520,9 @@ export interface CacheStatusDto {
     coversCount: number;
     /** 媒体缓存总量上限（超出后核心按最旧自动清理） */
     limitBytes: number;
+    /** 可直接设置的上限范围（核心与界面共用同一份边界） */
+    limitMinBytes: number;
+    limitMaxBytes: number;
 }
 
 export interface CacheClearResultDto {

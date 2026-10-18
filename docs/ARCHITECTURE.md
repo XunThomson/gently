@@ -419,7 +419,7 @@ play_history 表 → 最近播放视图 / 推荐画像输入
 ```
 React（UI / store / services）
    │  invoke(command) / listen(event)      ← 无 HTTP、无端口、无 CORS、无 JWT
-Rust 本机核心（**已实现**：契约里的 69 条命令 / 9 类事件，`cargo test -p gently-core` 237 项）
+Rust 本机核心（**已实现**：契约里的 70 条命令 / 9 类事件，`cargo test -p gently-core` 237 项）
    ├─ 插件宿主（内嵌 QuickJS + 权限白名单）与订阅索引缓存
    ├─ 曲库聚合（流式搜索、跨源去重、候选排序、播放回退）与缓存
    ├─ 本地曲库（symphonia 读标签/时长/内嵌封面）+ 封面缓存 + FTS5 检索
@@ -433,7 +433,7 @@ Rust 本机核心（**已实现**：契约里的 69 条命令 / 9 类事件，`c
 
 契约两处，且只有两处：
 
-1. `docs/contracts/local-core-api.md`——规范正文：69 条命令 + 9 类事件、错误码表、
+1. `docs/contracts/local-core-api.md`——规范正文：70 条命令 + 9 类事件、错误码表、
    多音源策略、插件与皮肤模型、本机存储布局、安全与信任模型；
 2. `src/api/index.ts`——上述契约的前端类型（只有类型，无实现）。
 

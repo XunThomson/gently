@@ -71,7 +71,7 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 
 约定：`ref` = `source:trackId`；`source` = 插件 id。写命令无需幂等键（本地事务）。
 
-### system（5）
+### system（6）
 | 命令 | 参数 | 返回 |
 |---|---|---|
 | `system.status` | — | `{version, platform, dbPath, dataDir, pluginRuntime, dbReady, dbError?, credentialsBackend, counts:{plugins,favorites,tracks,downloads}}`——`pluginRuntime` 在 M0 为 `none`、M1 接入 QuickJS 后为 `quickjs`；`dbReady:false` 表示降级运行（`dbError` 给出原因）；`credentialsBackend` 是凭据落点（`windows-credential-manager` / `memory`），界面据此说明「重启后是否还要重新填写」 |
@@ -79,6 +79,7 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 | `system.reveal{path}` | 受管目录内的路径 | `null`；目录外或不存在 → `common.invalid_argument` / `common.not_found` |
 | `system.cacheStatus` | — | `{mediaBytes, mediaCount, catalogBytes, catalogCount, coversBytes, coversCount, limitBytes}`：播放缓存 / 歌词与详情缓存 / 封面缓存的占用（设置页展示） |
 | `system.cacheClear{kind?}` | `media` / `catalog`（歌词与详情）/ `covers` / `all`（缺省） | `{removedBytes, removedFiles}`；未知 kind → `common.invalid_argument`（缓存可随时整目录删除，见 §9） |
+| `system.cacheConfig{limitBytes}` | 播放缓存总量上限（128 MiB ~ 32 GiB） | 更新后**立即按新上限淘汰一次**并返回最新 `cacheStatus`；越界 → `common.invalid_argument`（`details` 带 `min`/`max`）。设置存 `<data>/cache-settings.json`——**清缓存不会重置它**（读用 `cacheStatus`、写用 `cacheConfig`，读写分开） |
 
 ### plugin：管理（13）
 | 命令 | 说明 |
@@ -671,7 +672,7 @@ cache/
 | 本地路径统一归一化（折叠重复分隔符，四处共用一份实现） | 用户粘贴 `C:\\Music` 这种路径时 Windows 照样认，但同一个文件会被收成两行、封面哈希也算不到一起 |
 | 下发快照时重新签发本地封面地址 | 快照存的是当时的回环端口，端口每次启动都变：原样下发会让收藏/历史/歌单显示不出封面（本地页却有）——打包版实测撞到过 |
 | 内嵌封面两条提取路径各有夹具（mp3 链式 / FLAC 容器） | 合并逻辑的两半都可能是「真实用户唯一的封面来源」，只测一半等于另一半静默失效也没人知道；`.m4a/.ogg` 同理但容器夹具成本高，如实记为未覆盖 |
-| 新增 `catalog.favorites`（68 条命令）与 ABI `getFavorites(page, collectionId?)`、`catalog.favoriteCollections`（69 条命令，R61） | 登录之后要有用处：源侧收藏夹是**账号里**的数据（与「本机收藏」是两回事），混在一个列表里会让人分不清存在哪、为什么某首歌不见了；「不缓存」也是这条决定的另一半（R60） |
+| 新增 `catalog.favorites`（68 条命令）与 ABI `getFavorites(page, collectionId?)`、`catalog.favoriteCollections`（69 条命令，R61）；`system.cacheConfig`（70 条命令，R62）让上限可配且清缓存不重置 | 登录之后要有用处：源侧收藏夹是**账号里**的数据（与「本机收藏」是两回事），混在一个列表里会让人分不清存在哪、为什么某首歌不见了；「不缓存」也是这条决定的另一半（R60） |
 | 明确「前端 `src/plugins/**` 不是插件 ABI」 | 避免把 mock 兜底接口误当协议 |
 
 ## 11. 非功能性
