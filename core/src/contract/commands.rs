@@ -56,6 +56,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "catalog.favorites",
     "catalog.favoriteCollections",
     "catalog.loginQr",
+    "catalog.loginWeb",
     "catalog.loginQrPoll",
     "catalog.lyrics",
     "catalog.lyricsSearch",

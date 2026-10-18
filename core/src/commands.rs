@@ -202,6 +202,7 @@ pub fn dispatch(
         "catalog.lyrics" => crate::catalog_detail::lyrics(ctx, params),
         "catalog.lyricsSearch" => crate::catalog_detail::lyrics_search(ctx, params),
         "catalog.loginQr" => crate::login_qr::login_qr(ctx, params),
+        "catalog.loginWeb" => crate::login_web::login_web(ctx, params),
         "catalog.loginQrPoll" => crate::login_qr::login_qr_poll(ctx, params),
         "library.favorites.list" => crate::library::favorites_list(ctx, params),
         "library.favorites.set" => crate::library::favorites_set(ctx, params),
@@ -335,6 +336,9 @@ const IMPLEMENTED: &[&str] = &[
     "catalog.favoriteCollections",
     "catalog.lyrics",
     "catalog.lyricsSearch",
+    "catalog.loginQr",
+    "catalog.loginQrPoll",
+    "catalog.loginWeb",
     "playback.resolve",
     "playback.report",
 ];

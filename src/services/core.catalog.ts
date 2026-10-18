@@ -13,7 +13,16 @@
  *    调用方按「该源不提供」处理，不必区分错误码。
  */
 
-import type {CoreError, CoreResult, Lyrics, LyricSearchResult, ResolvedMedia, TopListGroup, TopListPage} from '../api';
+import type {
+    CoreError,
+    CoreResult,
+    Lyrics,
+    LyricSearchResult,
+    ResolvedMedia,
+    TopListGroup,
+    TopListPage,
+    WebLoginPlan,
+} from '../api';
 import type {Album, CuratedPlaylist, GroupedTrack, Track, TrackQuality} from '../types';
 import {coreAvailable, invokeCore} from './core.bridge';
 import {CORE_EVENTS} from './core.events';
@@ -370,6 +379,11 @@ export function coreLyricsSearch(
 }
 
 /** `catalog.loginQr`：开一次二维码登录会话（内容由插件给，核心只转手） */
+/** `catalog.loginWeb`：用浏览器窗口登录的计划（登录页 / 要读的 Cookie 名 / 凭据键） */
+export function coreLoginWeb(source: string): Promise<CoreResult<WebLoginPlan>> {
+    return invokeCore('catalog.loginWeb', {source});
+}
+
 export function coreLoginQr(
     source: string,
 ): Promise<CoreResult<{source: string; key: string; content: string; tip?: string}>> {

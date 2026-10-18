@@ -138,7 +138,7 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
   其它上游失败 → `source.upstream_failed`；
 - 状态变化推 `auth:changed`（§3）。
 
-### catalog（12）
+### catalog（13）
 | 命令 | 说明 |
 |---|---|
 | `catalog.search{keyword, sources?, limit?}` | **流式**：立即返回 `{searchId}`，结果通过事件分批到达（§3） |
@@ -152,6 +152,7 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 | `catalog.loginQr{source}` | 源必须实现 `getLoginQr`（缺能力 → `common.not_implemented`）。返回 `{source, key, content, tip?}`：`content` 是**要画成二维码的字符串**（通常是登录 URL，由插件给——登录地址是具体第三方的，核心不掺和，ADR-0005）；`key` 用于后续轮询；缺 `content` → `plugin.runtime_error` |
 | `catalog.loginQrPoll{source, key}` | 轮询一次登录状态：`{source, state}`，`state ∈ waiting / scanned / confirmed / expired`（插件给别的值一律按 `waiting`）。**只有 `confirmed` 落凭据**：插件须同时给出 `credentialKey` 与 `value`，且 `credentialKey` 必须是该插件**清单声明过的凭据键**（否则 `plugin.permission_denied`）；核心把会话写进凭据库后返回 `{source, state:'confirmed', credentialKey}`——**令牌永不回传前端** |
 | `catalog.favoriteCollections{source}` | 源侧**可选的收藏夹/歌单**（第 69 条命令）：返回 `{source, items:[{id, title, count?}]}`。只有一份默认收藏的源**不实现** `getFavoriteCollections`——此时返回**空数组而不是错误**（界面据此隐藏选择器）。缺 `id` 的条目被丢弃；`count`/`mediaCount` 归一化成 `count`。**不缓存**（收藏夹名字与数量随时会变） |
+| `catalog.loginWeb{source}` | **浏览器窗口登录**的计划（第 73 条命令）：源必须在清单里声明 `@login`（否则 `common.not_implemented`）。返回 `{source, title, url, cookieNames, credentialKey}`——`url` 是**要打开的登录页**、`cookieNames` 是从 webview Cookie 罐里要取的字段、`credentialKey` 是会话写进哪个凭据键。**核心只出计划、不开窗口**：读 webview 的 Cookie 属于宿主能力，由桌面层的 `web_login` 命令完成（见 §2 末尾「桌面层命令」）。地址一律来自清单，核心不内置任何第三方地址（ADR-0005） |
 | `catalog.lyrics{ref, withTranslation?}` | 歌词；无词返回 `data: null`。返回 `{format:'lrc'\|'plain', content, translated?}`——**只交原文**，解析成行（含译文按时间戳对齐）是纯展示问题，由前端唯一一份 `src/utils/lyrics.ts` 完成 |
 | `catalog.lyricsSearch{query, limit?}` | **按关键词跨源找歌词**（歌词与歌曲分离时的兜底入口）：每个已启用且同时有 `search`+`getLyric` 的源各起一个线程，先 `search` 再取前 `limit`（1~5，缺省 2）个条目问歌词；没词的条目跳过，单源失败不影响其它源。返回 `{items, searchedSources, failedSources, skippedSources, timedOutSources}`：`items[]` 为 `{source, sourceName, track, lyrics}`；整体最多等 12s，`timedOutSources` 里的源**不阻塞已拿到的结果**。歌词按 `lyrics:<source>:<rawId>:false` 缓存（与 `catalog.lyrics` 同键） |
 
@@ -304,9 +305,16 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 - **导出**当前皮肤为 JSON（内置预设直接前端序列化，只有用户皮肤才取核心原文，见 §11）；
 - 校验与落盘**全部在核心**（结构 + 令牌键名白名单），被拒的键名逐条回给界面。
 
+### 桌面层命令（不经 `core_invoke`）
+
+Tauri 适配层另外注册了一条命令：它需要**宿主能力**（读 webview 的 Cookie 罐），而核心不依赖 Tauri。
+
+| 命令 | 说明 |
+|---|---|
+| `web_login{source}` | 按 `catalog.loginWeb` 给出的计划打开登录页窗口，轮询**这个窗口**的 Cookie 罐；`cookieNames` 全部到齐后调 `plugin.credentials.set` 落库，返回 `{ok, data:{source, state, credentialKey?}}`，`state ∈ confirmed / canceled`（关窗或 300s 超时都算 canceled，**凭据不动**）。会话值**不经过前端**。注册在 `src-tauri/src/lib.rs` 的 `generate_handler!` 里，前端只经 `services/core.bridge.ts` 的 `coreWebLogin` 调它 |
+
 ### 导入来源（插件与皮肤共用）
-```ts
-type ImportSource =
+```tstype ImportSource =
     | {kind:'file';      path: string}        // 单文件 .js（插件）或 .json（皮肤）
     | {kind:'dir';       path: string}        // 目录包：plugin.json + entry
     | {kind:'archive';   path: string}        // zip（**插件已实现**：stored + deflate；解压后按目录包/单文件归一化）
@@ -386,13 +394,21 @@ type PluginOrigin =
 // @oauth authorize=https://id.example.com/authorize,token=https://id.example.com/token,client=demo,scopes=fav
                              // 第三方授权（可选）：端点由作者提供，域名必须在 @hosts 里；
                              // 参数用逗号分隔，值里不能有逗号；可选 port=<n>（0 = 随机回环端口）、pkce / nopkce
+// @login url=https://example.com/login,cookies=SESSION_ID,key=apiKey
+                             // 浏览器窗口登录（可选）：打开站点自己的登录页，登录完成后从
+                             // **webview 的 Cookie 罐**里取 cookies=（多个用 + 连接）拼成会话，
+                             // 写进 key=（必须是本清单 @credentials 里声明过的键）。
+                             // url 必须 HTTPS 且域名在 @hosts 内（本机回环 http 例外）。
+                             // 与 @oauth 的区别：不用站点接口、不碰第三方登录风控，
+                             // 等价于「在浏览器里登录后复制 Cookie」，但全自动。见 §2 桌面层命令。
 ```
 
 目录包的 `plugin.json` 里同一份声明写成对象（字段与上面一一对应）：
 
 ```json
 "oauth": {"authorizeUrl": "https://id.example.com/authorize", "tokenUrl": "https://id.example.com/token",
-          "clientId": "demo", "scopes": ["fav"], "pkce": true, "redirectPort": 0}
+          "clientId": "demo", "scopes": ["fav"], "pkce": true, "redirectPort": 0},
+"webLogin": {"url": "https://example.com/login", "cookieNames": ["SESSION_ID"], "credentialKey": "apiKey"}
 ```
 
 声明 `@oauth` 会**自动补上** `network` + `credentials` 权限（流程要出网、令牌进凭据库）；

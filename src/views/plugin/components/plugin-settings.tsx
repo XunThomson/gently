@@ -15,6 +15,7 @@ import {
 import styles from '../plugin.module.css';
 import {PluginAuth} from './plugin-auth';
 import {PluginQrLogin} from './plugin-qr-login';
+import {PluginWebLogin} from './plugin-web-login';
 
 /**
  * 单个插件的**管理面板**：凭据 + 配置（契约 `plugin.credentials.*` / `plugin.config.*`）。
@@ -151,6 +152,11 @@ export function PluginSettings({plugin}: {plugin: PluginSummary}) {
         <div className={styles.settings}>
             {/* 第三方授权（只有声明了 @oauth 的插件才出现） */}
             <PluginAuth plugin={plugin} />
+
+            {/* 浏览器窗口登录（清单声明了 @login 才出现）：打开源站自己的登录页，会话自动落库 */}
+            {plugin.manifest?.webLogin && (
+                <PluginWebLogin pluginId={plugin.id} onConfirmed={() => void load()}/>
+            )}
 
             {/* 二维码登录（插件实现了 getLoginQr/pollLoginQr 才出现） */}
             {plugin.manifest?.capabilities?.includes('loginQr') && (

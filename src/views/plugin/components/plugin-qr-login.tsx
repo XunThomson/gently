@@ -8,9 +8,9 @@ import {catalogService} from '../../../services';
 import {qrSvgDataUrl} from './qr-code';
 import styles from './plugin-qr-login.module.css';
 
-/** 轮询间隔：R82 实测网易云的确认窗口只有约 2 秒（802 之后很快变成 8821），
- *  因此这里比常见的 1–2 秒更密——扫完到看见「已登录」基本在同一秒内。 */
-const POLL_MS = 300;
+/** 轮询间隔：登录端点本身有频率风控（社区里有「频繁调用登录接口被封 IP」的记录），
+ *  所以按常见第三方客户端那样**每秒问一次**，不追求更快——再快也快不过人手点确认。 */
+const POLL_MS = 1000;
 
 interface Props {
     pluginId: string;
@@ -129,6 +129,9 @@ export function PluginQrLogin({pluginId, configured = false, onConfirmed}: Props
 
             {/* 已经有凭据时明说「再扫会覆盖」：否则用户会以为扫码是必须做的第二步 */}
             {configured && !session && <p className={styles.hint}>{t('page.plugin.qrConfigured')}</p>}
+
+            {/* 风险提示：第三方客户端登录会被源站风控（有的源已经出现过封号），必须说清楚 */}
+            <p className={styles.hint}>{t('page.plugin.qrRisk')}</p>
 
             {error && (
                 <p className={styles.error}>

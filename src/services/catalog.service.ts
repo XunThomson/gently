@@ -9,7 +9,16 @@ import {
     setMusicSourceEnabled,
     unregisterMusicSource,
 } from '../plugins';
-import type {CoreError, LoginQrSession, LoginQrStatus, LyricSearchResult, TopListGroup, TopListPage} from '../api';
+import type {
+    CoreError,
+    LoginQrSession,
+    LoginQrStatus,
+    LyricSearchResult,
+    TopListGroup,
+    TopListPage,
+    WebLoginPlan,
+    WebLoginResult,
+} from '../api';
 import {findAlbum, findCuratedPlaylist} from '../mock/catalog.mock';
 import type {
     Album,
@@ -22,7 +31,7 @@ import type {
 } from '../types';
 import type {MusicSourcePlugin} from '../plugins';
 import type {CoreFavoriteCollection} from './core.catalog';
-import {coreAvailable} from './core.bridge';
+import {coreAvailable, coreWebLogin} from './core.bridge';
 import {
     coreAlbum,
     coreFavoriteCollections,
@@ -30,6 +39,7 @@ import {
     coreLyricsSearch,
     coreLoginQr,
     coreLoginQrPoll,
+    coreLoginWeb,
     corePlaylist,
     coreRecommend,
     coreResolveUrl,
@@ -437,6 +447,27 @@ export const catalogService = {
     async loginQrPoll(sourceId: string, key: string): Promise<{data: LoginQrStatus | null; error?: CoreError}> {
         if (!coreAvailable()) return {data: null};
         const result = await coreLoginQrPoll(sourceId, key);
+        if (result.ok && result.data) return {data: result.data};
+        return {data: null, ...(result.ok ? {} : {error: result.error})};
+    },
+
+    /**
+     * 用**浏览器窗口**登录（`catalog.loginWeb` + 宿主命令 `web_login`）。
+     *
+     * 与二维码登录的区别：这里打开的是源站自己的登录页（用户面对站点原有流程），
+     * 登录完成后由宿主从 webview 的 Cookie 罐里取出会话；会话值**不经过前端**。
+     */
+    async loginWebPlan(sourceId: string): Promise<{data: WebLoginPlan | null; error?: CoreError}> {
+        if (!coreAvailable()) return {data: null};
+        const result = await coreLoginWeb(sourceId);
+        if (result.ok && result.data) return {data: result.data};
+        return {data: null, ...(result.ok ? {} : {error: result.error})};
+    },
+
+    /** 开登录窗口并等用户登录；`state` 只有 confirmed / canceled（超时也算 canceled） */
+    async loginWeb(sourceId: string): Promise<{data: WebLoginResult | null; error?: CoreError}> {
+        if (!coreAvailable()) return {data: null};
+        const result = await coreWebLogin(sourceId);
         if (result.ok && result.data) return {data: result.data};
         return {data: null, ...(result.ok ? {} : {error: result.error})};
     },

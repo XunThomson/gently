@@ -17,6 +17,7 @@
 pub mod cache;
 pub mod catalog;
 pub mod login_qr;
+pub mod login_web;
 pub mod catalog_detail;
 pub mod commands;
 pub mod contract;

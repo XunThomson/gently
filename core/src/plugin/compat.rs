@@ -177,6 +177,8 @@ fn synthesize(source: &str, transport: Arc<dyn HttpTransport>) -> Fallible<Parse
             // 兼容插件的登录态走 `env.getUserVariables()` 里的 cookie / token：
             // 清单是从 `module.exports` 合成的，没有可信的授权端点声明，因此不认 @oauth
             oauth: None,
+            // 同理：兼容插件的清单里没有可信的登录页声明，不认 @login
+            web_login: None,
             min_core_version: None,
             tags: Vec::new(),
             capabilities,

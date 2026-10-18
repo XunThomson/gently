@@ -26,6 +26,7 @@ import type {
     PluginSummary,
     SystemPathsDto,
     SystemStatusDto,
+    WebLoginResult,
 } from '../api';
 import {isTauri} from './window.service';
 
@@ -83,6 +84,34 @@ export const coreSystem = {
     /** 改播放缓存上限；核心立即按新上限淘汰并返回最新状态 */
     cacheConfig: (limitBytes: number) => invokeCore<CacheStatusDto>('system.cacheConfig', {limitBytes}),
 };
+
+/**
+ * 调用一条**桌面层**命令（`generate_handler!` 里与 `core_invoke` 并列注册的那几个）。
+ *
+ * 用途：少数能力必须由宿主提供（例如读 webview 的 Cookie 罐），核心拿不到。
+ * 约定与 `invokeCore` 完全一致：永不抛异常，统一回契约信封。
+ */
+async function invokeHost<T>(entry: string, args: Record<string, unknown>): Promise<CoreResult<T>> {
+    if (!coreAvailable()) {
+        return fail('common.unsupported_platform', '当前不在桌面宿主中，浏览器预览不支持该操作');
+    }
+    try {
+        const {invoke} = await import('@tauri-apps/api/core');
+        const result = await invoke<CoreResult<T>>(entry, args);
+        if (result && typeof result === 'object' && 'ok' in result) return result;
+        return fail('common.internal', `宿主命令 ${entry} 未返回契约信封`);
+    } catch (err) {
+        return fail('common.internal', err instanceof Error ? err.message : String(err));
+    }
+}
+
+/**
+ * 打开源站自己的登录页，登录完成后**自动读取 webview 里的会话**并写进凭据库。
+ *
+ * 为什么需要宿主命令：Cookie 罐属于 webview，只有宿主读得到；而「读哪些 Cookie、写进哪个键」
+ * 由插件清单的 `@login` 声明（核心的 `catalog.loginWeb` 只负责校验与转手）。
+ */
+export const coreWebLogin = (source: string) => invokeHost<WebLoginResult>('web_login', {source});
 
 let probed: Promise<CoreResult<SystemStatusDto>> | null = null;
 

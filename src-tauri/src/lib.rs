@@ -7,6 +7,7 @@
 //! 因此这里只注册 `core_invoke`，由 core 按契约名路由（见 `core/src/commands.rs`）。
 
 pub mod state;
+pub mod web_login;
 
 use std::sync::Arc;
 
@@ -99,7 +100,7 @@ pub fn run() {
             app.manage(AppState { core: Arc::new(core), _log_guard: log_guard });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![core_invoke])
+        .invoke_handler(tauri::generate_handler![core_invoke, web_login::web_login])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

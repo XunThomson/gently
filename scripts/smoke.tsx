@@ -2008,6 +2008,43 @@ async function main(): Promise<void> {
             'auth: 没声明 @oauth 的插件不显示授权入口',
             !withoutOauth.includes('OAuth'),
         );
+
+        /* 声明了 @login 的插件：出现「在登录窗口里登录」入口，并且**域名来自清单**；
+           没声明的面板里不该有它。登录窗口本身由宿主开（Node 里没有 webview），
+           这里只断言界面这一侧。 */
+        const webLoginPlugin = {
+            ...oauthPlugin,
+            id: 'smoke-weblogin',
+            name: '窗口登录源',
+            manifest: {
+                ...oauthPlugin.manifest,
+                id: 'smoke-weblogin',
+                name: '窗口登录源',
+                hosts: ['music.example.com'],
+                credentials: [{key: 'session_cookie', label: '会话', required: true, secret: true}],
+                oauth: undefined,
+                webLogin: {
+                    url: 'https://music.example.com/login',
+                    cookieNames: ['SESSION_ID'],
+                    credentialKey: 'session_cookie',
+                },
+            },
+        };
+        const withWebLogin = renderToString(<PluginSettings plugin={webLoginPlugin}/>);
+        const withoutWebLogin = renderToString(
+            <PluginSettings plugin={{...webLoginPlugin, manifest: {...webLoginPlugin.manifest, webLogin: undefined}}}/>,
+        );
+        check(
+            /* 域名来自核心返回的计划（异步取），SSR 里拿不到——这里只钉界面这一侧：
+               入口出现、文案在；域名/会话读取由宿主命令 + 打包版实测覆盖 */
+            'web login: 声明 @login 的插件出现登录窗口入口',
+            withWebLogin.includes('在登录窗口里登录') && withWebLogin.includes('打开登录窗口'),
+            withWebLogin.slice(0, 120),
+        );
+        check(
+            'web login: 没声明 @login 的插件不显示该入口',
+            !withoutWebLogin.includes('打开登录窗口'),
+        );
     }
 
     /* 歌曲详情：先恢复播放，确保歌词面板也有内容可渲染 */

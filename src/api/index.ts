@@ -146,6 +146,35 @@ export interface LoginQrStatus {
     credentialKey?: string;
 }
 
+/**
+ * 清单里的「浏览器窗口登录」声明（`@login`）。
+ *
+ * 语义：应用打开 `url` 这个**站点自己的登录页**，登录完成后从 webview 的 Cookie 罐里
+ * 取出 `cookieNames` 拼成会话，写进 `credentialKey` 这个凭据键。
+ */
+export interface WebLoginDecl {
+    url: string;
+    cookieNames: string[];
+    credentialKey: string;
+}
+
+/** catalog.loginWeb：用浏览器窗口登录所需的计划（地址来自插件清单，核心不内置任何第三方地址） */
+export interface WebLoginPlan {
+    source: string;
+    /** 插件显示名（登录窗口标题用） */
+    title: string;
+    url: string;
+    cookieNames: string[];
+    credentialKey: string;
+}
+
+/** 桌面层 `web_login` 的结果：会话值不回传前端，只说状态与键名 */
+export interface WebLoginResult {
+    source: string;
+    state: 'confirmed' | 'canceled';
+    credentialKey?: string;
+}
+
 export interface LyricSearchItem {
     source: string;
     sourceName: string;
@@ -269,6 +298,11 @@ export interface PluginManifest {
      * **应用不内置任何第三方地址**（ADR-0005）——没有声明就是没有。
      */
     oauth?: OAuthConfig;
+    /**
+     * 「浏览器窗口登录」声明（`@login`）：界面据此给「打开登录窗口」入口，
+     * 并把**要打开的登录页域名**如实展示给用户。
+     */
+    webLogin?: WebLoginDecl;
     minCoreVersion?: string;
     tags: string[];
     /**
@@ -355,6 +389,11 @@ export interface PluginImportPreview {
      * **会把浏览器带去哪个域名**、要哪些 scope、有没有关掉 PKCE。
      */
     oauth?: OAuthConfig;
+    /**
+     * 「浏览器窗口登录」声明（清单里有 `@login` 时出现）：界面据此给「打开登录窗口」入口，
+     * 并把**要打开的登录页域名**如实展示给用户。
+     */
+    webLogin?: WebLoginDecl;
 }
 
 export interface PluginCredentialStatus {

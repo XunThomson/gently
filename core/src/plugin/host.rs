@@ -800,6 +800,7 @@ pub fn probe(source: &str, limits: HostLimits, transport: Arc<dyn HttpTransport>
         hosts: Vec::new(),
         credentials: Vec::new(),
         oauth: None,
+        web_login: None,
         min_core_version: None,
         tags: Vec::new(),
         capabilities: Vec::new(),

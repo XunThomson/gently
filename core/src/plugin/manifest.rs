@@ -210,6 +210,40 @@ fn default_true() -> bool {
     true
 }
 
+/// 「在浏览器窗口里登录，然后自动读取 web 会话」的声明（`@login`）。
+///
+/// 为什么需要它：有些源只接受**网页会话 Cookie**，而让用户自己去开发者工具里翻 Cookie 门槛太高；
+/// 由我们打开一个真正的登录页窗口（用户面对的是站点自己的页面与风控），登录完成后从 webview 的
+/// Cookie 罐里读出会话，写进凭据库——等价于「手动复制 Cookie」，只是自动化了。
+///
+/// 单文件插件的头部写法（参数之间用逗号分隔）：
+///
+/// ```text
+/// // @login url=https://example.com/,cookies=MUSIC_U+__csrf,key=demo_cookie
+/// ```
+///
+/// 目录包的 `plugin.json` 等价写法：
+///
+/// ```json
+/// "webLogin": {"url": "https://example.com/", "cookieNames": ["MUSIC_U"], "credentialKey": "demo_cookie"}
+/// ```
+///
+/// 约束：
+/// - `url` 必须 HTTPS，域名必须在 `@hosts` 里（和普通出网同一道白名单）；
+/// - `cookies` 用 `+` 分隔，按顺序拼接；**至少一个**；
+/// - `key` 必须是本清单 `@credentials` 里声明过的键（否则清单一律视为无效，避免写到一个没人认的键）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebLoginConfig {
+    /// 登录页地址（HTTPS）
+    pub url: String,
+    /// 要读的 Cookie 名，按顺序拼接成 `name=value; …`
+    #[serde(default)]
+    pub cookie_names: Vec<String>,
+    /// 会话写进凭据库的键（必须出现在 `@credentials` 里）
+    pub credential_key: String,
+}
+
 /// 插件清单：单文件头部注释与目录包 `plugin.json` 共用。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -237,6 +271,9 @@ pub struct PluginManifest {
     /// 第三方授权声明（`@oauth`）：端点由插件提供，核心只跑通用流程
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oauth: Option<OAuthConfig>,
+    /// 「在浏览器窗口里登录、自动取 web 会话」的声明（`@login`）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_login: Option<WebLoginConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_core_version: Option<String>,
     #[serde(default)]
@@ -482,6 +519,9 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
     // ---- 第三方授权（@oauth）：端点由插件声明，核心只跑通用 OAuth 流程 ----
     let oauth = parse_oauth(&many("oauth"), &hosts, &mut invalid);
 
+    // ---- 浏览器窗口登录（@login）：登录页 + 要读的 Cookie 名 + 凭据键，全部由插件声明 ----
+    let web_login = parse_web_login(&many("login"), &hosts, &credentials, &mut invalid);
+
     // 头部出现 `@compat` 即开启兼容模式（不需要值，避免 @compat=true 这类歧义）
     let compat = header.iter().any(|(key, _)| key == "compat");
 
@@ -549,9 +589,9 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
         }
     }
     // ---- 未知头部字段：提示但不阻断（便于格式演进） ----
-    const KNOWN: [&str; 16] = [
+    const KNOWN: [&str; 17] = [
         "id", "name", "version", "author", "description", "homepage", "url", "entry", "qualities",
-        "permissions", "hosts", "credentials", "oauth", "mincoreversion", "tags", "compat",
+        "permissions", "hosts", "credentials", "oauth", "login", "mincoreversion", "tags", "compat",
     ];
     let unknown: Vec<String> = header
         .iter()
@@ -584,6 +624,7 @@ fn build(header: Header, source: Option<&str>) -> Fallible<ParsedPlugin> {
             hosts,
             credentials,
             oauth,
+            web_login,
             min_core_version: single("mincoreversion"),
             tags: many("tags"),
             capabilities,
@@ -597,11 +638,102 @@ fn invalid_source(message: &str, details: serde_json::Value) -> CoreError {
     CoreError::new(ErrorCode::PluginInvalidSource, message).with_details(details)
 }
 
+/// 解析 `@login` 的 `key=value` 片段：`url=…,cookies=A+B,key=…`。
+///
+/// 任一必填项缺失、URL 不是 HTTPS（回环除外）、域名不在 `@hosts`、凭据键没在 `@credentials`
+/// 里声明，都记进 `invalid` 并返回 `None`——宁可在预览里说清原因，也不要运行时打开一个
+/// 取不到会话的窗口。
+fn parse_web_login(
+    pieces: &[String],
+    hosts: &[String],
+    credentials: &[CredentialField],
+    invalid: &mut Vec<serde_json::Value>,
+) -> Option<WebLoginConfig> {
+    if pieces.is_empty() {
+        return None;
+    }
+
+    let mut url = String::new();
+    let mut cookie_names: Vec<String> = Vec::new();
+    let mut credential_key = String::new();
+
+    for piece in pieces {
+        let (name, value) = match piece.split_once('=') {
+            Some((name, value)) => (name.trim().to_ascii_lowercase(), value.trim().to_string()),
+            None => (piece.trim().to_ascii_lowercase(), String::new()),
+        };
+        match name.as_str() {
+            "url" | "page" => url = value,
+            "cookies" | "cookie" => {
+                cookie_names =
+                    value.split(['+', ',', ' ']).map(str::trim).filter(|one| !one.is_empty()).map(str::to_string).collect();
+            }
+            "key" | "credential" | "credentialkey" => credential_key = value,
+            other => invalid.push(serde_json::json!({
+                "field": "login",
+                "value": piece,
+                "expect": format!("不认识的键 `{other}`（可用 url= / cookies= / key=）"),
+            })),
+        }
+    }
+
+    let mut broken = false;
+    if url.trim().is_empty() {
+        invalid.push(serde_json::json!({
+            "field": "login",
+            "value": "url=",
+            "expect": "浏览器登录至少要给 url=（登录页地址）",
+        }));
+        broken = true;
+    } else if !is_loopback_http(&url) {
+        let allowed = url.starts_with("https://")
+            && super::transport::host_of(&url)
+                .is_some_and(|host| super::transport::host_allowed(hosts, &host));
+        if !allowed {
+            invalid.push(serde_json::json!({
+                "field": "login",
+                "value": format!("url={url}"),
+                "expect": "登录页必须是 HTTPS，且域名写进 @hosts（本机回环 http 除外）",
+            }));
+            broken = true;
+        }
+    }
+
+    if cookie_names.is_empty() {
+        invalid.push(serde_json::json!({
+            "field": "login",
+            "value": "cookies=",
+            "expect": "要读的 Cookie 名至少一个（多个用 + 连接，例如 MUSIC_U+__csrf）",
+        }));
+        broken = true;
+    }
+
+    if credential_key.trim().is_empty() {
+        invalid.push(serde_json::json!({
+            "field": "login",
+            "value": "key=",
+            "expect": "会话要写进哪个凭据键（必须是 @credentials 里声明过的键）",
+        }));
+        broken = true;
+    } else if !credentials.iter().any(|field| field.key == credential_key) {
+        invalid.push(serde_json::json!({
+            "field": "login",
+            "value": format!("key={credential_key}"),
+            "expect": "key 必须是本清单 @credentials 里声明过的键",
+        }));
+        broken = true;
+    }
+
+    if broken {
+        return None;
+    }
+    Some(WebLoginConfig { url, cookie_names, credential_key })
+}
+
 /// 解析 `@oauth` 的 `key=value` 片段（目录包走 `header_from_json` 归一化成同一形状）。
 ///
 /// 返回 `None` = 没声明；`Some` = 声明合法（或至少能构造出来），非法项进 `invalid`。
-fn parse_oauth(
-    pieces: &[String],
+fn parse_oauth(    pieces: &[String],
     hosts: &[String],
     invalid: &mut Vec<serde_json::Value>,
 ) -> Option<OAuthConfig> {
@@ -1057,5 +1189,53 @@ async function getMediaSource(track, quality) { return null; }
     fn id_and_version_shapes_are_enforced() {
         assert!(parse_source(&MINIMAL.replace("demo-source", "Bad_ID")).is_err());
         assert!(parse_source(&MINIMAL.replace("1.0.0", "v1")).is_err());
+    }
+
+    /// `@login`：浏览器窗口登录的三要素（登录页 / 要读的 Cookie 名 / 凭据键）。
+    ///
+    /// 为什么值得盯：这条声明决定了「打开哪个页面」和「把读到的会话写进哪个键」，
+    /// 校验一旦松掉，插件就能借登录之名把任意值写进任意凭据键。
+    #[test]
+    fn web_login_declaration_is_validated() {
+        let source = format!(
+            "{MINIMAL}// @hosts example.com\n// @credentials demo_cookie:会话\n// @login url=https://example.com/login,cookies=MUSIC_U+__csrf,key=demo_cookie\n"
+        );
+        let parsed = parse_source(&source).expect("合法声明应解析成功");
+        let login = parsed.manifest.web_login.expect("应当解析出 web_login");
+        assert_eq!(login.url, "https://example.com/login");
+        assert_eq!(login.cookie_names, vec!["MUSIC_U".to_string(), "__csrf".to_string()]);
+        assert_eq!(login.credential_key, "demo_cookie");
+        assert!(parsed
+            .manifest
+            .permissions
+            .contains(&crate::plugin::PluginPermission::Network));
+
+        // 域名不在 @hosts 里 → 清单无效（否则等于给 webview 开了一个没登记过的地址）
+        let off_hosts = format!(
+            "{MINIMAL}// @hosts example.com\n// @credentials demo_cookie:会话\n// @login url=https://other.example.org/login,cookies=MUSIC_U,key=demo_cookie\n"
+        );
+        assert!(parse_source(&off_hosts).is_err(), "域名不在 @hosts 时必须拒绝");
+
+        // 不是 HTTPS → 拒绝（本机回环例外）
+        let plain = format!(
+            "{MINIMAL}// @hosts example.com\n// @credentials demo_cookie:会话\n// @login url=http://example.com/login,cookies=MUSIC_U,key=demo_cookie\n"
+        );
+        assert!(parse_source(&plain).is_err(), "明文登录页必须拒绝");
+        let loopback = format!(
+            "{MINIMAL}// @credentials demo_cookie:会话\n// @login url=http://127.0.0.1:8080/login,cookies=MUSIC_U,key=demo_cookie\n"
+        );
+        assert!(parse_source(&loopback).is_ok(), "本机回环允许明文（测试与本地登录页）");
+
+        // 凭据键没在 @credentials 里声明 → 拒绝
+        let undeclared = format!(
+            "{MINIMAL}// @hosts example.com\n// @credentials demo_cookie:会话\n// @login url=https://example.com/login,cookies=MUSIC_U,key=other_key\n"
+        );
+        assert!(parse_source(&undeclared).is_err(), "未声明的凭据键必须拒绝");
+
+        // 缺 Cookie 名 → 拒绝
+        let no_cookie = format!(
+            "{MINIMAL}// @hosts example.com\n// @credentials demo_cookie:会话\n// @login url=https://example.com/login,key=demo_cookie\n"
+        );
+        assert!(parse_source(&no_cookie).is_err(), "没说读哪个 Cookie 时不该放行");
     }
 }
