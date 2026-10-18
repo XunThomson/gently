@@ -6,7 +6,7 @@ import {EmptyState} from '../../components/ui/empty-state';
 import {IconChevronDown, IconChevronLeft, IconMusic, IconPause, IconPlay} from '../../components/ui/icon';
 import {Lyrics} from '../../components/ui/lyrics';
 import {useActions, usePlayerState} from '../../store';
-import {trackCoverStyle} from '../../utils/cover';
+import {Cover} from '../../components/ui/cover';
 import {LyricsToolsDrawer} from './components/LyricsToolsDrawer';
 import styles from './now-playing.module.css';
 
@@ -72,9 +72,12 @@ export default function NowPlayingView() {
 
             <div className={styles.layout}>
                 <section className={styles.artwork}>
-                    <div
+                    <Cover
                         className={styles.cover}
-                        style={trackCoverStyle(artwork)}
+                        artwork={artwork.artwork}
+                        gradient={artwork.gradient}
+                        title={artwork.title}
+                        artist={artwork.artist}
                     >
                         <span className={styles.initial}>{artwork.title.slice(0, 1)}</span>
                         <button
@@ -85,7 +88,7 @@ export default function NowPlayingView() {
                         >
                             {playing ? <IconPause size={16}/> : <IconPlay size={16}/>}
                         </button>
-                    </div>
+                    </Cover>
                     <p className={styles.caption}>{current.title}</p>
                 </section>
 

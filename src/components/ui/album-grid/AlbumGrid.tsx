@@ -3,7 +3,7 @@ import {useTranslation} from 'react-i18next';
 import {EmptyState} from '../../../components/ui/empty-state';
 import {IconPlay} from '../../../components/ui/icon';
 import type {RecommendedAlbum} from '../../../types';
-import {coverStyle} from '../../../utils/cover';
+import {Cover} from '../cover';
 import {ReasonChip} from '../reason-chip';
 import styles from './AlbumGrid.module.css';
 
@@ -46,9 +46,11 @@ export function AlbumGrid({albums, onSelect, onPlay}: AlbumGridProps): JSX.Eleme
                     onClick={() => onSelect(album)}
                     onKeyDown={(event) => activate(event, album)}
                 >
-                    <span
+                    <Cover
                         className={styles.cover}
-                        style={coverStyle(album.cover, `${album.source}|${album.title}`)}
+                        artwork={album.cover}
+                        title={album.title}
+                        artist={album.artist ?? ''}
                     >
                         <span className={styles.initial}>{album.title.slice(0, 1)}</span>
                         <button
@@ -63,7 +65,7 @@ export function AlbumGrid({albums, onSelect, onPlay}: AlbumGridProps): JSX.Eleme
                         >
                             <IconPlay size={12}/>
                         </button>
-                    </span>
+                    </Cover>
                     <span className={styles.title}>{album.title}</span>
                     <ReasonChip reason={album.reason} className={styles.reason}/>
                     <span className={styles.artist}>{album.artist}</span>

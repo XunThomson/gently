@@ -91,6 +91,7 @@ import ThemeView from '../src/views/theme';
 import FavoritesView from '../src/views/favorites';
 import {SourceFavorites} from '../src/views/favorites/components/source-favorites';
 import {CollectionPicker} from '../src/views/favorites/components/collection-picker';
+import {Cover} from '../src/components/ui/cover';
 import {DownloadMark} from '../src/components/ui/download-mark';
 import PlaylistView from '../src/views/playlist';
 import CollectionView from '../src/views/collection';
@@ -1012,6 +1013,26 @@ async function main(): Promise<void> {
             'cover: 没有地址时才用哈希渐变兜底',
             typeof gradientFallback.background === 'string' && !gradientFallback.backgroundImage,
             JSON.stringify(gradientFallback),
+        );
+    }
+
+    /* 封面用 <img> 而不是背景图：要能显式声明 no-referrer（图床对陌生 Referer 回 403） */
+    {
+        const withImage = renderToString(
+            <Cover artwork="http://i2.example.com/a.jpg" title="歌" artist="人"/>,
+        );
+        check(
+            'cover: 有地址时渲染 <img> 并声明 no-referrer（http 同时升到 https）',
+            withImage.includes('<img') &&
+                withImage.includes('src="https://i2.example.com/a.jpg"') &&
+                withImage.includes('referrerPolicy="no-referrer"'),
+            withImage,
+        );
+        const gradientOnly = renderToString(<Cover title="歌" artist="人"/>);
+        check(
+            'cover: 没有地址时不渲染 <img>（退回渐变，不留破图）',
+            !gradientOnly.includes('<img'),
+            gradientOnly,
         );
     }
 

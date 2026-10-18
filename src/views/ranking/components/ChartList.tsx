@@ -3,7 +3,7 @@ import {DownloadMark} from '../../../components/ui/download-mark';
 import {useTranslation} from 'react-i18next';
 import {IconMusic} from '../../../components/ui/icon';
 import type {Track} from '../../../types';
-import {trackCoverStyle} from '../../../utils/cover';
+import {Cover} from '../../../components/ui/cover';
 import styles from './ChartList.module.css';
 
 export interface ChartListProps {
@@ -46,9 +46,12 @@ export function ChartList({rows, currentTitle, loading = false, onSelect}: Chart
                     >
                         <div className={styles.rank}>{i + 1}</div>
 
-                        <div
+                        <Cover
                             className={styles.cover}
-                            style={trackCoverStyle(track)}
+                            artwork={track.artwork}
+                            gradient={track.gradient}
+                            title={track.title}
+                            artist={track.artist}
                         >
                             {playing ? (
                                 <div className={styles.playingBars}>
@@ -59,7 +62,7 @@ export function ChartList({rows, currentTitle, loading = false, onSelect}: Chart
                             ) : (
                                 '♪'
                             )}
-                        </div>
+                        </Cover>
 
                         <div className={styles.meta}>
                             <div className={styles.title}>

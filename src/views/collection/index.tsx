@@ -20,7 +20,7 @@ import {errorText} from '../../i18n/errors';
 import {catalogService, recommendService} from '../../services';
 import type {CoreError} from '../../api';
 import type {Album, CuratedPlaylist, RecommendedTrack, Track} from '../../types';
-import {coverStyle} from '../../utils/cover';
+import {Cover} from '../../components/ui/cover';
 import {SimilarList} from './components/SimilarList';
 import styles from './collection.module.css';
 
@@ -180,12 +180,14 @@ export default function CollectionView() {
             }
         >
             <div className={styles.head}>
-                <span
+                <Cover
                     className={styles.cover}
-                    style={coverStyle(item.cover, `${item.source}|${item.title}`)}
+                    artwork={item.cover}
+                    title={item.title}
+                    artist={''}
                 >
                     <span className={styles.initial}>{item.title.slice(0, 1)}</span>
-                </span>
+                </Cover>
 
                 <div className={styles.meta}>
                     <span className={styles.kind}>

@@ -1,6 +1,6 @@
 import {useTranslation} from 'react-i18next';
 import type {RecommendedTrack} from '../../../types';
-import {trackCoverStyle} from '../../../utils/cover';
+import {Cover} from '../../../components/ui/cover';
 import styles from './SimilarList.module.css';
 
 export interface SimilarListProps {
@@ -36,12 +36,15 @@ export function SimilarList({tracks, currentId, onSelect}: SimilarListProps) {
                             className={`${styles.row}${playing ? ` ${styles.playing}` : ''}`}
                             onClick={() => onSelect(track)}
                         >
-                            <span
+                            <Cover
                                 className={styles.cover}
-                                style={trackCoverStyle(track)}
+                                artwork={track.artwork}
+                                gradient={track.gradient}
+                                title={track.title}
+                                artist={track.artist}
                             >
                                 {playing ? '❚❚' : '♪'}
-                            </span>
+                            </Cover>
                             <span className={styles.meta}>
                                 <span className={styles.title}>{track.title}</span>
                                 <span className={styles.artist}>{track.artist}</span>

@@ -27,30 +27,38 @@
     min-width: 0;
 }
 
+/* 播放条封面：按钮负责可点区域与悬停，内层 `.cover` 只负责把图画满 */
+.coverButton {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+}
+
 .cover {
     width: var(--player-cover-size);
     height: var(--player-cover-size);
     flex-shrink: 0;
     display: grid;
     place-items: center;
-    padding: 0;
-    border: 0;
     border-radius: var(--player-cover-radius);
     background: var(--bg-surface-alt);
     color: var(--brand-contrast);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-bold);
-    cursor: pointer;
     box-shadow: var(--shadow-sm);
     transition: transform var(--motion-fast), box-shadow var(--motion-fast);
 }
 
-.cover:not(:disabled):hover {
+.coverButton:not(:disabled):hover .cover {
     transform: scale(1.04);
     box-shadow: var(--shadow-md);
 }
 
-.cover:disabled {
+.coverButton:disabled {
     cursor: default;
     opacity: 0.7;
 }

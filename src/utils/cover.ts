@@ -12,34 +12,32 @@ import {grad, hashStr} from './helpers';
  *
  * 同一个算法只有这一份，网格与详情页共用。
  */
-export function coverStyle(cover: string | undefined, seed: string): CSSProperties {
+/**
+ * 把封面地址规范成**可直接加载**的 https URL；不是图片地址（渐变、空串）时返回 `null`。
+ *
+ * 桌面端页面跑在 `http://tauri.localhost`，属于安全上下文，于是：
+ * - `http://…` 的图会被当**混合内容**直接拦掉（上游插件给的就是 `http://i1.example.com/…`）；
+ * - `//host/…` 会被解析成 `tauri://host/…`。
+ * 两种情况都表现为「封面静默加载失败、退回渐变色块」，看起来像「没有封面」（R73）。
+ */
+export function coverUrl(cover: string | undefined): string | null {
     const value = (cover ?? '').trim();
-
-    if (value.startsWith('data:')) {
-        return {
-            backgroundImage: `url("${value}")`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat',
-        };
-    }
-
-    /**
-     * 封面地址统一升到 https，并补全**协议相对地址**。
-     *
-     * 桌面端页面跑在 `tauri://localhost`，属于安全上下文，于是：
-     * - `http://…` 的图会被当**混合内容**直接拦掉（上游插件给的就是 `http://i1.example.com/…`）；
-     * - `//host/…` 会被解析成 `tauri://host/…`。
-     * 两种情况都表现为「封面静默加载失败、退回渐变色块」，看起来像「没有封面」（R73）。
-     */
     const remote = value.startsWith('//')
         ? `https:${value}`
         : /^http:\/\//i.test(value)
           ? `https://${value.slice(7)}`
           : value;
-    if (/^https:\/\//i.test(remote)) {
+    if (value.startsWith('data:')) return value;
+    return /^https:\/\//i.test(remote) ? remote : null;
+}
+
+export function coverStyle(cover: string | undefined, seed: string): CSSProperties {
+    const value = (cover ?? '').trim();
+    const url = coverUrl(value);
+
+    if (url) {
         return {
-            backgroundImage: `url("${remote}")`,
+            backgroundImage: `url("${url}")`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',

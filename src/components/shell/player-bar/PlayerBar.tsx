@@ -6,7 +6,7 @@ import {appConfig} from '../../../config/app.config';
 import {useActions, usePlayerState, useSelect} from '../../../store';
 import {useTheme} from '../../../theme';
 import type {RepeatMode} from '../../../types';
-import {trackCoverStyle} from '../../../utils/cover';
+import {Cover} from '../../ui/cover';
 import {fmt} from '../../../utils/helpers';
 import {
     IconHeart,
@@ -135,18 +135,23 @@ export function PlayerBar() {
                 <div className={styles.left}>
                     <button
                         type="button"
-                        className={styles.cover}
-                        style={
-                            artwork
-                                ? trackCoverStyle(artwork)
-                                : undefined
-                        }
+                        className={styles.coverButton}
                         title={current ? t('player.openDetail') : undefined}
                         aria-label={current ? t('player.openDetail') : undefined}
                         disabled={!current}
                         onClick={openDetail}
                     >
-                        {current ? current.title.slice(0, 1) : '♪'}
+                        {current ? (
+                            <Cover
+                                className={styles.cover}
+                                artwork={artwork?.artwork}
+                                gradient={artwork?.gradient}
+                                title={artwork?.title ?? ''}
+                                artist={artwork?.artist ?? ''}
+                            />
+                        ) : (
+                            <span className={styles.cover}>♪</span>
+                        )}
                     </button>
 
                     <div className={styles.info}>

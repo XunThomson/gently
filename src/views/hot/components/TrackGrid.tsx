@@ -3,7 +3,7 @@ import {EmptyState} from '../../../components/ui/empty-state';
 import {IconClose, IconMusic, IconPause, IconPlay} from '../../../components/ui/icon';
 import {ReasonChip} from '../../../components/ui/reason-chip';
 import type {RecommendationReason, Track} from '../../../types';
-import {trackCoverStyle} from '../../../utils/cover';
+import {Cover} from '../../../components/ui/cover';
 import styles from './TrackGrid.module.css';
 
 export interface TrackGridProps {
@@ -70,12 +70,12 @@ export function TrackGrid({
                             className={styles.cardMain}
                             onClick={() => onSelect(track)}
                         >
-                            <span className={styles.cover} style={trackCoverStyle(track)}>
+                            <Cover className={styles.cover} artwork={track.artwork} gradient={track.gradient} title={track.title} artist={track.artist}>
                                 <span className={styles.initial}>{track.title.slice(0, 1)}</span>
                                 <span className={`${styles.play}${isCurrent ? ` ${styles.playVisible}` : ''}`}>
                                     {isCurrent && playing ? <IconPause size={12}/> : <IconPlay size={12}/>}
                                 </span>
-                            </span>
+                            </Cover>
                             <span className={styles.title}>{track.title}</span>
                             <span className={styles.artist}>{track.artist}</span>
                             {reason && (

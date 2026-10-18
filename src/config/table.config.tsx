@@ -3,7 +3,7 @@ import type {ColumnDef, RowAction} from '../components/ui/data-table';
 import {ActionsCell, BadgeCell, ProgressCell, TextCell} from '../components/ui/data-table';
 import {DownloadMark} from '../components/ui/download-mark';
 import type {Track} from '../types';
-import {trackCoverStyle} from '../utils/cover';
+import {Cover} from '../components/ui/cover';
 import styles from './table.config.module.css';
 
 /**
@@ -36,7 +36,13 @@ export const titleColumn = <T extends Track>(t: TFunction): ColumnDef<T> => ({
     // 取值优先级与播放条 / 榜单 / 歌词页完全一致（`utils/cover.ts`），列表里不会出现「另一种封面」。
     render: (value, record) => (
         <span className={styles.title}>
-            <span aria-hidden="true" className={styles.cover} style={trackCoverStyle(record)} />
+            <Cover
+                className={styles.cover}
+                artwork={record.artwork}
+                gradient={record.gradient}
+                title={record.title}
+                artist={record.artist}
+            />
             {/* 文本包一层：`TextCell` 本身是 flex 项，不设 min-width 时会顶开下载标记 */}
             <span className={styles.titleText}>
                 <TextCell>
