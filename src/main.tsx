@@ -20,6 +20,11 @@ const desktopLyricsMode =
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).get('window') === 'desktop-lyrics';
 
+/* 给歌词窗口打一个标记：整页要透明（见 assets/css/global.css），主窗口不受影响 */
+if (desktopLyricsMode) {
+    document.documentElement.dataset.window = 'desktop-lyrics';
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <StrictMode>
         <ThemeProvider>

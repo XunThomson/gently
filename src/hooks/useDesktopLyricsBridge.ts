@@ -5,18 +5,31 @@ import {useActions, usePlayerState, useSelect} from '../store';
 import type {PlayerState} from '../store/types';
 import type {ThemeMode} from '../theme';
 import type {DesktopLyricsPayload} from '../widgets/desktop-lyrics/types';
+import {
+    DEFAULT_LYRICS_WINDOW_SETTINGS,
+    readLyricsWindowSettings,
+    subscribeLyricsWindowSettings,
+    type LyricsWindowSettings,
+} from '../utils/lyricsWindowSettings';
 
 let eventApi: Promise<typeof import('@tauri-apps/api/event')> | null = null;
 const events = () => (eventApi ??= import('@tauri-apps/api/event'));
+
+/** 没有「下一行」时，当前行按 4 秒唱完算（逐字展开的兜底长度） */
+const LAST_LINE_SECONDS = 4;
 
 /** 由播放器状态算出桌面歌词窗口要显示的内容（纯函数，便于推理与测试） */
 export function desktopLyricsPayload(
     player: PlayerState,
     themeMode: ThemeMode = 'light',
+    settings: LyricsWindowSettings = DEFAULT_LYRICS_WINDOW_SETTINGS,
 ): DesktopLyricsPayload {
-    const active = activeLyricIndex(player.lyrics, player.elapsed + player.lyricsOffset);
+    const elapsed = player.elapsed + player.lyricsOffset;
+    const active = activeLyricIndex(player.lyrics, elapsed);
     const line = active >= 0 ? player.lyrics[active] : undefined;
     const next = player.lyrics[active + 1];
+    const lineStart = line?.time ?? 0;
+    const lineEnd = next?.time ?? lineStart + LAST_LINE_SECONDS;
 
     return {
         title: player.current?.title ?? '',
@@ -28,6 +41,11 @@ export function desktopLyricsPayload(
         empty: player.lyrics.length === 0,
         source: player.lyricsSource?.sourceName ?? '',
         themeMode,
+        elapsed,
+        lineStart,
+        lineEnd,
+        background: settings.background,
+        sweep: settings.sweep,
     };
 }
 
@@ -43,8 +61,9 @@ export function useDesktopLyricsBridge(): void {
     const {setDesktopLyricsOpen} = useActions().ui;
     const themeMode = useSelect((state) => state.ui.themeMode);
 
-    const payloadRef = useRef<DesktopLyricsPayload>(desktopLyricsPayload(player, themeMode));
-    payloadRef.current = desktopLyricsPayload(player, themeMode);
+    const settings = readLyricsWindowSettings();
+    const payloadRef = useRef<DesktopLyricsPayload>(desktopLyricsPayload(player, themeMode, settings));
+    payloadRef.current = desktopLyricsPayload(player, themeMode, settings);
 
     const currentId = player.current?.id ?? '';
     const active = activeLyricIndex(player.lyrics, player.elapsed + player.lyricsOffset);
@@ -70,9 +89,17 @@ export function useDesktopLyricsBridge(): void {
             });
         });
 
+        /* 显示设置（背景 / 逐字展开）在设置页改完要**立刻**生效，不等 1s 心跳：
+           同步更新进载荷，再推一次 */
+        const unsubscribe = subscribeLyricsWindowSettings((next) => {
+            payloadRef.current = {...payloadRef.current, background: next.background, sweep: next.sweep};
+            push();
+        });
+
         return () => {
             disposed = true;
             window.clearInterval(timer);
+            unsubscribe();
             unlisten?.();
         };
     }, [setDesktopLyricsOpen]);

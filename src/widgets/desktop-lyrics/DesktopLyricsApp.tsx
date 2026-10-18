@@ -1,9 +1,11 @@
-import {useEffect, useState, type CSSProperties} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {IconClose} from '../../components/ui/icon';
 import {DESKTOP_LYRICS_EVENTS, isTauri, windowService} from '../../services';
 import {useTheme} from '../../theme';
+import {lyricLineProgress} from '../../utils/lyrics';
 import type {DesktopLyricsPayload} from './types';
+import {LyricsLineView, scaleStyle} from './LyricsLineView';
 import styles from './desktop-lyrics.module.css';
 
 const SCALE_KEY = 'gently:lyrics-window-scale';
@@ -18,10 +20,6 @@ function readScale(): number {
     return Math.min(MAX_SCALE, Math.max(MIN_SCALE, raw));
 }
 
-/** 字号缩放仍以主题 token 为基准（不把像素值写进组件） */
-function scaleStyle(token: string, scale: number): CSSProperties {
-    return {fontSize: `calc(var(${token}) * ${scale})`};
-}
 
 /**
  * 桌面歌词窗口。
@@ -29,12 +27,21 @@ function scaleStyle(token: string, scale: number): CSSProperties {
  * 这是一个**独立的 Tauri 窗口**（`desktop-lyrics`），不是主窗口里的一块浮层：
  * 置顶、无边框、可拖动、可缩放。播放状态由主窗口通过窗口间事件同步过来
  * （见 `useDesktopLyricsBridge`），因此它自己不需要重复一份播放器状态。
+ *
+ * 逐字展开（卡拉 OK 式高亮）**自己插值**，不让主窗口 30Hz 推事件：
+ * 载荷里带 `elapsed / lineStart / lineEnd`，窗口内用 `requestAnimationFrame`
+ * 按墙钟往前推；每分钟 60 次 IPC 换来平滑的字幕是不划算的，而 1s 心跳同步
+ * 足够把插值误差压回几十毫秒。
  */
 export function DesktopLyricsApp() {
     const {t} = useTranslation();
     const {mode, setMode} = useTheme();
     const [payload, setPayload] = useState<DesktopLyricsPayload | null>(null);
     const [scale, setScale] = useState(readScale);
+    /** 当前行唱到的比例（0~1），只在开启逐字展开时用 */
+    const [progress, setProgress] = useState(0);
+    /** 收到载荷的本地时刻：用来按墙钟插值（不依赖主窗口再推） */
+    const baseRef = useRef<{elapsed: number; at: number}>({elapsed: 0, at: 0});
 
     /* 独立 WebView 不会自动跟随主窗口的主题：跟着同步过来的 mode 切换 */
     useEffect(() => {
@@ -51,7 +58,9 @@ export function DesktopLyricsApp() {
             unlisten = await listen<DesktopLyricsPayload>(
                 DESKTOP_LYRICS_EVENTS.update,
                 (event) => {
-                    if (!disposed) setPayload(event.payload);
+                    if (disposed) return;
+                    setPayload(event.payload);
+                    baseRef.current = {elapsed: event.payload.elapsed, at: performance.now()};
                 },
             );
         })();
@@ -61,6 +70,29 @@ export function DesktopLyricsApp() {
             unlisten?.();
         };
     }, []);
+
+    /* 逐字展开：根据「收到载荷时的位置 + 墙钟流逝」算进度 */
+    useEffect(() => {
+        if (!payload?.sweep) {
+            setProgress(0);
+            return;
+        }
+        let frame = 0;
+        let last = -1;
+        const tick = () => {
+            const {elapsed, at} = baseRef.current;
+            const now = payload.playing ? elapsed + (performance.now() - at) / 1000 : elapsed;
+            const next = lyricLineProgress(payload.lineStart, payload.lineEnd, now);
+            // 只在变化超过 0.5% 时 setState：60fps 重渲染没必要，肉眼看不出差别
+            if (Math.abs(next - last) >= 0.005) {
+                last = next;
+                setProgress(next);
+            }
+            frame = requestAnimationFrame(tick);
+        };
+        frame = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(frame);
+    }, [payload?.sweep, payload?.playing, payload?.lineStart, payload?.lineEnd, payload?.elapsed]);
 
     const adjustScale = (delta: number) => {
         setScale((current) => {
@@ -82,9 +114,14 @@ export function DesktopLyricsApp() {
     const empty = !payload || payload.empty;
     const line = payload?.line ?? '';
     const nextLine = payload?.next ?? '';
+    const sweep = payload?.sweep ?? false;
 
     return (
-        <div className={styles.window} data-tauri-drag-region="deep">
+        <div
+            className={styles.window}
+            data-bg={payload?.background ?? 'solid'}
+            data-tauri-drag-region="deep"
+        >
             <div className={styles.controls}>
                 <button
                     type="button"
@@ -126,17 +163,13 @@ export function DesktopLyricsApp() {
                     </p>
                 ) : (
                     <>
-                        <p className={styles.line} style={scaleStyle('--font-size-3xl', scale)}>
-                            {line}
-                            {payload?.translation && (
-                                <span
-                                    className={styles.translation}
-                                    style={scaleStyle('--font-size-base', scale)}
-                                >
-                                    {payload.translation}
-                                </span>
-                            )}
-                        </p>
+                        <LyricsLineView
+                            line={line}
+                            translation={payload?.translation}
+                            progress={progress}
+                            sweep={sweep}
+                            scale={scale}
+                        />
                         {nextLine && (
                             <p className={styles.next} style={scaleStyle('--font-size-sm', scale)}>
                                 {nextLine}

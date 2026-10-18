@@ -14,6 +14,20 @@ export function activeLyricIndex(lines: LyricLine[], elapsed: number): number {
 }
 
 /**
+ * 当前行已经唱到的比例（0~1）：桌面歌词的「逐字展开」用它算遮罩宽度。
+ *
+ * `end` 是**下一行的开始时间**（没有下一行时由调用方给一个合理的收尾时间）。
+ * 边界都要能算：`end <= start`（同一时间戳的重复行）、`elapsed` 在行之前/之后，
+ * 都夹到 0~1，绝不让遮罩出现负数宽度。
+ */
+export function lyricLineProgress(start: number, end: number, elapsed: number): number {
+    if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(elapsed)) return 0;
+    if (end <= start) return elapsed >= end ? 1 : 0;
+    const ratio = (elapsed - start) / (end - start);
+    return Math.min(1, Math.max(0, ratio));
+}
+
+/**
  * 歌词解析：把核心给的**原文**（契约 `Lyrics{format, content, translated?}`）转成
  * 视图要的行数组（`{time, text, translation?}`）。
  *

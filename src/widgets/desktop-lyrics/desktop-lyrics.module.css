@@ -11,11 +11,35 @@
     box-sizing: border-box;
     padding: var(--space-4) var(--space-5);
     overflow: hidden;
+    /* 背景三档（设置页可调）：实心 / 半透明 / 全透明。
+       半透明与透明都必须保留文字可读性，所以文字用 `--text-primary` + 轻微投影。 */
     background: var(--bg-surface);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-xl);
     color: var(--text-primary);
     user-select: none;
+    transition: background-color var(--motion-base), border-color var(--motion-base);
+}
+
+.window[data-bg='translucent'] {
+    background: color-mix(in srgb, var(--bg-surface) 40%, transparent);
+    border-color: color-mix(in srgb, var(--border-default) 45%, transparent);
+}
+
+.window[data-bg='transparent'] {
+    background: transparent;
+    border-color: transparent;
+}
+
+/* 文字在透明背景上压一层同色描边（用主题文字色，不用硬编码白/黑） */
+.window[data-bg='transparent'] .lineIdle,
+.window[data-bg='transparent'] .lineSweep,
+.window[data-bg='transparent'] .line,
+.window[data-bg='transparent'] .translation,
+.window[data-bg='transparent'] .next {
+    text-shadow:
+        0 0 0.15em var(--bg-app),
+        0 0 0.35em var(--bg-app);
 }
 
 .controls {
@@ -67,6 +91,7 @@
 }
 
 .line {
+    position: relative;
     margin: 0;
     font-size: var(--font-size-3xl);
     font-weight: var(--font-weight-semibold);
@@ -76,6 +101,20 @@
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+}
+
+/* 逐字展开：底层「未唱到」用弱化色，上层按进度裁出来用主文字色 */
+.lineIdle {
+    color: var(--lyrics-inactive-color);
+    opacity: 0.75;
+}
+
+.lineSweep {
+    position: absolute;
+    inset: 0;
+    color: var(--text-primary);
+    pointer-events: none;
+    transition: clip-path var(--motion-fast) linear;
 }
 
 .translation {

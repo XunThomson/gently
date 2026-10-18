@@ -10,6 +10,11 @@ import {appConfig} from '../../config/app.config';
 import {SUPPORTED_LANGS} from '../../i18n';
 import {errorText} from '../../i18n/errors';
 import {catalogService, coreAvailable, coreSystem, windowService} from '../../services';
+import {
+    readLyricsWindowSettings,
+    writeLyricsWindowSettings,
+    type LyricsBackground,
+} from '../../utils/lyricsWindowSettings';
 import {useActions, usePluginState, useSelect} from '../../store';
 import {getThemePreset, useTheme} from '../../theme';
 import type {ThemeMode} from '../../theme';
@@ -148,6 +153,8 @@ export default function SettingView() {
     /* 歌词窗口锁定（点击穿透）：状态持久化在 localStorage，解锁只能在这里——锁定后
        歌词窗口自己收不到点击，靠它自己的按钮解锁是死路 */
     const [lyricsLocked, setLyricsLockedState] = useState(() => windowService.desktopLyricsLocked());
+    /* 歌词窗口的观感设置（背景 / 逐字展开）：与歌词窗口读同一份 localStorage */
+    const [lyricsWindow, setLyricsWindow] = useState(readLyricsWindowSettings);
 
     /* 先切界面状态再落盘：锁定是个开关，点下去就该立刻看到结果；
        写盘/窗口调用失败只记日志，不把开关弹回去（那会让人以为点击没生效） */
@@ -237,6 +244,46 @@ export default function SettingView() {
                     </span>
                 </div>
                 <p className={styles.hint}>{t('page.setting.lyricsLockHint')}</p>
+
+                {/* 背景三档：透明背景在浅色壁纸上可能看不清字，所以默认仍是不透明 */}
+                <div className={styles.field}>
+                    <span className={styles.label}>{t('page.setting.lyricsBackground')}</span>
+                    <span className={styles.value}>
+                        <UnderlineRadioGroup
+                            name="lyrics-background"
+                            value={lyricsWindow.background}
+                            onChange={(value) =>
+                                setLyricsWindow(
+                                    writeLyricsWindowSettings({background: value as LyricsBackground}),
+                                )
+                            }
+                            options={[
+                                {value: 'solid', label: t('page.setting.lyricsBgSolid')},
+                                {value: 'translucent', label: t('page.setting.lyricsBgTranslucent')},
+                                {value: 'transparent', label: t('page.setting.lyricsBgTransparent')},
+                            ]}
+                        />
+                    </span>
+                </div>
+
+                {/* 逐字展开（卡拉 OK 式）：默认关闭，用户显式打开 */}
+                <div className={styles.field}>
+                    <span className={styles.label}>{t('page.setting.lyricsSweep')}</span>
+                    <span className={styles.value}>
+                        <UnderlineRadioGroup
+                            name="lyrics-sweep"
+                            value={lyricsWindow.sweep ? 'on' : 'off'}
+                            onChange={(value) =>
+                                setLyricsWindow(writeLyricsWindowSettings({sweep: value === 'on'}))
+                            }
+                            options={[
+                                {value: 'off', label: t('page.setting.lyricsSweepOff')},
+                                {value: 'on', label: t('page.setting.lyricsSweepOn')},
+                            ]}
+                        />
+                    </span>
+                </div>
+                <p className={styles.hint}>{t('page.setting.lyricsSweepHint')}</p>
             </section>
 
             {/* ---------- 音源与音质 ---------- */}

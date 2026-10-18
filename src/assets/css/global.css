@@ -185,3 +185,16 @@ hr {
 ::-webkit-scrollbar-track {
     background: transparent;
 }
+
+/* ----- 桌面歌词窗口：整页透明 -----
+   `tauri.conf.json` 里那个窗口是 `transparent: true` 的，但 body 默认带 `--bg-app`，
+   不覆盖的话窗口仍是实心矩形，「透明背景」设置等于没做。
+   用 `html[data-window=...]` 限定，避免影响主窗口。 */
+html[data-window='desktop-lyrics'],
+html[data-window='desktop-lyrics'] body {
+    background: transparent;
+}
+
+html[data-window='desktop-lyrics'] body {
+    overflow: hidden;
+}

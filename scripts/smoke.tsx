@@ -35,13 +35,19 @@ import type {ThemeSkin} from '../src/theme';
 import {TitleBar, Toolbar} from '../src/components/shell/title-bar';
 import {Sidebar} from '../src/components/shell/sidebar';
 import {PlayerBar, shouldOpenNowPlaying} from '../src/components/shell/player-bar';
-import {DesktopLyricsApp, type DesktopLyricsPayload} from '../src/widgets/desktop-lyrics';
+import {DesktopLyricsApp, LyricsLineView, type DesktopLyricsPayload} from '../src/widgets/desktop-lyrics';
 import {desktopLyricsPayload} from '../src/hooks/useDesktopLyricsBridge';
 import {
     defaultLyricsPosition,
     LYRICS_BOTTOM_MARGIN,
     placeLyrics,
 } from '../src/utils/lyricsWindowPosition';
+import {lyricLineProgress} from '../src/utils/lyrics';
+import {
+    LYRICS_SETTINGS_KEY,
+    readLyricsWindowSettings,
+    writeLyricsWindowSettings,
+} from '../src/utils/lyricsWindowSettings';
 import {clearPets, listPets, PetHost, petPlaybackSnapshot, registerPet} from '../src/pet';
 import {QueuePanel} from '../src/components/shell/player-bar/QueuePanel';
 import {ActionsPanel} from '../src/components/shell/player-bar/ActionsPanel';
@@ -788,6 +794,97 @@ async function main(): Promise<void> {
             shifted.line === '第三句' && shifted.next === '',
             JSON.stringify(shifted),
         );
+
+        /* 逐字展开需要的「行时间窗」必须随载荷过去（窗口自己按墙钟插值，不能靠主窗口 30Hz 推） */
+        check(
+            'desktop lyrics: 载荷带当前行的起止时间与显示设置',
+            payload.lineStart === 5 &&
+                payload.lineEnd === 9 &&
+                payload.elapsed === 6 &&
+                payload.background === 'solid' &&
+                payload.sweep === false,
+            JSON.stringify({lineStart: payload.lineStart, lineEnd: payload.lineEnd, elapsed: payload.elapsed}),
+        );
+        const swept = desktopLyricsPayload(base, 'dark', {background: 'transparent', sweep: true});
+        check(
+            'desktop lyrics: 设置里的背景与逐字展开会进载荷',
+            swept.background === 'transparent' && swept.sweep === true && swept.themeMode === 'dark',
+            JSON.stringify({bg: swept.background, sweep: swept.sweep}),
+        );
+        check(
+            'desktop lyrics: 最后一行没有下一行时给一个兜底收尾时间',
+            desktopLyricsPayload({...base, elapsed: 10, lyricsOffset: 0}).lineEnd > 9,
+        );
+    }
+
+    /* 逐字展开的渲染：两层同一段文字 + 按进度裁切（冒烟里能直接断言的 DOM 形状） */
+    {
+        const sweeping = renderToString(
+            <LyricsLineView line="第一句歌词" progress={0.4} sweep scale={1}/>,
+        );
+        check(
+            'desktop lyrics: 逐字展开时渲染两层文字，上层按进度裁切',
+            sweeping.includes('第一句歌词') &&
+                (sweeping.match(/第一句歌词/g) ?? []).length === 2 &&
+                sweeping.includes('clip-path:inset(0 60% 0 0)'),
+            sweeping,
+        );
+        const plain = renderToString(<LyricsLineView line="第一句歌词" progress={0.4} sweep={false} scale={1}/>);
+        check(
+            'desktop lyrics: 关闭逐字展开时只有一层文字',
+            (plain.match(/第一句歌词/g) ?? []).length === 1 && !plain.includes('clip-path'),
+            plain,
+        );
+    }
+
+    /* 逐字展开的进度（纯函数）：越界夹紧、退化区间不产生负宽度 */
+    {
+        check('lyrics: 行进度在区间内按比例', lyricLineProgress(10, 20, 15) === 0.5);
+        check('lyrics: 行进度在开始前为 0、结束后为 1', lyricLineProgress(10, 20, 5) === 0 && lyricLineProgress(10, 20, 25) === 1);
+        check('lyrics: 退化区间（同一时间戳）不会算出负数', lyricLineProgress(10, 10, 9) === 0 && lyricLineProgress(10, 10, 11) === 1);
+        check('lyrics: 非法输入一律 0', lyricLineProgress(Number.NaN, 20, 15) === 0);
+    }
+
+    /* 桌面歌词显示设置：默认值保守（不透明 / 关闭逐字），坏数据退回默认 */
+    {
+        const globalScope = globalThis as unknown as {localStorage?: Storage};
+        const backup = globalScope.localStorage;
+        const values = new Map<string, string>();
+        globalScope.localStorage = {
+            getItem: (key: string) => values.get(key) ?? null,
+            setItem: (key: string, value: string) => void values.set(key, String(value)),
+            removeItem: (key: string) => void values.delete(key),
+            clear: () => values.clear(),
+            key: (index: number) => [...values.keys()][index] ?? null,
+            get length() {
+                return values.size;
+            },
+        } as Storage;
+
+        const defaults = readLyricsWindowSettings();
+        check(
+            'lyrics settings: 默认不透明背景且不开启逐字展开',
+            defaults.background === 'solid' && defaults.sweep === false,
+            JSON.stringify(defaults),
+        );
+        const written = writeLyricsWindowSettings({background: 'transparent', sweep: true});
+        check(
+            'lyrics settings: 写入后可读回',
+            written.background === 'transparent' &&
+                written.sweep === true &&
+                readLyricsWindowSettings().background === 'transparent',
+            JSON.stringify(written),
+        );
+        values.set(LYRICS_SETTINGS_KEY, '{"background":"bogus","sweep":"yes"}');
+        const repaired = readLyricsWindowSettings();
+        check(
+            'lyrics settings: 坏数据退回默认值（不把非法背景传给窗口）',
+            repaired.background === 'solid' && repaired.sweep === false,
+            JSON.stringify(repaired),
+        );
+
+        if (backup === undefined) delete globalScope.localStorage;
+        else globalScope.localStorage = backup;
     }
 
     /* 桌面歌词窗口的摆放规则（纯函数）：记得的位置可用就用，不可见就回到底部居中 */
