@@ -2,7 +2,7 @@
  * 本机核心桥接：**全应用唯一允许调用 Tauri IPC 的地方**（AGENTS 约束 13）。
  *
  * 职责：
- * - 用唯一的入口命令 `core_invoke` 承载契约里的 57 条命令（Tauri 命令名无法表达
+ * - 用唯一的入口命令 `core_invoke` 承载契约里的全部命令（Tauri 命令名无法表达
  *   `plugin.import` 这种点号名，因此核心侧做了统一分发，见 `core/src/commands.rs`）；
  * - 把「永不抛异常」的信封语义落到前端：调用方永远拿到 `CoreResult<T>`，
  *   IPC reject（版本不匹配、反序列化失败）统一归为 `common.internal`；
@@ -13,6 +13,9 @@
  */
 
 import type {
+    CacheClearKind,
+    CacheClearResultDto,
+    CacheStatusDto,
     CoreError,
     CoreErrorCode,
     CoreResult,
@@ -74,6 +77,9 @@ export const coreSystem = {
     status: () => invokeCore<SystemStatusDto>('system.status'),
     paths: () => invokeCore<SystemPathsDto>('system.paths'),
     reveal: (path: string) => invokeCore<null>('system.reveal', {path}),
+    cacheStatus: () => invokeCore<CacheStatusDto>('system.cacheStatus'),
+    cacheClear: (kind: CacheClearKind = 'all') =>
+        invokeCore<CacheClearResultDto>('system.cacheClear', {kind}),
 };
 
 let probed: Promise<CoreResult<SystemStatusDto>> | null = null;

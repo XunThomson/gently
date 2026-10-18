@@ -55,6 +55,8 @@ pub struct CoreContext {
     pub snapshots: Arc<crate::catalog::ItemSnapshots>,
     /// 下载任务的控制登记表（暂停/取消标志）
     pub downloads: Arc<crate::download::DownloadRegistry>,
+    /// 播放缓存补全的登记表（防重复下载同一首、限制并发）
+    pub cache_fills: Arc<crate::cache::CacheRegistry>,
     /// 本地流代理（仅回环 + 一次性令牌；契约 §7）
     pub streams: Arc<crate::media::StreamRegistry>,
     pub events: Arc<dyn EventSink>,
@@ -83,6 +85,7 @@ impl CoreContext {
             searches: Arc::new(crate::catalog::SearchRegistry::default()),
             snapshots: Arc::new(crate::catalog::ItemSnapshots::default()),
             downloads: Arc::new(crate::download::DownloadRegistry::default()),
+            cache_fills: Arc::new(crate::cache::CacheRegistry::default()),
             streams,
             events: Arc::new(NullEventSink),
         }
@@ -157,6 +160,8 @@ pub fn dispatch(
         "system.status" => to_json(system_status(ctx)),
         "system.paths" => to_json(ctx.paths.to_dto()),
         "system.reveal" => reveal(ctx, params),
+        "system.cacheStatus" => cache_status(ctx, params),
+        "system.cacheClear" => cache_clear(ctx, params),
         "plugin.preview" => plugin_preview(ctx, params),
         "plugin.import" => plugin_import(ctx, params),
         "plugin.list" => plugin_list(ctx),
@@ -242,6 +247,8 @@ const IMPLEMENTED: &[&str] = &[
     "system.status",
     "system.paths",
     "system.reveal",
+    "system.cacheStatus",
+    "system.cacheClear",
     "plugin.preview",
     "plugin.import",
     "plugin.list",
@@ -343,6 +350,26 @@ fn reveal(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::
     let params: RevealParams = parse_params(params)?;
     reveal_in_file_manager(ctx, &params.path)?;
     Ok(serde_json::Value::Null)
+}
+
+/// `system.cacheStatus`：播放缓存 / 歌词与详情缓存 / 封面缓存的占用（设置页展示用）。
+fn cache_status(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let _ = parse_params::<serde_json::Value>(params)?;
+    Ok(crate::cache::status(&ctx.paths))
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CacheClearParams {
+    /// `media` / `catalog`（歌词与详情）/ `covers` / `all`（缺省）
+    #[serde(default)]
+    kind: Option<String>,
+}
+
+/// `system.cacheClear{kind?}`：删除缓存（缓存可随时整目录删除，契约 §9）。
+fn cache_clear(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    let params: CacheClearParams = parse_params(params)?;
+    crate::cache::clear(&ctx.paths, params.kind.as_deref().unwrap_or("all"))
 }
 
 /// 在系统文件管理器中定位/打开路径。
@@ -1201,6 +1228,37 @@ fn playback_resolve(ctx: &CoreContext, params: serde_json::Value) -> Fallible<se
             None => continue,
         };
 
+        /* 缓存优先：命中就直接把本地文件发布到同一条回环代理。
+           放在插件解析**之前**，因此断网或插件被卸载时也能播已经缓存过的那首。 */
+        if source != LOCAL_SOURCE {
+            let exact = crate::cache::lookup_exact(
+                &ctx.paths,
+                &crate::cache::media_key(&reference, &params.quality),
+            );
+            if let Some(hit) = exact.or_else(|| crate::cache::lookup_any(&ctx.paths, &reference)) {
+                match ctx.streams.publish_local(&hit.path) {
+                    Ok(stream_url) => {
+                        let quality =
+                            if hit.quality.is_empty() { params.quality.clone() } else { hit.quality };
+                        tracing::debug!(source, quality = %quality, "播放命中本地缓存");
+                        return to_json(json!({
+                            "source": source,
+                            "quality": quality,
+                            "streamUrl": stream_url,
+                            "originUrl": "",
+                            "headers": {},
+                            "expiresInSec": 1800,
+                            "fromCache": true,
+                        }));
+                    }
+                    Err(error) => {
+                        // 缓存文件坏了/被删了：不能因此播不了，继续走插件解析
+                        tracing::warn!(code = error.code.as_str(), "缓存文件不可播：{}", error.message);
+                    }
+                }
+            }
+        }
+
         // 本地曲目：不经插件，直接把文件发布到**同一条回环代理**上
         // （前端因此只有一条播放路径：Range/拖动进度、无 Blob hack）
         if source == LOCAL_SOURCE {
@@ -1231,6 +1289,17 @@ fn playback_resolve(ctx: &CoreContext, params: serde_json::Value) -> Fallible<se
         let Some(capabilities) = ctx.plugins.capabilities(source) else { continue };
         if !capabilities.contains(&crate::plugin::PluginCapability::GetMediaSource) {
             continue;
+        }
+
+        /* 以库里的状态为准：用户刚点了「停用」，这次播放就不该再走它
+           （与搜索的「禁用立即生效」一致；缓存命中的分支在上面，不受影响）。 */
+        if let Some(store) = ctx.store.as_ref() {
+            if let Ok(Some(record)) = store.get_plugin(source) {
+                if !record.enabled {
+                    tracing::debug!(source, "插件已停用，跳过该候选");
+                    continue;
+                }
+            }
         }
 
         // 插件看到的曲目对象：优先用**插件自己产出过的原始条目**（归一化时留下的快照，字段最全），
@@ -1267,6 +1336,18 @@ fn playback_resolve(ctx: &CoreContext, params: serde_json::Value) -> Fallible<se
         };
 
         let quality = media.quality.unwrap_or_else(|| params.quality.clone());
+
+        /* 播放成功后在后台把这首歌补进缓存（只缓存用户真的播放过的）。
+           失败只记 debug 日志，不影响本次播放。 */
+        crate::cache::spawn_fill(
+            ctx,
+            reference.clone(),
+            quality.clone(),
+            source.to_string(),
+            media.url.clone(),
+            media.headers.clone(),
+        );
+
         return to_json(json!({
             "source": source,
             "quality": quality,

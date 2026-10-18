@@ -1,16 +1,20 @@
+import {useCallback, useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
+import type {CacheClearKind, CacheStatusDto} from '../../api';
 import {Page} from '../../components/ui/page';
 import {Button} from '../../components/ui/button';
 import {UnderlineRadioGroup} from '../../components/ui/radio-group';
 import {BadgeCell, TextCell} from '../../components/ui/data-table';
 import {appConfig} from '../../config/app.config';
 import {SUPPORTED_LANGS} from '../../i18n';
-import {catalogService} from '../../services';
+import {errorText} from '../../i18n/errors';
+import {catalogService, coreAvailable, coreSystem} from '../../services';
 import {useActions, usePluginState, useSelect} from '../../store';
 import {getThemePreset, useTheme} from '../../theme';
 import type {ThemeMode} from '../../theme';
 import type {DownloadQualityFallback, SourceDisplayMode, SourceFilterStyle, TrackQuality} from '../../types';
+import {formatBytes} from '../../utils/helpers';
 import {QUALITIES_DESC, qualityLabelKey} from '../../utils/quality';
 import {DiagnosticsCard} from './components/diagnostics-card';
 import styles from './setting.module.css';
@@ -56,6 +60,59 @@ export default function SettingView() {
      * 桌面上一个音源都没装时，这里以前会直接抛异常——应用没有错误边界，整页白屏。
      */
     const source = catalogService.activeSource(pluginList);
+
+    /* 缓存占用是**本机核心**的数据：桌面端打开设置就查一次；浏览器预览如实说明不可用 */
+    const {requestConfirm} = useActions().dialog;
+    const cacheAvailable = coreAvailable();
+    const [cache, setCache] = useState<CacheStatusDto | null>(null);
+    const [cacheError, setCacheError] = useState<string | null>(null);
+    const [cacheNotice, setCacheNotice] = useState<string | null>(null);
+    const [cacheBusy, setCacheBusy] = useState(false);
+
+    const refreshCache = useCallback(async () => {
+        if (!cacheAvailable) return;
+        const result = await coreSystem.cacheStatus();
+        if (result.ok) {
+            setCache(result.data);
+            setCacheError(null);
+        } else {
+            setCacheError(errorText(t, result.error));
+        }
+    }, [cacheAvailable, t]);
+
+    useEffect(() => {
+        void refreshCache();
+    }, [refreshCache]);
+
+    const clearCache = useCallback(
+        (kind: CacheClearKind) => {
+            requestConfirm({
+                titleKey: 'page.setting.cacheClearConfirm',
+                descKey: 'page.setting.cacheClearDesc',
+                tone: 'danger',
+                onConfirm: async () => {
+                    setCacheBusy(true);
+                    const result = await coreSystem.cacheClear(kind);
+                    setCacheBusy(false);
+                    if (result.ok) {
+                        setCacheNotice(
+                            t('page.setting.cacheCleared', {
+                                files: result.data.removedFiles,
+                                size: formatBytes(result.data.removedBytes),
+                            }),
+                        );
+                        setCacheError(null);
+                        await refreshCache();
+                    } else {
+                        setCacheError(errorText(t, result.error));
+                    }
+                },
+            });
+        },
+        [requestConfirm, refreshCache, t],
+    );
+
+    const cacheTotal = cache ? cache.mediaBytes + cache.catalogBytes + cache.coversBytes : 0;
 
     const currentLang = (i18n.resolvedLanguage ?? 'zh').slice(0, 2);
 
@@ -275,6 +332,100 @@ export default function SettingView() {
                         />
                     </span>
                 </div>
+            </section>
+
+            <section className={styles.card}>
+                <div className={styles.cacheHeader}>
+                    <h2 className={styles.cardTitle}>{t('page.setting.cache')}</h2>
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={!cacheAvailable || cacheBusy}
+                        onClick={() => void refreshCache()}
+                    >
+                        {t('page.setting.cacheRefresh')}
+                    </Button>
+                </div>
+                <p className={styles.hint}>{t('page.setting.cacheHint')}</p>
+
+                {!cacheAvailable ? (
+                    <p className={styles.hint}>{t('page.setting.cacheUnavailable')}</p>
+                ) : (
+                    <>
+                        <div className={styles.field}>
+                            <span className={styles.label}>{t('page.setting.cacheMedia')}</span>
+                            <span className={styles.value}>
+                                {cache
+                                    ? t('page.setting.cacheUsage', {
+                                        size: formatBytes(cache.mediaBytes),
+                                        count: cache.mediaCount,
+                                    })
+                                    : '—'}
+                            </span>
+                        </div>
+
+                        <div className={styles.field}>
+                            <span className={styles.label}>{t('page.setting.cacheCatalog')}</span>
+                            <span className={styles.value}>
+                                {cache
+                                    ? t('page.setting.cacheUsage', {
+                                        size: formatBytes(cache.catalogBytes),
+                                        count: cache.catalogCount,
+                                    })
+                                    : '—'}
+                            </span>
+                        </div>
+
+                        <div className={styles.field}>
+                            <span className={styles.label}>{t('page.setting.cacheCovers')}</span>
+                            <span className={styles.value}>
+                                {cache
+                                    ? t('page.setting.cacheUsage', {
+                                        size: formatBytes(cache.coversBytes),
+                                        count: cache.coversCount,
+                                    })
+                                    : '—'}
+                            </span>
+                        </div>
+
+                        <div className={styles.field}>
+                            <span className={styles.label}>{t('page.setting.cacheLimit')}</span>
+                            <span className={styles.value}>
+                                {cache ? formatBytes(cache.limitBytes) : '—'}
+                            </span>
+                        </div>
+
+                        <div className={styles.cacheActions}>
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={cacheBusy || (cache?.mediaCount ?? 0) === 0}
+                                onClick={() => clearCache('media')}
+                            >
+                                {t('page.setting.cacheClearMedia')}
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={cacheBusy || (cache?.catalogCount ?? 0) === 0}
+                                onClick={() => clearCache('catalog')}
+                            >
+                                {t('page.setting.cacheClearCatalog')}
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="danger"
+                                disabled={cacheBusy || cacheTotal === 0}
+                                onClick={() => clearCache('all')}
+                            >
+                                {t('page.setting.cacheClearAll')}
+                            </Button>
+                        </div>
+
+                        {cacheNotice && <p className={styles.notice}>{cacheNotice}</p>}
+                        {cacheError && <p className={styles.notice}>{cacheError}</p>}
+                    </>
+                )}
             </section>
 
             <section className={styles.card}>

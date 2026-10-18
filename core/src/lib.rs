@@ -10,8 +10,10 @@
 //! - [`events`]：事件通道抽象（Tauri 实现在 `src-tauri`）；
 //! - [`paths`]：本机数据目录布局；
 //! - [`store`]：SQLite 访问层与迁移（ADR-0004）；
+//! - [`cache`]：播放缓存（播放过的远端曲目落本地，离线优先）；
 //! - [`logging`]：tracing 初始化。
 
+pub mod cache;
 pub mod catalog;
 pub mod catalog_detail;
 pub mod commands;

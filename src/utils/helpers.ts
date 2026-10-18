@@ -34,6 +34,16 @@ export function fmt(sec: number): string {
 export const formatSizeMb = (doneMb: number, totalMb: number): string =>
     `${doneMb.toFixed(1)}Mb/${totalMb.toFixed(1)}Mb`;
 
+/** 任意字节数 → 人读体积（单位语言中立；0 显示 0 KB 而不是空白） */
+export function formatBytes(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB';
+    const gb = 1024 ** 3;
+    const mb = 1024 ** 2;
+    if (bytes >= gb) return `${(bytes / gb).toFixed(2)} GB`;
+    if (bytes >= mb) return `${(bytes / mb).toFixed(1)} MB`;
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 export function matchesQuery(...fieldsAndQuery: string[]): boolean {
     const query = fieldsAndQuery[fieldsAndQuery.length - 1].trim().toLowerCase();
     if (!query) return true;

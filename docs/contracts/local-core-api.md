@@ -5,7 +5,7 @@ version: 0.2
 owner: gently
 scope: 本机核心能力契约（无服务器形态）
 token_budget: 2600
-tldr: 本机核心的 Tauri 命令与事件清单（61 条命令 + 8 类事件）。v0.2 相对 v0.1 补齐三处硬伤：插件 API 支持专辑/歌单/歌词/榜单（否则对应命令永远无法实现）、媒体地址携带 headers 并由核心提供本地流代理（WebView 的 audio 无法设请求头、需 Range）、分发改为「单文件 JS + 订阅源索引」为主。
+tldr: 本机核心的 Tauri 命令与事件清单（63 条命令 + 8 类事件）。v0.2 相对 v0.1 补齐三处硬伤：插件 API 支持专辑/歌单/歌词/榜单（否则对应命令永远无法实现）、媒体地址携带 headers 并由核心提供本地流代理（WebView 的 audio 无法设请求头、需 Range）、分发改为「单文件 JS + 订阅源索引」为主。
 ---
 
 # 本机核心能力契约（local core）v0.2
@@ -71,12 +71,14 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 
 约定：`ref` = `source:trackId`；`source` = 插件 id。写命令无需幂等键（本地事务）。
 
-### system（3）
+### system（5）
 | 命令 | 参数 | 返回 |
 |---|---|---|
 | `system.status` | — | `{version, platform, dbPath, dataDir, pluginRuntime, dbReady, dbError?, credentialsBackend, counts:{plugins,favorites,tracks,downloads}}`——`pluginRuntime` 在 M0 为 `none`、M1 接入 QuickJS 后为 `quickjs`；`dbReady:false` 表示降级运行（`dbError` 给出原因）；`credentialsBackend` 是凭据落点（`windows-credential-manager` / `memory`），界面据此说明「重启后是否还要重新填写」 |
 | `system.paths` | — | `{data, cache, plugins, subscriptions, skins, downloads, logs}` |
 | `system.reveal{path}` | 受管目录内的路径 | `null`；目录外或不存在 → `common.invalid_argument` / `common.not_found` |
+| `system.cacheStatus` | — | `{mediaBytes, mediaCount, catalogBytes, catalogCount, coversBytes, coversCount, limitBytes}`：播放缓存 / 歌词与详情缓存 / 封面缓存的占用（设置页展示） |
+| `system.cacheClear{kind?}` | `media` / `catalog`（歌词与详情）/ `covers` / `all`（缺省） | `{removedBytes, removedFiles}`；未知 kind → `common.invalid_argument`（缓存可随时整目录删除，见 §9） |
 
 ### plugin：管理（13）
 | 命令 | 说明 |
@@ -229,6 +231,9 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
   （`local:C:/Music/a.flac`，`split_once(':')` 只切第一个冒号，路径里的冒号不受影响）；
 - 本地代理只接受**音频扩展名**且文件必须存在（白名单与扫描共用一份实现）；文件被删/被移走时
   该候选不可播 → 继续回退，全失败仍是 `data: null`；
+- **缓存优先（R56）**：远端候选在调用插件**之前**先查 `<data>/cache/media/`；命中直接走同一条回环代理
+  并返回 `fromCache: true`（断网、或插件被停用/卸载时，已缓存的那首仍能播）；未命中且解析成功时，
+  在后台补全缓存（只缓存**播放过的**，见 §9.1）；
 - 本地响应带 `Accept-Ranges: bytes` / `Cache-Control: no-store` / 按扩展名的 `Content-Type`；
   `Range` 支持 `bytes=start-end`、`bytes=start-`、`bytes=-suffix`（单区间；多区间或越界 → `416`），
   命中时回 `206` + `Content-Range`；响应头**不出现文件路径**（代理不是目录浏览器）；
@@ -571,6 +576,22 @@ async function getRecommend() {}                   // 可选
 
 访问层与并发模型见 `docs/adr/0004-local-storage.md`（rusqlite + 单写线程 + WAL + FTS5）。
 
+### 9.1 缓存布局与策略（R56）
+
+```
+cache/
+├── media/   播放过的远端曲目：<sha256(ref|quality) 前 32 位>.<ext> + 同名 .json 元信息
+├── catalog/ 详情 / 榜单 / 歌词的 JSON 缓存（歌词 TTL 30 天，其余 6–24 小时）
+└── covers/  本地文件内嵌封面（扫描时落盘）
+```
+
+- **只缓存用户真的播放过的**：`playback.resolve` 解析成功后在后台补全，不预取；
+- **离线优先**：`playback.resolve` 在调用插件**之前**查缓存，命中即用回环代理播放
+  （返回 `fromCache: true`）——断网或插件被停用/卸载时，已缓存的那首仍能播；
+- 单文件 256 MiB、媒体总量 1 GiB（`limitBytes`），超出按最旧（`.json` 的 `at`）删除；
+- 缓存失败只记日志，不影响本次播放；`system.cacheClear` 是用户可控的清理入口；
+- 缓存不是用户资产：可随时整目录删除；下载（`downloads/`）才是用户资产。
+
 ## 10. 与 v0.1 的差异（变更记录）
 
 | 变更 | 原因 |
@@ -585,6 +606,7 @@ async function getRecommend() {}                   // 可选
 | 新增 `plugin.compat.observed` / `plugin.compat.confirm`（§5.4） | 兼容模式没有域名声明，权限只能事后**收窄**：先观测实际访问的域名，用户确认后固化为 `hosts` 白名单并关闭兼容模式（TOFU） |
 | 新增 `library.history.clear`（60 条命令） | 界面一直有「清空播放记录」入口；历史成为核心的事实来源后，没有这条命令等于该功能静默失效 |
 | 新增 `catalog.lyricsSearch`（61 条命令） | 歌词与歌曲分离：源不给词、各源同名歌曲名称不一致、自动歌词与音频对不上——用户需要自己跨源挑一份并看到来源（R54） |
+| 新增 `system.cacheStatus` / `system.cacheClear`（63 条命令） | 离线可用：只缓存播放过的曲目、命中缓存优先于插件解析；用户需要看到占用并能清理（R56） |
 | 本地曲目新增 `artwork`（内嵌封面 → 回环 `/cover/<name>` 路由） | 本地列表只有哈希渐变；封面缓存按源路径哈希命名，不改表结构，前端只多一个「列表缩略图」消费点 |
 | 本地标签改为**合并「链式元数据 + 容器元数据」** | symphonia 0.5.5 的 mp3 demuxer 不解析 ID3v2：只读 `format.metadata()` 会让最常见的 mp3 丢掉全部标签与内嵌封面（实测确认） |
 | 本地路径统一归一化（折叠重复分隔符，四处共用一份实现） | 用户粘贴 `C:\\Music` 这种路径时 Windows 照样认，但同一个文件会被收成两行、封面哈希也算不到一起 |

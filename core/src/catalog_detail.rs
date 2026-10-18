@@ -26,8 +26,11 @@ use crate::commands::{parse_params, CoreContext};
 use crate::contract::{CoreError, ErrorCode, Fallible};
 use crate::plugin::{list_items, PluginCapability, PluginHost};
 
-/// 详情类缓存时长（曲目/专辑/歌单/歌词）。
+/// 详情类缓存时长（曲目/专辑/歌单）。
 const DETAIL_TTL_SEC: i64 = 6 * 60 * 60;
+/// 歌词单独用更长的 TTL：歌词几乎不变，而它是**离线可播**的一部分——
+/// 6 小时就过期的话，隔天断网就退化成「暂无歌词」。
+const LYRICS_TTL_SEC: i64 = 30 * 24 * 60 * 60;
 /// 榜单与分类树变化慢，可以缓存久一点。
 const LIST_TTL_SEC: i64 = 24 * 60 * 60;
 
@@ -282,7 +285,7 @@ pub fn lyrics(ctx: &CoreContext, params: Value) -> Fallible<Value> {
         // MusicFree 的 `getLyric(musicItem)` 同样收条目对象；自有 ABI 收字符串 id
         json!([detail_item_arg(ctx, source, raw_id)]),
         &format!("lyrics:{source}:{raw_id}:{}", params.with_translation),
-        DETAIL_TTL_SEC,
+        LYRICS_TTL_SEC,
     )?;
 
     Ok(parse_lyric_value(&value, params.with_translation).unwrap_or(Value::Null))
@@ -480,7 +483,7 @@ fn cached_lyric(
     let arg = item_arg_for(plugins, snapshots, source, raw_id);
     let raw = plugins.call(source, "getLyric", &json!([arg]).to_string()).ok()?;
     let value: Value = serde_json::from_str(&raw).ok()?;
-    cache::write(paths, &key, DETAIL_TTL_SEC, &value);
+    cache::write(paths, &key, LYRICS_TTL_SEC, &value);
     parse_lyric_value(&value, false)
 }
 
@@ -527,11 +530,13 @@ fn call_detail(
     cache_key: &str,
     ttl_sec: i64,
 ) -> Fallible<Value> {
-    ready_source(ctx, source, capability)?;
-
+    /* 缓存**先于**能力/启用检查：缓存是本机数据，断网或插件被卸载时仍应能看歌词/详情。
+       没有缓存时再走原来的前置检查（缺能力 → not_implemented，未安装 → not_found）。 */
     if let Some(hit) = cache::read(&ctx.paths, cache_key) {
         return Ok(hit);
     }
+
+    ready_source(ctx, source, capability)?;
 
     let raw = ctx.plugins.call(source, function, &args.to_string())?;
     let parsed: Value = serde_json::from_str(&raw).map_err(|err| {

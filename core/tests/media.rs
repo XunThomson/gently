@@ -337,8 +337,7 @@ fn local_files_play_through_the_same_proxy_with_range() {
 
 /// `playback.report` 写播放历史（与 `library.history.push` 同一份数据）。
 #[test]
-fn playback_report_records_history() {
-    let (ctx, dir) = setup();
+fn playback_report_records_history() {    let (ctx, dir) = setup();
 
     let value = call(
         &ctx,
@@ -365,6 +364,99 @@ fn playback_report_records_history() {
     // 引用格式错误 → 参数非法；库不可用时 → library.io_error
     let bad = call(&ctx, "playback.report", json!({ "ref": "没有冒号" }));
     assert_eq!(bad["error"]["code"], ErrorCode::InvalidArgument.as_str(), "{bad}");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 播放缓存：播放过的远端曲目落本地；**断网/插件停用时仍能从缓存播**；可清理。
+#[test]
+fn played_tracks_are_cached_and_playable_when_the_source_is_gone() {
+    use gently_core::plugin::{DownloadEvent, DownloadOutcome};
+
+    /// 只用于缓存补全的传输层：`download` 返回 11 字节；不联网。
+    struct CacheTransport;
+    impl HttpTransport for CacheTransport {
+        fn send(&self, _request: &HttpRequest) -> Fallible<HttpResponse> {
+            Err(gently_core::CoreError::new(ErrorCode::SourceUpstreamFailed, "测试：禁止出网"))
+        }
+
+        fn download(
+            &self,
+            _request: &HttpRequest,
+            sink: &mut dyn FnMut(DownloadEvent<'_>) -> bool,
+        ) -> Fallible<DownloadOutcome> {
+            let headers = vec![("content-length".to_string(), "11".to_string())];
+            let keep = sink(DownloadEvent::Start { status: 200, headers: &headers });
+            if !keep {
+                return Ok(DownloadOutcome { status: 200, headers, bytes: 0, aborted: true });
+            }
+            let body = b"cached-mp3!";
+            let _ = sink(DownloadEvent::Chunk(body));
+            Ok(DownloadOutcome { status: 200, headers, bytes: body.len() as u64, aborted: false })
+        }
+    }
+
+    const CACHE_SOURCE: &str = r#"
+// @id cache-source
+// @name 缓存测试源
+// @version 1.0.0
+// @author tester
+// @hosts cdn.example.com
+async function getMediaSource() {
+    return {url: 'https://cdn.example.com/song.mp3', headers: {'Referer': 'https://example.com'}};
+}
+"#;
+
+    let dir = common::temp_dir("media-cache");
+    let paths = AppPaths::resolve(&dir);
+    paths.ensure().unwrap();
+    let store = Store::open(&paths.db).unwrap();
+    let ctx = CoreContext::new(paths)
+        .with_store(store)
+        .with_events(Arc::new(NullSink))
+        .with_http(Arc::new(CacheTransport));
+    install(&ctx, CACHE_SOURCE);
+
+    let reference = "cache-source:t1";
+    let first = call(&ctx, "playback.resolve", json!({ "reference": reference, "quality": "standard" }));
+    assert_eq!(first["ok"], json!(true), "{first}");
+    assert_eq!(first["data"]["source"], json!("cache-source"), "{first}");
+
+    // 缓存是后台线程补的：等文件出现（最多 3s），并确认 status 能看见
+    let key = gently_core::cache::media_key(reference, "standard");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while std::time::Instant::now() < deadline
+        && gently_core::cache::lookup_exact(&ctx.paths, &key).is_none()
+    {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(
+        gently_core::cache::lookup_exact(&ctx.paths, &key).is_some(),
+        "播放后应写入缓存"
+    );
+    let status = call(&ctx, "system.cacheStatus", json!({}));
+    assert_eq!(status["ok"], json!(true), "{status}");
+    assert!(status["data"]["mediaCount"].as_u64().unwrap() >= 1, "{status}");
+
+    // 停用插件 = 源不可用；缓存优先应仍然可播（离线场景）
+    let disabled = call(&ctx, "plugin.setEnabled", json!({ "id": "cache-source", "enabled": false }));
+    assert_eq!(disabled["ok"], json!(true), "{disabled}");
+    let offline = call(&ctx, "playback.resolve", json!({ "reference": reference, "quality": "standard" }));
+    assert_eq!(offline["ok"], json!(true), "{offline}");
+    assert_eq!(offline["data"]["fromCache"], json!(true), "应命中缓存：{offline}");
+    assert!(
+        offline["data"]["streamUrl"].as_str().unwrap().starts_with("http://127.0.0.1"),
+        "缓存也要走同一条回环代理：{offline}"
+    );
+
+    // 清理后：缓存没了、源也不可用 → 按契约返回 null（不假装能播）
+    let cleared = call(&ctx, "system.cacheClear", json!({ "kind": "media" }));
+    assert_eq!(cleared["ok"], json!(true), "{cleared}");
+    assert!(cleared["data"]["removedFiles"].as_u64().unwrap() >= 1, "{cleared}");
+    let after = call(&ctx, "system.cacheStatus", json!({}));
+    assert_eq!(after["data"]["mediaCount"], json!(0), "{after}");
+    let gone = call(&ctx, "playback.resolve", json!({ "reference": reference, "quality": "standard" }));
+    assert_eq!(gone["data"], json!(null), "{gone}");
 
     std::fs::remove_dir_all(&dir).ok();
 }

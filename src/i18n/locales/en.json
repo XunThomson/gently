@@ -489,7 +489,22 @@
       "defaultDownloadQuality": "Default download quality",
       "whenDownloadQualityIsMissing": "When the preferred quality is unavailable",
       "downloadLowerQualityVersion": "Use a lower quality",
-      "downloadHigherQualityVersion": "Use a higher quality"
+      "downloadHigherQualityVersion": "Use a higher quality",
+      "cache": "Cache",
+      "cacheHint": "Only tracks you played and lyrics you used are cached; offline playback prefers the local cache. Oldest entries are removed when the limit is exceeded.",
+      "cacheMedia": "Playback cache",
+      "cacheCatalog": "Lyrics & details",
+      "cacheCovers": "Embedded covers",
+      "cacheLimit": "Size limit",
+      "cacheUsage": "{{size}} · {{count}} files",
+      "cacheRefresh": "Refresh",
+      "cacheClearMedia": "Clear playback cache",
+      "cacheClearCatalog": "Clear lyrics & details",
+      "cacheClearAll": "Clear everything",
+      "cacheClearConfirm": "Clear cache",
+      "cacheClearDesc": "The cache is rebuilt on demand (played songs need to be played online again to be cached); downloaded files are not affected.",
+      "cacheCleared": "Removed {{files}} files ({{size}})",
+      "cacheUnavailable": "Cache management needs the desktop core; the browser preview has no local cache."
     }
   },
   "language": {

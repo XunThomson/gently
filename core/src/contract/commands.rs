@@ -8,10 +8,12 @@
 
 /// 契约中的全部命令名（`域.动作[.子动作]`）。
 pub const COMMAND_NAMES: &[&str] = &[
-    // system（3）——M0 真实实现
+    // system（5）——M0 真实实现 + R56 缓存管理
     "system.status",
     "system.paths",
     "system.reveal",
+    "system.cacheStatus",
+    "system.cacheClear",
     // plugin：管理（13）
     "plugin.list",
     "plugin.preview",

@@ -489,7 +489,22 @@
       "defaultDownloadQuality": "默认下载音质",
       "whenDownloadQualityIsMissing": "下载音质缺失时",
       "downloadLowerQualityVersion": "改用更低音质",
-      "downloadHigherQualityVersion": "改用更高音质"
+      "downloadHigherQualityVersion": "改用更高音质",
+      "cache": "缓存",
+      "cacheHint": "只缓存你播放过的歌曲与用过的歌词；断网或音源不可用时优先用本地缓存。总量超过上限后自动删除最旧的。",
+      "cacheMedia": "播放缓存",
+      "cacheCatalog": "歌词与详情",
+      "cacheCovers": "内嵌封面",
+      "cacheLimit": "容量上限",
+      "cacheUsage": "{{size}} · {{count}} 个文件",
+      "cacheRefresh": "刷新",
+      "cacheClearMedia": "清理播放缓存",
+      "cacheClearCatalog": "清理歌词与详情",
+      "cacheClearAll": "全部清理",
+      "cacheClearConfirm": "清理缓存",
+      "cacheClearDesc": "缓存会按需重新生成（播放过的歌曲需要再次联网才能重新缓存）；已下载的文件不受影响。",
+      "cacheCleared": "已清理 {{files}} 个文件（{{size}}）",
+      "cacheUnavailable": "缓存管理需要桌面端本机核心；浏览器预览没有本地缓存。"
     }
   },
   "language": {

@@ -18,7 +18,7 @@ import {DEFAULT_PRESET_ID} from '../src/theme';
 import {store, useActions} from '../src/store';
 import {buildCssVars, themeConfig} from '../src/theme/tokens';
 import {demoSourcesEnabled, demoSourcesReady, getActiveMusicSource, listMusicSources} from '../src/plugins';
-import {catalogService, fileService, libraryService, recommendService, skinService} from '../src/services';
+import {catalogService, coreSystem, fileService, libraryService, recommendService, skinService} from '../src/services';
 import zh from '../src/i18n/locales/zh.json';
 import en from '../src/i18n/locales/en.json';
 import {CORE_ERROR_CODES} from '../src/api';
@@ -1299,6 +1299,11 @@ async function main(): Promise<void> {
     check('core: 浏览器下榜单分类树返回 null', (await coreTopLists('demo')) === null);
     check('core: 浏览器下榜单内容返回 null', (await coreTopList('demo', 'hot')) === null);
     check('core: 浏览器下歌词返回 null', (await coreLyrics('demo:1', true)) === null);
+    const browserCache = await coreSystem.cacheStatus();
+    check(
+        'core: 浏览器下缓存状态返回 unsupported_platform（界面据此说明需要桌面端）',
+        browserCache.ok === false && browserCache.error.code === 'common.unsupported_platform',
+    );
     const browserLyricSearch = await catalogService.searchLyrics('测试');
     check(
         'core: 浏览器下歌词搜索返回空且不抛异常',
@@ -1349,6 +1354,7 @@ async function main(): Promise<void> {
     const savePlaylistCalls: Record<string, unknown>[] = [];
     const skinExportCalls: Record<string, unknown>[] = [];
     const skinImportCalls: Record<string, unknown>[] = [];
+    const cacheClearCalls: Record<string, unknown>[] = [];
     const resolveCalls: Record<string, unknown>[] = [];
     const reportCalls: Record<string, unknown>[] = [];
     await withFakeCore(
@@ -1474,6 +1480,21 @@ async function main(): Promise<void> {
                     });
                 }
                 return failure('common.not_found', `插件未安装：${String(params.ref ?? '')}`);
+            }
+            if (command === 'system.cacheStatus') {
+                return envelope({
+                    mediaBytes: 2048,
+                    mediaCount: 2,
+                    catalogBytes: 1024,
+                    catalogCount: 3,
+                    coversBytes: 512,
+                    coversCount: 1,
+                    limitBytes: 1024 * 1024 * 1024,
+                });
+            }
+            if (command === 'system.cacheClear') {
+                cacheClearCalls.push(params);
+                return envelope({removedBytes: 2048, removedFiles: 2});
             }
             if (command === 'skin.list') {
                 return envelope([
@@ -1667,6 +1688,28 @@ async function main(): Promise<void> {
                 'fake: 导出用户皮肤取核心原文',
                 skinExportCalls.length === 1 && userJson.includes('fromCore'),
                 JSON.stringify(skinExportCalls),
+            );
+
+            /* 6d. 缓存管理：状态与清理都走核心；清理后界面会重新读一次状态 */
+            const cacheStatus = await coreSystem.cacheStatus();
+            check(
+                'fake: 缓存状态读核心（媒体/歌词/封面分别统计）',
+                cacheStatus.ok &&
+                    cacheStatus.data.mediaCount === 2 &&
+                    cacheStatus.data.catalogCount === 3 &&
+                    cacheStatus.data.coversCount === 1 &&
+                    cacheStatus.data.limitBytes > 0,
+                JSON.stringify(cacheStatus),
+            );
+            cacheClearCalls.length = 0;
+            const cleared = await coreSystem.cacheClear('media');
+            check(
+                'fake: 清理缓存指定 kind 并带回删除统计',
+                cleared.ok &&
+                    cacheClearCalls.length === 1 &&
+                    cacheClearCalls[0].kind === 'media' &&
+                    cleared.data.removedFiles === 2,
+                JSON.stringify({calls: cacheClearCalls, cleared}),
             );
 
             /* 6c. 皮肤导入的两条来源（粘贴 JSON / 粘贴本机路径）都要走核心的 `skin.preview` + `skin.install`：

@@ -67,3 +67,26 @@
     color: var(--text-secondary);
     word-break: break-all;
 }
+
+/* 卡片标题行：标题 + 右侧刷新按钮 */
+.cacheHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+/* 缓存操作按钮组：窄窗口下换行而不是溢出 */
+.cacheActions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+/* 操作反馈（清理成功 / 失败原因） */
+.notice {
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+    color: var(--text-secondary);
+}

@@ -389,6 +389,8 @@ export interface ResolvedMedia {
     headers?: Record<string, string>;
     mimeType?: string;
     expiresInSec: number;
+    /** 这条地址来自本地播放缓存（断网也能播）；界面可据此显示「缓存」标记 */
+    fromCache?: boolean;
 }
 
 /* ============================== 契约 ============================== */
@@ -436,6 +438,31 @@ export interface SystemApi {
     paths(): Promise<CoreResult<SystemPathsDto>>;
     /** 在系统文件管理器中打开某个路径（仅限受管目录） */
     reveal(input: {path: string}): Promise<CoreResult<null>>;
+    /** 缓存占用（播放缓存 / 歌词与详情 / 封面），设置页展示与清理用 */
+    cacheStatus(): Promise<CoreResult<CacheStatusDto>>;
+    /** 清理缓存；缺省 kind = all */
+    cacheClear(input?: {kind?: CacheClearKind}): Promise<CoreResult<CacheClearResultDto>>;
+}
+
+export type CacheClearKind = 'media' | 'catalog' | 'covers' | 'all';
+
+export interface CacheStatusDto {
+    /** 播放缓存（播放过的远端曲目） */
+    mediaBytes: number;
+    mediaCount: number;
+    /** 歌词 / 详情 / 榜单 JSON 缓存 */
+    catalogBytes: number;
+    catalogCount: number;
+    /** 本地内嵌封面 */
+    coversBytes: number;
+    coversCount: number;
+    /** 媒体缓存总量上限（超出后核心按最旧自动清理） */
+    limitBytes: number;
+}
+
+export interface CacheClearResultDto {
+    removedBytes: number;
+    removedFiles: number;
 }
 
 export interface CatalogApi {
