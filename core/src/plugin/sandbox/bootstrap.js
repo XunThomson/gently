@@ -141,7 +141,8 @@
     globalThis.__collect = function () {
         const names = ['search', 'getMediaSource', 'getTrackInfo', 'getAlbumInfo',
                        'getPlaylistInfo', 'getLyric', 'getTopLists', 'getTopList', 'getRecommend',
-                       'getFavorites', 'getFavoriteCollections'];
+                       'getFavorites', 'getFavoriteCollections',
+                       'getLoginQr', 'pollLoginQr'];
         const out = {};
         const exported = (globalThis.module && globalThis.module.exports) || {};
 

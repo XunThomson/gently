@@ -887,10 +887,16 @@ fn collect_capabilities(context: &Context) -> Fallible<Vec<PluginCapability>> {
         let names: Vec<String> = ctx
             .eval("__collect()")
             .map_err(|err| describe_js_error(&err, "能力探测失败"))?;
-        Ok(names
-            .iter()
-            .filter_map(|name| capability_of(name))
-            .collect())
+        // 一个能力可能对应多个函数名（`getLoginQr` + `pollLoginQr`）：去重后再上报
+        let mut capabilities: Vec<PluginCapability> = Vec::new();
+        for name in &names {
+            if let Some(capability) = capability_of(name) {
+                if !capabilities.contains(&capability) {
+                    capabilities.push(capability);
+                }
+            }
+        }
+        Ok(capabilities)
     })
 }
 /// `eval` 失败时的错误映射：优先带上 bootstrap 记录的说明
