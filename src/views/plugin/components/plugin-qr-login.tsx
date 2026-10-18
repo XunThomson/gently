@@ -9,7 +9,7 @@ import {qrSvgDataUrl} from './qr-code';
 import styles from './plugin-qr-login.module.css';
 
 /** 轮询间隔：扫码到确认通常几秒内完成，2 秒一次既不迟钝也不打扰 */
-const POLL_MS = 2000;
+const POLL_MS = 600;
 
 interface Props {
     pluginId: string;

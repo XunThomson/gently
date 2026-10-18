@@ -119,6 +119,8 @@ pub fn login_qr_poll(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     ctx.plugins
         .credentials()
         .set(&params.source, &credential_key, Some(&session));
+    /* 审计：**只记键名**，会话值永不进日志（红线 14） */
+    tracing::info!(plugin = %params.source, key = %credential_key, "插件凭据已写入（二维码登录）");
 
     Ok(json!({
         "source": params.source,
