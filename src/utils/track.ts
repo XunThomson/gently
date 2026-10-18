@@ -47,9 +47,24 @@ export function groupTracks(
     return [...groups.values()].map(({primary, candidates}) => ({
         ...primary,
         id: `song:${trackGroupKey(primary)}`,
+        /**
+         * 封面（与渐变占位）**在各候选之间取第一个非空的**。
+         *
+         * 为什么：同一首歌常被多个源收录，而「哪个源排前面」取决于音源优先级。视频站的条目
+         * 几乎都带封面（视频封面就是专辑封面），音乐站的搜索接口却常常不给（实测网易云
+         * `/api/search/get` 的 `album.picUrl` 是空串）。只认 primary 的话，同一首歌会
+         * 「有时有图、有时是色块」，取决于哪个源排在前面（R73 用户报的「封面大多数都有」）。
+         */
+        artwork: firstNonEmpty([primary.artwork, ...candidates.map((item) => item.track.artwork)]),
+        gradient: firstNonEmpty([primary.gradient, ...candidates.map((item) => item.track.gradient)]) ?? '',
         candidates,
         sourceCount: candidates.length,
     }));
+}
+
+/** 第一个非空字符串（保留顺序，「主条目 → 候选」兜底取值用） */
+export function firstNonEmpty(values: (string | undefined)[]): string | undefined {
+    return values.find((value): value is string => typeof value === 'string' && value.trim().length > 0);
 }
 
 /** 按音源偏好顺序排序候选（未出现在偏好里的保持原顺序排在最后） */

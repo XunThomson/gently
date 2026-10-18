@@ -965,6 +965,56 @@ async function main(): Promise<void> {
         clearCachedLyricSearch();
     }
 
+    /* 封面优先级（R73）：同一首歌多个源时，封面要取第一个非空的候选，
+       不能只看「排在最前面的源」——音乐站的搜索接口常常不给封面 */
+    {
+        const base = {title: '封面测试曲', artist: '歌手', album: '', durationSec: 100};
+        const withoutCover = {...base, id: 'music-src:1', source: 'music-src', artwork: ''};
+        const withCover = {...base, id: 'video-src:1', source: 'video-src', artwork: 'https://example.com/a.jpg'};
+        const grouped = groupTracks([withoutCover, withCover]);
+        check(
+            'cover: 分组时封面取候选里第一个非空值',
+            grouped.length === 1 && grouped[0].artwork === 'https://example.com/a.jpg',
+            JSON.stringify(grouped.map((item) => item.artwork)),
+        );
+        check(
+            'cover: 主条目本来就有封面时保持原样',
+            groupTracks([withCover, withoutCover])[0].artwork === 'https://example.com/a.jpg',
+        );
+        check(
+            'cover: 全都没有封面时留空（界面退回渐变，不显示破图）',
+            groupTracks([withoutCover, {...withoutCover, source: 'other', id: 'other:1'}])[0].artwork === undefined,
+            JSON.stringify(groupTracks([withoutCover, {...withoutCover, source: 'other', id: 'other:1'}])[0].artwork),
+        );
+
+        /* 协议相对地址必须补 https：桌面端页面在 tauri:// 下，`//host/x.jpg` 会被解析成
+           `tauri://host/x.jpg` 直接加载失败——一整批封面会静默变成色块 */
+        const protocolRelative = coverStyle('//i0.example.com/a.jpg', 'seed');
+        check(
+            'cover: 协议相对地址补成 https',
+            protocolRelative.backgroundImage === 'url("https://i0.example.com/a.jpg")',
+            JSON.stringify(protocolRelative),
+        );
+        const httpsCover = coverStyle('https://i0.example.com/b.jpg', 'seed');
+        check(
+            'cover: https 地址原样使用',
+            httpsCover.backgroundImage === 'url("https://i0.example.com/b.jpg")',
+            JSON.stringify(httpsCover),
+        );
+        const httpCover = coverStyle('http://i2.example.com/c.jpg', 'seed');
+        check(
+            'cover: http 地址升到 https（桌面端是安全上下文，http 图会被当混合内容拦掉）',
+            httpCover.backgroundImage === 'url("https://i2.example.com/c.jpg")',
+            JSON.stringify(httpCover),
+        );
+        const gradientFallback = coverStyle('', 'seed');
+        check(
+            'cover: 没有地址时才用哈希渐变兜底',
+            typeof gradientFallback.background === 'string' && !gradientFallback.backgroundImage,
+            JSON.stringify(gradientFallback),
+        );
+    }
+
     /* 收藏夹选择器：收起时只有一个触发器（上千个收藏夹也不会铺开） */
     {
         const many = Array.from({length: 1000}, (_, index) => ({

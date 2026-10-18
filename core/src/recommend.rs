@@ -362,7 +362,8 @@ fn rank_albums(pool: &[Value], taste: &Taste, limit: usize) -> Vec<Value> {
                 "id": format!("local-album:{}", album),
                 "title": album,
                 "artist": artist,
-                "cover": "",
+                // 封面取组内第一个非空：曲目快照里通常已经带着源封面
+                "cover": first_artwork(&tracks),
                 "year": 0,
                 "tags": tags,
                 "source": "local",
@@ -389,7 +390,8 @@ fn rank_playlists(ctx: &CoreContext, taste: &Taste, limit: usize) -> Fallible<Ve
             "id": playlist.id,
             "title": playlist.name,
             "description": "",
-            "cover": "",
+            // 同上：歌单封面用内部第一张有图的曲目
+            "cover": first_artwork(&refs),
             "tags": tags,
             "source": "local",
             "tracks": tracks,
@@ -550,6 +552,29 @@ fn track_artist(track: &Value) -> String {
 
 fn track_album(track: &Value) -> String {
     track.get("album").and_then(Value::as_str).unwrap_or_default().to_string()
+}
+
+/// 曲目的封面地址（`artwork` 优先，兼容旧快照里的 `cover`）。
+fn track_artwork(track: &Value) -> String {
+    ["artwork", "cover"]
+        .iter()
+        .filter_map(|key| track.get(*key).and_then(Value::as_str))
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// 一组曲目里第一个非空封面：专辑 / 歌单的封面就是这样来的。
+///
+/// 以前这里是硬编码空串，于是「专辑/歌单卡片」永远是渐变色块——哪怕里面的曲目
+/// 明明带着视频封面或专辑图（R73 用户报的「封面大多数都存在」）。
+fn first_artwork(tracks: &[&Value]) -> String {
+    tracks
+        .iter()
+        .map(|track| track_artwork(track))
+        .find(|value| !value.is_empty())
+        .unwrap_or_default()
 }
 
 fn track_album_id(track: &Value) -> String {

@@ -2,6 +2,13 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      封面防盗链：桌面宿主的页面 origin 是 `tauri://localhost`，带出去的 Referer 就是它，
+      而图床（实测 B 站 i0/i1.hdslb.com）会对陌生 Referer 直接回 403 —— 一整批封面静默
+      加载失败、退回渐变色块，看起来像「没有封面」（R73）。不发 Referer 时同一张图是 200。
+      这里只影响页面自己发起的图片请求；媒体走核心回环代理，与这里无关。
+    -->
+    <meta name="referrer" content="no-referrer" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />

@@ -527,11 +527,36 @@ fn merge_tracks(collected: Vec<(String, u32, Vec<Value>)>) -> Vec<Value> {
                 .collect();
 
             let mut grouped = base;
+            /* 封面：主条目没有就从其它候选里取第一个非空的。
+               音乐站的搜索接口经常不给封面（实测网易云 `album.picUrl` 是空串），而视频站的条目
+               几乎都带（视频封面就是专辑图）。只认主条目的话，同一首歌会「有时有图、有时是色块」
+               ——取决于哪个源排在前面（R73 用户报的「封面大多数都有」）。 */
+            let fallback_artwork = members
+                .iter()
+                .map(|(_, _, track)| track_artwork(track))
+                .find(|value| !value.is_empty());
+            let base_artwork_empty = grouped["artwork"].as_str().map(str::trim).unwrap_or("").is_empty();
+            if base_artwork_empty {
+                if let Some(artwork) = fallback_artwork {
+                    grouped["artwork"] = json!(artwork);
+                }
+            }
             grouped["sourceCount"] = json!(candidates.len());
             grouped["candidates"] = json!(candidates);
             Some(grouped)
         })
         .collect()
+}
+
+/// 曲目快照里的封面地址（`artwork` 优先，兼容旧字段 `cover`）。
+fn track_artwork(track: &Value) -> String {
+    ["artwork", "cover"]
+        .iter()
+        .filter_map(|key| track.get(*key).and_then(Value::as_str))
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_string()
 }
 
 fn now_millis() -> u64 {

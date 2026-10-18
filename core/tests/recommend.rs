@@ -145,9 +145,56 @@ fn home_builds_a_profile_from_local_behaviour_without_any_network() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// 「推荐专辑 / 推荐歌单」的封面要来自组内的曲目，而不是永远空着。
+///
+/// 真实症状（R73）：热门页的专辑与歌单卡片永远是渐变色块，哪怕里面的曲目带着视频封面。
+/// 根因是 `recommend` 里把 `cover` 硬编码成空串。
 #[test]
-fn home_without_any_behaviour_falls_back_to_trending() {
-    let (ctx, _http, dir) = setup("empty");
+fn album_cover_comes_from_its_tracks() {
+    let (ctx, _http, dir) = setup("cover");
+    let store = ctx.store.as_ref().unwrap();
+
+    let with_art = json!({
+        "id": "demo:cover-a",
+        "title": "有图的歌",
+        "artist": "张三",
+        "album": "封面专辑",
+        "source": "demo",
+        "tags": ["流行"],
+        "albumId": "demo-album-cover",
+        "artwork": "https://example.com/cover-a.jpg",
+    });
+    store.set_favorite("demo:cover-a", "demo", &with_art, true).unwrap();
+
+    let without_art = json!({
+        "id": "demo:cover-b",
+        "title": "没图的歌",
+        "artist": "张三",
+        "album": "封面专辑",
+        "source": "demo",
+        "tags": ["流行"],
+        "albumId": "demo-album-cover",
+    });
+    store.set_favorite("demo:cover-b", "demo", &without_art, true).unwrap();
+
+    let value = call(&ctx, "recommend.home", json!({}));
+    assert_eq!(value["ok"], json!(true), "{value}");
+    let albums = value["data"]["albums"].as_array().unwrap();
+    let hit = albums
+        .iter()
+        .find(|album| album["title"] == json!("封面专辑"))
+        .expect("专辑应该出现在推荐里");
+    assert_eq!(
+        hit["cover"],
+        json!("https://example.com/cover-a.jpg"),
+        "专辑封面应取组内第一张有图的曲目：{hit}"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn home_without_any_behaviour_falls_back_to_trending() {    let (ctx, _http, dir) = setup("empty");
     // 只有本地曲库（没有播放史与收藏）→ 画像是空的
     let music = dir.join("music");
     std::fs::create_dir_all(&music).unwrap();
