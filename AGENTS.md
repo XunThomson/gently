@@ -69,7 +69,7 @@
 
 ```bash
 pnpm typecheck   # tsc --noEmit（只读）
-pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染 + i18n/CSS token 守卫 + 假宿主下的桌面端分支（410 项）
+pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染 + i18n/CSS token 守卫 + 假宿主下的桌面端分支（417 项）
 pnpm check:contract  # 契约守卫：文档 ↔ Rust 命令/事件清单 ↔ 前端服务层与事件常量（含事件名字符集，双向）
 pnpm check:reachability  # 界面可达性守卫：每条契约能力是否真能从界面走到（有封装却没人调用 → 失败）
 pnpm verify      # 一次跑完：typecheck + smoke + check:contract + check:reachability + cargo test -p gently-core
