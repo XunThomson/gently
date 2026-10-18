@@ -15,7 +15,7 @@ tldr: 第六十九轮（R69）：**主题市场「导出」修好 + B 站收藏�
 
 | # | 需求 | 状态 |
 |---|---|---|
-| 1 | 实现 B 站收藏夹（插件侧 `getFavoriteCollections` + `getFavorites`） | **插件侧完成（R69）**，等登录 Cookie 后做实机取数 |
+| 1 | 实现 B 站收藏夹（插件侧 `getFavoriteCollections` + `getFavorites`） | **完成（R69）**：插件侧实现 + 界面链路实测（用测试源验收藏夹选择/翻页）；B 站真实取数需你填一次登录 Cookie |
 | 2 | 实现网易云插件 | **完成（交付在 `release/plugins/wangyiyun.js`）** |
 | 3 | 歌词页功能项过多 → 抽屉式惰性展开；偏移同步体验 + 同步参数缓存 | **完成（R68）** |
 | 4 | 桌面歌词背景改透明 + 逐字「从左到右流式展开」，设置里显式开关 | **完成（R67）** |
@@ -90,6 +90,9 @@ tldr: 第六十九轮（R69）：**主题市场「导出」修好 + B 站收藏�
     且内容是核心那份原文，**资源管理器打开的就是 `…\com.xun.gently\skins`**
     （UIA 读到窗口标题，`r68-export-ok.png`）；
   - 导出（内置预设）：状态「已复制「暮光紫」的皮肤 JSON 到剪贴板」，`Get-Clipboard` 读到的就是皮肤 JSON；
+  - 源收藏（用本机的测试源验完整链路）：源选择器 → 收藏夹选择器（默认收藏夹 12 / 动画收藏夹 3）→
+    行数据；切到「动画收藏夹」行标题随之变成 `[fav-anime] …`；「加载更多」拉到第 2 页后按 `isEnd`
+    收起按钮（`r68-source-fav-test.png` / `r68-source-fav-paging.png`）；
   - B 站插件重装后核心日志：`capabilities=[Search, GetMediaSource, GetTrackInfo, GetAlbumInfo,
     GetTopLists, GetTopList, GetFavorites, GetFavoriteCollections]`；
   - 源收藏选中该源：面板显示「插件执行出错：需要登录：在插件设置里填写 B 站 Cookie（SESSDATA）后重试」
