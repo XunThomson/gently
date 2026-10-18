@@ -225,8 +225,10 @@
     "hot": {
       "title": "热门推荐",
       "recommendSub": "基于最近收听",
-      "emptyTitle": "没有找到匹配的歌曲",
-      "emptyHint": "试试其他关键词"
+      "emptyTitle": "还没有足够的收听记录",
+      "emptyHint": "播放几首歌、收藏几张专辑，或到「本地音乐」扫描一下，这里就会按你的口味排序",
+      "searchEmptyTitle": "没有找到匹配的歌曲",
+      "searchEmptyHint": "试试其他关键词"
     },
     "download": {
       "title": "下载管理",

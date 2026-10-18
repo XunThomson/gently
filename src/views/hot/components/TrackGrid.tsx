@@ -20,6 +20,9 @@ export interface TrackGridProps {
      */
     onDislike?: (track: Track) => void;
     onSelect: (track: Track) => void;
+    /** 空态文案（推荐页与搜索页语境不同：这里传推荐专用的） */
+    emptyTitleKey?: string;
+    emptyHintKey?: string;
 }
 
 /**
@@ -36,6 +39,8 @@ export function TrackGrid({
     reasonOf,
     onDislike,
     onSelect,
+    emptyTitleKey = 'page.hot.searchEmptyTitle',
+    emptyHintKey = 'page.hot.searchEmptyHint',
 }: TrackGridProps) {
     const {t} = useTranslation();
 
@@ -43,8 +48,8 @@ export function TrackGrid({
         return (
             <EmptyState
                 icon={<IconMusic size={30}/>}
-                title={t('page.hot.emptyTitle')}
-                hint={t('page.hot.emptyHint')}
+                title={t(emptyTitleKey)}
+                hint={t(emptyHintKey)}
             />
         );
     }

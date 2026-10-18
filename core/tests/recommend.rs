@@ -167,6 +167,26 @@ fn home_without_any_behaviour_falls_back_to_trending() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// 「曲库极小 + 全都刚听过」时不能给出空推荐。
+///
+/// 真实症状（R66 打包版）：只有一首播放史的机器上，热门页的「为你推荐」是一个空网格，
+/// 而「推荐专辑」有内容——因为单曲排除了最近听过的（`RECENT_EXCLUDE`），把它们全排掉了。
+/// 规则应当是「能排除就排除，排空就放宽」。
+#[test]
+fn home_relaxes_recent_exclusion_instead_of_returning_nothing() {
+    let (ctx, _http, dir) = setup("tiny");
+    // 只有一首，并且刚刚播过 → 它同时是「唯一候选」和「最近听过」
+    push_history(&ctx, "demo-source:only", "唯一的一首", "歌手", &["流行"], 1);
+
+    let value = call(&ctx, "recommend.home", json!({}));
+    assert_eq!(value["ok"], json!(true), "{value}");
+    let tracks = value["data"]["tracks"].as_array().unwrap();
+    assert_eq!(tracks.len(), 1, "排空时必须放宽，而不是给空列表：{tracks:?}");
+    assert_eq!(tracks[0]["title"], json!("唯一的一首"), "{tracks:?}");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 #[test]
 fn similar_accepts_an_album_seed() {
     // 契约写明 `recommend.similar` 的种子可以是**曲目引用**或**专辑 id**。

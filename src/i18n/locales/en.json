@@ -225,8 +225,10 @@
     "hot": {
       "title": "Featured",
       "recommendSub": "Based on recent listening",
-      "emptyTitle": "No matching songs",
-      "emptyHint": "Try another keyword"
+      "emptyTitle": "Not enough listening history yet",
+      "emptyHint": "Play a few songs, favorite some albums, or scan your local music — this page ranks by your taste",
+      "searchEmptyTitle": "No matching songs",
+      "searchEmptyHint": "Try another keyword"
     },
     "download": {
       "title": "Downloads",

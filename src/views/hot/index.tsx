@@ -73,6 +73,8 @@ export default function HotView() {
                     title={t('recommend.tracksTitle')}
                     subtitle={t('recommend.tracksSubtitle')}
                 />
+                {/* 空态文案是**推荐专用**的：搜索页那套「没有找到匹配的歌曲 / 试试其他关键词」
+                    放在这里会让人以为「推荐等于搜索」，也不知道该做什么 */}
                 <TrackGrid
                     tracks={tracks}
                     loading={loading}
@@ -81,6 +83,8 @@ export default function HotView() {
                     reasonOf={(track) => (track as RecommendedTrack).reason}
                     onDislike={dislike}
                     onSelect={(track) => playOrToggle(track, tracks)}
+                    emptyTitleKey="page.hot.emptyTitle"
+                    emptyHintKey="page.hot.emptyHint"
                 />
             </section>
 

@@ -438,13 +438,30 @@ fn reveal_in_file_manager(ctx: &CoreContext, raw: &str) -> Fallible<()> {
 #[cfg(target_os = "windows")]
 fn platform_reveal(path: &std::path::Path) -> std::io::Result<()> {
     use std::process::Command;
-    // 目录直接打开；文件用 /select 在父目录里高亮
-    if path.is_dir() {
-        Command::new("explorer").arg(path).spawn()?;
-    } else {
-        Command::new("explorer").arg(format!("/select,{}", path.display())).spawn()?;
-    }
+    // 目录直接打开；文件用 /select 在父目录里高亮。
+    //
+    // 两个必须踩准的点（R66 修的就是它们）：
+    // 1. **分隔符必须是反斜杠**：`system.paths` 回给前端的路径是 `F:/a/b`（正斜杠，见
+    //    `paths::to_dto`），前端原样传回来；`explorer "F:/a/b"` 会解析失败并**默默打开
+    //    默认文件夹**（用户看到的症状是「打开的不是数据目录」）；
+    // 2. `/select,` 后面的路径**要带引号**：带空格的路径（`C:\Users\Xun\AppData\...`）很常见，
+    //    不加引号会被 explorer 截断。
+    let arg = reveal_arg(path.is_dir(), &path.to_string_lossy());
+    Command::new("explorer").arg(arg).spawn()?;
     Ok(())
+}
+
+/// 拼 `explorer` 的参数（**纯函数**，测试盯着这一份实现）。
+///
+/// 输入是任意分隔符的路径（前端回传的就是 `F:/...`），输出是 explorer 认的那一个参数。
+#[cfg(any(target_os = "windows", test))]
+fn reveal_arg(is_dir: bool, path: &str) -> String {
+    let native = path.replace('/', "\\");
+    if is_dir {
+        native
+    } else {
+        format!("/select,\"{native}\"")
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -1483,4 +1500,31 @@ fn to_json<T: Serialize>(value: T) -> Fallible<serde_json::Value> {
 
 fn slash(path: &std::path::Path) -> String {
     path.to_string_lossy().replace('\\', "/")
+}
+
+#[cfg(test)]
+mod reveal_args {
+    use super::reveal_arg;
+
+    /// `system.paths` 回给前端的是正斜杠路径，前端原样传回来；explorer 必须是反斜杠。
+    #[test]
+    fn forward_slashes_become_native_backslashes() {
+        assert_eq!(reveal_arg(true, "C:/Users/Xun/AppData"), r"C:\Users\Xun\AppData");
+        assert_eq!(
+            reveal_arg(true, r"C:\Users\Xun\AppData"),
+            r"C:\Users\Xun\AppData"
+        );
+    }
+
+    /// 文件要用 `/select,"<path>"`：带空格的路径不加引号会被 explorer 截断。
+    #[test]
+    fn files_are_selected_and_quoted() {
+        assert_eq!(
+            reveal_arg(false, "C:/Users/Xun/My Music/a.flac"),
+            r#"/select,"C:\Users\Xun\My Music\a.flac""#
+        );
+        // 目录不拼 /select：直接打开那个目录
+        assert!(reveal_arg(true, "C:/Users/Xun/My Music").ends_with(r"My Music"));
+        assert!(!reveal_arg(true, "C:/Users/Xun/My Music").starts_with("/select"));
+    }
 }

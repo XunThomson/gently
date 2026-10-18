@@ -142,7 +142,14 @@ pub fn home(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     let pool = candidate_pool(ctx)?;
     let excluded: Vec<String> = recent_refs.iter().take(RECENT_EXCLUDE).cloned().collect();
 
-    let tracks = rank_tracks(&pool, &taste, limit, &excluded);
+    // 「排除最近听过的」在**曲库很小时会把候选全删光**：只有一两首歌的用户，推荐页的
+    // 单曲区就变成空白（R66 实测：`albums` 有内容、`tracks` 却是 0 条）。
+    // 规则因此是「能排除就排除，排空就放宽」——先按排除算，空了就不排除再算一次；
+    // 推荐理由不受影响（它来自口味画像，而不是「是否刚刚听过」）。
+    let mut tracks = rank_tracks(&pool, &taste, limit, &excluded);
+    if tracks.is_empty() && !excluded.is_empty() {
+        tracks = rank_tracks(&pool, &taste, limit, &[]);
+    }
     let albums = rank_albums(&pool, &taste, limit);
     let playlists = rank_playlists(ctx, &taste, limit)?;
 
