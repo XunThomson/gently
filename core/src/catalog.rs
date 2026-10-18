@@ -500,10 +500,17 @@ fn merge_tracks(collected: Vec<(String, u32, Vec<Value>)>) -> Vec<Value> {
                 track["title"].as_str().unwrap_or_default().to_lowercase(),
                 track["artist"].as_str().unwrap_or_default().to_lowercase()
             );
-            if !groups.contains_key(&key) {
+            let entry = groups.entry(key.clone()).or_insert_with(|| {
                 order.push(key.clone());
+                Vec::new()
+            });
+            /* 同一个源在一组里只留第一条：音乐站的搜索接口经常对同一首歌返回多个专辑版本
+               （实测网易云「海阔天空」一组里 4 条全是同一个源），全都塞进候选会让
+               「4 个音源」这种数字骗人，也会让封面兜底在同一个源的重复条目之间空转。 */
+            if entry.iter().any(|(member_source, _, _)| member_source == &source) {
+                continue;
             }
-            groups.entry(key).or_default().push((source.clone(), priority, track));
+            entry.push((source.clone(), priority, track));
         }
     }
 
@@ -564,4 +571,47 @@ fn now_millis() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::merge_tracks;
+    use serde_json::json;
+
+    fn track(source: &str, title: &str, artwork: &str) -> serde_json::Value {
+        json!({
+            "id": format!("{source}:{title}"),
+            "title": title,
+            "artist": "歌手",
+            "album": "",
+            "source": source,
+            "artwork": artwork,
+            "duration": "3:00",
+            "durationSec": 180,
+        })
+    }
+
+    /// 同一个源对同一首歌返回多条（音乐站常见的「多个专辑版本」）时，候选里只留第一条；
+    /// 否则界面上的「N 个音源」会骗人，封面兜底也会在重复条目之间空转。
+    #[test]
+    fn candidates_dedupe_same_source() {
+        let merged = merge_tracks(vec![
+            (
+                "music-src".to_string(),
+                1,
+                vec![track("music-src", "同一首歌", ""), track("music-src", "同一首歌", "")],
+            ),
+            (
+                "video-src".to_string(),
+                2,
+                vec![track("video-src", "同一首歌", "https://example.com/a.jpg")],
+            ),
+        ]);
+        assert_eq!(merged.len(), 1, "{merged:?}");
+        let group = &merged[0];
+        assert_eq!(group["sourceCount"], json!(2), "两个源，不是三条：{group}");
+        assert_eq!(group["candidates"].as_array().unwrap().len(), 2, "{group}");
+        // 主条目（music-src）没有封面 → 取 video-src 的
+        assert_eq!(group["artwork"], json!("https://example.com/a.jpg"), "{group}");
+    }
 }

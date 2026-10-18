@@ -20,6 +20,8 @@ import {catalogService, coreAvailable} from '../../services';
 import {useSelect} from '../../store';
 import type {GroupedTrack, Track} from '../../types';
 import {filterGroupsBySource} from '../../utils/track';
+import {usePluginState} from '../../store';
+
 import styles from './search.module.css';
 
 /**
@@ -93,7 +95,9 @@ export default function SearchView() {
      * 那种说法会让用户以为歌不存在，实际是根本没有源可搜。
      * 演示源只活在浏览器预览里（`demoSourcesEnabled`），所以这里只看核心。
      */
-    const noSource = coreAvailable() && catalogService.listSources().length === 0;
+    /* 有没有可用音源要看**核心装的插件**（桌面端音源都在核心里，前端注册表是空的）。 */
+    const enabledPlugins = usePluginState().list.filter((plugin) => plugin.enabled);
+    const noSource = coreAvailable() && enabledPlugins.length === 0;
 
     const columns: ColumnDef<Track>[] = [
         indexColumn<Track>(),
