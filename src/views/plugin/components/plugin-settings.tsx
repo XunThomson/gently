@@ -153,6 +153,8 @@ export function PluginSettings({plugin}: {plugin: PluginSummary}) {
 
             {/* 凭据 */}
             <span className={styles.label}>{t('page.plugin.credentialTitle')}</span>
+            {/* 引导：普通用户第一次看到「Cookie / token」这种词是不知道从哪来的 */}
+            <p className={styles.hint}>{t('page.plugin.credentialGuide')}</p>
             {credentials === null ? (
                 <p className={styles.hint}>{t('common.loading')}</p>
             ) : credentials.length === 0 ? (

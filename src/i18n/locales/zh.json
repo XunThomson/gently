@@ -183,6 +183,10 @@
   "player": {
     "notPlaying": "未在播放",
     "pickSong": "选择一首歌曲开始",
+    "playbackFailed": "无法播放",
+    "retry": "重试",
+    "failureNoSource": "{{count}} 个音源都没能给出可播放的地址",
+    "failureMedia": "音频加载失败（地址可能已过期）",
     "repeatOff": "顺序播放",
     "repeatAll": "列表循环",
     "repeatOne": "单曲循环",
@@ -324,6 +328,7 @@
       "settingsClose": "收起设置",
       "save": "保存",
       "credentialTitle": "凭据（只存本机，不经任何服务器）",
+      "credentialGuide": "这个值由插件决定从哪来：常见是「先在浏览器里登录该网站，再复制它要求的 Cookie / token」。应用不会代你获取，也不会把它发给任何服务器；填完保存即可在「源收藏」里使用。",
       "oauthTitle": "第三方授权（安装后浏览器会打开这个域名的授权页）",
       "oauthHost": "授权域名：{{host}}",
       "authTitle": "第三方授权（OAuth 2.0，端点由该插件声明）",
@@ -418,7 +423,14 @@
       "sourceEmpty": "这个源没有返回任何收藏歌曲",
       "sourceHint": "源收藏来自插件（需要登录，登录方式由该源决定）；本机不缓存它，每次打开都会重新取。",
       "noSourceFavorites": "没有已启用的音源提供收藏夹（插件需要实现 getFavorites 并完成登录）。",
-      "loadMore": "加载更多"
+      "loadMore": "加载更多",
+      "collectionPicker": "选择收藏夹",
+      "collectionSearch": "搜索收藏夹",
+      "collectionTotal": "共 {{count}} 个",
+      "collectionMatch": "匹配 {{count}} 个",
+      "collectionNone": "没有匹配的收藏夹",
+      "collectionMore": "还有 {{count}} 个未列出，继续输入缩小范围",
+      "configureCredentials": "去配置凭据"
     },
     "search": {
       "title": "搜索结果",

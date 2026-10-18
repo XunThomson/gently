@@ -108,6 +108,32 @@
     flex: none;
 }
 
+/* 播放失败：一句能看懂的话 + 「重试」。不能只在控制台里说——
+   用户看到的应该是「无法播放」，而不是一个还在走的进度条 */
+.failure {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: none;
+    padding: 1px 7px;
+    border: 1px solid var(--danger);
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--danger);
+    font-family: inherit;
+    font-size: var(--player-chip-font-size);
+    cursor: pointer;
+    transition: background-color var(--motion-fast);
+}
+
+.failure:hover {
+    background: var(--bg-hover);
+}
+
+.failureRetry {
+    text-decoration: underline;
+}
+
 .chip {
     padding: 1px 7px;
     border-radius: var(--radius-full);

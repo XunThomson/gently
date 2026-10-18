@@ -57,7 +57,7 @@ export function PlayerBar() {
     const navigate = useNavigate();
     const location = useLocation();
     const player = usePlayerState();
-    const {toggle, next, prev, setRepeat, setVolume, seek} = useActions().player;
+    const {toggle, next, prev, setRepeat, setVolume, seek, retryPlayback} = useActions().player;
     const {toggleFavorite} = useActions().collection;
     const isFavorite = useSelect(
         (s) =>
@@ -80,10 +80,25 @@ export function PlayerBar() {
     }, [panel]);
 
     const {config} = useTheme();
-    const {current, detail, playing, elapsed, duration, repeat, volume} = player;
+    const {current, detail, playing, elapsed, duration, repeat, volume, playbackError} = player;
     /* 封面优先用**源侧详情**（`catalog.track` 补的元数据）：列表快照常常没有封面 */
     const artwork = detail ?? current;
     const progressSkin = config.components.playerBar.progressThumbSkin;
+
+    /* 播放失败时「播放/暂停」按钮变成「重试」：再次点它应该重新解析音源，
+       而不是把 `playing` 翻成 true 又一个字都不响（R71 的那个坑）。 */
+    const onMainControl = () => {
+        if (playbackError) retryPlayback();
+        else toggle();
+    };
+    const failureHint = playbackError
+        ? [
+            playbackError.kind === 'noSource'
+                ? t('player.failureNoSource', {count: playbackError.failedSources.length})
+                : t('player.failureMedia'),
+            ...(playbackError.detail ? [playbackError.detail] : []),
+        ].join(' · ')
+        : '';
 
     const repeatLabel =
         repeat === 'one'
@@ -153,6 +168,20 @@ export function PlayerBar() {
                                     <span className={styles.chip}>{current.duration}</span>
                                 </span>
                             )}
+                            {/* 播不出来就直说：以前这里什么提示都没有，进度条却还在走 */}
+                            {playbackError && (
+                                <button
+                                    type="button"
+                                    className={styles.failure}
+                                    title={failureHint}
+                                    onClick={retryPlayback}
+                                >
+                                    {t('player.playbackFailed')}
+                                    <span className={styles.failureRetry}>
+                                        {t('player.retry')}
+                                    </span>
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -185,10 +214,10 @@ export function PlayerBar() {
                     <button
                         type="button"
                         className={styles.ctrlMain}
-                        title={playing ? t('common.pause') : t('common.play')}
-                        aria-label={playing ? t('common.pause') : t('common.play')}
+                        title={playbackError ? t('player.retry') : playing ? t('common.pause') : t('common.play')}
+                        aria-label={playbackError ? t('player.retry') : playing ? t('common.pause') : t('common.play')}
                         disabled={!current}
-                        onClick={toggle}
+                        onClick={onMainControl}
                     >
                         {playing ? <IconPause size={14}/> : <IconPlay size={14}/>}
                     </button>

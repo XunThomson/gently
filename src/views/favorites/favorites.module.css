@@ -29,3 +29,145 @@
     line-height: var(--line-height-relaxed);
     color: var(--text-tertiary);
 }
+
+/* ---------- 收藏夹选择器（触发器 + 可搜索抽屉） ---------- */
+
+.picker {
+    position: relative;
+    display: inline-flex;
+    min-width: 0;
+}
+
+.pickerTrigger {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    max-width: 320px;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: border-color var(--motion-fast), color var(--motion-fast),
+        background-color var(--motion-fast);
+}
+
+.pickerTrigger:hover {
+    border-color: var(--brand);
+    color: var(--brand);
+    background: var(--brand-soft);
+}
+
+.pickerValue {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pickerCount {
+    flex: none;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.pickerPanel {
+    position: absolute;
+    top: calc(100% + var(--space-1));
+    left: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: min(340px, 80vw);
+    padding: var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-lg);
+}
+
+.pickerSearch {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    color: var(--text-tertiary);
+}
+
+.pickerSearch input {
+    flex: 1;
+    min-width: 0;
+    height: 30px;
+    border: 0;
+    background: none;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    outline: none;
+}
+
+.pickerStat {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+}
+
+.pickerList {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-height: 280px;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+}
+
+.pickerItem {
+    width: 100%;
+    padding: var(--space-1) var(--space-2);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.pickerItem:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.pickerItem[data-active='true'] {
+    color: var(--brand);
+    background: var(--brand-soft);
+}
+
+.pickerEmpty {
+    padding: var(--space-2);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-sm);
+}
+
+/* 错误 + 「去配置凭据」并排：错误本身是文本，动作是一个按钮 */
+.errorRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-2);
+}

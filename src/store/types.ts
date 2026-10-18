@@ -121,6 +121,23 @@ export interface PlayerState {
     failedSources: string[];
     /** 是否正在解析音源 */
     resolving: boolean;
+    /**
+     * 最近一次播放失败的原因；`null` 表示没问题。
+     *
+     * 为什么必须存在：以前解析失败 / 媒体加载失败只把 `playable` 置 false，而 `playing` 仍为 true、
+     * 回退时钟继续推进进度——界面看起来在放，实际**完全没有声音**，也没有任何提示（R71 用户报的
+     * 「player 在播放、实际没有播放」）。现在失败就**停表并说明原因**。
+     */
+    playbackError: PlaybackFailure | null;
+}
+
+/** 播放失败：要么所有候选源都解析不到地址，要么媒体元素自己报错 */
+export interface PlaybackFailure {
+    kind: 'noSource' | 'media';
+    /** 已经试过的音源 id（界面可以说「3 个源都试过了」） */
+    failedSources: string[];
+    /** 媒体的原始错误（错误码 / 异常文本），只作为次要说明 */
+    detail?: string;
 }
 
 /**
@@ -299,8 +316,15 @@ export interface PlayerActions {
     tick: () => void;
     /** 由音频引擎回写真实进度与时长 */
     setProgress: (elapsed: number, duration: number) => void;
-    /** 音源不可用：退回模拟时钟 */
-    markUnplayable: () => void;
+    /**
+     * 媒体引擎报错（加载 / 解码 / 播放策略拒绝）。
+     *
+     * 行为：**先换源**——把当前音源记为失败，用还没试过的候选继续解析（多源回退的应有之义）；
+     * 全都没了才停播（`playing:false`）并把原因写进 `playbackError`，让界面能说清「为什么没声音」。
+     */
+    markUnplayable: (message?: string) => void;
+    /** 重试当前曲目：重新解析全部候选音源并继续播放 */
+    retryPlayback: () => void;
     seek: (seconds: number) => void;
     stop: () => void;
     /** 手动切换当前曲目的音源 */

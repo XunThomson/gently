@@ -12,7 +12,8 @@ import {
     LYRICS_OFFSET_STEP_SEC,
     lyricsOffsetForKey,
 } from '../../../utils/lyricsOffset';
-import {rawTrackIdOf, readLyricsSync, saveLyricsQuery} from '../../../utils/lyricsSyncCache';
+import {readLyricsSync, rawTrackIdOf, saveLyricsQuery} from '../../../utils/lyricsSyncCache';
+import {readCachedLyricSearch, saveCachedLyricSearch} from '../../../utils/lyricsSearchCache';
 import styles from '../now-playing.module.css';
 
 /** 结果里第一行歌词，用来让用户一眼看出「这份词对不对」 */
@@ -24,6 +25,16 @@ function firstLineOf(item: LyricSearchItem): string {
 function querySeedFor(track: Track): string {
     const remembered = readLyricsSync(track.id).query;
     return remembered ?? `${track.title} ${track.artist}`.trim();
+}
+
+/**
+ * 打开抽屉时这一格该有的状态（纯函数，冒烟直接钉住）。
+ *
+ * 两样都要恢复：**关键词**（持久化在 `lyricsSyncCache`）与**上次的搜索结果**
+ * （会话级 `lyricsSearchCache`）——用户抱怨的正是「切走再回来还得重新搜一遍」。
+ */
+export function initialSearchState(track: Track): {query: string; result: LyricSearchResult | null} {
+    return {query: querySeedFor(track), result: readCachedLyricSearch(track.id)};
 }
 
 const TABS = ['sync', 'source', 'search'] as const;
@@ -50,11 +61,13 @@ export function LyricsToolsDrawer({open}: {open: boolean}) {
     const {applyLyrics, nudgeLyricsOffset, setLyricsOffset, restoreAutoLyrics} = useActions().player;
 
     const trackId = current?.id ?? '';
+    /* 首次挂载就带上这一首的关键词与上次的搜索结果：切走再回来不该重新搜一遍 */
+    const seed = current ? initialSearchState(current) : {query: '', result: null};
     const [tab, setTab] = useState<Tab>('sync');
     const [visited, setVisited] = useState<Tab[]>(['sync']);
-    const [query, setQuery] = useState(() => (current ? querySeedFor(current) : ''));
+    const [query, setQuery] = useState(seed.query);
     const [searching, setSearching] = useState(false);
-    const [result, setResult] = useState<LyricSearchResult | null>(null);
+    const [result, setResult] = useState<LyricSearchResult | null>(seed.result);
     const [searchError, setSearchError] = useState<CoreError | null>(null);
     const [noCore, setNoCore] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
@@ -66,12 +79,14 @@ export function LyricsToolsDrawer({open}: {open: boolean}) {
         return () => window.clearTimeout(timer);
     }, [notice]);
 
-    /* 换曲目：预填这首的关键词，上一首的结果不能留在这一首上 */
+    /* 换曲目：预填这首的关键词，并恢复**这一首**上次的搜索结果
+       （上一首的结果不能留在这一首上，但这一首自己的要还回来） */
     useEffect(() => {
         const track = current;
         if (!track) return;
-        setQuery(querySeedFor(track));
-        setResult(null);
+        const next = initialSearchState(track);
+        setQuery(next.query);
+        setResult(next.result);
         setSearchError(null);
         setNoCore(false);
     }, [trackId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -121,7 +136,11 @@ export function LyricsToolsDrawer({open}: {open: boolean}) {
             const outcome = await catalogService.searchLyrics(keyword);
             if (outcome.error) setSearchError(outcome.error);
             else if (!outcome.data) setNoCore(true);
-            else setResult(outcome.data);
+            else {
+                setResult(outcome.data);
+                /* 记住这首曲目的搜索结果：切走再回来（或关掉抽屉再打开）不用重新搜 */
+                saveCachedLyricSearch(currentTrack.id, outcome.data);
+            }
         } finally {
             setSearching(false);
         }

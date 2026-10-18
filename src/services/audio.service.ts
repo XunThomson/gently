@@ -117,6 +117,16 @@ class AudioEngine {
         this.volume = Math.min(1, Math.max(0, volume));
         if (this.el) this.safeSetVolume(this.el);
     }
+
+    /** 当前媒体时间（秒）；没有元素时为 0。看门狗用它判断「进度到底有没有在走」 */
+    currentTime(): number {
+        return this.el?.currentTime ?? 0;
+    }
+
+    /** 元素是否还停着（没有元素也算停着） */
+    isPausedNow(): boolean {
+        return !this.el || this.el.paused;
+    }
 }
 
 export const audioEngine = new AudioEngine();

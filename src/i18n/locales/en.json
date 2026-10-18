@@ -183,6 +183,10 @@
   "player": {
     "notPlaying": "Nothing playing",
     "pickSong": "Pick a song to start",
+    "playbackFailed": "Can not play",
+    "retry": "Retry",
+    "failureNoSource": "None of the {{count}} sources returned a playable URL",
+    "failureMedia": "The audio failed to load (the URL may have expired)",
     "repeatOff": "Play in order",
     "repeatAll": "Repeat all",
     "repeatOne": "Repeat one",
@@ -324,6 +328,7 @@
       "settingsClose": "Hide settings",
       "save": "Save",
       "credentialTitle": "Credentials (stored on this machine only)",
+      "credentialGuide": "Where the value comes from is up to the plugin: usually you sign in on that site in a browser first, then copy the cookie / token it asks for. The app never fetches it for you and never sends it anywhere; save it here and the source favorites can use it.",
       "oauthTitle": "Third-party sign-in (after install, your browser opens that domain's consent page)",
       "oauthHost": "Authorization host: {{host}}",
       "authTitle": "Third-party sign-in (OAuth 2.0, endpoints declared by this plugin)",
@@ -418,7 +423,14 @@
       "sourceEmpty": "This source returned no favorite songs",
       "sourceHint": "Source favorites come from a plugin (sign-in is up to that source). They are not cached locally: each visit fetches them again.",
       "noSourceFavorites": "No enabled source provides favorites (a plugin must implement getFavorites and be signed in).",
-      "loadMore": "Load more"
+      "loadMore": "Load more",
+      "collectionPicker": "Choose a collection",
+      "collectionSearch": "Search collections",
+      "collectionTotal": "{{count}} total",
+      "collectionMatch": "{{count}} match",
+      "collectionNone": "No matching collection",
+      "collectionMore": "{{count}} more not listed — keep typing to narrow down",
+      "configureCredentials": "Configure credentials"
     },
     "search": {
       "title": "Search results",

@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {useTranslation} from 'react-i18next';
+import {useNavigate} from 'react-router';
 import type {CoreError, PluginSummary} from '../../../api';
 import type {CoreFavoriteCollection} from '../../../services/core.catalog';
 import {Button} from '../../../components/ui/button';
@@ -19,6 +20,7 @@ import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../../hooks/use
 import {errorText} from '../../../i18n/errors';
 import {catalogService, corePlugin} from '../../../services';
 import type {Track} from '../../../types';
+import {CollectionPicker} from './collection-picker';
 import styles from '../favorites.module.css';
 
 /**
@@ -33,6 +35,7 @@ import styles from '../favorites.module.css';
  */
 export function SourceFavorites() {
     const {t} = useTranslation();
+    const navigate = useNavigate();
     const buildActions = useTrackActions();
     const playRow = usePlayRow();
     const currentId = useCurrentTrackId();
@@ -166,26 +169,33 @@ export function SourceFavorites() {
                 </Button>
             </div>
 
-            {/* 收藏夹/歌单选择器：只有该源真的有多份收藏时才出现（单份收藏的源不打扰用户） */}
+            {/* 收藏夹/歌单选择器：只有该源真的有多份收藏时才出现（单份收藏的源不打扰用户）。
+                用可搜索的抽屉而不是一排单选：收藏夹可能上千个，一次性铺开没法用。 */}
             {collections.length > 1 && (
                 <div className={styles.sourceBar}>
-                    <UnderlineRadioGroup
-                        name="favorites-collection"
-                        value={collection}
-                        onChange={(value) => setCollection(value)}
+                    <CollectionPicker
                         options={collections.map((entry) => ({
-                            value: entry.id,
-                            label:
-                                entry.count === undefined
-                                    ? entry.title
-                                    : `${entry.title}（${entry.count}）`,
+                            id: entry.id,
+                            title: entry.title,
+                            ...(entry.count === undefined ? {} : {count: entry.count}),
                         }))}
+                        value={collection || collections[0].id}
+                        onChange={(value) => setCollection(value)}
                     />
                 </div>
             )}
 
             {error ? (
-                <TextCell tone="danger">{errorText(t, error)}</TextCell>
+                <div className={styles.errorRow}>
+                    <TextCell tone="danger">{errorText(t, error)}</TextCell>
+                    {/* 绝大多数「取不到收藏」都是这个源还没登录：给一条能走的路，
+                        而不是让用户自己猜「凭据/凭据与配置」在哪 */}
+                    {error.code.startsWith('plugin.') && (
+                        <Button size="sm" variant="ghost" onClick={() => navigate('/plugin')}>
+                            {t('page.favorites.configureCredentials')}
+                        </Button>
+                    )}
+                </div>
             ) : null}
 
             {loading && rows.length === 0 ? (

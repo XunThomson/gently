@@ -1,5 +1,5 @@
 import {appConfig} from '../../config/app.config';
-import {audioEngine, catalogService, libraryService} from '../../services';
+import {audioEngine, catalogService, coreAvailable, libraryService} from '../../services';
 import type {GroupedTrack, NowPlaying, Track, TrackCandidate} from '../../types';
 import {clampLyricsOffset, readLyricsOffset, writeLyricsOffset} from '../../utils/lyricsOffset';
 import {
@@ -9,7 +9,13 @@ import {
     saveLyricsChoice,
     type AppliedLyricsChoice,
 } from '../../utils/lyricsSyncCache';
-import type {LyricSourceInfo, PlayerActions, PlayerState, StoreCtx} from '../types';
+import type {
+    LyricSourceInfo,
+    PlaybackFailure,
+    PlayerActions,
+    PlayerState,
+    StoreCtx,
+} from '../types';
 
 let playSeq = 0;
 
@@ -64,6 +70,7 @@ export function createPlayerSlice(ctx: StoreCtx) {
         quality: null,
         failedSources: [],
         resolving: false,
+        playbackError: null,
     };
 
     const patch = (partial: Partial<PlayerState>) => {
@@ -151,12 +158,23 @@ export function createPlayerSlice(ctx: StoreCtx) {
     /**
      * 按候选顺序解析音源：首个能播的就用它，失败的记为不可用并继续下一个。
      * 这样「某个音源的某首歌播不了」不会卡住播放，用户仍能听到其它源的同一首歌。
+     *
+     * 选项：
+     * - `keepElapsed`：保留当前进度（切音源 / 换音质时用）；
+     * - `alreadyFailed`：已经确认播不了的源（媒体元素报错时由 `markUnplayable` 传进来），
+     *   这一轮直接跳过它们，不重复撞同一堵墙；
+     * - `failure`：全都没成功时用哪种失败说明（媒体报错要保留「媒体」这个原因，而不是笼统的「没有源」）。
      */
     const resolveWithFallback = async (
         candidates: TrackCandidate[],
         playId: number,
-        keepElapsed = false,
+        options: {
+            keepElapsed?: boolean;
+            alreadyFailed?: string[];
+            failure?: Omit<PlaybackFailure, 'failedSources'>;
+        } = {},
     ) => {
+        const {keepElapsed = false, alreadyFailed = [], failure = {kind: 'noSource'}} = options;
         const {preferredQuality, preferredSource} = ctx.getState().ui;
         const ordered = preferredSource
             ? [...candidates].sort((a, b) => {
@@ -166,12 +184,19 @@ export function createPlayerSlice(ctx: StoreCtx) {
             })
             : candidates;
 
-        patch({resolving: true, failedSources: [], candidates: ordered});
+        const failed = [...alreadyFailed];
+        patch({
+            resolving: true,
+            failedSources: [...failed],
+            candidates: ordered,
+            playbackError: null,
+        });
 
-        const failed: string[] = [];
         const resumeAt = keepElapsed ? ctx.getState().player.elapsed : 0;
 
         for (const candidate of ordered) {
+            if (failed.includes(candidate.source)) continue;
+
             const resolved = await catalogService.resolveUrl(
                 candidate.track,
                 preferredQuality,
@@ -189,6 +214,7 @@ export function createPlayerSlice(ctx: StoreCtx) {
                     quality: resolved.quality,
                     failedSources: failed,
                     resolving: false,
+                    playbackError: null,
                 });
                 if (resumeAt > 0) actions.seek(resumeAt);
                 return;
@@ -198,13 +224,29 @@ export function createPlayerSlice(ctx: StoreCtx) {
             patch({failedSources: [...failed]});
         }
 
-        // 全部候选都不可播：退回模拟时钟，界面照常推进
+        /**
+         * 全部候选都解析不到地址：**停表并给出原因**，不再假装在播。
+         *
+         * 以前这里是「退回模拟时钟，界面照常推进」——那正是「界面在放、实际没声音」的根源：
+         * 没有音源却显示播放中，用户只能靠「怎么没声音」自己猜。
+         *
+         * 例外：**没有本机核心**（浏览器预览 `pnpm dev`）时保留旧行为——那里本来就没有音频，
+         * 时钟是唯一的「播放」，停掉只会让预览变成一个不能动的界面。
+         */
+        const stillCurrent = ctx.getState().player.current?.playId === playId;
+        const strict = coreAvailable();
         patch({
             audioUrl: null,
             playable: false,
             activeSource: null,
             quality: null,
             resolving: false,
+            ...(stillCurrent && strict
+                ? {
+                    playing: false,
+                    playbackError: {...failure, failedSources: [...failed]},
+                }
+                : {}),
         });
     };
 
@@ -286,6 +328,8 @@ export function createPlayerSlice(ctx: StoreCtx) {
             quality: null,
             failedSources: [],
             resolving: true,
+            // 新的一首：上一次的播放失败提示不能留在这儿
+            playbackError: null,
         });
 
         void loadLyrics(track, current.playId);
@@ -393,8 +437,43 @@ export function createPlayerSlice(ctx: StoreCtx) {
             patch(patchDuration ? {elapsed, duration} : {elapsed});
         },
 
-        markUnplayable() {
-            patch({audioUrl: null, playable: false});
+        markUnplayable(message) {
+            const {current, candidates, failedSources, activeSource} = ctx.getState().player;
+            if (!current) return;
+
+            /* 把「正在用的这个源」记为失败，然后拿剩下的候选再解析一次：
+               多源的意义就在这里——A 源给的地址 403 了，B 源通常还能放。 */
+            const failed =
+                activeSource && !failedSources.includes(activeSource)
+                    ? [...failedSources, activeSource]
+                    : [...failedSources];
+            const remaining = candidates.filter((candidate) => !failed.includes(candidate.source));
+
+            patch({audioUrl: null, playable: false, failedSources: failed});
+
+            if (remaining.length > 0) {
+                void resolveWithFallback(candidates, current.playId, {keepElapsed: true, alreadyFailed: failed, failure: {kind: 'media', ...(message ? {detail: message} : {})}});
+                return;
+            }
+
+            // 没有任何来源能放了：停表，把原因交给界面
+            patch({
+                playing: false,
+                playbackError: {kind: 'media', failedSources: failed, ...(message ? {detail: message} : {})},
+            });
+        },
+
+        retryPlayback() {
+            const {current, candidates} = ctx.getState().player;
+            if (!current) return;
+            patch({
+                playing: true,
+                playbackError: null,
+                failedSources: [],
+                audioUrl: null,
+                playable: false,
+            });
+            void resolveWithFallback(candidates, current.playId);
         },
 
         seek(seconds) {
@@ -425,6 +504,7 @@ export function createPlayerSlice(ctx: StoreCtx) {
                 quality: null,
                 failedSources: [],
                 resolving: false,
+                playbackError: null,
             });
         },
 
@@ -471,24 +551,42 @@ export function createPlayerSlice(ctx: StoreCtx) {
         },
 
         switchSource(sourceId) {
-            const {current, candidates} = ctx.getState().player;
+            const {current, candidates, activeSource} = ctx.getState().player;
             if (!current) return;
 
             const only = candidates.filter((candidate) => candidate.source === sourceId);
             if (only.length === 0) return;
 
-            // 手动切换：只试指定的源，失败则保留当前播放状态并标记不可用
-            void resolveWithFallback(only, current.playId, true).then(() => {
-                if (ctx.getState().player.activeSource === null) {
-                    patch({failedSources: [sourceId], resolving: false});
+            const previous = activeSource;
+            // 手动切换：先只试指定的源
+            void resolveWithFallback(only, current.playId, {keepElapsed: true}).then(() => {
+                const state = ctx.getState().player;
+                if (state.activeSource !== null) return;
+
+                /* 指定源放不了：把之前能放的源找回来。
+                   以前这里只是「保留 current 并标记不可用」——而 `playing` 还是 true、进度照走，
+                   用户看到的是「切了个源之后还在播但没声音」（R71 报的那类现象）。
+                   能退回去就退回；退不回去就停在失败态并说明原因。 */
+                const back = previous && previous !== sourceId
+                    ? candidates.filter((candidate) => candidate.source === previous)
+                    : [];
+                if (back.length > 0) {
+                    void resolveWithFallback(back, current.playId, {keepElapsed: true, alreadyFailed: [sourceId]});
+                    return;
                 }
+                patch({
+                    failedSources: state.failedSources.includes(sourceId)
+                        ? state.failedSources
+                        : [...state.failedSources, sourceId],
+                    resolving: false,
+                });
             });
         },
 
         reloadSource() {
             const {current, candidates} = ctx.getState().player;
             if (!current || candidates.length === 0) return;
-            void resolveWithFallback(candidates, current.playId, true);
+            void resolveWithFallback(candidates, current.playId, {keepElapsed: true});
         },
 
         removeFromQueue(trackId) {

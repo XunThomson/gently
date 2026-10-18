@@ -90,11 +90,18 @@ import SettingView from '../src/views/setting';
 import ThemeView from '../src/views/theme';
 import FavoritesView from '../src/views/favorites';
 import {SourceFavorites} from '../src/views/favorites/components/source-favorites';
+import {CollectionPicker} from '../src/views/favorites/components/collection-picker';
 import {DownloadMark} from '../src/components/ui/download-mark';
 import PlaylistView from '../src/views/playlist';
 import CollectionView from '../src/views/collection';
 import NowPlayingView from '../src/views/now-playing';
-import {LyricsToolsDrawer} from '../src/views/now-playing/components/LyricsToolsDrawer';
+import {LyricsToolsDrawer, initialSearchState} from '../src/views/now-playing/components/LyricsToolsDrawer';
+import {
+    cachedLyricSearchCount,
+    clearCachedLyricSearch,
+    readCachedLyricSearch,
+    saveCachedLyricSearch,
+} from '../src/utils/lyricsSearchCache';
 import SearchView from '../src/views/search';
 import {
     coreAlbum,
@@ -897,6 +904,94 @@ async function main(): Promise<void> {
         check('lyrics: 行进度在开始前为 0、结束后为 1', lyricLineProgress(10, 20, 5) === 0 && lyricLineProgress(10, 20, 25) === 1);
         check('lyrics: 退化区间（同一时间戳）不会算出负数', lyricLineProgress(10, 10, 9) === 0 && lyricLineProgress(10, 10, 11) === 1);
         check('lyrics: 非法输入一律 0', lyricLineProgress(Number.NaN, 20, 15) === 0);
+    }
+
+    /* 歌词搜索结果的会话级缓存：切走再回来不用重新搜（用户报的「回来还得再搜一遍」） */
+    {
+        const result = {
+            items: [
+                {
+                    source: 'src-a',
+                    sourceName: '源 A',
+                    track: {id: 'src-a:1', source: 'src-a', title: '探针歌', artist: '探针', album: '', durationSec: 100},
+                    lyrics: {format: 'lrc', content: '[00:01.00]第一句'},
+                },
+            ],
+            searchedSources: ['src-a'],
+            failedSources: [],
+            skippedSources: [],
+            timedOutSources: [],
+        };
+        clearCachedLyricSearch();
+        check('lyrics search cache: 没搜过时取不到', readCachedLyricSearch('src-a:1') === null);
+        saveCachedLyricSearch('src-a:1', result);
+        check(
+            'lyrics search cache: 存进去能原样取回（含歌词正文）',
+            readCachedLyricSearch('src-a:1')?.items[0]?.lyrics.content === '[00:01.00]第一句',
+            JSON.stringify(readCachedLyricSearch('src-a:1')?.items.length),
+        );
+        check(
+            'lyrics search cache: 别的曲目不受影响',
+            readCachedLyricSearch('src-a:2') === null,
+        );
+        for (let i = 0; i < 10; i += 1) saveCachedLyricSearch(`src-a:extra-${i}`, result);
+        check(
+            'lyrics search cache: 只留最近 8 首（不会无限涨）',
+            cachedLyricSearchCount() === 8,
+            String(cachedLyricSearchCount()),
+        );
+        check(
+            'lyrics search cache: 超上限时丢最早写入的',
+            readCachedLyricSearch('src-a:1') === null && readCachedLyricSearch('src-a:extra-9') !== null,
+        );
+        clearCachedLyricSearch();
+
+        /* 抽屉打开时的初始状态 = 关键词 + 上次的搜索结果 */
+        const track = {
+            id: 'src-a:refresh',
+            source: 'src-a',
+            title: '探针歌',
+            artist: '探针',
+            album: '',
+            durationSec: 100,
+        } as unknown as Track;
+        saveCachedLyricSearch(track.id, result);
+        const seeded = initialSearchState(track);
+        check(
+            'lyrics drawer: 回到这首曲目时带出上次的搜索状态',
+            seeded.result?.items.length === 1 && seeded.query.includes('探针歌'),
+            JSON.stringify({items: seeded.result?.items.length, query: seeded.query}),
+        );
+        clearCachedLyricSearch();
+    }
+
+    /* 收藏夹选择器：收起时只有一个触发器（上千个收藏夹也不会铺开） */
+    {
+        const many = Array.from({length: 1000}, (_, index) => ({
+            id: `fav-${index}`,
+            title: `收藏夹 ${index}`,
+            count: index,
+        }));
+        const html = renderToString(
+            <MemoryRouter>
+                <ThemeProvider>
+                    <CollectionPicker options={many} value="fav-42" onChange={() => undefined}/>
+                </ThemeProvider>
+            </MemoryRouter>,
+        );
+        const t = i18n.getFixedT('zh');
+        check(
+            'favorites: 收藏夹选择器收起时只显示当前收藏夹与总数',
+            html.includes('收藏夹 42') &&
+                html.includes(t('page.favorites.collectionTotal', {count: 1000})) &&
+                !html.includes('收藏夹 43'),
+            html.length.toString(),
+        );
+        check(
+            'favorites: 上千个收藏夹也不会一次性渲染（抽屉未展开时列表不在 DOM 里）',
+            (html.match(/收藏夹 \d+/g) ?? []).length <= 2,
+            String((html.match(/收藏夹 \d+/g) ?? []).length),
+        );
     }
 
     /* 本机路径导入的形态默认值：按扩展名猜（R68 之前默认「压缩包」，导入单文件直接报格式不合法） */
@@ -1974,6 +2069,8 @@ async function main(): Promise<void> {
     const revealCalls: string[] = [];
     const resolveCalls: Record<string, unknown>[] = [];
     const reportCalls: Record<string, unknown>[] = [];
+    /** 这些源在假宿主里「解析不到地址」（R71 的停表 / 换源断言用它） */
+    let resolveFailFor: string[] = [];
     await withFakeCore(
         (command, params, host) => {
             if (command === 'plugin.list') {
@@ -1984,7 +2081,11 @@ async function main(): Promise<void> {
             }
             if (command === 'playback.resolve') {
                 resolveCalls.push(params);
-                return envelope({streamUrl: 'http://127.0.0.1:1/probe', source: 'local', quality: 'standard'});
+                const source = String((params as {source?: unknown}).source ?? 'local');
+                if (resolveFailFor.includes(source)) {
+                    return failure('source.unavailable', `探针：${source} 解析不到地址`);
+                }
+                return envelope({streamUrl: 'http://127.0.0.1:1/probe', source, quality: 'standard'});
             }
             if (command === 'playback.report') {
                 reportCalls.push(params);
@@ -2989,6 +3090,105 @@ async function main(): Promise<void> {
                     resolveCalls.length === 0,
                     JSON.stringify(resolveCalls),
                 );
+            }
+
+            /* 16b. 「界面在播、实际没声音」：解析全失败必须**停表并给出原因**，不能假装在播。
+               以前失败只把 `playable` 置 false，`playing` 还是 true、回退时钟继续走进度——
+               用户看到的是「播放中」却完全无声，也没有任何提示。 */
+            {
+                const probeTrack = {
+                    id: 'local:71',
+                    source: 'local',
+                    title: '两个源的探针曲目',
+                    artist: '探针',
+                    album: '',
+                    durationSec: 120,
+                };
+                /* 两个候选源都必须是「核心认识」的：`local` 是核心伪源，`core-source` 来自 plugin.list */
+                const grouped = {
+                    ...probeTrack,
+                    candidates: [
+                        {source: 'local', track: {...probeTrack}, qualities: ['standard']},
+                        {source: 'core-source', track: {...probeTrack, source: 'core-source'}, qualities: ['standard']},
+                    ],
+                } as unknown as Track;
+
+                /* 两个源都解析不到 → 停播 + 说明原因 */
+                resolveFailFor = ['local', 'core-source'];
+                actions.player.play(grouped, [grouped]);
+                await new Promise((resolve) => setTimeout(resolve, 80));
+                check(
+                    'store: 所有音源都解析不到时停表并给出原因（不再假装在播）',
+                    s().player.playing === false &&
+                        s().player.playbackError?.kind === 'noSource' &&
+                        s().player.playbackError?.failedSources.length === 2,
+                    JSON.stringify({playing: s().player.playing, err: s().player.playbackError}),
+                );
+
+                /* 原地重试：只剩一个源能放 → 应该自动用它继续播，且清掉失败标记 */
+                resolveFailFor = ['core-source'];
+                actions.player.retryPlayback();
+                await new Promise((resolve) => setTimeout(resolve, 80));
+                check(
+                    'store: 重试播放会重新解析并用还能放的源继续',
+                    s().player.playing === true &&
+                        s().player.activeSource === 'local' &&
+                        s().player.playbackError === null,
+                    JSON.stringify({playing: s().player.playing, source: s().player.activeSource, err: s().player.playbackError}),
+                );
+
+                /* 播放中媒体元素报错：先换源——另一个源还能放就继续，不许变成「静音播放」 */
+                resolveFailFor = ['local', 'core-source'];
+                actions.player.markUnplayable('code 4');
+                await new Promise((resolve) => setTimeout(resolve, 80));
+                check(
+                    'store: 媒体报错时全部候选都试过才停播（并带上错误说明）',
+                    s().player.playing === false &&
+                        s().player.playbackError?.kind === 'media' &&
+                        s().player.playbackError?.detail === 'code 4',
+                    JSON.stringify({playing: s().player.playing, err: s().player.playbackError}),
+                );
+
+                resolveFailFor = [];
+                actions.player.retryPlayback();
+                await new Promise((resolve) => setTimeout(resolve, 80));
+                check(
+                    'store: 重试成功后失败提示消失',
+                    s().player.playing === true && s().player.playbackError === null,
+                    JSON.stringify({playing: s().player.playing, err: s().player.playbackError}),
+                );
+                actions.player.stop();
+            }
+
+            /* 播放失败时播放条要**说出来**：一个「无法播放 · 重试」的按钮，点它重新解析 */
+            {
+                const failTrack = {
+                    id: 'local:72',
+                    source: 'local',
+                    title: '播不出来的曲目',
+                    artist: '探针',
+                    album: '',
+                    durationSec: 60,
+                } as unknown as Track;
+                resolveFailFor = ['local'];
+                actions.player.play(failTrack, [failTrack]);
+                await new Promise((resolve) => setTimeout(resolve, 80));
+                const barHtml = renderToString(
+                    <MemoryRouter>
+                        <ThemeProvider>
+                            <PlayerBar/>
+                        </ThemeProvider>
+                    </MemoryRouter>,
+                );
+                check(
+                    'player-bar: 播放失败时显示「无法播放」与「重试」',
+                    barHtml.includes(i18n.getFixedT('zh')('player.playbackFailed')) &&
+                        barHtml.includes(i18n.getFixedT('zh')('player.retry')) &&
+                        barHtml.includes(i18n.getFixedT('zh')('player.failureNoSource', {count: 1})),
+                    barHtml.slice(0, 200),
+                );
+                actions.player.stop();
+                resolveFailFor = [];
             }
 
             /* 17. 搜索竞态：核心在 `catalog.search` 返回**之前**就推完事件（本地插件几乎瞬时）。
