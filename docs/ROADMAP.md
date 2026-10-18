@@ -544,6 +544,10 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
   服务层补齐皮肤展示字段（缺 `swatches` 的合法皮肤会把主题市场打成错误边界）。
   `release/plugins/bili-audio.js` 增加 `getFavoriteCollections` / `getFavorites`（登录 Cookie 走
   `@credentials`），并把插件能力名单收敛成**一份**（静态预扫描漏过收藏夹两项）。核心单测 246、smoke 397。
+- **R70 窗口拉伸错位的真凶：8px 无人绘制区**：无边框窗口在 `shadow:true` 时被 tao 按
+  `frame_thickness` 缩进 8px 留给 DWM 投影，而 popup 窗口上 DWM 不画 → 那圈露出下方窗口的像素。
+  主窗口改 `"shadow": false` 后客户区铺满整窗（像素探针实证），且 tao 在无阴影时对四边做完整
+  hit-test，resize / 最大化 / 还原均正常；另用「直接渲染 vs 拉回该尺寸」的像素对比证明重排本身无错位。
 - **退出标准**：安装包在干净环境可启动并完成一次完整链路（导入插件 → 播放 → 扫描 → 收藏）。
   **R20 把这套链路自动化了**（`core/tests/e2e_chain.rs`：走 `dispatch`、真的按 Range 取代理地址、
   重开库验证持久化）；**R30 又把它在真实打包版上人肉点了一遍并留了截图**

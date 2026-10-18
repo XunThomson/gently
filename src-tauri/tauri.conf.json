@@ -18,7 +18,8 @@
         "height": 800,
         "minWidth": 900,
         "minHeight": 600,
-        "decorations": false
+        "decorations": false,
+        "shadow": false
       },
       {
         "label": "desktop-lyrics",
