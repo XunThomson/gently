@@ -35,6 +35,8 @@ import type {ThemeSkin} from '../src/theme';
 import {TitleBar, Toolbar} from '../src/components/shell/title-bar';
 import {Sidebar} from '../src/components/shell/sidebar';
 import {PlayerBar, shouldOpenNowPlaying} from '../src/components/shell/player-bar';
+import {DesktopLyricsApp, type DesktopLyricsPayload} from '../src/widgets/desktop-lyrics';
+import {desktopLyricsPayload} from '../src/hooks/useDesktopLyricsBridge';
 import {QueuePanel} from '../src/components/shell/player-bar/QueuePanel';
 import {ActionsPanel} from '../src/components/shell/player-bar/ActionsPanel';
 import {SourcePicker} from '../src/components/shell/player-bar/SourcePicker';
@@ -740,6 +742,46 @@ async function main(): Promise<void> {
     );
     actions.player.play(first, s().library.local);
 
+    /* 桌面歌词载荷：当前行 / 下一行 / 译文 / 来源 / 偏移都从同一份播放器状态算出 */
+    {
+        const current = {...first, playId: 99};
+        const base = {
+            ...s().player,
+            current,
+            lyrics: [
+                {time: 1, text: '第一句'},
+                {time: 5, text: '第二句', translation: 'second line'},
+                {time: 9, text: '第三句'},
+            ],
+            elapsed: 6,
+            lyricsOffset: 0,
+            playing: true,
+            lyricsSource: {
+                source: 'probe-source',
+                sourceName: '探针源',
+                title: current.title,
+                artist: current.artist,
+            },
+        };
+        const payload: DesktopLyricsPayload = desktopLyricsPayload(base);
+        check(
+            'desktop lyrics: 载荷给出当前行 / 下一行 / 译文 / 来源',
+            payload.line === '第二句' &&
+                payload.next === '第三句' &&
+                payload.translation === 'second line' &&
+                payload.source === '探针源' &&
+                payload.empty === false &&
+                payload.playing,
+            JSON.stringify(payload),
+        );
+        const shifted = desktopLyricsPayload({...base, lyricsOffset: 4});
+        check(
+            'desktop lyrics: 时间轴偏移参与高亮判断',
+            shifted.line === '第三句' && shifted.next === '',
+            JSON.stringify(shifted),
+        );
+    }
+
     /* 歌词解析：核心只交付原文，行数组由前端解析（只有这一份解析器） */
     const lrcLines = toLyricLines({
         format: 'lrc',
@@ -1131,6 +1173,7 @@ async function main(): Promise<void> {
     render('TitleBar', <TitleBar/>);
     render('Sidebar', <Sidebar mainMenu={buildMenuRoutes(appRoutes)}/>);
     render('PlayerBar', <PlayerBar/>);
+    render('DesktopLyricsApp（无窗口时的空态）', <DesktopLyricsApp/>);
 
     /* ---------------- 窗口控制（无边框窗口的两个真实 bug） ---------------- */
     {
@@ -1158,6 +1201,11 @@ async function main(): Promise<void> {
             normalTitle.includes(`title="${i18n.t('toolbar.maximize')}"`) &&
                 maximizedTitle.includes(`title="${i18n.t('toolbar.restore')}"`) &&
                 !maximizedTitle.includes(`title="${i18n.t('toolbar.maximize')}"`),
+        );
+        const lyricsTitle = renderToString(<Toolbar desktopLyricsOpen/>);
+        check(
+            '窗口：桌面歌词按钮有独立入口与按下态',
+            lyricsTitle.includes(i18n.t('toolbar.desktopLyrics')),
         );
     }
     render('RankingView', <RankingView/>);

@@ -23,9 +23,10 @@ async function fetchSuggestions(keyword: string): Promise<SearchSuggestion[]> {
 export function TitleBar() {
     const {t} = useTranslation();
     const navigate = useNavigate();
-    const {setSearchQuery, setThemeMode} = useActions().ui;
+    const {setSearchQuery, setThemeMode, setDesktopLyricsOpen} = useActions().ui;
     const searchQuery = useSelect((s) => s.ui.searchQuery);
     const scheme = useSelect((s) => s.ui.scheme);
+    const desktopLyricsOpen = useSelect((s) => s.ui.desktopLyricsOpen);
 
     const [compact, setCompact] = useState(false);
     const [maximized, setMaximized] = useState(false);
@@ -69,6 +70,23 @@ export function TitleBar() {
         });
     }, []);
 
+    /* 桌面歌词：窗口可见性与 store 同步（歌词窗口自己关掉时会推事件回来） */
+    const toggleDesktopLyrics = useCallback(async () => {
+        const open = await windowService.toggleDesktopLyrics();
+        if (open !== null) setDesktopLyricsOpen(open);
+    }, [setDesktopLyricsOpen]);
+
+    useEffect(() => {
+        if (!isTauri()) return;
+        let active = true;
+        void windowService.desktopLyricsVisible().then((visible) => {
+            if (active) setDesktopLyricsOpen(visible);
+        });
+        return () => {
+            active = false;
+        };
+    }, [setDesktopLyricsOpen]);
+
     return (
         /*
          * data-tauri-drag-region="deep"：无边框窗口（decorations: false）的拖动区。
@@ -108,6 +126,8 @@ export function TitleBar() {
                 onThemeMarketClick={() => navigate('/theme')}
                 onSettingsClick={() => navigate('/setting')}
                 onCompactClick={toggleCompact}
+                desktopLyricsOpen={desktopLyricsOpen}
+                onDesktopLyricsClick={() => void toggleDesktopLyrics()}
                 onMinimizeClick={() => void windowService.minimize()}
                 onMaximizeClick={() => void windowService.toggleMaximize()}
                 onCloseClick={() => void windowService.close()}

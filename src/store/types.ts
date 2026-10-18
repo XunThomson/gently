@@ -52,6 +52,8 @@ export interface UiState {
     downloadMaxConcurrent: number;
     /** 用户导入的皮肤 */
     customSkins: ThemeSkin[];
+    /** 桌面歌词窗口是否可见（窗口状态，不持久化） */
+    desktopLyricsOpen: boolean;
 }
 
 /** 一份歌词的来路（自动加载 / 用户从搜索结果里挑的） */
@@ -243,6 +245,8 @@ export interface UiActions {
     setDownloadQualityFallback: (fallback: DownloadQualityFallback) => void;
     /** 同时下载数；超出 1~4 会被钳到边界 */
     setDownloadMaxConcurrent: (count: number) => void;
+    /** 桌面歌词窗口的可见状态（由窗口服务 / 窗口间事件同步） */
+    setDesktopLyricsOpen: (open: boolean) => void;
     /** 安装（导入）一个皮肤 */
     installSkin: (skin: ThemeSkin) => void;
     removeSkin: (skinId: string) => void;

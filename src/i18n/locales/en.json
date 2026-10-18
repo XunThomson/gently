@@ -84,6 +84,7 @@
     "minimize": "Minimize",
     "maximize": "Maximize",
     "restore": "Restore down",
+    "desktopLyrics": "Desktop lyrics",
     "close": "Close"
   },
   "sidebar": {
@@ -506,6 +507,14 @@
       "cacheCleared": "Removed {{files}} files ({{size}})",
       "cacheUnavailable": "Cache management needs the desktop core; the browser preview has no local cache."
     }
+  },
+  "desktopLyrics": {
+    "notPlaying": "Not playing",
+    "noLyrics": "No lyrics",
+    "close": "Close desktop lyrics",
+    "fontSmaller": "Smaller text",
+    "fontLarger": "Larger text",
+    "source": "Lyrics source: {{source}}"
   },
   "language": {
     "zh": "中文",

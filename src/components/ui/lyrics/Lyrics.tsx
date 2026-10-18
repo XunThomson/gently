@@ -15,8 +15,10 @@ export interface LyricsProps {
 /**
  * 高亮行 = 最后一行满足 line.time <= elapsed（findLastIndex 语义，按数组下标取最后匹配项）；
  * elapsed 早于所有行时为 -1。
+ *
+ * 导出是因为**桌面歌词窗口**也要用同一套高亮判断——同一算法只留一份实现。
  */
-function findActiveIndex(lines: LyricLine[], elapsed: number): number {
+export function activeLyricIndex(lines: LyricLine[], elapsed: number): number {
     for (let i = lines.length - 1; i >= 0; i -= 1) {
         if (lines[i].time <= elapsed) return i;
     }
@@ -30,7 +32,7 @@ function findActiveIndex(lines: LyricLine[], elapsed: number): number {
 export function Lyrics({lines, elapsed, onSeek, className}: LyricsProps) {
     const {t} = useTranslation();
     const containerRef = useRef<HTMLDivElement>(null);
-    const activeIndex = findActiveIndex(lines, elapsed);
+    const activeIndex = activeLyricIndex(lines, elapsed);
 
     useEffect(() => {
         if (activeIndex < 0) return;

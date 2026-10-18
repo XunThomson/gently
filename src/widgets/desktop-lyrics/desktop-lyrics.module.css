@@ -1,0 +1,127 @@
+/* 桌面歌词独立窗口：整窗可拖动（按钮按 Tauri 语义阻断拖动），内容居中 */
+
+.window {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--space-2);
+    width: 100vw;
+    height: 100vh;
+    box-sizing: border-box;
+    padding: var(--space-4) var(--space-5);
+    overflow: hidden;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-xl);
+    color: var(--text-primary);
+    user-select: none;
+}
+
+.controls {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-3);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    opacity: 0.55;
+    transition: opacity var(--motion-fast);
+}
+
+.window:hover .controls {
+    opacity: 1;
+}
+
+.control {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    height: 22px;
+    padding: 0 var(--space-1);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.control:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    flex: 1;
+    min-height: 0;
+    text-align: center;
+}
+
+.line {
+    margin: 0;
+    font-size: var(--font-size-3xl);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    color: var(--text-primary);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.translation {
+    display: block;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-normal);
+    color: var(--text-secondary);
+}
+
+.next {
+    margin: 0;
+    max-width: 90%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    color: var(--text-tertiary);
+}
+
+.hint {
+    margin: 0;
+    font-size: var(--font-size-base);
+    color: var(--text-tertiary);
+}
+
+.meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: 1.2em;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.track {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.source {
+    flex: none;
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

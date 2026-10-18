@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capability for the main window and the desktop-lyrics window",
+  "windows": ["main", "desktop-lyrics"],
   "permissions": [
     "core:default",
     "opener:default",
@@ -10,6 +10,10 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-start-dragging",
     "core:window:allow-close",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-position",
+    "core:window:allow-set-focus",
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-size"
   ]

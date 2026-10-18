@@ -12,12 +12,31 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "gently",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
         "minHeight": 600,
         "decorations": false
+      },
+      {
+        "label": "desktop-lyrics",
+        "url": "index.html?window=desktop-lyrics",
+        "title": "gently 桌面歌词",
+        "width": 760,
+        "height": 160,
+        "minWidth": 420,
+        "minHeight": 120,
+        "center": true,
+        "visible": false,
+        "focus": false,
+        "resizable": true,
+        "decorations": false,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "transparent": false
       }
     ],
     "security": {

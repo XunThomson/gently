@@ -45,6 +45,7 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         downloadMaxConcurrent: clampConcurrent(
             persisted.downloadMaxConcurrent ?? appConfig.download.maxConcurrent,
         ),
+        desktopLyricsOpen: false,
         customSkins,
     };
 
@@ -113,6 +114,9 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         },
         setDownloadMaxConcurrent(downloadMaxConcurrent) {
             patch({downloadMaxConcurrent: clampConcurrent(downloadMaxConcurrent)});
+        },
+        setDesktopLyricsOpen(desktopLyricsOpen) {
+            patch({desktopLyricsOpen});
         },
         installSkin(skin) {
             const {customSkins} = ctx.getState().ui;

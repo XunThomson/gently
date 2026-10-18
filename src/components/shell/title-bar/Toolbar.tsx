@@ -4,6 +4,7 @@ import type {ColorScheme} from '../../../theme';
 import {
     IconBulb,
     IconClose,
+    IconLyrics,
     IconMaximize,
     IconMinimize,
     IconPalette,
@@ -24,6 +25,9 @@ export interface ToolbarProps {
     /** 悬浮小窗（置顶小尺寸）开关 */
     onCompactClick?: () => void;
     compact?: boolean;
+    /** 桌面歌词窗口（独立置顶窗口）开关 */
+    onDesktopLyricsClick?: () => void;
+    desktopLyricsOpen?: boolean;
     /**
      * 是否可用原生窗口控制。
      * 浏览器 / vite dev 下没有 Tauri 宿主，按钮必须禁用，
@@ -52,6 +56,8 @@ export function Toolbar({
     onSettingsClick,
     onCompactClick,
     compact = false,
+    onDesktopLyricsClick,
+    desktopLyricsOpen = false,
     windowControlsEnabled = false,
     maximized = false,
     onMinimizeClick,
@@ -96,6 +102,10 @@ export function Toolbar({
 
             {button(t('toolbar.pip'), <IconPip size={18}/>, onCompactClick, {
                 pressed: compact,
+                disabled: !windowControlsEnabled,
+            })}
+            {button(t('toolbar.desktopLyrics'), <IconLyrics size={18}/>, onDesktopLyricsClick, {
+                pressed: desktopLyricsOpen,
                 disabled: !windowControlsEnabled,
             })}
             {button(t('toolbar.minimize'), <IconMinimize size={18}/>, onMinimizeClick, {

@@ -84,6 +84,7 @@
     "minimize": "最小化",
     "maximize": "最大化",
     "restore": "向下还原",
+    "desktopLyrics": "桌面歌词",
     "close": "关闭"
   },
   "sidebar": {
@@ -506,6 +507,14 @@
       "cacheCleared": "已清理 {{files}} 个文件（{{size}}）",
       "cacheUnavailable": "缓存管理需要桌面端本机核心；浏览器预览没有本地缓存。"
     }
+  },
+  "desktopLyrics": {
+    "notPlaying": "未在播放",
+    "noLyrics": "暂无歌词",
+    "close": "关闭桌面歌词",
+    "fontSmaller": "缩小字号",
+    "fontLarger": "放大字号",
+    "source": "歌词来源：{{source}}"
   },
   "language": {
     "zh": "中文",

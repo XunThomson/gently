@@ -227,6 +227,15 @@ export const IconPip = (p: IconProps) => (
     </Svg>
 );
 
+/** 桌面歌词：三行歌词 + 一个音符 */
+export const IconLyrics = (p: IconProps) => (
+    <Svg {...p}>
+        <path d="M4 6h8M4 10h8M4 14h5"/>
+        <path d="M18 6v8"/>
+        <circle cx="16.2" cy="15" r="1.8"/>
+    </Svg>
+);
+
 export const IconMinimize = (p: IconProps) => (
     <Svg {...p}>
         <path d="M5 12h14"/>

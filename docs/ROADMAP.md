@@ -484,6 +484,11 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
   （断网 / 插件停用/卸载仍可播）；歌词缓存 TTL 提到 30 天且缓存命中不依赖插件；
   新增 `system.cacheStatus` / `system.cacheClear`（契约 63 条）与设置页缓存卡片（占用 + 分类清理）。
   顺带修掉「播放不看插件启停状态」的真 bug。`pnpm smoke` 322、核心单测 220。
+- **R57 桌面歌词**：`tauri.conf.json` 的第二个窗口 `desktop-lyrics`（无边框 / 置顶 / 跳过任务栏 /
+  启动隐藏，URL `index.html?window=desktop-lyrics`；`main.tsx` 按 query 分派）；主窗口工具栏开关 +
+  窗口服务（显示时摆到屏幕底部居中）；跨窗口用 `gently:lyrics:update` / `gently:lyrics:closed`
+  事件同步当前行 / 下一行 / 播放态 / 歌词来源 / 主题模式（行变化立即推 + 1s 心跳）；歌词窗口支持
+  A−/A+ 字号、拖动、关闭，复用 `activeLyricIndex`。`pnpm smoke` 326。
 - **退出标准**：安装包在干净环境可启动并完成一次完整链路（导入插件 → 播放 → 扫描 → 收藏）。
   **R20 把这套链路自动化了**（`core/tests/e2e_chain.rs`：走 `dispatch`、真的按 Range 取代理地址、
   重开库验证持久化）；**R30 又把它在真实打包版上人肉点了一遍并留了截图**

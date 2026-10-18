@@ -10,6 +10,7 @@ import {appRoutes, buildMenuRoutes} from "./router/meta.tsx";
 import {usePlayerEngine} from "./hooks/usePlayerEngine";
 import {useAudioEngine} from "./hooks/useAudioEngine";
 import {useDownloadEngine} from "./hooks/useDownloadEngine";
+import {useDesktopLyricsBridge} from "./hooks/useDesktopLyricsBridge";
 import {useActions} from "./store";
 import {probeCore} from "./services";
 import {useTheme} from "./theme";
@@ -28,6 +29,8 @@ export default function App() {
     useAudioEngine();
     usePlayerEngine();
     useDownloadEngine();
+    /* 主窗口 → 桌面歌词窗口的状态桥（仅 Tauri 宿主；浏览器下是空操作） */
+    useDesktopLyricsBridge();
 
     /* 收藏/歌单与音源列表都是全局数据（侧边栏、音源筛选常驻），启动时各加载一次 */
     useEffect(() => {

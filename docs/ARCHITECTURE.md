@@ -244,6 +244,23 @@ views/
 - **播放列表抽屉**展示当前曲目与队列，点击即切换（`player.queue` 状态）。
 - **功能抽屉**收敛功能性操作：收藏 / 下载 / 加入歌单 / 打开歌词页。
 
+### 桌面歌词窗口（第二个 WebView）
+
+`tauri.conf.json` 里定义第二个窗口 `desktop-lyrics`（无边框、置顶、跳过任务栏、启动时隐藏），
+URL 是 `index.html?window=desktop-lyrics`；`main.tsx` 按 query 决定挂载完整应用还是
+`DesktopLyricsApp`，因此**构建产物只有一份**。
+
+- 主窗口工具栏的「桌面歌词」按钮经 `windowService.toggleDesktopLyrics()` 显示/隐藏它；
+  首次显示时摆在屏幕底部居中。
+- 两个窗口是**独立 JS 上下文**，store 不共享：主窗口用窗口间事件
+  `gently:lyrics:update` 推 `{title, artist, line, next, translation, playing, empty, source, themeMode}`，
+  歌词窗口监听渲染；行变化/播放态变化立即推一次，另有 1s 心跳兜底。
+- 歌词窗口的关闭按钮隐藏窗口并推 `gently:lyrics:closed`，主窗口据此恢复按钮状态。
+- 高亮行判断复用 `activeLyricIndex`（与歌词页同一份实现）；主题模式随载荷同步
+  （独立 WebView 不会自动跟随主窗口的主题切换）。
+- 事件名用冒号分段（Tauri 字符集约束）；窗口权限在 `capabilities/default.json` 同时授予
+  两个窗口（`allow-show` / `allow-hide` / `allow-set-position` / `allow-start-dragging` 等）。
+
 ### 音频播放链路
 
 ```
