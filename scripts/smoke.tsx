@@ -18,7 +18,7 @@ import {DEFAULT_PRESET_ID} from '../src/theme';
 import {store, useActions} from '../src/store';
 import {buildCssVars, themeConfig} from '../src/theme/tokens';
 import {demoSourcesEnabled, demoSourcesReady, getActiveMusicSource, listMusicSources} from '../src/plugins';
-import {catalogService, coreSystem, fileService, libraryService, oauthBegin, oauthCancel, oauthListen, oauthSignOut, oauthStatus, recommendService, skinService} from '../src/services';
+import {catalogService, coreSystem, fileService, libraryService, oauthBegin, oauthCancel, oauthListen, oauthSignOut, oauthStatus, recommendService, skinService, windowService} from '../src/services';
 import zh from '../src/i18n/locales/zh.json';
 import en from '../src/i18n/locales/en.json';
 import {CORE_ERROR_CODES} from '../src/api';
@@ -841,6 +841,38 @@ async function main(): Promise<void> {
             JSON.stringify(placeLyrics(onSecond, [monitor, second], size)) === JSON.stringify(onSecond),
             JSON.stringify(placeLyrics(onSecond, [monitor, second], size)),
         );
+    }
+
+    /* 桌面歌词「锁定（点击穿透）」：浏览器里没有窗口，但状态必须如实保存与回读，
+       否则设置页会显示一个永远打不开的开关 */
+    {
+        // Node 里没有 localStorage：装一个最小实现（与浏览器同名同形），用完删掉
+        const globalScope = globalThis as unknown as {localStorage?: Storage};
+        const backup = globalScope.localStorage;
+        const values = new Map<string, string>();
+        globalScope.localStorage = {
+            getItem: (key: string) => values.get(key) ?? null,
+            setItem: (key: string, value: string) => void values.set(key, String(value)),
+            removeItem: (key: string) => void values.delete(key),
+            clear: () => values.clear(),
+            key: (index: number) => [...values.keys()][index] ?? null,
+            get length() {
+                return values.size;
+            },
+        } as Storage;
+
+        check('desktop lyrics: 默认未锁定', windowService.desktopLyricsLocked() === false);
+        const locked = await windowService.setDesktopLyricsLocked(true);
+        check(
+            'desktop lyrics: 锁定状态被持久化',
+            locked === true && windowService.desktopLyricsLocked() === true,
+            String(windowService.desktopLyricsLocked()),
+        );
+        await windowService.setDesktopLyricsLocked(false);
+        check('desktop lyrics: 可以再解锁（解锁入口在设置页）', windowService.desktopLyricsLocked() === false);
+
+        if (backup === undefined) delete globalScope.localStorage;
+        else globalScope.localStorage = backup;
     }
 
     /* 2.x 宠物接口（当前无内置宠物）：宿主零成本、注册表与只读快照可用 */

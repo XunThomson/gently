@@ -9,7 +9,7 @@ import {BadgeCell, TextCell} from '../../components/ui/data-table';
 import {appConfig} from '../../config/app.config';
 import {SUPPORTED_LANGS} from '../../i18n';
 import {errorText} from '../../i18n/errors';
-import {catalogService, coreAvailable, coreSystem} from '../../services';
+import {catalogService, coreAvailable, coreSystem, windowService} from '../../services';
 import {useActions, usePluginState, useSelect} from '../../store';
 import {getThemePreset, useTheme} from '../../theme';
 import type {ThemeMode} from '../../theme';
@@ -145,6 +145,17 @@ export default function SettingView() {
         [cacheAvailable, t],
     );
 
+    /* 歌词窗口锁定（点击穿透）：状态持久化在 localStorage，解锁只能在这里——锁定后
+       歌词窗口自己收不到点击，靠它自己的按钮解锁是死路 */
+    const [lyricsLocked, setLyricsLockedState] = useState(() => windowService.desktopLyricsLocked());
+
+    /* 先切界面状态再落盘：锁定是个开关，点下去就该立刻看到结果；
+       写盘/窗口调用失败只记日志，不把开关弹回去（那会让人以为点击没生效） */
+    const setLyricsLocked = useCallback((locked: boolean) => {
+        setLyricsLockedState(locked);
+        void windowService.setDesktopLyricsLocked(locked);
+    }, []);
+
     const cacheTotal = cache ? cache.mediaBytes + cache.catalogBytes + cache.coversBytes : 0;
 
     const currentLang = (i18n.resolvedLanguage ?? 'zh').slice(0, 2);
@@ -205,6 +216,27 @@ export default function SettingView() {
                     </span>
                 </div>
                 <p className={styles.hint}>{t('page.setting.confirmHint')}</p>
+            </section>
+
+            {/* ---------- 桌面歌词 ---------- */}
+            <section className={styles.card}>
+                <h2 className={styles.cardTitle}>{t('page.setting.lyricsSection')}</h2>
+
+                <div className={styles.field}>
+                    <span className={styles.label}>{t('page.setting.lyricsLock')}</span>
+                    <span className={styles.value}>
+                        <UnderlineRadioGroup
+                            name="lyrics-lock"
+                            value={lyricsLocked ? 'lock' : 'free'}
+                            onChange={(value) => void setLyricsLocked(value === 'lock')}
+                            options={[
+                                {value: 'free', label: t('page.setting.lyricsLockOff')},
+                                {value: 'lock', label: t('page.setting.lyricsLockOn')},
+                            ]}
+                        />
+                    </span>
+                </div>
+                <p className={styles.hint}>{t('page.setting.lyricsLockHint')}</p>
             </section>
 
             {/* ---------- 音源与音质 ---------- */}

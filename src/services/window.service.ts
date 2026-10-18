@@ -18,6 +18,14 @@ export const DESKTOP_LYRICS_LABEL = 'desktop-lyrics';
 export const LYRICS_POSITION_KEY = 'gently:lyrics-window-pos';
 
 /**
+ * 「锁定歌词窗口（鼠标点击穿透）」的持久化键。
+ *
+ * 为什么锁定状态必须能在**主窗口**里改：锁定之后歌词窗口自己收不到任何鼠标事件，
+ * 等于它自己被锁死——解锁入口只能放在主窗口（设置页），否则用户再也解不开。
+ */
+export const LYRICS_LOCKED_KEY = 'gently:lyrics-locked';
+
+/**
  * 主窗口 ↔ 桌面歌词窗口的**窗口间事件**（不是核心契约事件）。
  *
  * 事件名同样受 Tauri 字符集约束（只允许字母数字与 `- / : _`），所以用冒号分段。
@@ -120,11 +128,33 @@ export const windowService = {
             }
             await placeLyricsWindow(win);
             await win.show();
+            // 锁定状态是持久化的：窗口重建后也要重新应用（否则重启就「解锁」了）
+            await applyLyricsLock(win);
             return true;
         } catch (err) {
             console.warn('[window] 切换桌面歌词窗口失败', err);
             return null;
         }
+    },
+
+    /** 歌词窗口是否处于「锁定（点击穿透）」状态 */
+    desktopLyricsLocked: (): boolean => readLyricsLocked(),
+
+    /**
+     * 锁定 / 解锁歌词窗口：锁定后鼠标点击**穿透**到下面的窗口，歌词条不再挡路。
+     *
+     * 解锁入口只在设置页——锁定之后歌词窗口自己收不到点击，不能靠它自己的按钮解锁。
+     */
+    setDesktopLyricsLocked: async (locked: boolean): Promise<boolean> => {
+        writeLyricsLocked(locked);
+        if (!isTauri()) return locked;
+        try {
+            const win = await lyricsWindow();
+            if (win) await win.setIgnoreCursorEvents(locked);
+        } catch (err) {
+            console.warn('[window] 设置歌词窗口点击穿透失败', err);
+        }
+        return locked;
     },
 
     /** 隐藏桌面歌词窗口（歌词窗口自己的关闭按钮也用它） */
@@ -170,6 +200,47 @@ async function placeLyricsWindow(win: LyricsWindow): Promise<void> {
     }
 }
 
+/**
+ * 把持久化的锁定状态**同步**到窗口上（每次显示之后调用；失败只记日志）。
+ *
+ * 注意这里是 true / false 都写：`setIgnoreCursorEvents` 失败时我们没法查询窗口的真实状态，
+ * 而每次显示都重新同步一遍，就能让「设置里改了但窗口没跟上」在下一次显示时自愈——
+ * 否则用户一旦锁上、解锁调用又失败，就再也点不到歌词条上的任何按钮了。
+ */
+async function applyLyricsLock(win: LyricsWindow): Promise<void> {
+    try {
+        await win.setIgnoreCursorEvents(readLyricsLocked());
+    } catch (err) {
+        console.warn('[window] 同步歌词窗口点击穿透失败', err);
+    }
+}
+
+/**
+ * 取 localStorage：**没有就返回 null**（Node 里的冒烟测试、SSR）。
+ *
+ * 不直接写 `localStorage.xxx`：在 Node 里那会抛 `ReferenceError` 而不是被 catch 到，
+ * 于是「读一眼设置」就能把整个页面渲染打断。
+ */
+function storage(): Storage | null {
+    try {
+        return typeof localStorage === 'undefined' ? null : localStorage;
+    } catch {
+        return null;
+    }
+}
+
+function readLyricsLocked(): boolean {
+    return storage()?.getItem(LYRICS_LOCKED_KEY) === '1';
+}
+
+function writeLyricsLocked(locked: boolean): void {
+    try {
+        storage()?.setItem(LYRICS_LOCKED_KEY, locked ? '1' : '0');
+    } catch (err) {
+        console.warn('[window] 保存歌词窗口锁定状态失败', err);
+    }
+}
+
 /** 隐藏前把当前坐标记下来（用户拖到哪，下次就还在哪）。 */
 async function rememberLyricsPosition(win: LyricsWindow): Promise<void> {
     try {
@@ -182,7 +253,7 @@ async function rememberLyricsPosition(win: LyricsWindow): Promise<void> {
 
 function readLyricsPosition(): Position | null {
     try {
-        const raw = localStorage.getItem(LYRICS_POSITION_KEY);
+        const raw = storage()?.getItem(LYRICS_POSITION_KEY);
         if (!raw) return null;
         const value = JSON.parse(raw) as Partial<Position> | null;
         if (!value || typeof value.x !== 'number' || typeof value.y !== 'number') return null;
@@ -195,7 +266,7 @@ function readLyricsPosition(): Position | null {
 
 function writeLyricsPosition(position: Position): void {
     try {
-        localStorage.setItem(LYRICS_POSITION_KEY, JSON.stringify(position));
+        storage()?.setItem(LYRICS_POSITION_KEY, JSON.stringify(position));
     } catch (err) {
         console.warn('[window] 保存桌面歌词窗口位置失败', err);
     }

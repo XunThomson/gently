@@ -516,6 +516,9 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
   `utils/lyricsWindowPosition.ts` 负责「不够可见就回退底部居中 / 半出屏就夹回」；
   并补上 `allow-outer-position` / `allow-available-monitors` 两个窗口权限——此前
   `currentMonitor()` 一直被 ACL 拒绝、异常被静默 catch（真机验证时才暴露）。`pnpm smoke` 357。
+- **R64 桌面歌词锁定（点击穿透）**：设置页新增「桌面歌词」卡片，锁定后 `setIgnoreCursorEvents(true)`；
+  解锁只能在设置页（锁定后歌词窗口收不到任何点击），状态持久化并在每次显示时重新同步。
+  `pnpm smoke` 360。解锁方向的真机自动化没验成功（驱动命中点不稳定），如实登记。
 - **退出标准**：安装包在干净环境可启动并完成一次完整链路（导入插件 → 播放 → 扫描 → 收藏）。
   **R20 把这套链路自动化了**（`core/tests/e2e_chain.rs`：走 `dispatch`、真的按 Range 取代理地址、
   重开库验证持久化）；**R30 又把它在真实打包版上人肉点了一遍并留了截图**
