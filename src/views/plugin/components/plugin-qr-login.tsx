@@ -8,8 +8,9 @@ import {catalogService} from '../../../services';
 import {qrSvgDataUrl} from './qr-code';
 import styles from './plugin-qr-login.module.css';
 
-/** 轮询间隔：扫码到确认通常几秒内完成；600ms 实测能在确认后 1 秒内切到「已登录」 */
-const POLL_MS = 600;
+/** 轮询间隔：R82 实测网易云的确认窗口只有约 2 秒（802 之后很快变成 8821），
+ *  因此这里比常见的 1–2 秒更密——扫完到看见「已登录」基本在同一秒内。 */
+const POLL_MS = 300;
 
 interface Props {
     pluginId: string;
