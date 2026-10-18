@@ -6,12 +6,16 @@
  */
 
 import {appConfig} from '../config/app.config';
+import {placeLyrics, type Position} from '../utils/lyricsWindowPosition';
 
 export const isTauri = (): boolean =>
     typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 /** 桌面歌词窗口（`tauri.conf.json` 里的 label；启动时隐藏，按需显示） */
 export const DESKTOP_LYRICS_LABEL = 'desktop-lyrics';
+
+/** 用户拖动后记住的窗口坐标（localStorage；两个窗口同源，写读共享） */
+export const LYRICS_POSITION_KEY = 'gently:lyrics-window-pos';
 
 /**
  * 主窗口 ↔ 桌面歌词窗口的**窗口间事件**（不是核心契约事件）。
@@ -109,6 +113,8 @@ export const windowService = {
             const win = await lyricsWindow();
             if (!win) return null;
             if (await win.isVisible()) {
+                // 先记位置再隐藏：用户拖到哪，下次显示就还在哪
+                await rememberLyricsPosition(win);
                 await win.hide();
                 return false;
             }
@@ -126,7 +132,10 @@ export const windowService = {
         if (!isTauri()) return;
         try {
             const win = await lyricsWindow();
-            if (win) await win.hide();
+            if (win) {
+                await rememberLyricsPosition(win);
+                await win.hide();
+            }
         } catch (err) {
             console.warn('[window] 隐藏桌面歌词窗口失败', err);
         }
@@ -141,21 +150,53 @@ async function lyricsWindow() {
 type LyricsWindow = NonNullable<Awaited<ReturnType<typeof lyricsWindow>>>;
 
 /**
- * 每次显示时放到屏幕底部居中。
+ * 摆放歌词窗口：**优先用用户上次拖动后的位置**，没记过 / 不可见才回到底部居中。
  *
- * 不做「记住上次位置」：窗口配置里 `center: true` 会让它在启动时回到屏幕中央，
- * 而用户对桌面歌词的默认预期就是贴着屏幕底部——统一每次摆放比「一半记住一半忘了」可预期。
+ * 判断逻辑在 `utils/lyricsWindowPosition.ts`（纯函数，与冒烟测试同一份实现）：
+ * 副屏被拔、分辨率变了都会自动回退，不会把窗口放到看不见的地方。
  */
 async function placeLyricsWindow(win: LyricsWindow): Promise<void> {
     try {
-        const {currentMonitor, PhysicalPosition} = await import('@tauri-apps/api/window');
-        const monitor = await currentMonitor();
-        if (!monitor) return;
-        const size = await win.outerSize();
-        const x = monitor.position.x + Math.round((monitor.size.width - size.width) / 2);
-        const y = monitor.position.y + monitor.size.height - size.height - 72;
-        await win.setPosition(new PhysicalPosition(Math.max(0, x), Math.max(0, y)));
+        const {availableMonitors, PhysicalPosition} = await import('@tauri-apps/api/window');
+        const [monitors, size] = await Promise.all([availableMonitors(), win.outerSize()]);
+        const rects = monitors.map((monitor) => ({
+            position: monitor.position,
+            size: monitor.size,
+        }));
+        const position = placeLyrics(readLyricsPosition(), rects, size);
+        await win.setPosition(new PhysicalPosition(position.x, position.y));
     } catch (err) {
         console.warn('[window] 摆放桌面歌词窗口失败（保持默认位置）', err);
+    }
+}
+
+/** 隐藏前把当前坐标记下来（用户拖到哪，下次就还在哪）。 */
+async function rememberLyricsPosition(win: LyricsWindow): Promise<void> {
+    try {
+        const position = await win.outerPosition();
+        writeLyricsPosition({x: position.x, y: position.y});
+    } catch (err) {
+        console.warn('[window] 记录桌面歌词窗口位置失败', err);
+    }
+}
+
+function readLyricsPosition(): Position | null {
+    try {
+        const raw = localStorage.getItem(LYRICS_POSITION_KEY);
+        if (!raw) return null;
+        const value = JSON.parse(raw) as Partial<Position> | null;
+        if (!value || typeof value.x !== 'number' || typeof value.y !== 'number') return null;
+        return {x: value.x, y: value.y};
+    } catch {
+        // 存坏了就当作没记过（回到底部居中），不要让一条坏数据挡住歌词窗口
+        return null;
+    }
+}
+
+function writeLyricsPosition(position: Position): void {
+    try {
+        localStorage.setItem(LYRICS_POSITION_KEY, JSON.stringify(position));
+    } catch (err) {
+        console.warn('[window] 保存桌面歌词窗口位置失败', err);
     }
 }

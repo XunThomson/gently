@@ -37,6 +37,11 @@ import {Sidebar} from '../src/components/shell/sidebar';
 import {PlayerBar, shouldOpenNowPlaying} from '../src/components/shell/player-bar';
 import {DesktopLyricsApp, type DesktopLyricsPayload} from '../src/widgets/desktop-lyrics';
 import {desktopLyricsPayload} from '../src/hooks/useDesktopLyricsBridge';
+import {
+    defaultLyricsPosition,
+    LYRICS_BOTTOM_MARGIN,
+    placeLyrics,
+} from '../src/utils/lyricsWindowPosition';
 import {clearPets, listPets, PetHost, petPlaybackSnapshot, registerPet} from '../src/pet';
 import {QueuePanel} from '../src/components/shell/player-bar/QueuePanel';
 import {ActionsPanel} from '../src/components/shell/player-bar/ActionsPanel';
@@ -781,6 +786,60 @@ async function main(): Promise<void> {
             'desktop lyrics: 时间轴偏移参与高亮判断',
             shifted.line === '第三句' && shifted.next === '',
             JSON.stringify(shifted),
+        );
+    }
+
+    /* 桌面歌词窗口的摆放规则（纯函数）：记得的位置可用就用，不可见就回到底部居中 */
+    {
+        const monitor = {position: {x: 0, y: 0}, size: {width: 1920, height: 1080}};
+        const size = {width: 760, height: 160};
+        const fallback = defaultLyricsPosition([monitor], size);
+        check(
+            'desktop lyrics: 没记过位置时底部居中（留出底边距）',
+            fallback.x === Math.round((1920 - 760) / 2) &&
+                fallback.y === 1080 - 160 - LYRICS_BOTTOM_MARGIN,
+            JSON.stringify(fallback),
+        );
+
+        const remembered = {x: 120, y: 300};
+        check(
+            'desktop lyrics: 记得的位置可用就原样使用',
+            JSON.stringify(placeLyrics(remembered, [monitor], size)) === JSON.stringify(remembered),
+            JSON.stringify(placeLyrics(remembered, [monitor], size)),
+        );
+
+        // 副屏被拔 / 换分辨率：旧坐标不在任何屏幕里 → 回到底部居中，不能放到看不见的地方
+        const offscreen = {x: 4000, y: 2600};
+        check(
+            'desktop lyrics: 记住的位置已经不在屏幕里时回退到底部居中',
+            JSON.stringify(placeLyrics(offscreen, [monitor], size)) === JSON.stringify(fallback),
+            JSON.stringify(placeLyrics(offscreen, [monitor], size)),
+        );
+
+        // 大部分还在屏幕里、但右边/下边露出去一点：夹回屏幕内，保证整条歌词可见
+        const halfOff = {x: 1220, y: 980};
+        const clamped = placeLyrics(halfOff, [monitor], size);
+        check(
+            'desktop lyrics: 大半可见的位置被夹回屏幕内',
+            clamped.x === 1920 - 760 && clamped.y === 1080 - 160,
+            JSON.stringify(clamped),
+        );
+
+        // 大半已经出屏（拖出去太多）：宁可回退到底部居中，也不要露出半条看不见的歌词
+        const mostlyOff = {x: 1500, y: 1020};
+        check(
+            'desktop lyrics: 大半出屏时回退到底部居中',
+            JSON.stringify(placeLyrics(mostlyOff, [monitor], size)) === JSON.stringify(fallback),
+            JSON.stringify(placeLyrics(mostlyOff, [monitor], size)),
+        );
+
+        // 第二块屏幕：落在它上面的位置也算「可见」
+        const second = {position: {x: 1920, y: 0}, size: {width: 1280, height: 720}};
+        const onSecond = {x: 2100, y: 200};
+        check(
+            'desktop lyrics: 副屏上的位置同样被认可',
+            JSON.stringify(placeLyrics(onSecond, [monitor, second], size)) === JSON.stringify(onSecond),
+            JSON.stringify(placeLyrics(onSecond, [monitor, second], size)),
         );
     }
 
