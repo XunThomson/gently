@@ -22,7 +22,7 @@ pub const MAX_SOURCE_BYTES: u64 = 1024 * 1024;
 /// （`host::collect_capabilities`）、以及 `PluginCapability::name()` 的往返校验测试。
 /// R68 之前有两份：这里停在 9 项（少了 `getFavorites` / `getFavoriteCollections`），
 /// 结果插件预览与 `plugin-tool check` 说「不支持收藏夹」、装完运行时探测又能用。
-pub(crate) const CAPABILITY_FUNCTION_NAMES: [&str; 11] = [
+pub(crate) const CAPABILITY_FUNCTION_NAMES: [&str; 13] = [
     "search",
     "getMediaSource",
     "getTrackInfo",
@@ -34,6 +34,8 @@ pub(crate) const CAPABILITY_FUNCTION_NAMES: [&str; 11] = [
     "getRecommend",
     "getFavorites",
     "getFavoriteCollections",
+    "getLoginQr",
+    "pollLoginQr",
 ];
 
 /// 必选函数：缺失时预览给出警告（不作为硬错误——静态扫描可能误判）。
@@ -111,6 +113,8 @@ pub enum PluginCapability {
     /// 源侧**可选的收藏夹/歌单**列表（有多个收藏夹的第三方必须实现它，用户才能选中）
     #[serde(rename = "getFavoriteCollections")]
     GetFavoriteCollections,
+    #[serde(rename = "loginQr")]
+    LoginQr,
 }
 
 impl PluginCapability {
@@ -127,6 +131,7 @@ impl PluginCapability {
             "getRecommend" => Some(Self::GetRecommend),
             "getFavorites" => Some(Self::GetFavorites),
             "getFavoriteCollections" => Some(Self::GetFavoriteCollections),
+            "getLoginQr" | "pollLoginQr" => Some(Self::LoginQr),
             _ => None,
         }
     }
@@ -144,6 +149,7 @@ impl PluginCapability {
             Self::GetRecommend => "getRecommend",
             Self::GetFavorites => "getFavorites",
             Self::GetFavoriteCollections => "getFavoriteCollections",
+            Self::LoginQr => "getLoginQr",
         }
     }
 }
@@ -830,11 +836,22 @@ async function getMediaSource(track, quality) { return null; }
     /// 「静态预扫描说这个源不支持收藏夹、运行时探测说能用」——同一件事两套结论。
     #[test]
     fn capability_name_list_matches_enum() {
-        assert_eq!(CAPABILITY_FUNCTION_NAMES.len(), 11);
+        assert_eq!(CAPABILITY_FUNCTION_NAMES.len(), 13);
         for name in CAPABILITY_FUNCTION_NAMES {
             let capability =
                 PluginCapability::from_name(name).expect("清单里的名字必须能解析成能力");
-            assert_eq!(capability.name(), name, "name() 与清单不一致");
+            // 一个能力可以对应多个 ABI 函数名（二维码登录就是 `getLoginQr` + `pollLoginQr`），
+            // 所以只要求「名字能解析、规范名也在清单里、往返一致」，不要求 1:1。
+            assert_eq!(
+                PluginCapability::from_name(capability.name()),
+                Some(capability),
+                "name() 的往返不一致：{name}"
+            );
+            assert!(
+                CAPABILITY_FUNCTION_NAMES.contains(&capability.name()),
+                "规范名不在清单里：{}",
+                capability.name()
+            );
         }
 
         let scanned = scan_capabilities(

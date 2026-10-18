@@ -201,6 +201,8 @@ pub fn dispatch(
         "catalog.favoriteCollections" => crate::catalog_detail::favorite_collections(ctx, params),
         "catalog.lyrics" => crate::catalog_detail::lyrics(ctx, params),
         "catalog.lyricsSearch" => crate::catalog_detail::lyrics_search(ctx, params),
+        "catalog.loginQr" => crate::login_qr::login_qr(ctx, params),
+        "catalog.loginQrPoll" => crate::login_qr::login_qr_poll(ctx, params),
         "library.favorites.list" => crate::library::favorites_list(ctx, params),
         "library.favorites.set" => crate::library::favorites_set(ctx, params),
         "library.playlists.list" => crate::library::playlists_list(ctx, params),

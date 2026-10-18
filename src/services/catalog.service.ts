@@ -9,7 +9,7 @@ import {
     setMusicSourceEnabled,
     unregisterMusicSource,
 } from '../plugins';
-import type {CoreError, LyricSearchResult, TopListGroup, TopListPage} from '../api';
+import type {CoreError, LoginQrSession, LoginQrStatus, LyricSearchResult, TopListGroup, TopListPage} from '../api';
 import {findAlbum, findCuratedPlaylist} from '../mock/catalog.mock';
 import type {
     Album,
@@ -28,6 +28,8 @@ import {
     coreFavoriteCollections,
     coreFavorites,
     coreLyricsSearch,
+    coreLoginQr,
+    coreLoginQrPoll,
     corePlaylist,
     coreRecommend,
     coreResolveUrl,
@@ -416,6 +418,28 @@ export const catalogService = {
         return {...track, candidates: sortCandidates(track.candidates, [preferredSource])};
     },
 
+    /* ---------------- 二维码登录 ---------------- */
+
+    /**
+     * 开一次二维码登录会话（`catalog.loginQr`）。
+     *
+     * 二维码内容由**插件**给（登录 URL 是具体第三方的，核心不掺和）；界面只负责画出来。
+     * 用户确认后由核心把会话写进凭据库，**前端永远拿不到令牌**。
+     */
+    async loginQr(sourceId: string): Promise<{data: LoginQrSession | null; error?: CoreError}> {
+        if (!coreAvailable()) return {data: null};
+        const result = await coreLoginQr(sourceId);
+        if (result.ok && result.data) return {data: result.data};
+        return {data: null, ...(result.ok ? {} : {error: result.error})};
+    },
+
+    /** 问一次登录状态（`catalog.loginQrPoll`） */
+    async loginQrPoll(sourceId: string, key: string): Promise<{data: LoginQrStatus | null; error?: CoreError}> {
+        if (!coreAvailable()) return {data: null};
+        const result = await coreLoginQrPoll(sourceId, key);
+        if (result.ok && result.data) return {data: result.data};
+        return {data: null, ...(result.ok ? {} : {error: result.error})};
+    },
     /* ---------------- 歌词搜索 ---------------- */
 
     /**

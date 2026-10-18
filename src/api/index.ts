@@ -127,6 +127,25 @@ export interface Lyrics {
  * `sourceName` 是插件清单里的显示名——用户据此判断「这份词来自哪个源」；
  * `track` 是**这个源下的那条曲目**（各源同名歌曲可能不一致，界面要能区分）。
  */
+/** catalog.loginQr：让源开一次登录会话（二维码内容由插件给，核心只转手） */
+export interface LoginQrSession {
+    source: string;
+    /** 后续轮询用的会话标识 */
+    key: string;
+    /** 要画成二维码的字符串（通常是登录 URL） */
+    content: string;
+    /** 插件给的提示语（可选） */
+    tip?: string;
+}
+
+/** catalog.loginQrPoll：一次登录状态。confirmed 时核心已把会话写进凭据库，不会回传令牌 */
+export interface LoginQrStatus {
+    source: string;
+    state: 'waiting' | 'scanned' | 'confirmed' | 'expired';
+    /** 会话写进了哪个凭据键（只在 confirmed 时给） */
+    credentialKey?: string;
+}
+
 export interface LyricSearchItem {
     source: string;
     sourceName: string;
@@ -274,7 +293,9 @@ export type PluginCapability =
     /** 源侧收藏夹（需要登录的源才有；`catalog.favorites` 读它） */
     | 'getFavorites'
     /** 源侧可选收藏夹/歌单列表（有多个收藏夹的第三方才需要） */
-    | 'getFavoriteCollections';
+    | 'getFavoriteCollections'
+    /** 二维码登录（getLoginQr / pollLoginQr；登录会话由核心落凭据） */
+    | 'loginQr';
 
 /** 已安装插件的完整信息 */
 export interface PluginSummary extends PluginInfo {

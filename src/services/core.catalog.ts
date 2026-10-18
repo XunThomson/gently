@@ -368,3 +368,24 @@ export function coreLyricsSearch(
         ...(limit ? {limit} : {}),
     });
 }
+
+/** `catalog.loginQr`：开一次二维码登录会话（内容由插件给，核心只转手） */
+export function coreLoginQr(
+    source: string,
+): Promise<CoreResult<{source: string; key: string; content: string; tip?: string}>> {
+    return invokeCore('catalog.loginQr', {source});
+}
+
+/** `catalog.loginQrPoll`：问一次登录状态；confirmed 时核心已落凭据（**不回传令牌**） */
+export function coreLoginQrPoll(
+    source: string,
+    key: string,
+): Promise<
+    CoreResult<{
+        source: string;
+        state: 'waiting' | 'scanned' | 'confirmed' | 'expired';
+        credentialKey?: string;
+    }>
+> {
+    return invokeCore('catalog.loginQrPoll', {source, key});
+}

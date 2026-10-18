@@ -149,6 +149,8 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 | `catalog.topList{source, id, page?}` | 某个榜单/分类的内容 |
 | `catalog.recommend{source}` | 源侧推荐 |
 | `catalog.favorites{source, page?, collectionId?}` | 源侧「我收藏的歌曲」（第 68 条命令）：源必须已启用且实现 `getFavorites`（缺能力 → `common.not_implemented`，界面据此隐藏入口；未安装/已禁用 → `common.not_found`）。返回 `{source, collectionId, items, hasMore, nextPage?}`，`hasMore` 来自插件的 `isEnd`（缺字段不猜「还有下一页」）。`collectionId` 是用户选中的收藏夹/歌单，核心把它作为 **`getFavorites` 的第二个参数**交给插件（不传 = 源自己的默认列表）。**不缓存**：收藏是用户自己的状态，随时会在别处变动。登录由插件自己负责（`@oauth` 令牌或清单声明的凭据），核心不掺和 |
+| `catalog.loginQr{source}` | 源必须实现 `getLoginQr`（缺能力 → `common.not_implemented`）。返回 `{source, key, content, tip?}`：`content` 是**要画成二维码的字符串**（通常是登录 URL，由插件给——登录地址是具体第三方的，核心不掺和，ADR-0005）；`key` 用于后续轮询；缺 `content` → `plugin.runtime_error` |
+| `catalog.loginQrPoll{source, key}` | 轮询一次登录状态：`{source, state}`，`state ∈ waiting / scanned / confirmed / expired`（插件给别的值一律按 `waiting`）。**只有 `confirmed` 落凭据**：插件须同时给出 `credentialKey` 与 `value`，且 `credentialKey` 必须是该插件**清单声明过的凭据键**（否则 `plugin.permission_denied`）；核心把会话写进凭据库后返回 `{source, state:'confirmed', credentialKey}`——**令牌永不回传前端** |
 | `catalog.favoriteCollections{source}` | 源侧**可选的收藏夹/歌单**（第 69 条命令）：返回 `{source, items:[{id, title, count?}]}`。只有一份默认收藏的源**不实现** `getFavoriteCollections`——此时返回**空数组而不是错误**（界面据此隐藏选择器）。缺 `id` 的条目被丢弃；`count`/`mediaCount` 归一化成 `count`。**不缓存**（收藏夹名字与数量随时会变） |
 | `catalog.lyrics{ref, withTranslation?}` | 歌词；无词返回 `data: null`。返回 `{format:'lrc'\|'plain', content, translated?}`——**只交原文**，解析成行（含译文按时间戳对齐）是纯展示问题，由前端唯一一份 `src/utils/lyrics.ts` 完成 |
 | `catalog.lyricsSearch{query, limit?}` | **按关键词跨源找歌词**（歌词与歌曲分离时的兜底入口）：每个已启用且同时有 `search`+`getLyric` 的源各起一个线程，先 `search` 再取前 `limit`（1~5，缺省 2）个条目问歌词；没词的条目跳过，单源失败不影响其它源。返回 `{items, searchedSources, failedSources, skippedSources, timedOutSources}`：`items[]` 为 `{source, sourceName, track, lyrics}`；整体最多等 12s，`timedOutSources` 里的源**不阻塞已拿到的结果**。歌词按 `lyrics:<source>:<rawId>:false` 缓存（与 `catalog.lyrics` 同键） |
@@ -410,6 +412,8 @@ async function getTopList(id, page) {}             // 可选
 async function getRecommend() {}                   // 可选
 async function getFavorites(page, collectionId) {} // 可选 → 源侧收藏夹（需要登录；`catalog.favorites` 调它）
 async function getFavoriteCollections() {}         // 可选 → 可选收藏夹/歌单 [{id, title, count?}]
+async function getLoginQr() {}                     // 可选 → 二维码登录会话 {key, content, tip?}（会话由核心落凭据）
+async function pollLoginQr(key) {}                 // 可选 → 登录状态 {state, credentialKey?, value?}（value 只在 confirmed 时给，核心收到后立即落库、不回传）
 ```
 
 - **`getFavorites(page, collectionId)`**：返回 `Track[]` 或 `{isEnd, data}`；`isEnd: false` 表示还有下一页。

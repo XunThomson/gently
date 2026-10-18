@@ -92,6 +92,7 @@ import FavoritesView from '../src/views/favorites';
 import {SourceFavorites} from '../src/views/favorites/components/source-favorites';
 import {CollectionPicker} from '../src/views/favorites/components/collection-picker';
 import {Cover} from '../src/components/ui/cover';
+import {qrSvgDataUrl} from '../src/views/plugin/components/qr-code';
 import {DownloadMark} from '../src/components/ui/download-mark';
 import PlaylistView from '../src/views/playlist';
 import CollectionView from '../src/views/collection';
@@ -1034,6 +1035,18 @@ async function main(): Promise<void> {
             !gradientOnly.includes('<img'),
             gradientOnly,
         );
+    }
+
+    /* 二维码登录：插件给的是「要编码的字符串」，画图在前端 */
+    {
+        const url = qrSvgDataUrl('https://example.com/login?codekey=abc');
+        check(
+            'qr: 生成 SVG data URL（二维码由前端画，插件只给内容）',
+            url.startsWith('data:image/svg+xml;charset=utf-8,') && decodeURIComponent(url).includes('<svg'),
+            url.slice(0, 48),
+        );
+        const other = qrSvgDataUrl('https://example.com/login?codekey=zzz');
+        check('qr: 不同内容生成不同图', other !== url);
     }
 
     /* 收藏夹选择器：收起时只有一个触发器（上千个收藏夹也不会铺开） */
