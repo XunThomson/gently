@@ -1,6 +1,8 @@
 import {appConfig} from '../../config/app.config';
 import {coreDownloadsAvailable, libraryService} from '../../services';
+import type {Track, TrackCandidate, TrackQuality} from '../../types';
 import {formatSizeMb} from '../../utils/helpers';
+import {pickQualityWithFallback} from '../../utils/quality';
 import type {DownloadActions, DownloadState, StoreCtx} from '../types';
 
 /** 曲目时长 → 文件大小（MB）的粗略估算（**仅 mock 用**：核心会给真实总量） */
@@ -14,7 +16,7 @@ const mb = (bytes: number) => bytes / 1024 / 1024;
  * 前端本地任务 id 的前缀（`dl:<track.id>`）。
  *
  * 核心给的任务 id 是 `dl-<毫秒>-<序号>`（连字符），因此「谁持有这个任务」一眼可分：
- * 本地项只可能是「浏览器模拟」或「核心拒绝建任务后留下的错误项」，
+ * 本地项可能是「排队等待的占位」「浏览器模拟」或「核心拒绝建任务后留下的错误项」，
  * 核心命令（pause/resume/remove）对它们没有意义（见 `resume`）。
  */
 const LOCAL_TASK_PREFIX = 'dl:';
@@ -37,6 +39,31 @@ export function createDownloadSlice(ctx: StoreCtx) {
     let coreDriven = false;
     let subscribed = false;
 
+    /**
+     * 排队等待并发槽位的任务（只在本会话内：占位任务让用户看得见「在等」）。
+     *
+     * 下载并发数是设置页的可调项（`ui.downloadMaxConcurrent`）：**所有**新任务都先入队，
+     * 由 `pump()` 按槽位交给核心。这样「快速连点下载」不会一口气建十个任务。
+     *
+     * `resume` 是「继续一个已存在的核心任务」：核心的 resume 会立刻起线程，
+     * 所以先排队、轮到它时再发命令，否则用户点几下「继续」就绕过了上限。
+     */
+    type QueuedItem =
+        | {kind: 'create'; localId: string; track: Track}
+        | {kind: 'resume'; localId: string; track: Track};
+    const queued: QueuedItem[] = [];
+    /**
+     * 本会话里**真的已经开始**（占用并发槽）的任务 id。
+     *
+     * 不能靠「状态是不是 pending」判断：核心建任务后先落 pending、worker 起来才推进度，
+     * 库里也可能留着上次退出时的 pending 任务——把它们都算成「在下载」会让队列永远等不到槽位。
+     * 这里只记我们自己发出去的命令，done/error/paused/移除时释放。
+     */
+    const running = new Set<string>();
+    let pumping = false;
+    /** 正在 await 建任务的数量：也算占用槽位，否则一笔 await 期间会超发 */
+    let starting = 0;
+
     const patch = (partial: Partial<DownloadState>) => {
         ctx.setState({download: {...ctx.getState().download, ...partial}});
     };
@@ -46,6 +73,165 @@ export function createDownloadSlice(ctx: StoreCtx) {
         updater: (task: DownloadState['tasks'][number]) => DownloadState['tasks'][number],
     ) => {
         patch({tasks: ctx.getState().download.tasks.map((t) => (t.id === id ? updater(t) : t))});
+    };
+
+    const localIdOf = (track: Track) => `${LOCAL_TASK_PREFIX}${track.id}`;
+    const isLocalTask = (id: string) => id.startsWith(LOCAL_TASK_PREFIX);
+
+    const maxConcurrent = () => Math.max(1, ctx.getState().ui.downloadMaxConcurrent);
+
+    /** 占着并发槽的任务数：本会话已开始 + 正在 await 建任务 */
+    const activeCount = () => starting + running.size;
+
+    const dropQueued = (localId: string) => {
+        const at = queued.findIndex((item) => item.localId === localId);
+        if (at >= 0) queued.splice(at, 1);
+    };
+
+    /** 释放已经结束/被移除任务的并发槽（状态是事实来源，running 只是本会话的记账） */
+    const pruneRunning = () => {
+        for (const id of [...running]) {
+            const task = ctx.getState().download.tasks.find((item) => item.id === id);
+            if (!task || task.status === 'done' || task.status === 'error' || task.status === 'paused') {
+                running.delete(id);
+            }
+        }
+    };
+
+    /**
+     * 按曲目自带的候选信息 + 用户设置挑下载音质。
+     * 列表快照（收藏 / 最近）里没有候选信息时返回用户选的档位，不瞎猜。
+     */
+    const qualityFor = (track: Track): TrackQuality => {
+        const {downloadQuality, downloadQualityFallback} = ctx.getState().ui;
+        const candidates = (track as Track & {candidates?: TrackCandidate[]}).candidates ?? [];
+        const available = candidates.find((item) => item.source === track.source)?.qualities ?? [];
+        return pickQualityWithFallback(available, downloadQuality, downloadQualityFallback);
+    };
+
+    /** 浏览器预览：把占位项同步转成「模拟下载中」，由 `tick()` 推进；占一个并发槽 */
+    const markSimulated = (track: Track, localId?: string) => {
+        const totalMb = sizeOf(track.durationSec);
+        const id = localId ?? localIdOf(track);
+        if (localId) {
+            updateTask(localId, (task) => ({
+                ...task,
+                status: 'downloading',
+                totalMb,
+                sizeText: formatSizeMb(0, totalMb),
+            }));
+        } else {
+            patch({
+                tasks: [
+                    {
+                        id,
+                        track,
+                        status: 'downloading',
+                        progress: 0,
+                        totalMb,
+                        sizeText: formatSizeMb(0, totalMb),
+                    },
+                    ...ctx.getState().download.tasks,
+                ],
+            });
+        }
+        running.add(id);
+    };
+
+    /** 真正建任务：交给核心（浏览器预览走 `markSimulated`，不会到这里） */
+    const startTask = async (track: Track, localId?: string): Promise<void> => {
+        const {downloadDir} = ctx.getState().ui;
+        const dir = downloadDir.trim() || undefined;
+        const result = await libraryService.createDownload(track, qualityFor(track), dir);
+
+        if (result.ok) {
+            /* 去掉占位项（可能与核心任务同 id：核心拒绝后重试时会出现），再放到队首 */
+            const tasks = ctx.getState().download.tasks.filter(
+                (task) => task.id !== localId && task.id !== result.data.id,
+            );
+            patch({tasks: [result.data, ...tasks]});
+            running.add(result.data.id);
+            return;
+        }
+
+        // 宿主在这一刻不可用了（浏览器预览 / 核心掉线）：继续走模拟，界面不会卡在「等待中」
+        if (result.error.code === 'common.unsupported_platform') {
+            markSimulated(track, localId);
+            return;
+        }
+
+        // 核心**拒绝**建任务（插件未安装 / 解析不到地址 / 目录不存在）：让用户看到原因
+        const failed: DownloadState['tasks'][number] = {
+            id: localId ?? localIdOf(track),
+            track,
+            status: 'error',
+            progress: 0,
+            totalMb: 0,
+            sizeText: '',
+            errorCode: result.error.code,
+            error: result.error.message,
+        };
+        if (localId && ctx.getState().download.tasks.some((task) => task.id === localId)) {
+            updateTask(localId, () => failed);
+        } else {
+            patch({tasks: [failed, ...ctx.getState().download.tasks]});
+        }
+    };
+
+    /** 槽位空出来后，按顺序把排队中的任务交给核心 */
+    const pump = async (): Promise<void> => {
+        if (pumping) return;
+        pumping = true;
+        try {
+            while (queued.length > 0 && activeCount() < maxConcurrent()) {
+                const next = queued.shift()!;
+
+                if (next.kind === 'resume') {
+                    const task = ctx.getState().download.tasks.find((item) => item.id === next.localId);
+                    // 已经完成 / 被移除的任务不再续传（失败项允许重试）
+                    if (!task || task.status === 'done') continue;
+
+                    updateTask(next.localId, (item) => ({
+                        ...item,
+                        status: 'downloading',
+                        speedText: undefined,
+                        errorCode: undefined,
+                        error: undefined,
+                    }));
+                    if (!coreDownloadsAvailable()) {
+                        // 浏览器预览：没有真任务可续传，按模拟下载继续
+                        running.add(next.localId);
+                        continue;
+                    }
+                    starting += 1;
+                    try {
+                        await libraryService.resumeDownload(next.localId);
+                    } finally {
+                        starting -= 1;
+                    }
+                    running.add(next.localId);
+                    continue;
+                }
+
+                // 占位项可能已被用户移除：不再替它建任务
+                if (!ctx.getState().download.tasks.some((task) => task.id === next.localId)) continue;
+
+                /* 浏览器预览：**同步**转成模拟下载（测试与界面都期望点完立刻是「下载中」） */
+                if (!coreDownloadsAvailable()) {
+                    markSimulated(next.track, next.localId);
+                    continue;
+                }
+
+                starting += 1;
+                try {
+                    await startTask(next.track, next.localId);
+                } finally {
+                    starting -= 1;
+                }
+            }
+        } finally {
+            pumping = false;
+        }
     };
 
     /** 订阅核心下载事件：进度/完成/失败都要反映到任务上 */
@@ -69,6 +255,7 @@ export function createDownloadSlice(ctx: StoreCtx) {
                     });
                 },
                 onDone: ({id, path}) => {
+                    running.delete(id);
                     updateTask(id, (task) => ({
                         ...task,
                         status: 'done',
@@ -77,8 +264,11 @@ export function createDownloadSlice(ctx: StoreCtx) {
                         speedText: undefined,
                         path,
                     }));
+                    // 槽位空出来：把排队中的下一首交出去
+                    void pump();
                 },
                 onError: ({id, code, message}) => {
+                    running.delete(id);
                     updateTask(id, (task) => ({
                         ...task,
                         status: 'error',
@@ -87,6 +277,7 @@ export function createDownloadSlice(ctx: StoreCtx) {
                         errorCode: code,
                         error: message,
                     }));
+                    void pump();
                 },
             })
             .catch((err) => console.warn('[download] 订阅核心事件失败', err));
@@ -112,96 +303,87 @@ export function createDownloadSlice(ctx: StoreCtx) {
                 .getState()
                 .download.tasks.filter((task) => task.id.startsWith(LOCAL_TASK_PREFIX));
             patch({tasks: [...local, ...(tasks ?? [])], loaded: true});
+            /* 会话里记的「在跑」可能已经不在列表里（别处移除 / 上次退出）：顺手释放槽位 */
+            pruneRunning();
             if (coreDriven) subscribeCore();
+            // 核心列表里可能没有「下载中」了（上次退出时在跑的都停了）：把排队项接上
+            void pump();
         },
 
-        /** 已存在的曲目不重复入队 */
+        /**
+         * 加入下载队列：**先入队**，再由 `pump()` 按并发上限交给核心。
+         *
+         * 用户在设置页改过下载目录 / 默认音质 / 缺档策略，这里都按当前设置执行；
+         * 快速连点下载只会排出一个等待队列，不会一口气建一堆任务。
+         */
         add(track) {
             const {tasks} = ctx.getState().download;
             if (tasks.some((task) => task.track.id === track.id)) return;
 
-            // 桌面端：交给核心（真实 URL、真实进度、落盘）
-            void libraryService.createDownload(track).then((result) => {
-                if (result.ok) {
-                    patch({tasks: [result.data, ...ctx.getState().download.tasks]});
-                    return;
-                }
-                // 浏览器预览（没有核心）：下面插占位并由 `tick()` 推进
-                if (result.error.code === 'common.unsupported_platform') return;
-                // 核心**拒绝**建任务（插件未安装 / 解析不到地址）：必须让用户看到原因。
-                // 以前这里 `if (!created) return`——点了下载什么都不发生，也说不清为什么。
-                // **不编造文件大小**：核心没建任务，就没有真实总量，写「0.0Mb/3.4Mb」
-                // 是拿时长估算冒充事实（失败项本就不显示进度列）。
-                patch({
-                    tasks: [
-                        {
-                            id: `${LOCAL_TASK_PREFIX}${track.id}`,
-                            track,
-                            status: 'error',
-                            progress: 0,
-                            totalMb: 0,
-                            sizeText: '',
-                            errorCode: result.error.code,
-                            error: result.error.message,
-                        },
-                        ...ctx.getState().download.tasks,
-                    ],
-                });
-            });
+            const localId = localIdOf(track);
+            if (queued.some((item) => item.localId === localId)) return;
 
-            // 有核心就不模拟：是否走模拟只取决于**有没有核心**，而不是 `load()` 时的快照。
-            // 用快照会在「load() 之前点下载」时同时插一条假任务、又收到核心的真任务（同一首歌两条）。
-            if (coreDownloadsAvailable()) return;
-
-            const totalMb = sizeOf(track.durationSec);
+            queued.push({kind: 'create', localId, track});
             patch({
                 tasks: [
                     {
-                        id: `${LOCAL_TASK_PREFIX}${track.id}`,
+                        id: localId,
                         track,
                         status: 'pending',
                         progress: 0,
-                        totalMb,
-                        sizeText: formatSizeMb(0, totalMb),
+                        totalMb: 0,
+                        sizeText: '',
                     },
-                    ...tasks,
+                    ...ctx.getState().download.tasks,
                 ],
             });
+            void pump();
         },
 
         remove(id) {
+            dropQueued(id);
+            running.delete(id);
             patch({tasks: ctx.getState().download.tasks.filter((t) => t.id !== id)});
             void libraryService.removeDownload(id);
+            // 让出槽位：下一首该开始了
+            void pump();
         },
 
         pause(id) {
+            // 排队中的任务还没发命令：直接从队列撤掉即可
+            dropQueued(id);
+            running.delete(id);
             updateTask(id, (t) =>
-                t.status === 'downloading' ? {...t, status: 'paused', speedText: undefined} : t,
+                t.status === 'downloading' || t.status === 'pending'
+                    ? {...t, status: 'paused', speedText: undefined}
+                    : t,
             );
             void libraryService.pauseDownload(id);
+            // 暂停也让出槽位
+            void pump();
         },
 
         resume(id) {
             const task = ctx.getState().download.tasks.find((t) => t.id === id);
+            if (!task) return;
 
-            // 本地兜底项（核心拒绝建任务 / 浏览器模拟）的 id 形如 `dl:<track.id>`，**核心不认识它**。
-            // 有核心时「重试」= 重新建一次任务（用户可能刚把插件装好）；没有核心时照旧跑模拟。
-            if (task && id.startsWith(LOCAL_TASK_PREFIX) && coreDownloadsAvailable()) {
+            /* 有核心时，本地项（核心拒绝的失败项 / 浏览器占位）核心不认识这个 id：
+               「继续」= 按当前设置重新建一次任务（用户可能刚把插件装好）。
+               浏览器预览没有核心，占位项就是模拟任务本身——在**原地**继续，
+               换一个 id 会让列表里那一条任务突然消失、进度也丢了。 */
+            if (isLocalTask(id) && coreDownloadsAvailable()) {
+                dropQueued(id);
                 patch({tasks: ctx.getState().download.tasks.filter((t) => t.id !== id)});
                 actions.add(task.track);
                 return;
             }
 
-            /* 速度只有**浏览器模拟**能编：核心持有的任务由 `download:progress` 事件给真实速度，
-               这里先写一个 `1.0Mb/s` 会让界面在核心还没回报时显示一个假数字（随后被真值覆盖，
-               但那一瞬间是假的；核心报错时更是永远留着假的）。 */
-            const simulated = !coreDownloadsAvailable();
-            updateTask(id, (t) =>
-                t.status === 'paused' || t.status === 'error' || t.status === 'pending'
-                    ? {...t, status: 'downloading', ...(simulated ? {speedText: '1.0Mb/s'} : {})}
-                    : t,
-            );
-            void libraryService.resumeDownload(id);
+            /* resume 会让核心立刻起线程（浏览器预览则立刻变成模拟下载），先排队、
+               轮到它时再动手——否则连点几下「继续」就绕过了并发上限。 */
+            if (queued.some((item) => item.localId === id)) return;
+            queued.push({kind: 'resume', localId: id, track: task.track});
+            updateTask(id, (t) => ({...t, status: 'pending', speedText: undefined}));
+            void pump();
         },
 
         clearFinished() {
@@ -234,6 +416,9 @@ export function createDownloadSlice(ctx: StoreCtx) {
                     };
                 }),
             });
+            // 模拟任务完成也释放槽位：把排队中的下一首接上
+            pruneRunning();
+            void pump();
         },
     };
 

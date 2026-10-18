@@ -1,5 +1,10 @@
 import type {ThemeMode, ThemeSkin} from '../theme/types';
-import type {SourceDisplayMode, SourceFilterStyle, TrackQuality} from '../types';
+import type {
+    DownloadQualityFallback,
+    SourceDisplayMode,
+    SourceFilterStyle,
+    TrackQuality,
+} from '../types';
 
 /**
  * UI 偏好持久化（主题 / 音源 / 皮肤 / 确认开关）。
@@ -16,6 +21,11 @@ export interface PersistedUi {
     preferredSource?: string | null;
     preferredQuality?: TrackQuality;
     confirmDestructive?: boolean;
+    /** 下载目录（空串 = 核心默认目录） */
+    downloadDir?: string;
+    downloadQuality?: TrackQuality;
+    downloadQualityFallback?: DownloadQualityFallback;
+    downloadMaxConcurrent?: number;
     /** 用户导入的皮肤（体积小，直接存本地） */
     customSkins?: ThemeSkin[];
 }

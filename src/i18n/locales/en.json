@@ -83,6 +83,7 @@
     "pip": "Picture in picture",
     "minimize": "Minimize",
     "maximize": "Maximize",
+    "restore": "Restore down",
     "close": "Close"
   },
   "sidebar": {
@@ -461,7 +462,17 @@
       "diagOpenLogs": "Open logs",
       "diagErrorHint": "Failed to load: {{reason}}",
       "diagRefresh": "Refresh",
-      "diagLoading": "Loading…"
+      "diagLoading": "Loading…",
+      "download": "Download",
+      "downloadDir": "Download folder",
+      "downloadDirPlaceholder": "Leave empty for the default folder",
+      "downloadDirHint": "Empty = the downloads folder under the data directory. A custom folder must already exist; the core rejects missing folders with a clear reason.",
+      "maximumConcurrentDownloads": "Maximum concurrent downloads",
+      "downloadConcurrentHint": "Extra tracks wait in a queue instead of competing for bandwidth.",
+      "defaultDownloadQuality": "Default download quality",
+      "whenDownloadQualityIsMissing": "When the preferred quality is unavailable",
+      "downloadLowerQualityVersion": "Use a lower quality",
+      "downloadHigherQualityVersion": "Use a higher quality"
     }
   },
   "language": {

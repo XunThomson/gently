@@ -9,6 +9,7 @@ import {
     IconPalette,
     IconPip,
     IconGear,
+    IconRestore,
 } from '../../ui/icon';
 import styles from './title-bar.module.css';
 
@@ -29,6 +30,8 @@ export interface ToolbarProps {
      * 否则会出现「点了没反应」的 UI 与效果不一致。
      */
     windowControlsEnabled?: boolean;
+    /** 窗口当前是否最大化（决定最后一个窗口按钮是「最大化」还是「向下还原」） */
+    maximized?: boolean;
     onMinimizeClick?: () => void;
     onMaximizeClick?: () => void;
     onCloseClick?: () => void;
@@ -50,6 +53,7 @@ export function Toolbar({
     onCompactClick,
     compact = false,
     windowControlsEnabled = false,
+    maximized = false,
     onMinimizeClick,
     onMaximizeClick,
     onCloseClick,
@@ -97,9 +101,13 @@ export function Toolbar({
             {button(t('toolbar.minimize'), <IconMinimize size={18}/>, onMinimizeClick, {
                 disabled: !windowControlsEnabled,
             })}
-            {button(t('toolbar.maximize'), <IconMaximize size={18}/>, onMaximizeClick, {
-                disabled: !windowControlsEnabled,
-            })}
+            {/* 最大化 / 向下还原：**图标 + 文案都要区分**，否则用户看不出当前状态 */}
+            {button(
+                maximized ? t('toolbar.restore') : t('toolbar.maximize'),
+                maximized ? <IconRestore size={18}/> : <IconMaximize size={18}/>,
+                onMaximizeClick,
+                {disabled: !windowControlsEnabled},
+            )}
             {button(t('toolbar.close'), <IconClose size={18}/>, onCloseClick, {
                 disabled: !windowControlsEnabled,
             })}

@@ -83,6 +83,7 @@
     "pip": "画中画",
     "minimize": "最小化",
     "maximize": "最大化",
+    "restore": "向下还原",
     "close": "关闭"
   },
   "sidebar": {
@@ -461,7 +462,17 @@
       "diagOpenLogs": "打开日志目录",
       "diagErrorHint": "读取失败：{{reason}}",
       "diagRefresh": "刷新",
-      "diagLoading": "读取中…"
+      "diagLoading": "读取中…",
+      "download": "下载",
+      "downloadDir": "下载目录",
+      "downloadDirPlaceholder": "留空使用默认目录",
+      "downloadDirHint": "留空 = 数据目录下的 downloads；自定义目录必须已存在（核心会校验，不存在时任务会带明确原因失败）。",
+      "maximumConcurrentDownloads": "最多同时下载歌曲数",
+      "downloadConcurrentHint": "超出上限的曲目会排队等待，不会同时抢带宽。",
+      "defaultDownloadQuality": "默认下载音质",
+      "whenDownloadQualityIsMissing": "下载音质缺失时",
+      "downloadLowerQualityVersion": "改用更低音质",
+      "downloadHigherQualityVersion": "改用更高音质"
     }
   },
   "language": {

@@ -259,9 +259,15 @@ export const libraryService = {
     /**
      * 交给核心建下载任务；返回信封（浏览器端是 `common.unsupported_platform` 失败，
      * 调用方据此退回模拟进度；其他失败码要显示给用户，见 `download.slice`）。
+     *
+     * `dir` 是设置页里的下载目录：空/未传 → 核心默认目录（`<data>/downloads`）。
      */
-    createDownload(track: Track, quality: TrackQuality = 'standard'): Promise<CoreResult<DownloadTask>> {
-        return coreCreateDownload(track, quality);
+    createDownload(
+        track: Track,
+        quality: TrackQuality = 'standard',
+        dir?: string,
+    ): Promise<CoreResult<DownloadTask>> {
+        return coreCreateDownload(track, quality, dir);
     },
 
     async pauseDownload(id: string): Promise<void> {

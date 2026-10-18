@@ -56,6 +56,14 @@ export const appConfig = {
         progressPerTick: 0.03,
         /** 文件大小估算：每多少秒时长 ≈ 1MB */
         secondsPerMb: 30,
+        /** 默认同时下载的歌曲数（设置页可调） */
+        maxConcurrent: 3,
+        /** 设置页可选的并发档位（够用即可，不做无级滑杆） */
+        maxConcurrentOptions: [1, 2, 3, 4],
+        /** 默认下载音质 */
+        defaultQuality: 'high',
+        /** 首选音质不可用时默认往哪边取 */
+        defaultQualityFallback: 'lower',
     },
 
     /** 歌词 mock 生成参数（接入真实歌词后仅保留展示相关配置） */

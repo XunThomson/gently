@@ -10,7 +10,7 @@ import {readFileSync, readdirSync} from 'node:fs';
 import path from 'node:path';
 import type {ReactNode} from 'react';
 
-import '../src/i18n';
+import i18n from '../src/i18n';
 import {ThemeProvider} from '../src/theme';
 import {resolveTheme, themePresets} from '../src/theme';
 import {activeUserSkinId, resolveActivePreset} from '../src/theme';
@@ -26,14 +26,15 @@ import {CORE_EVENTS, EVENT_NAME_PATTERN} from '../src/services/core.events';
 import {filterGroupsBySource, groupTracks} from '../src/utils/track';
 import {toLyricLines} from '../src/utils/lyrics';
 import {coverStyle, trackCoverStyle} from '../src/utils/cover';
+import type {Track, TrackQuality} from '../src/types';
 import {canDownload} from '../src/hooks/useTrackActions';
-import {pickQuality} from '../src/utils/quality';
+import {pickQuality, pickQualityWithFallback} from '../src/utils/quality';
 import {getThemeSkin, parseSkin, resolveTheme as resolveSkin, serializeSkin} from '../src/theme';
 import type {ThemeSkin} from '../src/theme';
 
-import {TitleBar} from '../src/components/shell/title-bar';
+import {TitleBar, Toolbar} from '../src/components/shell/title-bar';
 import {Sidebar} from '../src/components/shell/sidebar';
-import {PlayerBar} from '../src/components/shell/player-bar';
+import {PlayerBar, shouldOpenNowPlaying} from '../src/components/shell/player-bar';
 import {QueuePanel} from '../src/components/shell/player-bar/QueuePanel';
 import {ActionsPanel} from '../src/components/shell/player-bar/ActionsPanel';
 import {SourcePicker} from '../src/components/shell/player-bar/SourcePicker';
@@ -576,6 +577,28 @@ async function main(): Promise<void> {
     check('quality: 期望档位可用时取该档', pickQuality(['hires', 'lossless', 'high'], 'high') === 'high');
     check('quality: 源不支持任何档位返回 null', pickQuality([], 'high') === null);
 
+    /* 下载的缺档策略：设置页可选「往更低」或「往更高」，方向优先、另一方向兜底 */
+    check(
+        'quality: 首选档位可用时不改档',
+        pickQualityWithFallback(['standard', 'high'], 'high', 'lower') === 'high',
+    );
+    check(
+        'quality: 缺档且选择「更低」时取最近的更低档',
+        pickQualityWithFallback(['standard', 'high'], 'lossless', 'lower') === 'high',
+    );
+    check(
+        'quality: 缺档且选择「更高」时取最近的更高档',
+        pickQualityWithFallback(['lossless', 'hires'], 'standard', 'higher') === 'lossless',
+    );
+    check(
+        'quality: 所选方向没有档位时改用另一方向',
+        pickQualityWithFallback(['hires'], 'standard', 'lower') === 'hires',
+    );
+    check(
+        'quality: 来源没说支持哪些档位时保留首选',
+        pickQualityWithFallback([], 'hires', 'lower') === 'hires',
+    );
+
     const baseTrack = (await catalogService.fetchRecommendFrom(3))[0];
     check(
         'quality: 解析结果带上实际音源与音质',
@@ -608,6 +631,17 @@ async function main(): Promise<void> {
     const s = () => store.getState();
 
     check('store: 初始未在播放', s().player.current === null && !s().player.playing);
+
+    check(
+        'store: 下载设置的默认值来自 appConfig',
+        s().ui.downloadDir === '' &&
+            s().ui.downloadQuality === 'high' &&
+            s().ui.downloadQualityFallback === 'lower' &&
+            s().ui.downloadMaxConcurrent === 3,
+    );
+    actions.ui.setDownloadMaxConcurrent(99);
+    check('store: 并发数越界被钳到最大可选档', s().ui.downloadMaxConcurrent === 4);
+    actions.ui.setDownloadMaxConcurrent(3);
 
     await actions.library.load();
     check('store: library.load 写入数据', s().library.loaded && s().library.local.length > 0);
@@ -828,7 +862,8 @@ async function main(): Promise<void> {
     check('store: 重复加入下载队列不产生重复项', s().download.tasks.length === tasksBefore + 1);
 
     const addedTask = s().download.tasks.find((t) => t.track.id === dlTrack.id)!;
-    check('store: 新下载任务状态为等待中', addedTask.status === 'pending');
+    /* 有空闲并发槽时直接开始（与桌面端一致；满槽才会显示「等待中」） */
+    check('store: 新下载任务有空闲槽时直接开始', addedTask.status === 'downloading');
     actions.download.resume(addedTask.id);
     check(
         'store: 等待中任务可直接开始',
@@ -1058,6 +1093,35 @@ async function main(): Promise<void> {
     render('TitleBar', <TitleBar/>);
     render('Sidebar', <Sidebar mainMenu={buildMenuRoutes(appRoutes)}/>);
     render('PlayerBar', <PlayerBar/>);
+
+    /* ---------------- 窗口控制（无边框窗口的两个真实 bug） ---------------- */
+    {
+        const titleBarHtml = renderToString(
+            <MemoryRouter initialEntries={['/ranking']}>
+                <ThemeProvider><TitleBar/></ThemeProvider>
+            </MemoryRouter>,
+        );
+        /* decorations: false 时窗口靠这个属性拖动；丢了它整个窗口就拖不动 */
+        check(
+            '窗口：标题栏挂载拖动区（无边框窗口可拖动）',
+            titleBarHtml.includes('data-tauri-drag-region'),
+        );
+        /* 已在歌词页时不再 push：否则返回要点 N 次才回得去 */
+        check(
+            '窗口：播放条在歌词页不再重复压入历史',
+            shouldOpenNowPlaying('/now-playing') === false &&
+                shouldOpenNowPlaying('/collection/album/mock/album%3Ax') === true,
+        );
+        /* 最大化 / 向下还原必须是两个可区分的图标与文案 */
+        const normalTitle = renderToString(<Toolbar/>);
+        const maximizedTitle = renderToString(<Toolbar maximized/>);
+        check(
+            '窗口：最大化与向下还原使用不同图标 / 文案',
+            normalTitle.includes(`title="${i18n.t('toolbar.maximize')}"`) &&
+                maximizedTitle.includes(`title="${i18n.t('toolbar.restore')}"`) &&
+                !maximizedTitle.includes(`title="${i18n.t('toolbar.maximize')}"`),
+        );
+    }
     render('RankingView', <RankingView/>);
     render('HotView', <HotView/>);
     render('DownloadView', <DownloadView/>);
@@ -1228,6 +1292,8 @@ async function main(): Promise<void> {
        而它们正是 `ui.loadSkins` 的 active 纠正、榜单错误提示这类逻辑的所在。
        这里临时装一个假宿主：只替换 `window.__TAURI_INTERNALS__.invoke`，用完立刻恢复现场。 */
     let downloadCreateAttempts = 0;
+    /** 核心侧收到的 `download.create` 参数（设置页的目录 / 音质是否真的生效） */
+    const downloadCreateCalls: Record<string, unknown>[] = [];
     const fakeDownloadSeed = s().library.local[0] ?? s().collection.favorites[0] ?? s().player.queue[0];
     /* 假宿主里核心会「读失败」，本地曲库因此为空（R28 的策略）——播放类断言要用这里预抓的曲目 */
     const fakeTrackSeeds = [...s().library.local, ...s().collection.favorites, ...s().player.queue];
@@ -1331,6 +1397,19 @@ async function main(): Promise<void> {
             if (command === 'download.create') {
                 // 与真实核心同形：曲目所属的源不在核心里 → not_found（「插件未安装」）
                 downloadCreateAttempts += 1;
+                downloadCreateCalls.push(params);
+                // `ok:` 开头的曲目走成功路径：用它验证并发排队与设置项是否真的带过去
+                const refTrackId = String((params.track as {id?: unknown} | undefined)?.id ?? '');
+                if (refTrackId.startsWith('ok:')) {
+                    return envelope({
+                        id: `dl-ok-${downloadCreateAttempts}`,
+                        track: params.track ?? null,
+                        status: 'pending',
+                        progress: 0,
+                        totalMb: 0,
+                        sizeText: '',
+                    });
+                }
                 return failure('common.not_found', `插件未安装：${String(params.ref ?? '')}`);
             }
             if (command === 'skin.list') {
@@ -1597,6 +1676,75 @@ async function main(): Promise<void> {
                         canDownload({source: 'local'}) === false && canDownload({source: 'core-source'}),
                     );
                 }
+            }
+
+            /* 7b. 下载设置真的生效：目录 / 默认音质 / 缺档策略直接进 `download.create`；
+               并发上限用「排队占位」实现——第一首没结束时第二首不建任务。 */
+            if (fakeTrackSeeds[0]) {
+                const base = fakeTrackSeeds[0];
+                const makeQueuedTrack = (suffix: string, qualities: TrackQuality[]): Track => {
+                    const track = {
+                        ...base,
+                        id: `ok:${suffix}`,
+                        source: 'ok-source',
+                        title: `队列曲目 ${suffix}`,
+                    };
+                    return {
+                        ...track,
+                        candidates: [{source: 'ok-source', track, qualities}],
+                    };
+                };
+
+                actions.ui.setDownloadDir('C:\\Downloads\\gently');
+                actions.ui.setDownloadQuality('hires');
+                actions.ui.setDownloadQualityFallback('lower');
+                actions.ui.setDownloadMaxConcurrent(1);
+
+                downloadCreateAttempts = 0;
+                downloadCreateCalls.length = 0;
+
+                const queuedA = makeQueuedTrack('a', ['standard', 'high']);
+                const queuedB = makeQueuedTrack('b', ['standard', 'high']);
+                actions.download.add(queuedA);
+                await flushIpc();
+                actions.download.add(queuedB);
+                await flushIpc();
+
+                const firstCall = downloadCreateCalls[0];
+                check(
+                    'fake: 下载目录与缺档策略真的进了 download.create',
+                    firstCall?.dir === 'C:\\Downloads\\gently' && firstCall?.quality === 'high',
+                    JSON.stringify({dir: firstCall?.dir, quality: firstCall?.quality}),
+                );
+                check(
+                    'fake: 并发上限生效（第二首只排队、不超发）',
+                    downloadCreateAttempts === 1 &&
+                        s().download.tasks.some(
+                            (task) => task.track.id === queuedB.id && task.status === 'pending',
+                        ),
+                    `attempts=${downloadCreateAttempts}`,
+                );
+
+                const firstTask = s().download.tasks.find((task) => task.track.id === queuedA.id);
+                if (firstTask) {
+                    host.emit('download:done', {id: firstTask.id, path: 'C:/tmp/a.mp3', bytes: 1024});
+                    await flushIpc();
+                    check(
+                        'fake: 前一首完成后排队的下一首自动开始',
+                        downloadCreateAttempts === 2 &&
+                            s().download.tasks.some(
+                                (task) =>
+                                    task.track.id === queuedB.id && task.id.startsWith('dl-ok-'),
+                            ),
+                        `attempts=${downloadCreateAttempts}`,
+                    );
+                }
+
+                // 收尾：恢复默认设置，避免影响后面的断言
+                actions.ui.setDownloadDir('');
+                actions.ui.setDownloadQuality('high');
+                actions.ui.setDownloadQualityFallback('lower');
+                actions.ui.setDownloadMaxConcurrent(3);
             }
 
             /* 8. 事件链路：下载进度/完成/失败都要落到任务上。

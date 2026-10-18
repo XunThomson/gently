@@ -1,4 +1,4 @@
-import {useCallback, useState} from 'react';
+import {useCallback, useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
 import {useActions, useSelect} from '../../../store';
@@ -28,8 +28,34 @@ export function TitleBar() {
     const scheme = useSelect((s) => s.ui.scheme);
 
     const [compact, setCompact] = useState(false);
+    const [maximized, setMaximized] = useState(false);
     const {config} = useTheme();
     const searchBox = config.components.searchBox;
+
+    /* 最大化状态以**真实窗口**为准：按钮、双击拖动区、系统快捷键都会改它 */
+    useEffect(() => {
+        if (!isTauri()) return;
+        let active = true;
+        let unlisten: (() => void) | undefined;
+
+        const sync = () => {
+            void windowService.isMaximized().then((value) => {
+                if (active) setMaximized(value);
+            });
+        };
+
+        sync();
+        void windowService.onResized(sync).then((off) => {
+            unlisten = off;
+            /* 订阅回来时组件已经卸载：立刻退订，别留下野监听 */
+            if (!active) off();
+        });
+
+        return () => {
+            active = false;
+            unlisten?.();
+        };
+    }, []);
 
     /* 灯泡：明暗背景一键切换（主题市场只负责配色预设，互不重叠） */
     const toggleScheme = useCallback(() => {
@@ -44,7 +70,13 @@ export function TitleBar() {
     }, []);
 
     return (
-        <header className={styles.titleBar}>
+        /*
+         * data-tauri-drag-region="deep"：无边框窗口（decorations: false）的拖动区。
+         * Tauri 的注入脚本按 mousedown 的路径判定——按钮 / 输入框等可点击元素会**阻断**拖动，
+         * 所以搜索框与工具栏按钮照常可点，空白处与 Logo 才是拖动区。
+         * 没有这个属性，无边框窗口就完全拖不动（这是一个真实报上来的 bug）。
+         */
+        <header className={styles.titleBar} data-tauri-drag-region="deep">
             <Logo/>
 
             <div className={styles.search}>
@@ -71,6 +103,7 @@ export function TitleBar() {
                 scheme={scheme}
                 compact={compact}
                 windowControlsEnabled={isTauri()}
+                maximized={maximized}
                 onSchemeToggle={toggleScheme}
                 onThemeMarketClick={() => navigate('/theme')}
                 onSettingsClick={() => navigate('/setting')}

@@ -1,6 +1,7 @@
 import type {ColorScheme, ThemeMode, ThemeSkin} from '../theme';
 import type {CoreError, LocalScanResult, TopListGroup} from '../api';
 import type {
+    DownloadQualityFallback,
     DownloadTask,
     LocalTrack,
     LyricLine,
@@ -41,6 +42,14 @@ export interface UiState {
     preferredQuality: TrackQuality;
     /** 危险操作前是否二次确认 */
     confirmDestructive: boolean;
+    /** 下载目录；空串表示用核心默认目录（`<data>/downloads`） */
+    downloadDir: string;
+    /** 默认下载音质 */
+    downloadQuality: TrackQuality;
+    /** 首选音质不可用时往哪边取 */
+    downloadQualityFallback: DownloadQualityFallback;
+    /** 最多同时下载的歌曲数（1~4） */
+    downloadMaxConcurrent: number;
     /** 用户导入的皮肤 */
     customSkins: ThemeSkin[];
 }
@@ -206,6 +215,12 @@ export interface UiActions {
     setPreferredSource: (sourceId: string | null) => void;
     setPreferredQuality: (quality: TrackQuality) => void;
     setConfirmDestructive: (enabled: boolean) => void;
+    /** 下载目录（空串 = 核心默认目录） */
+    setDownloadDir: (dir: string) => void;
+    setDownloadQuality: (quality: TrackQuality) => void;
+    setDownloadQualityFallback: (fallback: DownloadQualityFallback) => void;
+    /** 同时下载数；超出 1~4 会被钳到边界 */
+    setDownloadMaxConcurrent: (count: number) => void;
     /** 安装（导入）一个皮肤 */
     installSkin: (skin: ThemeSkin) => void;
     removeSkin: (skinId: string) => void;

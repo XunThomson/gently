@@ -112,6 +112,13 @@ export interface Playlist {
 /** 音质档位（由低到高） */
 export type TrackQuality = 'standard' | 'high' | 'lossless' | 'hires';
 
+/**
+ * 首选音质不可用时往哪边取。
+ * - `lower`：退回更低的档位（更省流量，通常也更快）
+ * - `higher`：退到更高的档位（宁可文件大一点也要保住音质）
+ */
+export type DownloadQualityFallback = 'lower' | 'higher';
+
 /** 同一首歌在某个音源下的候选 */
 export interface TrackCandidate {
     /** 音源（plugin）id */

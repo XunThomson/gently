@@ -37,6 +37,22 @@
     font-size: var(--font-size-sm);
 }
 
+/* 设置项里的文本输入（下载目录等）：宽度跟随内容区，窄窗口下不撑破卡片 */
+.input {
+    width: min(420px, 100%);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-alt);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+}
+
+.input::placeholder {
+    color: var(--text-tertiary);
+}
+
 /* 字段下方的补充说明（默认关闭二次确认、诊断提示等） */
 .hint {
     font-size: var(--font-size-xs);

@@ -239,6 +239,14 @@ export const IconMaximize = (p: IconProps) => (
     </Svg>
 );
 
+/** 向下还原：与「最大化」必须是两个可区分的图标（双窗格），否则用户看不出当前状态 */
+export const IconRestore = (p: IconProps) => (
+    <Svg {...p}>
+        <rect x="9" y="9" width="12" height="12" rx="1.5"/>
+        <path d="M15 9V4.5A1.5 1.5 0 0 0 13.5 3h-9A1.5 1.5 0 0 0 3 4.5v9A1.5 1.5 0 0 0 4.5 15H9"/>
+    </Svg>
+);
+
 /* ============================== 其它 ============================== */
 
 export const IconHeart = (p: IconProps) => (

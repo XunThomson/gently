@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState, type KeyboardEvent} from 'react';
 import {useTranslation} from 'react-i18next';
-import {useNavigate} from 'react-router';
+import {useNavigate, useLocation} from 'react-router';
 import {useClickOutside} from '../../../hooks/useClickOutside';
 import {appConfig} from '../../../config/app.config';
 import {useActions, usePlayerState, useSelect} from '../../../store';
@@ -31,6 +31,20 @@ const NEXT_REPEAT: Record<RepeatMode, RepeatMode> = {off: 'all', all: 'one', one
 
 type PanelKind = 'queue' | 'actions';
 
+/** 歌词页路径（路由表里同一个字面量） */
+const NOW_PLAYING_PATH = '/now-playing';
+
+/**
+ * 点击播放条封面 / 标题是否应该**新压入**一条歌词页历史。
+ *
+ * 已经在歌词页时为 `false`：播放条在歌词页里仍然可见，每点一次都 `navigate()`
+ * 就会往历史栈里塞一条重复的 `/now-playing`，用户得点同样多次「返回」才回得去
+ * （这是一个真实报上来的 bug）。纯函数，冒烟能直接钉住它。
+ */
+export function shouldOpenNowPlaying(pathname: string): boolean {
+    return pathname !== NOW_PLAYING_PATH;
+}
+
 /**
  * 底部播放条。
  *
@@ -41,6 +55,7 @@ type PanelKind = 'queue' | 'actions';
 export function PlayerBar() {
     const {t} = useTranslation();
     const navigate = useNavigate();
+    const location = useLocation();
     const player = usePlayerState();
     const {toggle, next, prev, setRepeat, setVolume, seek} = useActions().player;
     const {toggleFavorite} = useActions().collection;
@@ -78,7 +93,10 @@ export function PlayerBar() {
                 : t('player.repeatOff');
 
     const openDetail = () => {
-        if (current) navigate('/now-playing');
+        if (!current) return;
+        /* 已经在歌词页就不要再 push 一条历史（见 `shouldOpenNowPlaying`） */
+        if (!shouldOpenNowPlaying(location.pathname)) return;
+        navigate(NOW_PLAYING_PATH);
     };
 
     const togglePanel = (kind: PanelKind) => setPanel((prev) => (prev === kind ? null : kind));

@@ -1,3 +1,4 @@
+import {appConfig} from '../../config/app.config';
 import {skinService} from '../../services';
 import {activeUserSkinId, resolveActivePreset} from '../../theme';
 import {themeConfig} from '../../theme/tokens';
@@ -16,6 +17,15 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
     );
     const mode = persisted.themeMode ?? themeConfig.mode;
 
+    /** 并发数是设置页的一档档选项：越界/坏值一律钳回合法区间，不把 NaN 存进状态 */
+    const clampConcurrent = (value: number): number => {
+        if (!Number.isFinite(value)) return appConfig.download.maxConcurrent;
+        const options = appConfig.download.maxConcurrentOptions;
+        const min = Math.min(...options);
+        const max = Math.max(...options);
+        return Math.min(max, Math.max(min, Math.round(value)));
+    };
+
     const state: UiState = {
         themeMode: mode,
         themePresetId: validPreset ? (persisted.themePresetId as string) : DEFAULT_PRESET_ID,
@@ -28,6 +38,13 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         preferredSource: persisted.preferredSource ?? null,
         preferredQuality: persisted.preferredQuality ?? 'high',
         confirmDestructive: persisted.confirmDestructive ?? true,
+        downloadDir: persisted.downloadDir ?? '',
+        downloadQuality: persisted.downloadQuality ?? appConfig.download.defaultQuality,
+        downloadQualityFallback:
+            persisted.downloadQualityFallback ?? appConfig.download.defaultQualityFallback,
+        downloadMaxConcurrent: clampConcurrent(
+            persisted.downloadMaxConcurrent ?? appConfig.download.maxConcurrent,
+        ),
         customSkins,
     };
 
@@ -84,6 +101,18 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         },
         setConfirmDestructive(confirmDestructive) {
             patch({confirmDestructive});
+        },
+        setDownloadDir(downloadDir) {
+            patch({downloadDir});
+        },
+        setDownloadQuality(downloadQuality) {
+            patch({downloadQuality});
+        },
+        setDownloadQualityFallback(downloadQualityFallback) {
+            patch({downloadQualityFallback});
+        },
+        setDownloadMaxConcurrent(downloadMaxConcurrent) {
+            patch({downloadMaxConcurrent: clampConcurrent(downloadMaxConcurrent)});
         },
         installSkin(skin) {
             const {customSkins} = ctx.getState().ui;

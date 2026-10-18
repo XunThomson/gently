@@ -1,4 +1,4 @@
-export {PlayerBar} from './PlayerBar';
+export {PlayerBar, shouldOpenNowPlaying} from './PlayerBar';
 export {SeekBar} from './SeekBar';
 export type {SeekBarProps} from './SeekBar';
 export {QueuePanel} from './QueuePanel';

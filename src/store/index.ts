@@ -77,6 +77,10 @@ store.subscribe(() => {
         preferredSource,
         preferredQuality,
         confirmDestructive,
+        downloadDir,
+        downloadQuality,
+        downloadQualityFallback,
+        downloadMaxConcurrent,
         customSkins,
     } = store.getState().ui;
 
@@ -88,6 +92,10 @@ store.subscribe(() => {
         preferredSource ?? '',
         preferredQuality,
         String(confirmDestructive),
+        downloadDir,
+        downloadQuality,
+        downloadQualityFallback,
+        String(downloadMaxConcurrent),
         customSkins.map((skin) => `${skin.id}:${skin.name}`).join(','),
     ].join('|');
     if (key === lastPersistedKey) return;
@@ -101,6 +109,10 @@ store.subscribe(() => {
         preferredSource,
         preferredQuality,
         confirmDestructive,
+        downloadDir,
+        downloadQuality,
+        downloadQualityFallback,
+        downloadMaxConcurrent,
         customSkins,
     });
 });

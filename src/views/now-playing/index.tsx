@@ -31,12 +31,23 @@ export default function NowPlayingView() {
         );
     }
 
+    /* 返回：有应用内历史就退一步；直接打开本页（刷新 / 深链）时退回首页，
+       不把用户丢出应用（`navigate(-1)` 在栈底等于关闭窗口）。 */
+    const goBack = () => {
+        const idx =
+            typeof window !== 'undefined'
+                ? Number((window.history.state as {idx?: unknown} | null)?.idx ?? 0)
+                : 0;
+        if (idx > 0) navigate(-1);
+        else navigate('/', {replace: true});
+    };
+
     /* 封面优先用源侧详情（`catalog.track`）：列表快照常常只有标题歌手 */
     const artwork = detail ?? current;
 
     return (
         <div className={styles.page}>
-            <button type="button" className={styles.back} onClick={() => navigate(-1)}>
+            <button type="button" className={styles.back} onClick={goBack}>
                 <IconChevronLeft size={16}/>
                 {t('common.back')}
             </button>
