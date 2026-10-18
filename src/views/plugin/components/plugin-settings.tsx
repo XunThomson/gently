@@ -154,7 +154,11 @@ export function PluginSettings({plugin}: {plugin: PluginSummary}) {
 
             {/* 二维码登录（插件实现了 getLoginQr/pollLoginQr 才出现） */}
             {plugin.manifest?.capabilities?.includes('loginQr') && (
-                <PluginQrLogin pluginId={plugin.id} onConfirmed={() => void load()}/>
+                <PluginQrLogin
+                    pluginId={plugin.id}
+                    configured={credentials?.some((field) => field.present) ?? false}
+                    onConfirmed={() => void load()}
+                />
             )}
 
             {/* 凭据 */}

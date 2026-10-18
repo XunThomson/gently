@@ -8,11 +8,13 @@ import {catalogService} from '../../../services';
 import {qrSvgDataUrl} from './qr-code';
 import styles from './plugin-qr-login.module.css';
 
-/** 轮询间隔：扫码到确认通常几秒内完成，2 秒一次既不迟钝也不打扰 */
+/** 轮询间隔：扫码到确认通常几秒内完成；600ms 实测能在确认后 1 秒内切到「已登录」 */
 const POLL_MS = 600;
 
 interface Props {
     pluginId: string;
+    /** 该插件是否已经有凭据（扫码会覆盖它，界面要说清楚） */
+    configured?: boolean;
     /** 登录确认后回调（刷新凭据状态、重新取数据） */
     onConfirmed: () => void;
 }
@@ -24,7 +26,7 @@ interface Props {
  * 这个组件只做三件事——画二维码、定时问状态、把状态说清楚。
  * 前端从头到尾**拿不到令牌**：`catalog.loginQrPoll` 只回 `state`。
  */
-export function PluginQrLogin({pluginId, onConfirmed}: Props) {
+export function PluginQrLogin({pluginId, configured = false, onConfirmed}: Props) {
     const {t} = useTranslation();
     const [session, setSession] = useState<LoginQrSession | null>(null);
     const [state, setState] = useState<LoginQrStatus['state'] | null>(null);
@@ -90,7 +92,9 @@ export function PluginQrLogin({pluginId, onConfirmed}: Props) {
               ? t('page.plugin.qrScanned')
               : state === 'expired'
                 ? t('page.plugin.qrExpired')
-                : '';
+                : state === 'confirmed'
+                  ? t('page.plugin.qrConfirmed')
+                  : '';
 
     return (
         <div className={styles.wrap}>
@@ -116,11 +120,14 @@ export function PluginQrLogin({pluginId, onConfirmed}: Props) {
             ) : (
                 <div className={styles.actions}>
                     <Button size="sm" disabled={busy} onClick={() => void start()}>
-                        {t("page.plugin.qrStart")}
+                        {t('page.plugin.qrStart')}
                     </Button>
                     {statusText && <span className={styles.status}>{statusText}</span>}
                 </div>
             )}
+
+            {/* 已经有凭据时明说「再扫会覆盖」：否则用户会以为扫码是必须做的第二步 */}
+            {configured && !session && <p className={styles.hint}>{t('page.plugin.qrConfigured')}</p>}
 
             {error && (
                 <p className={styles.error}>

@@ -335,6 +335,8 @@
       "qrExpired": "The QR code expired. Generate a new one.",
       "qrRetry": "Generate again",
       "qrNoCore": "QR sign-in needs the local core (desktop app).",
+      "qrConfirmed": "Signed in: the session was written to this machine's credential store; you can close this panel.",
+      "qrConfigured": "This plugin already has a credential; scanning again replaces it with the new session.",
       "credentialTitle": "Credentials (stored on this machine only)",
       "credentialGuide": "Where the value comes from is up to the plugin: usually you sign in on that site in a browser first, then copy the cookie / token it asks for. The app never fetches it for you and never sends it anywhere; save it here and the source favorites can use it.",
       "oauthTitle": "Third-party sign-in (after install, your browser opens that domain's consent page)",

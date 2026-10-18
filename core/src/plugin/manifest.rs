@@ -794,14 +794,24 @@ fn parse_credential(value: &str) -> Result<CredentialField, serde_json::Value> {
 }
 
 /// 静态预扫描：只认顶层 `function <name>` / `async function <name>` 声明。
+///
+/// 一个能力可能对应多个函数名（二维码登录有 `getLoginQr` / `pollLoginQr` 两个），
+/// 因此按能力去重——清单里出现两条 `LoginQr` 会让 UI 与日志都在说瞎话。
 fn scan_capabilities(source: &str) -> Vec<PluginCapability> {
-    CAPABILITY_FUNCTION_NAMES
-        .iter()
-        .filter(|name| {
-            source.contains(&format!("function {name}(")) || source.contains(&format!("function {name} ("))
-        })
-        .filter_map(|name| PluginCapability::from_name(name))
-        .collect()
+    let mut out: Vec<PluginCapability> = Vec::new();
+    for name in CAPABILITY_FUNCTION_NAMES {
+        let declared =
+            source.contains(&format!("function {name}(")) || source.contains(&format!("function {name} ("));
+        if !declared {
+            continue;
+        }
+        if let Some(capability) = PluginCapability::from_name(name) {
+            if !out.contains(&capability) {
+                out.push(capability);
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
