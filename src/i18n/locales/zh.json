@@ -413,7 +413,24 @@
     "nowPlaying": {
       "lyrics": "歌词",
       "noLyrics": "暂无歌词",
-      "addedToPlaylist": "已加入「{{name}}」"
+      "addedToPlaylist": "已加入「{{name}}」",
+      "searchLyrics": "搜索歌词",
+      "searchLyricsPlaceholder": "输入歌名或歌手",
+      "searchLyricsHint": "向已安装的音源按关键词找歌词；结果会列出歌词来自哪个源、对应哪首歌。选一份即可替换当前歌词。",
+      "searchLyricsLoading": "正在搜索歌词…",
+      "searchLyricsEmpty": "没有找到带歌词的结果，换一个关键词试试。",
+      "searchLyricsNoCore": "搜索歌词需要桌面端本机核心；浏览器预览只展示界面。",
+      "searchLyricsStats": "{{sources}} 个源返回 · {{count}} 份歌词",
+      "searchLyricsSkipped": "{{count}} 个源不提供歌词",
+      "searchLyricsTimedOut": "{{count}} 个源超时，结果可能不完整",
+      "useLyrics": "使用",
+      "lyricsSourceAuto": "自动匹配（当前曲目的源）",
+      "lyricsSourceTrack": "{{source}} · {{title}}",
+      "lyricsOffset": "歌词偏移",
+      "lyricsOffsetHint": "歌词比声音早或晚时，用 ±0.5 秒校正；每首歌各自记住。",
+      "lyricsOffsetReset": "归零",
+      "lyricsOffsetValue": "{{value}} 秒",
+      "lyricsApplied": "已使用「{{title}}」的歌词"
     },
     "setting": {
       "title": "设置",

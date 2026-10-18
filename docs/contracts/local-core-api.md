@@ -5,7 +5,7 @@ version: 0.2
 owner: gently
 scope: 本机核心能力契约（无服务器形态）
 token_budget: 2600
-tldr: 本机核心的 Tauri 命令与事件清单（59 条命令 + 8 类事件）。v0.2 相对 v0.1 补齐三处硬伤：插件 API 支持专辑/歌单/歌词/榜单（否则对应命令永远无法实现）、媒体地址携带 headers 并由核心提供本地流代理（WebView 的 audio 无法设请求头、需 Range）、分发改为「单文件 JS + 订阅源索引」为主。
+tldr: 本机核心的 Tauri 命令与事件清单（61 条命令 + 8 类事件）。v0.2 相对 v0.1 补齐三处硬伤：插件 API 支持专辑/歌单/歌词/榜单（否则对应命令永远无法实现）、媒体地址携带 headers 并由核心提供本地流代理（WebView 的 audio 无法设请求头、需 Range）、分发改为「单文件 JS + 订阅源索引」为主。
 ---
 
 # 本机核心能力契约（local core）v0.2
@@ -108,7 +108,7 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 | `plugin.subscriptions.refresh{id}` | 重新拉取索引并本地缓存；失败保留旧索引并报 `subscription.fetch_failed` |
 | `plugin.catalog.list{subscriptionId?, query?, tags?}` | 订阅内可安装条目（带 `installed` / `updateAvailable`） |
 
-### catalog（9）
+### catalog（10）
 | 命令 | 说明 |
 |---|---|
 | `catalog.search{keyword, sources?, limit?}` | **流式**：立即返回 `{searchId}`，结果通过事件分批到达（§3） |
@@ -119,6 +119,7 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 | `catalog.topList{source, id, page?}` | 某个榜单/分类的内容 |
 | `catalog.recommend{source}` | 源侧推荐 |
 | `catalog.lyrics{ref, withTranslation?}` | 歌词；无词返回 `data: null`。返回 `{format:'lrc'\|'plain', content, translated?}`——**只交原文**，解析成行（含译文按时间戳对齐）是纯展示问题，由前端唯一一份 `src/utils/lyrics.ts` 完成 |
+| `catalog.lyricsSearch{query, limit?}` | **按关键词跨源找歌词**（歌词与歌曲分离时的兜底入口）：每个已启用且同时有 `search`+`getLyric` 的源各起一个线程，先 `search` 再取前 `limit`（1~5，缺省 2）个条目问歌词；没词的条目跳过，单源失败不影响其它源。返回 `{items, searchedSources, failedSources, skippedSources, timedOutSources}`：`items[]` 为 `{source, sourceName, track, lyrics}`；整体最多等 12s，`timedOutSources` 里的源**不阻塞已拿到的结果**。歌词按 `lyrics:<source>:<rawId>:false` 缓存（与 `catalog.lyrics` 同键） |
 
 > 说明：v0.1 的 charts 命令（固定 hot/new/rise 枚举）已被 `topLists` / `topList` 取代——
 > 真实源提供的是任意分类树，固定枚举映射不了。**排行榜页需要按源的分类树渲染**（前端改动）。
@@ -583,6 +584,7 @@ async function getRecommend() {}                   // 可选
 | 新增错误码：`plugin.invalid_source`、`subscription.*`、`media.proxy_failed`、`media.blocked_address` | 新能力需要可区分的失败语义 |
 | 新增 `plugin.compat.observed` / `plugin.compat.confirm`（§5.4） | 兼容模式没有域名声明，权限只能事后**收窄**：先观测实际访问的域名，用户确认后固化为 `hosts` 白名单并关闭兼容模式（TOFU） |
 | 新增 `library.history.clear`（60 条命令） | 界面一直有「清空播放记录」入口；历史成为核心的事实来源后，没有这条命令等于该功能静默失效 |
+| 新增 `catalog.lyricsSearch`（61 条命令） | 歌词与歌曲分离：源不给词、各源同名歌曲名称不一致、自动歌词与音频对不上——用户需要自己跨源挑一份并看到来源（R54） |
 | 本地曲目新增 `artwork`（内嵌封面 → 回环 `/cover/<name>` 路由） | 本地列表只有哈希渐变；封面缓存按源路径哈希命名，不改表结构，前端只多一个「列表缩略图」消费点 |
 | 本地标签改为**合并「链式元数据 + 容器元数据」** | symphonia 0.5.5 的 mp3 demuxer 不解析 ID3v2：只读 `format.metadata()` 会让最常见的 mp3 丢掉全部标签与内嵌封面（实测确认） |
 | 本地路径统一归一化（折叠重复分隔符，四处共用一份实现） | 用户粘贴 `C:\\Music` 这种路径时 Windows 照样认，但同一个文件会被收成两行、封面哈希也算不到一起 |

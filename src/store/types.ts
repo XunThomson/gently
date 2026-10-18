@@ -54,6 +54,17 @@ export interface UiState {
     customSkins: ThemeSkin[];
 }
 
+/** 一份歌词的来路（自动加载 / 用户从搜索结果里挑的） */
+export interface LyricSourceInfo {
+    /** 插件 id（自动加载时是曲目自身的源） */
+    source: string;
+    /** 插件显示名（界面展示用；拿不到时退回 id） */
+    sourceName: string;
+    /** 这份歌词对应的曲目标题 / 歌手（各源同名歌曲可能不一致，界面要能区分） */
+    title: string;
+    artist: string;
+}
+
 export interface PlayerState {
     current: NowPlaying | null;
     /**
@@ -74,8 +85,19 @@ export interface PlayerState {
     elapsed: number;
     /** 当前曲目总秒数（优先取音频元数据） */
     duration: number;
-    /** 当前曲目歌词（随播放切换异步加载） */
+    /** 当前曲目歌词（随播放切换异步加载；用户手动挑选的也放这里） */
     lyrics: LyricLine[];
+    /**
+     * 当前歌词来自哪里。
+     * 自动加载 = 曲目自身的源；用户从「搜索歌词」里选了一份 = 那份结果的源与曲目信息。
+     * `null` 表示还没有歌词（或加载中），界面据此决定要不要显示来源行。
+     */
+    lyricsSource: LyricSourceInfo | null;
+    /**
+     * 歌词时间轴偏移（秒）。正值 = 歌词比音频**晚**，渲染时用 `elapsed + lyricsOffset`。
+     * 按曲目持久化（`utils/lyricsOffset.ts`），切歌时读回该曲目上次校正过的值。
+     */
+    lyricsOffset: number;
     /** 由数据源解析出的可播放地址 */
     audioUrl: string | null;
     /** 是否存在真实音源：false 时退回模拟时钟 */
@@ -274,6 +296,13 @@ export interface PlayerActions {
     switchSource: (sourceId: string) => void;
     /** 音质偏好变化后重新解析当前曲目 */
     reloadSource: () => void;
+    /**
+     * 应用一份**手动挑选**的歌词（来自歌词搜索）。
+     * 会覆盖自动加载的歌词；在本次播放内不再被自动加载覆盖。
+     */
+    applyLyrics: (lines: LyricLine[], source: LyricSourceInfo) => void;
+    /** 设置歌词时间轴偏移（秒，正 = 歌词比音频晚）；按当前曲目持久化 */
+    setLyricsOffset: (seconds: number) => void;
     /* ---- 队列控制 ---- */
     /** 从队列移除（当前曲目不可移除） */
     removeFromQueue: (trackId: string) => void;

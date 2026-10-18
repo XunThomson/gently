@@ -9,7 +9,7 @@ import {
     setMusicSourceEnabled,
     unregisterMusicSource,
 } from '../plugins';
-import type {CoreError, TopListGroup, TopListPage} from '../api';
+import type {CoreError, LyricSearchResult, TopListGroup, TopListPage} from '../api';
 import {findAlbum, findCuratedPlaylist} from '../mock/catalog.mock';
 import type {
     Album,
@@ -24,6 +24,7 @@ import type {MusicSourcePlugin} from '../plugins';
 import {coreAvailable} from './core.bridge';
 import {
     coreAlbum,
+    coreLyricsSearch,
     corePlaylist,
     coreRecommend,
     coreResolveUrl,
@@ -369,6 +370,25 @@ export const catalogService = {
     orderCandidates(track: GroupedTrack, preferredSource?: string | null): GroupedTrack {
         if (!preferredSource) return track;
         return {...track, candidates: sortCandidates(track.candidates, [preferredSource])};
+    },
+
+    /* ---------------- 歌词搜索 ---------------- */
+
+    /**
+     * 跨源按关键词找歌词（`catalog.lyricsSearch`）。
+     *
+     * - `data === null` 且没有 `error`：浏览器预览（没有核心）——界面如实说明需要桌面端；
+     * - `data === null` 且有 `error`：核心拒绝/失败（例如一个源都没装）；
+     * - 搜索本身是**用户动作**，因此只在用户点「搜索」时发起，不做预取。
+     */
+    async searchLyrics(query: string): Promise<{data: LyricSearchResult | null; error?: CoreError}> {
+        const keyword = query.trim();
+        if (!keyword) return {data: null};
+        if (!coreAvailable()) return {data: null};
+
+        const result = await coreLyricsSearch(keyword);
+        if (result.ok) return {data: result.data};
+        return {data: null, error: result.error};
     },
 
     /* ---------------- 播放地址 ---------------- */

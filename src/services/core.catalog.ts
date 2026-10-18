@@ -13,7 +13,7 @@
  *    调用方按「该源不提供」处理，不必区分错误码。
  */
 
-import type {CoreError, CoreResult, Lyrics, ResolvedMedia, TopListGroup, TopListPage} from '../api';
+import type {CoreError, CoreResult, Lyrics, LyricSearchResult, ResolvedMedia, TopListGroup, TopListPage} from '../api';
 import type {Album, CuratedPlaylist, GroupedTrack, Track, TrackQuality} from '../types';
 import {coreAvailable, invokeCore} from './core.bridge';
 import {CORE_EVENTS} from './core.events';
@@ -293,5 +293,21 @@ export function coreLyrics(reference: string, withTranslation = false): Promise<
     return detail<Lyrics>('catalog.lyrics', {
         ref: reference,
         ...(withTranslation ? {withTranslation: true} : {}),
+    });
+}
+
+/**
+ * 跨源按关键词找歌词（`catalog.lyricsSearch`）。
+ *
+ * 不用 `detail()`：它把失败吞成 `null`，而歌词搜索失败时界面要显示原因。
+ * 无核心时调用方拿到 `available: false` 并如实说明「需要桌面端」。
+ */
+export function coreLyricsSearch(
+    query: string,
+    limit?: number,
+): Promise<CoreResult<LyricSearchResult>> {
+    return invokeCore<LyricSearchResult>('catalog.lyricsSearch', {
+        query,
+        ...(limit ? {limit} : {}),
     });
 }

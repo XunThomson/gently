@@ -1,7 +1,8 @@
 import {appConfig} from '../../config/app.config';
 import {audioEngine, catalogService, libraryService} from '../../services';
 import type {GroupedTrack, NowPlaying, Track, TrackCandidate} from '../../types';
-import type {PlayerActions, PlayerState, StoreCtx} from '../types';
+import {clampLyricsOffset, readLyricsOffset, writeLyricsOffset} from '../../utils/lyricsOffset';
+import type {LyricSourceInfo, PlayerActions, PlayerState, StoreCtx} from '../types';
 
 let playSeq = 0;
 
@@ -10,6 +11,14 @@ let reportedPlayId = 0;
 
 /** 已经上报过**推荐反馈**的 `playId`（与历史上的去重分开：暂停会先消费掉历史那一次） */
 let feedbackPlayId = 0;
+
+/**
+ * 用户手动挑过歌词的 `playId`。
+ *
+ * 自动歌词是异步到的：用户点了「使用」之后它才回来的话，会把用户选的那份覆盖掉。
+ * 用 playId 记住「这次播放已经手动选过」，自动加载因此不再覆盖。
+ */
+let manualLyricsPlayId: number | null = null;
 
 /** 音源候选：聚合结果自带 candidates，普通曲目退化为单候选 */
 function candidatesOf(track: Track): TrackCandidate[] {
@@ -39,6 +48,8 @@ export function createPlayerSlice(ctx: StoreCtx) {
         elapsed: 0,
         duration: 0,
         lyrics: [],
+        lyricsSource: null,
+        lyricsOffset: 0,
         audioUrl: null,
         playable: false,
         candidates: [],
@@ -52,14 +63,33 @@ export function createPlayerSlice(ctx: StoreCtx) {
         ctx.setState({player: {...ctx.getState().player, ...partial}});
     };
 
-    /** 异步加载歌词；切歌后丢弃过期结果 */
+    /** 音源 id → 显示名（插件列表来自核心/注册表；拿不到就退回 id） */
+    const sourceNameOf = (sourceId: string): string =>
+        ctx.getState().plugin.list.find((plugin) => plugin.id === sourceId)?.name ?? sourceId;
+
+    /** 自动歌词的来路：当前曲目自身的源 */
+    const autoLyricSource = (track: Track): LyricSourceInfo => ({
+        source: track.source,
+        sourceName: sourceNameOf(track.source),
+        title: track.title,
+        artist: track.artist,
+    });
+
+    /** 异步加载歌词；切歌后丢弃过期结果，手动选过的歌词不被覆盖 */
     const loadLyrics = async (track: Track, playId: number) => {
         try {
             const lyrics = await libraryService.loadLyrics(track);
-            if (ctx.getState().player.current?.playId === playId) patch({lyrics});
+            if (ctx.getState().player.current?.playId !== playId) return;
+            if (manualLyricsPlayId === playId) return;
+            patch({
+                lyrics,
+                lyricsSource: lyrics.length > 0 ? autoLyricSource(track) : null,
+            });
         } catch (err) {
             console.warn('[player] 歌词加载失败', err);
-            if (ctx.getState().player.current?.playId === playId) patch({lyrics: []});
+            if (ctx.getState().player.current?.playId !== playId) return;
+            if (manualLyricsPlayId === playId) return;
+            patch({lyrics: [], lyricsSource: null});
         }
     };
 
@@ -196,6 +226,8 @@ export function createPlayerSlice(ctx: StoreCtx) {
 
         const current: NowPlaying = {...track, playId: ++playSeq};
         const candidates = candidatesOf(track);
+        // 新的一次播放：上一次手动挑的歌词不再相关
+        manualLyricsPlayId = null;
 
         patch({
             current,
@@ -206,6 +238,9 @@ export function createPlayerSlice(ctx: StoreCtx) {
             elapsed: 0,
             duration: track.durationSec,
             lyrics: [],
+            lyricsSource: null,
+            // 这首曲子上次校正过的偏移还记得（逐曲目持久化）
+            lyricsOffset: readLyricsOffset(track.id),
             audioUrl: null,
             playable: false,
             candidates,
@@ -334,6 +369,7 @@ export function createPlayerSlice(ctx: StoreCtx) {
 
         stop() {
             reportPlayback({final: true});
+            manualLyricsPlayId = null;
             patch({
                 current: null,
                 detail: null,
@@ -342,6 +378,8 @@ export function createPlayerSlice(ctx: StoreCtx) {
                 duration: 0,
                 index: -1,
                 lyrics: [],
+                lyricsSource: null,
+                lyricsOffset: 0,
                 audioUrl: null,
                 playable: false,
                 candidates: [],
@@ -350,6 +388,20 @@ export function createPlayerSlice(ctx: StoreCtx) {
                 failedSources: [],
                 resolving: false,
             });
+        },
+
+        applyLyrics(lines, source) {
+            const {current} = ctx.getState().player;
+            if (!current) return;
+            manualLyricsPlayId = current.playId;
+            patch({lyrics: lines, lyricsSource: source});
+        },
+
+        setLyricsOffset(seconds) {
+            const {current} = ctx.getState().player;
+            const value = clampLyricsOffset(seconds);
+            patch({lyricsOffset: value});
+            if (current) writeLyricsOffset(current.id, value);
         },
 
         switchSource(sourceId) {

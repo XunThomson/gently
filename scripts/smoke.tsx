@@ -702,6 +702,44 @@ async function main(): Promise<void> {
     actions.player.stop();
     check('store: stop 清空歌词与进度', s().player.lyrics.length === 0 && s().player.elapsed === 0);
 
+    /* 歌词来源与时间轴校正：自动歌词带来源；手动挑选的歌词不被随后到达的自动歌词覆盖 */
+    actions.player.play(first, s().library.local);
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    check(
+        'store: 自动歌词带上来源信息',
+        s().player.lyricsSource?.source === first.source && s().player.lyricsSource?.title === first.title,
+    );
+
+    actions.player.play(first, s().library.local);
+    actions.player.applyLyrics(
+        [{time: 1, text: '手动挑的第一句'}],
+        {source: 'other-source', sourceName: '别的源', title: '另一个条目', artist: '别人'},
+    );
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    check(
+        'store: 手动挑选的歌词覆盖自动歌词且不被迟到的自动结果覆盖',
+        s().player.lyrics.length === 1 &&
+            s().player.lyrics[0].text === '手动挑的第一句' &&
+            s().player.lyricsSource?.source === 'other-source',
+    );
+
+    actions.player.setLyricsOffset(1.5);
+    check('store: 歌词偏移可设置', s().player.lyricsOffset === 1.5);
+    actions.player.setLyricsOffset(999);
+    check('store: 歌词偏移被钳到上限（不产生荒谬值）', s().player.lyricsOffset === 30);
+    actions.player.setLyricsOffset(0);
+    check(
+        'store: 切歌后读回该曲目的偏移（默认 0）',
+        (() => {
+            const next = s().player.queue.find((track) => track.id !== first.id) ?? first;
+            actions.player.play(next, s().player.queue);
+            const offset = s().player.lyricsOffset;
+            actions.player.stop();
+            return offset === 0;
+        })(),
+    );
+    actions.player.play(first, s().library.local);
+
     /* 歌词解析：核心只交付原文，行数组由前端解析（只有这一份解析器） */
     const lrcLines = toLyricLines({
         format: 'lrc',
@@ -1261,6 +1299,11 @@ async function main(): Promise<void> {
     check('core: 浏览器下榜单分类树返回 null', (await coreTopLists('demo')) === null);
     check('core: 浏览器下榜单内容返回 null', (await coreTopList('demo', 'hot')) === null);
     check('core: 浏览器下歌词返回 null', (await coreLyrics('demo:1', true)) === null);
+    const browserLyricSearch = await catalogService.searchLyrics('测试');
+    check(
+        'core: 浏览器下歌词搜索返回空且不抛异常',
+        browserLyricSearch.data === null && !browserLyricSearch.error,
+    );
 
     /* 本机库门面：读返回 null（调用方退回 mock），写是安全空操作（不抛异常） */
     check('core: 浏览器下收藏列表返回 null', (await coreLoadFavorites()) === null);
@@ -1302,6 +1345,7 @@ async function main(): Promise<void> {
     const feedbackCalls: Record<string, unknown>[] = [];
     const detailCalls: Record<string, unknown>[] = [];
     const lyricsCalls: Record<string, unknown>[] = [];
+    const lyricSearchCalls: Record<string, unknown>[] = [];
     const savePlaylistCalls: Record<string, unknown>[] = [];
     const skinExportCalls: Record<string, unknown>[] = [];
     const skinImportCalls: Record<string, unknown>[] = [];
@@ -1339,6 +1383,25 @@ async function main(): Promise<void> {
                 // 歌词：核心只给原文；这里回 null（= 这个源没有歌词），只看有没有被问
                 lyricsCalls.push(params);
                 return envelope(null);
+            }
+            if (command === 'catalog.lyricsSearch') {
+                lyricSearchCalls.push(params);
+                return envelope({
+                    items: fakeDownloadSeed
+                        ? [
+                              {
+                                  source: 'core-source',
+                                  sourceName: '核心音源',
+                                  track: fakeDownloadSeed,
+                                  lyrics: {format: 'lrc', content: '[00:01.00]核心给的歌词'},
+                              },
+                          ]
+                        : [],
+                    searchedSources: ['core-source'],
+                    failedSources: [],
+                    skippedSources: ['search-only'],
+                    timedOutSources: [],
+                });
             }
             if (command === 'recommend.feedback') {
                 feedbackCalls.push(params);
@@ -2018,6 +2081,19 @@ async function main(): Promise<void> {
                     'fake: 本地曲目不问核心要歌词（没有插件，问了只是噪声）',
                     lyricsCalls.length === 0,
                     `calls=${lyricsCalls.length}`,
+                );
+
+                /* 歌词搜索：走核心命令，结果带回来源名称与条目信息（用户据此挑一份） */
+                lyricSearchCalls.length = 0;
+                const outcome = await catalogService.searchLyrics('测试歌词');
+                check(
+                    'fake: 歌词搜索走核心并带回来源与候选曲目',
+                    lyricSearchCalls.length === 1 &&
+                        lyricSearchCalls[0].query === '测试歌词' &&
+                        outcome.data?.items.length === 1 &&
+                        outcome.data.items[0].sourceName === '核心音源' &&
+                        outcome.data.items[0].track.id === fakeDownloadSeed?.id,
+                    JSON.stringify({calls: lyricSearchCalls, outcome}),
                 );
             }
 

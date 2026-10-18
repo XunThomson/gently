@@ -349,6 +349,82 @@ fn lyrics_normalize_and_return_null_when_absent() {
 }
 
 #[test]
+fn lyrics_search_collects_sources_and_skips_missing_capability() {
+    /// 有 search + getLyric：命中的前两条给词，第三条故意没词（应被跳过）。
+    const LYRICS_FINDER: &str = r#"
+// @id lyric-finder
+// @name 找词源
+// @version 1.0.0
+// @author tester
+const bump = (name) => storage.set(name, (storage.get(name) || 0) + 1);
+async function search() {
+    bump('search');
+    return [
+        {id: 'a', title: '测试歌 A', artist: '歌手甲', duration: 180},
+        {id: 'b', title: '测试歌 B', artist: '歌手乙', duration: 200},
+        {id: 'c', title: '没有歌词的歌', artist: '歌手丙'},
+    ];
+}
+async function getMediaSource() { return null; }
+async function getLyric(id) {
+    bump('lyric');
+    if (id === 'c') return null;
+    return {rawLrc: '[00:01.00]前缀 ' + id};
+}
+"#;
+
+    let (ctx, dir) = temp_ctx("lyrics-search");
+    install(&ctx, LYRICS_FINDER);
+    install(&ctx, SEARCH_ONLY);
+
+    let value = call(
+        &ctx,
+        "catalog.lyricsSearch",
+        json!({ "query": "测试", "limit": 3 }),
+    );
+    assert_eq!(value["ok"], json!(true), "{value}");
+    let data = &value["data"];
+    let items = data["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2, "没词的条目应被跳过：{value}");
+    assert_eq!(items[0]["source"], json!("lyric-finder"));
+    assert_eq!(items[0]["sourceName"], json!("找词源"), "结果要带来源名称：{value}");
+    assert_eq!(items[0]["track"]["id"], json!("lyric-finder:a"));
+    assert_eq!(items[0]["lyrics"]["format"], json!("lrc"));
+    assert!(items[0]["lyrics"]["content"].as_str().unwrap().contains("前缀 a"));
+    assert!(
+        data["skippedSources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|source| source == "search-only"),
+        "只有 search 的源应进 skippedSources：{value}"
+    );
+    assert_eq!(data["searchedSources"], json!(["lyric-finder"]));
+
+    // 缓存：同样的歌词不再问插件（search 会重新调，歌词命中缓存）
+    let lyric_calls = calls(&ctx, "lyric-finder", "lyric");
+    assert!(lyric_calls > 0);
+    let again = call(
+        &ctx,
+        "catalog.lyricsSearch",
+        json!({ "query": "测试", "limit": 3 }),
+    );
+    assert_eq!(again["ok"], json!(true), "{again}");
+    assert_eq!(
+        calls(&ctx, "lyric-finder", "lyric"),
+        lyric_calls,
+        "同一首歌词的第二次搜索应命中缓存"
+    );
+
+    // 空关键词明确报错，而不是返回空列表
+    let empty = call(&ctx, "catalog.lyricsSearch", json!({ "query": "   " }));
+    assert_eq!(empty["ok"], json!(false));
+    assert_eq!(empty["error"]["code"], json!("common.invalid_argument"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn results_are_cached_and_cache_key_covers_parameters() {
     let (ctx, dir) = temp_ctx("cache");
     let id = install(&ctx, DETAIL_PLUGIN);

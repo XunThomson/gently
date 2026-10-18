@@ -416,7 +416,7 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
 
 - **M5a 已完成（插件域收尾）**：`core/src/plugin_admin.rs` 落地最后 6 条命令
   （`plugin.config.get/put`、`plugin.credentials.set/clear/status`、`plugin.checkUpdate`），
-  **契约 60 条命令全部点亮**：配置乐观并发（冲突带 `details.current`、不改动已存值、64 KiB 上限）；
+  **契约 60 条命令全部点亮**（R54 又新增 `catalog.lyricsSearch`，现为 61 条）：配置乐观并发（冲突带 `details.current`、不改动已存值、64 KiB 上限）；
   凭据只读写清单声明过的键、`status` 只回「是否已配置」（命令层没有读值出口）；
   检查更新只比对来源（url 下载比对版本+sha256 / catalog 比对本地索引）**绝不自动更新**。
   **已知缺口**：凭据落点仍是内存实现（`keyring` crate 不在离线 registry 缓存里）→ 重启失效，
@@ -471,6 +471,13 @@ M1/M2 相对早期估算的增长来自订阅分发（索引 + 一键安装 + �
   → 核心留下**插件原始条目的进程内快照**（LRU、不落盘）并原样交回，沙箱再把字符串包成 `{id}`。
   ④ 三个假音源**无条件**注册、插件列表把演示源与占位项合并进核心清单 → 演示数据一律只在
   浏览器预览出现（见上面「前端不可退化」那条的反向规则）。
+- **R54 三个窗口 / 导航 bug + 下载设置**：最大化与向下还原共用图标（`isMaximized` + resize 订阅 +
+  `IconRestore`）、歌词页重复压历史（`shouldOpenNowPlaying` 守卫）、`decorations:false` 拖不动
+  （`data-tauri-drag-region="deep"` + `allow-start-dragging`）；设置页下载卡片从占位值改成真设置
+  （目录 / 默认音质 / 缺档策略 / 并发上限，store 用 `pump()` 排队）。
+- **R55 歌词搜索与时间轴校正**：核心新增 `catalog.lyricsSearch`（契约第 61 条命令：跨源搜歌 → 取词，
+  每源一线程、12s 整体截止、共用歌词缓存）；歌词页加「搜索歌词」面板（显示来源 / 曲目 / 首行，
+  点「使用」替换当前歌词）与逐曲目持久化的 `±0.5s` 校正；`pnpm smoke` 319、核心单测 219。
 - **退出标准**：安装包在干净环境可启动并完成一次完整链路（导入插件 → 播放 → 扫描 → 收藏）。
   **R20 把这套链路自动化了**（`core/tests/e2e_chain.rs`：走 `dispatch`、真的按 Range 取代理地址、
   重开库验证持久化）；**R30 又把它在真实打包版上人肉点了一遍并留了截图**

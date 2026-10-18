@@ -413,7 +413,24 @@
     "nowPlaying": {
       "lyrics": "Lyrics",
       "noLyrics": "No lyrics",
-      "addedToPlaylist": "Added to “{{name}}”"
+      "addedToPlaylist": "Added to “{{name}}”",
+      "searchLyrics": "Search lyrics",
+      "searchLyricsPlaceholder": "Song title or artist",
+      "searchLyricsHint": "Looks for lyrics across your installed sources and shows which source and track each result belongs to. Pick one to replace the current lyrics.",
+      "searchLyricsLoading": "Searching lyrics…",
+      "searchLyricsEmpty": "No lyrics found — try another keyword.",
+      "searchLyricsNoCore": "Searching lyrics needs the desktop core; the browser preview only shows the UI.",
+      "searchLyricsStats": "{{sources}} sources · {{count}} lyrics",
+      "searchLyricsSkipped": "{{count}} sources do not provide lyrics",
+      "searchLyricsTimedOut": "{{count}} sources timed out; results may be incomplete",
+      "useLyrics": "Use",
+      "lyricsSourceAuto": "Auto-matched (current track's source)",
+      "lyricsSourceTrack": "{{source}} · {{title}}",
+      "lyricsOffset": "Lyrics offset",
+      "lyricsOffsetHint": "If the lyrics run early or late, correct by ±0.5 s; remembered per track.",
+      "lyricsOffsetReset": "Reset",
+      "lyricsOffsetValue": "{{value}} s",
+      "lyricsApplied": "Using lyrics for “{{title}}”"
     },
     "setting": {
       "title": "Settings",

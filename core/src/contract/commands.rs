@@ -36,7 +36,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "plugin.subscriptions.remove",
     "plugin.subscriptions.refresh",
     "plugin.catalog.list",
-    // catalog（9）
+    // catalog（10）
     "catalog.search",
     "catalog.searchCancel",
     "catalog.track",
@@ -46,6 +46,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "catalog.topList",
     "catalog.recommend",
     "catalog.lyrics",
+    "catalog.lyricsSearch",
     // library（10）
     "library.favorites.list",
     "library.favorites.set",

@@ -22,6 +22,7 @@ src/assets/bgc.mp4
 # 原因：来源与许可不明，且这类文件通常含有具体第三方地址与分发链接（见 ADR-0005 的中立立场）。
 # 注意：examples/plugins/ 下的自有示例插件不受此规则影响。
 examples/Lk_*.js
+examples/wangyiyun.js
 examples/reference/
 
 

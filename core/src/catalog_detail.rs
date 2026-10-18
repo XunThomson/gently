@@ -10,17 +10,31 @@
 //!
 //! 歌词**不在核心解析成行**：前端已有 LRC 解析器，同一算法只留一份实现
 //! （契约里 `Lyrics.lines` 是「核心已解析时」的可选字段）。
+//!
+//! `catalog.lyricsSearch` 是「按关键词跨源找歌词」：源不提供歌词、各源歌名不一致时，
+//! 用户能换一个源/换一个条目；**每个源一个线程**、整体有截止时间，慢源不拖死整页。
+
+use std::collections::HashMap;
+use std::sync::{mpsc, Arc};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
+use crate::catalog::ItemSnapshots;
 use crate::commands::{parse_params, CoreContext};
 use crate::contract::{CoreError, ErrorCode, Fallible};
-use crate::plugin::{list_items, PluginCapability};
+use crate::plugin::{list_items, PluginCapability, PluginHost};
 
 /// 详情类缓存时长（曲目/专辑/歌单/歌词）。
 const DETAIL_TTL_SEC: i64 = 6 * 60 * 60;
 /// 榜单与分类树变化慢，可以缓存久一点。
 const LIST_TTL_SEC: i64 = 24 * 60 * 60;
+
+/// 歌词搜索：每个源最多取几个命中条目去问歌词（多了只会拖慢，不会更有用）。
+const LYRICS_SEARCH_PER_SOURCE: usize = 2;
+/// 歌词搜索的整体截止时间：慢源先不等了，返回已经拿到的结果。
+const LYRICS_SEARCH_TIMEOUT: Duration = Duration::from_secs(12);
 
 #[derive(Debug, serde::Deserialize)]
 struct RefParams {
@@ -52,6 +66,16 @@ struct LyricsParams {
     reference: String,
     #[serde(default)]
     with_translation: bool,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LyricsSearchParams {
+    /// 关键词：歌名 / 歌手 / 两者混合，与搜索框语义一致
+    query: String,
+    /// 每个源最多取几个命中条目问歌词（1~5，缺省 2）
+    #[serde(default)]
+    limit: Option<u32>,
 }
 
 // ---------------------------------------------------------------- 命令
@@ -261,17 +285,218 @@ pub fn lyrics(ctx: &CoreContext, params: Value) -> Fallible<Value> {
         DETAIL_TTL_SEC,
     )?;
 
-    // 三种写法都认：裸字符串、我们的 `{content}`、MusicFree 的 `{rawLrc}` / `{lrc}`
-    let content = match &value {
-        Value::String(text) => text.trim().to_string(),
-        other => pick_text(&[other], &["content", "rawLrc", "lrc", "lyric"])
-            .unwrap_or_default(),
-    };
-    if content.trim().is_empty() {
-        return Ok(Value::Null);
+    Ok(parse_lyric_value(&value, params.with_translation).unwrap_or(Value::Null))
+}
+
+/// `catalog.lyricsSearch{query, limit?}`：**跨源按关键词找歌词**。
+///
+/// 为什么需要它：歌词与歌曲是分离的——源不一定给歌词、各源同名歌曲的名称还可能不一致
+/// （视频源常在标题里塞无关内容），自动拿到的那份也未必与音频对得上。用户需要一个入口
+/// **自己挑一份**，并且能看到它来自哪个源、对应哪首歌。
+///
+/// 行为：
+/// - 每个已启用且同时具备 `search` + `getLyric` 能力的源各起一个线程；
+/// - 每源先 `search`，取前 `limit` 个条目逐个问歌词（无词的条目跳过）；
+/// - 整体最多等 [`LYRICS_SEARCH_TIMEOUT`]，超时的源记进 `timedOutSources`，**已经拿到的照常返回**；
+/// - 歌词结果按 `lyrics:<source>:<rawId>:false` 缓存（与 `catalog.lyrics` 同一个键）。
+pub fn lyrics_search(ctx: &CoreContext, params: Value) -> Fallible<Value> {
+    let params: LyricsSearchParams = parse_params(params)?;
+    let query = params.query.trim().to_string();
+    if query.is_empty() {
+        return Err(CoreError::invalid_argument("搜索歌词的关键词不能为空"));
+    }
+    let per_source = params
+        .limit
+        .unwrap_or(LYRICS_SEARCH_PER_SOURCE as u32)
+        .clamp(1, 5) as usize;
+
+    let load_failed = crate::catalog::ensure_loaded(ctx)?;
+    let store = ctx
+        .store
+        .as_ref()
+        .ok_or_else(|| CoreError::new(ErrorCode::LibraryIoError, "数据库不可用，无法确认插件状态"))?;
+
+    /* 目标源：已启用 + 已加载 + 同时有 search/getLyric。
+       只有 search 的源不参与（不是失败，如实放进 skippedSources）。 */
+    let mut targets: Vec<(u32, String, String)> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+    for record in store.list_plugins()? {
+        if !record.enabled {
+            continue;
+        }
+        let id = record.manifest.id.clone();
+        let Some(capabilities) = ctx.plugins.capabilities(&id) else { continue };
+        if !capabilities.contains(&PluginCapability::Search) {
+            continue;
+        }
+        if !capabilities.contains(&PluginCapability::GetLyric) {
+            skipped.push(id);
+            continue;
+        }
+        targets.push((record.priority as u32, id, record.manifest.name.clone()));
+    }
+    targets.sort_by_key(|(priority, _, _)| *priority);
+
+    if targets.is_empty() {
+        return Ok(json!({
+            "items": [],
+            "searchedSources": [],
+            "failedSources": load_failed,
+            "skippedSources": skipped,
+            "timedOutSources": [],
+        }));
     }
 
-    let format = match pick_text(&[&value], &["format"]).as_deref() {
+    let (tx, rx) = mpsc::channel::<(String, Vec<Value>, Option<String>)>();
+    for (_, source, source_name) in &targets {
+        let tx = tx.clone();
+        let plugins = Arc::clone(&ctx.plugins);
+        let snapshots = Arc::clone(&ctx.snapshots);
+        let paths = ctx.paths.clone();
+        let source = source.clone();
+        let source_name = source_name.clone();
+        let query = query.clone();
+
+        thread::Builder::new()
+            .name(format!("gently-lyrics-{source}"))
+            .spawn(move || {
+                let (items, error) =
+                    collect_source_lyrics(&plugins, &snapshots, &paths, &source, &source_name, &query, per_source);
+                let _ = tx.send((source, items, error));
+            })
+            .map_err(|err| CoreError::internal(format!("创建歌词搜索线程失败：{err}")))?;
+    }
+    drop(tx);
+
+    let deadline = Instant::now() + LYRICS_SEARCH_TIMEOUT;
+    let mut collected: HashMap<String, (Vec<Value>, Option<String>)> = HashMap::new();
+    for _ in 0..targets.len() {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match rx.recv_timeout(remaining) {
+            Ok((source, items, error)) => {
+                collected.insert(source, (items, error));
+            }
+            Err(_) => break,
+        }
+    }
+
+    /* 按源的优先级拼结果：不是按“谁先返回”，否则用户每次搜到的顺序都不一样。 */
+    let mut items: Vec<Value> = Vec::new();
+    let mut searched: Vec<String> = Vec::new();
+    let mut failed: Vec<String> = load_failed.clone();
+    let mut timed_out: Vec<String> = Vec::new();
+    for (_, source, _) in &targets {
+        match collected.remove(source) {
+            Some((source_items, None)) => {
+                searched.push(source.clone());
+                items.extend(source_items);
+            }
+            Some((_, Some(_))) => failed.push(source.clone()),
+            None => timed_out.push(source.clone()),
+        }
+    }
+
+    Ok(json!({
+        "items": items,
+        "searchedSources": searched,
+        "failedSources": failed,
+        "skippedSources": skipped,
+        "timedOutSources": timed_out,
+    }))
+}
+
+/// 一个源：search → 最多 `per_source` 个条目问歌词。
+///
+/// 单个条目无词/插件报错只跳过该条目，不让整源失败（社区插件质量参差）。
+fn collect_source_lyrics(
+    plugins: &PluginHost,
+    snapshots: &ItemSnapshots,
+    paths: &crate::paths::AppPaths,
+    source: &str,
+    source_name: &str,
+    query: &str,
+    per_source: usize,
+) -> (Vec<Value>, Option<String>) {
+    let raw = match plugins.call(source, "search", &json!([query, 1]).to_string()) {
+        Ok(raw) => raw,
+        Err(error) => return (Vec::new(), Some(error.message)),
+    };
+    let parsed: Value = match serde_json::from_str(&raw) {
+        Ok(value) => value,
+        Err(_) => {
+            return (Vec::new(), Some("search 返回的不是合法 JSON".to_string()));
+        }
+    };
+    let Some(array) = list_items(&parsed) else {
+        // 该源没有结果：不是失败，只是没有
+        return (Vec::new(), None);
+    };
+
+    let mut dropped = 0usize;
+    let mut items: Vec<Value> = Vec::new();
+    for item in array.iter() {
+        if items.len() >= per_source {
+            break;
+        }
+        let Some(track) = crate::catalog::normalize_track(source, item, &mut dropped) else {
+            continue;
+        };
+        // 播放解析要拿插件自己的条目；搜索歌词也顺手记快照（点“使用”后直接播放）
+        snapshots.remember(source, item);
+
+        let Some(reference) = track.get("id").and_then(Value::as_str) else { continue };
+        let Some((_, raw_id)) = reference.split_once(':') else { continue };
+        let Some(lyrics) = cached_lyric(plugins, snapshots, paths, source, raw_id) else {
+            continue;
+        };
+
+        items.push(json!({
+            "source": source,
+            "sourceName": source_name,
+            "track": track,
+            "lyrics": lyrics,
+        }));
+    }
+
+    (items, None)
+}
+
+/// 取一首歌词（先读 `cache/catalog/`，键与 `catalog.lyrics` 相同）。
+fn cached_lyric(
+    plugins: &PluginHost,
+    snapshots: &ItemSnapshots,
+    paths: &crate::paths::AppPaths,
+    source: &str,
+    raw_id: &str,
+) -> Option<Value> {
+    let key = format!("lyrics:{source}:{raw_id}:false");
+    if let Some(hit) = cache::read(paths, &key) {
+        return parse_lyric_value(&hit, false);
+    }
+
+    let arg = item_arg_for(plugins, snapshots, source, raw_id);
+    let raw = plugins.call(source, "getLyric", &json!([arg]).to_string()).ok()?;
+    let value: Value = serde_json::from_str(&raw).ok()?;
+    cache::write(paths, &key, DETAIL_TTL_SEC, &value);
+    parse_lyric_value(&value, false)
+}
+
+/// 插件返回的歌词值 → 契约里的 `{format, content, translated?}`；空词返回 `None`。
+///
+/// 三种写法都认：裸字符串、我们的 `{content}`、MusicFree 的 `{rawLrc}` / `{lrc}`。
+fn parse_lyric_value(value: &Value, with_translation: bool) -> Option<Value> {
+    let content = match value {
+        Value::String(text) => text.trim().to_string(),
+        other => pick_text(&[other], &["content", "rawLrc", "lrc", "lyric"]).unwrap_or_default(),
+    };
+    if content.trim().is_empty() {
+        return None;
+    }
+
+    let format = match pick_text(&[value], &["format"]).as_deref() {
         Some("plain") => "plain",
         Some("lrc") => "lrc",
         _ if looks_like_lrc(&content) => "lrc",
@@ -280,14 +505,14 @@ pub fn lyrics(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     let mut map = serde_json::Map::new();
     map.insert("format".into(), json!(format));
     map.insert("content".into(), json!(content));
-    if params.with_translation {
+    if with_translation {
         insert_opt(
             &mut map,
             "translated",
-            pick_text(&[&value], &["translated", "translation", "tlyric"]),
+            pick_text(&[value], &["translated", "translation", "tlyric"]),
         );
     }
-    Ok(Value::Object(map))
+    Some(Value::Object(map))
 }
 
 // ---------------------------------------------------------------- 内部
@@ -453,11 +678,18 @@ fn insert_opt(map: &mut serde_json::Map<String, Value>, key: &str, value: Option
 /// 自有 ABI 一律给字符串。沙箱侧还有一层别名参数适配兜底（`sandbox/bootstrap.js`），
 /// 两层都只做「形状翻译」，不新增任何能力。
 fn detail_item_arg(ctx: &CoreContext, source: &str, id: &str) -> Value {
-    let compat = ctx.plugins.manifest_of(source).is_some_and(|manifest| manifest.compat);
+    item_arg_for(&ctx.plugins, &ctx.snapshots, source, id)
+}
+
+/// 详情/歌词调用的第一个参数：兼容插件要**它自己产出过的那个条目**，自有 ABI 只要字符串 id。
+///
+/// 与线程共享的版本分开（线程里只拿得到 `Arc<PluginHost>` 与 `Arc<ItemSnapshots>`）。
+fn item_arg_for(plugins: &PluginHost, snapshots: &ItemSnapshots, source: &str, id: &str) -> Value {
+    let compat = plugins.manifest_of(source).is_some_and(|manifest| manifest.compat);
     if !compat {
         return json!(id);
     }
-    ctx.snapshots.get(source, id).unwrap_or_else(|| json!({ "id": id }))
+    snapshots.get(source, id).unwrap_or_else(|| json!({ "id": id }))
 }
 
 /// 列表形状 → 归一化曲目（复用搜索那套归一化，缺 `title` 的条目丢弃）。

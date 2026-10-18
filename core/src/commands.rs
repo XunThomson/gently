@@ -178,6 +178,7 @@ pub fn dispatch(
         "catalog.topList" => crate::catalog_detail::top_list(ctx, params),
         "catalog.recommend" => crate::catalog_detail::recommend(ctx, params),
         "catalog.lyrics" => crate::catalog_detail::lyrics(ctx, params),
+        "catalog.lyricsSearch" => crate::catalog_detail::lyrics_search(ctx, params),
         "library.favorites.list" => crate::library::favorites_list(ctx, params),
         "library.favorites.set" => crate::library::favorites_set(ctx, params),
         "library.playlists.list" => crate::library::playlists_list(ctx, params),
@@ -296,6 +297,7 @@ const IMPLEMENTED: &[&str] = &[
     "catalog.topList",
     "catalog.recommend",
     "catalog.lyrics",
+    "catalog.lyricsSearch",
     "playback.resolve",
     "playback.report",
 ];

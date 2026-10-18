@@ -118,6 +118,170 @@
     color: var(--text-secondary);
 }
 
+/* 标题 + 来源 + 「搜索歌词」按钮同一行；来源过长时省略，不把按钮挤出卡片 */
+.lyricsHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.headerActions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.sourceChip {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+/* ---------- 歌词搜索面板 ---------- */
+
+.searchPanel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--bg-surface-alt);
+}
+
+.searchForm {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.searchInput {
+    flex: 1;
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+}
+
+.searchInput::placeholder {
+    color: var(--text-tertiary);
+}
+
+.searchHint,
+.status {
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+    color: var(--text-tertiary);
+}
+
+.results {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    max-height: 150px;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.result {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+    transition: background-color var(--motion-fast);
+}
+
+.result:hover {
+    background: var(--bg-hover);
+}
+
+.resultMeta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.resultTitle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+}
+
+.sourceBadge {
+    flex: none;
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: var(--font-size-xs);
+}
+
+.resultSub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+/* ---------- 时间轴校正 ---------- */
+
+.syncRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.syncLabel {
+    color: var(--text-secondary);
+}
+
+.offsetValue {
+    min-width: 64px;
+    text-align: center;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+}
+
+.syncHint {
+    color: var(--text-tertiary);
+}
+
+.notice {
+    font-size: var(--font-size-xs);
+    color: var(--success);
+}
+
+/* 歌词滚动区：占满剩余高度（固定高度的卡片里必须能收缩，否则会把工具行挤出去） */
+.lyricsBody {
+    flex: 1;
+    min-height: 0;
+}
+
 @media (max-width: 900px) {
     .layout {
         grid-template-columns: minmax(0, 1fr);

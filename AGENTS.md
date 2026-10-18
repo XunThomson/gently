@@ -11,7 +11,7 @@
 - **不提供任何服务器**：无账号体系、无市场后端、无遥测（见 `docs/adr/0003-no-server-local-core.md`）。
   能力一律以**本机核心的 Tauri 命令/事件**提供；社区资源（插件/皮肤）靠用户自行 clone、
   下载或分享文件后**通用导入**。
-- 当前阶段：**桌面端已完整**——本机核心（Rust）实现了契约里的全部 60 条命令：插件沙箱（内嵌 QuickJS +
+- 当前阶段：**桌面端已完整**——本机核心（Rust）实现了契约里的全部 61 条命令：插件沙箱（内嵌 QuickJS +
   清单声明的权限白名单）、SQLite 本机库、本地曲库与内嵌封面、回环媒体代理、推荐、皮肤、下载、订阅。
   浏览器预览（`pnpm dev`，没有 Tauri 宿主）仍退回 `src/mock/**` 的假数据，**只用于看界面**；
   桌面端一律以核心为准（对外交付物见 `release/`，逐轮证据见 `docs/STATE.md`）。
@@ -69,7 +69,7 @@
 
 ```bash
 pnpm typecheck   # tsc --noEmit（只读）
-pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染 + i18n/CSS token 守卫 + 假宿主下的桌面端分支（312 项）
+pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染 + i18n/CSS token 守卫 + 假宿主下的桌面端分支（319 项）
 pnpm check:contract  # 契约守卫：文档 ↔ Rust 命令/事件清单 ↔ 前端服务层与事件常量（含事件名字符集，双向）
 pnpm check:reachability  # 界面可达性守卫：每条契约能力是否真能从界面走到（有封装却没人调用 → 失败）
 pnpm verify      # 一次跑完：typecheck + smoke + check:contract + check:reachability + cargo test -p gently-core

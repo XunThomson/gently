@@ -121,6 +121,31 @@ export interface Lyrics {
     lines?: LyricLine[];
 }
 
+/**
+ * 搜索结果里的一份歌词（`catalog.lyricsSearch`）。
+ *
+ * `sourceName` 是插件清单里的显示名——用户据此判断「这份词来自哪个源」；
+ * `track` 是**这个源下的那条曲目**（各源同名歌曲可能不一致，界面要能区分）。
+ */
+export interface LyricSearchItem {
+    source: string;
+    sourceName: string;
+    track: Track;
+    lyrics: Lyrics;
+}
+
+export interface LyricSearchResult {
+    items: LyricSearchItem[];
+    /** 成功问过（哪怕没有词）的源 */
+    searchedSources: string[];
+    /** search 失败 / 已启用但加载失败的源 */
+    failedSources: string[];
+    /** 有 search、但没有 getLyric 能力（不参与，不算失败） */
+    skippedSources: string[];
+    /** 超过整体截止时间、结果没等到 */
+    timedOutSources: string[];
+}
+
 /** 源的榜单/分类：**分类树由源自定义**，不是固定枚举 */
 export interface TopListItem {
     id: string;
@@ -430,6 +455,8 @@ export interface CatalogApi {
     recommend(input: {source: string}): Promise<CoreResult<Track[]>>;
     /** 无歌词返回 `data: null`，不是错误 */
     lyrics(input: {ref: string; withTranslation?: boolean}): Promise<CoreResult<Lyrics | null>>;
+    /** 跨源按关键词找歌词（手动选择用：带来源与候选曲目信息） */
+    lyricsSearch(input: {query: string; limit?: number}): Promise<CoreResult<LyricSearchResult>>;
 }
 
 export interface LibraryApi {
