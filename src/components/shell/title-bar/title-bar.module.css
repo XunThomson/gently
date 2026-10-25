@@ -8,12 +8,22 @@
     height: var(--title-bar-height);
     padding: 0 var(--title-bar-padding-x);
     box-sizing: border-box;
+    /* backdrop-filter 已经创建了独立 stacking context；不显式抬高层级时，
+       搜索建议面板（z-index: dropdown）会被后绘制的路由内容盖住。 */
+    position: relative;
+    z-index: var(--z-dropdown);
     background: var(--surface-chrome);
     backdrop-filter: var(--surface-blur);
     border-bottom: 1px solid var(--border-subtle);
     /* 允许拖动窗口（Tauri 无边框窗口常用） */
     -webkit-user-select: none;
     user-select: none;
+}
+
+/* 紧凑模式：品牌只留图形标，间距收紧，把宽度让给搜索框与工具按钮 */
+.titleBarCompact {
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
 }
 
 .logo {

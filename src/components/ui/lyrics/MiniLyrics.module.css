@@ -1,0 +1,75 @@
+/* 迷你播放器三行歌词：固定三槽，当前行居中；不滚动、不铺满整份歌词 */
+
+.root {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--mini-player-lyrics-line-gap);
+    width: 100%;
+    height: 100%;
+    padding: var(--mini-player-lyrics-padding-y) var(--lyrics-padding-x);
+    overflow: hidden;
+}
+
+.line {
+    flex: none;
+    width: 100%;
+    padding: var(--space-1) var(--lyrics-line-padding-x);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--lyrics-inactive-color);
+    opacity: var(--lyrics-inactive-opacity);
+    font-family: inherit;
+    font-size: var(--mini-player-lyrics-font-size);
+    font-weight: var(--font-weight-normal);
+    line-height: var(--line-height-relaxed);
+    text-align: left;
+    cursor: pointer;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    transition: color var(--motion-fast), opacity var(--motion-fast), background-color var(--motion-fast);
+}
+
+.line:hover {
+    opacity: 1;
+    color: var(--lyrics-hover-color);
+    background: var(--bg-hover);
+}
+
+.line[data-active='true'] {
+    color: var(--lyrics-active-color);
+    font-weight: var(--lyrics-active-weight);
+    opacity: 1;
+}
+
+.translation {
+    display: block;
+    margin-top: var(--lyrics-translation-gap);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-normal);
+    color: var(--lyrics-inactive-color);
+}
+
+.line[data-active='true'] .translation {
+    color: var(--lyrics-hover-color);
+}
+
+/* 当前行在首/尾时占位，保证当前行仍在纵向中间 */
+.emptySlot {
+    display: block;
+    flex: none;
+    min-height: var(--mini-player-lyrics-slot-height);
+}
+
+.empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: var(--mini-player-lyrics-padding-y) var(--lyrics-padding-x);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-sm);
+    text-align: center;
+}

@@ -134,7 +134,8 @@ pub fn track(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     item["candidates"] = json!([{
         "source": source,
         "track": item.clone(),
-        "qualities": ["standard"],
+        // 详情页也要带上源声明的音质；否则榜单/专辑里的曲目会被统一按 standard 播放
+        "qualities": ctx.plugins.qualities(source),
     }]);
     Ok(item)
 }

@@ -1,4 +1,4 @@
-import {useRef, useState} from 'react';
+import {memo, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useClickOutside} from '../../../hooks/useClickOutside';
 import {useActions, useSelect} from '../../../store';
@@ -13,7 +13,7 @@ import styles from './Picker.module.css';
  * 显示的是**当前实际在播的档位**（可能因音源能力而降级）；
  * 菜单里列出全部档位，并把当前音源不支持的档位标为不可用。
  */
-export function QualityPicker() {
+export const QualityPicker = memo(function QualityPicker() {
     const {t} = useTranslation();
     const quality = useSelect((s) => s.player.quality);
     const candidates = useSelect((s) => s.player.candidates);
@@ -82,6 +82,6 @@ export function QualityPicker() {
             )}
         </div>
     );
-}
+});
 
 export default QualityPicker;

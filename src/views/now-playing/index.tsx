@@ -1,14 +1,35 @@
-import {useState} from 'react';
+import {useCallback, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
 import {Button} from '../../components/ui/button';
 import {EmptyState} from '../../components/ui/empty-state';
 import {IconChevronDown, IconChevronLeft, IconMusic, IconPause, IconPlay} from '../../components/ui/icon';
 import {Lyrics} from '../../components/ui/lyrics';
-import {useActions, usePlayerState} from '../../store';
+import {useActions, useSelect} from '../../store';
+import {useShellMode} from '../../hooks/useShellMode';
 import {Cover} from '../../components/ui/cover';
 import {LyricsToolsDrawer} from './components/LyricsToolsDrawer';
 import styles from './now-playing.module.css';
+
+/**
+ * 歌词单独订阅 `elapsed / lyricsOffset`。
+ *
+ * 播放进度每 250ms 回写一次；如果 `NowPlayingView` 自己订阅 elapsed，整页
+ * （封面、标题、工具抽屉、歌词列表）都会跟着重渲染。这里把进度下沉到歌词子树，
+ * 页面壳只在曲目/播放态变化时更新。
+ */
+function NowPlayingLyrics() {
+    const lines = useSelect((s) => s.player.lyrics);
+    const elapsed = useSelect((s) => s.player.elapsed);
+    const offset = useSelect((s) => s.player.lyricsOffset);
+    const seek = useActions().player.seek;
+    const onSeek = useCallback(
+        (time: number) => seek(Math.max(0, time - offset)),
+        [seek, offset],
+    );
+
+    return <Lyrics lines={lines} elapsed={elapsed + offset} onSeek={onSeek}/>;
+}
 
 /**
  * 歌词页。
@@ -23,8 +44,12 @@ import styles from './now-playing.module.css';
 export default function NowPlayingView() {
     const {t} = useTranslation();
     const navigate = useNavigate();
-    const {current, detail, playing, elapsed, lyrics, lyricsOffset} = usePlayerState();
-    const {seek, toggle} = useActions().player;
+    const current = useSelect((s) => s.player.current);
+    const detail = useSelect((s) => s.player.detail);
+    const playing = useSelect((s) => s.player.playing);
+    const {toggle} = useActions().player;
+    /* 只有「被强制展开成完整界面」的迷你尺寸才需要单列；断点与外壳同一份配置 */
+    const mode = useShellMode();
 
     /* 抽屉：`mounted` 一旦为 true 就不再回退（惰性挂载 + 保留内部状态） */
     const [toolsOpen, setToolsOpen] = useState(false);
@@ -70,7 +95,10 @@ export default function NowPlayingView() {
                 {t('common.back')}
             </button>
 
-            <div className={styles.layout}>
+            <div
+                className={styles.layout}
+                data-stack={mode === 'mini' ? 'true' : 'false'}
+            >
                 <section className={styles.artwork}>
                     <Cover
                         className={styles.cover}
@@ -113,11 +141,7 @@ export default function NowPlayingView() {
                     {toolsMounted && <LyricsToolsDrawer open={toolsOpen}/>}
 
                     <div className={styles.lyricsBody}>
-                        <Lyrics
-                            lines={lyrics}
-                            elapsed={elapsed + lyricsOffset}
-                            onSeek={(time) => seek(Math.max(0, time - lyricsOffset))}
-                        />
+                        <NowPlayingLyrics/>
                     </div>
                 </section>
             </div>

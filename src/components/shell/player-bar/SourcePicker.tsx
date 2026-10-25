@@ -1,4 +1,4 @@
-import {useMemo, useRef, useState} from 'react';
+import {memo, useMemo, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useClickOutside} from '../../../hooks/useClickOutside';
 import {catalogService} from '../../../services';
@@ -13,7 +13,7 @@ import styles from './Picker.module.css';
  * - 自动回退时提示「当前音源不可用，已自动切换」，失败的音源在列表中标记不可用；
  * - 可手动切换到某个候选音源（只试该源）。
  */
-export function SourcePicker() {
+export const SourcePicker = memo(function SourcePicker() {
     const {t} = useTranslation();
     const candidates = useSelect((s) => s.player.candidates);
     const activeSource = useSelect((s) => s.player.activeSource);
@@ -109,6 +109,6 @@ export function SourcePicker() {
             )}
         </div>
     );
-}
+});
 
 export default SourcePicker;

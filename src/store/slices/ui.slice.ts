@@ -3,6 +3,12 @@ import {skinService} from '../../services';
 import {activeUserSkinId, resolveActivePreset} from '../../theme';
 import {themeConfig} from '../../theme/tokens';
 import {DEFAULT_PRESET_ID, themePresets} from '../../theme/presets';
+import {
+    createBackgroundPreset,
+    defaultBackgroundSettings,
+    normalizeBackgroundOptions,
+    normalizeBackgroundSettings,
+} from '../../utils/backgroundSettings';
 import type {PersistedUi} from '../persist';
 import type {UiActions, UiState, StoreCtx} from '../types';
 
@@ -47,6 +53,7 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         ),
         desktopLyricsOpen: false,
         customSkins,
+        background: normalizeBackgroundSettings(persisted.background),
     };
 
     const patch = (partial: Partial<UiState>) => {
@@ -117,6 +124,113 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         },
         setDesktopLyricsOpen(desktopLyricsOpen) {
             patch({desktopLyricsOpen});
+        },
+        setBackgroundEnabled(enabled) {
+            const background = ctx.getState().ui.background;
+            patch({background: {...background, enabled}});
+        },
+        setBackgroundKind(kind) {
+            const background = ctx.getState().ui.background;
+            patch({background: {...background, kind}});
+        },
+        setBackgroundPlayWhenReducedMotion(play) {
+            const background = ctx.getState().ui.background;
+            patch({background: {...background, playWhenReducedMotion: play}});
+        },
+        setBackgroundAsset(asset) {
+            const background = ctx.getState().ui.background;
+            patch({background: {...background, kind: 'video', asset, activePresetId: null}});
+        },
+        setBackgroundWeb(web) {
+            const background = ctx.getState().ui.background;
+            patch({background: {...background, kind: 'web', web, activePresetId: null}});
+        },
+        setBackgroundOptions(optionsPatch) {
+            const background = ctx.getState().ui.background;
+            patch({
+                background: {
+                    ...background,
+                    options: normalizeBackgroundOptions({...background.options, ...optionsPatch}),
+                    activePresetId: null,
+                },
+            });
+        },
+        saveBackgroundPreset(name) {
+            const background = ctx.getState().ui.background;
+            const trimmed = name.trim();
+            if (!trimmed || background.presets.length >= 30) return;
+            const preset = createBackgroundPreset(trimmed, background.options);
+            patch({
+                background: {
+                    ...background,
+                    presets: [...background.presets, preset],
+                    activePresetId: preset.id,
+                },
+            });
+        },
+        applyBackgroundPreset(id) {
+            const background = ctx.getState().ui.background;
+            const preset = background.presets.find((item) => item.id === id);
+            if (!preset) return;
+            patch({
+                background: {
+                    ...background,
+                    options: {...preset.options},
+                    activePresetId: preset.id,
+                },
+            });
+        },
+        removeBackgroundPreset(id) {
+            const background = ctx.getState().ui.background;
+            patch({
+                background: {
+                    ...background,
+                    presets: background.presets.filter((item) => item.id !== id),
+                    activePresetId: background.activePresetId === id ? null : background.activePresetId,
+                },
+            });
+        },
+        renameBackgroundPreset(id, name) {
+            const trimmed = name.trim().slice(0, 40);
+            if (!trimmed) return;
+            const background = ctx.getState().ui.background;
+            patch({
+                background: {
+                    ...background,
+                    presets: background.presets.map((item) =>
+                        item.id === id ? {...item, name: trimmed} : item,
+                    ),
+                },
+            });
+        },
+        addBackgroundPreset(preset) {
+            const background = ctx.getState().ui.background;
+            const existing = background.presets.some((item) => item.id === preset.id);
+            const presets = existing
+                ? background.presets.map((item) => (item.id === preset.id ? preset : item))
+                : [...background.presets, preset].slice(0, 30);
+            patch({
+                background: {
+                    ...background,
+                    presets,
+                },
+            });
+        },
+        resetBackground() {
+            const background = ctx.getState().ui.background;
+            const defaults = defaultBackgroundSettings();
+            patch({
+                background: {
+                    ...background,
+                    enabled: defaults.enabled,
+                    playWhenReducedMotion: defaults.playWhenReducedMotion,
+                    kind: defaults.kind,
+                    asset: null,
+                    web: null,
+                    options: defaults.options,
+                    activePresetId: null,
+                },
+            });
         },
         installSkin(skin) {
             const {customSkins} = ctx.getState().ui;

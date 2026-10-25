@@ -1,6 +1,14 @@
 import type {ColorScheme, ThemeMode, ThemeSkin} from '../theme';
 import type {CoreError, LocalScanResult, TopListGroup} from '../api';
 import type {
+    BackgroundAsset,
+    BackgroundKind,
+    BackgroundOptions,
+    BackgroundPreset,
+    BackgroundSettings,
+    WebAsset,
+} from '../utils/backgroundSettings';
+import type {
     DownloadQualityFallback,
     DownloadTask,
     LocalTrack,
@@ -32,6 +40,8 @@ export interface UiState {
     searchQuery: string;
     /** 音源展示方式：聚合 / 分源 */
     sourceDisplay: SourceDisplayMode;
+    /** 本地视频背景 + 展示参数预设 */
+    background: BackgroundSettings;
     /** 页面音源筛选的交互样式 */
     sourceFilterStyle: SourceFilterStyle;
     /** 当前页面选中的音源；'all' 表示全部 */
@@ -271,6 +281,27 @@ export interface UiActions {
     setDownloadMaxConcurrent: (count: number) => void;
     /** 桌面歌词窗口的可见状态（由窗口服务 / 窗口间事件同步） */
     setDesktopLyricsOpen: (open: boolean) => void;
+    /** 背景开关 */
+    setBackgroundEnabled: (enabled: boolean) => void;
+    /** 切换素材类型（视频 / 单文件网页），两种素材都保留 */
+    setBackgroundKind: (kind: BackgroundKind) => void;
+    /** 系统减少动态效果时是否仍显示背景（用户显式覆盖） */
+    setBackgroundPlayWhenReducedMotion: (play: boolean) => void;
+    /** 视频背景 Blob 已由服务层保存，这里只记录元数据 */
+    setBackgroundAsset: (asset: BackgroundAsset | null) => void;
+    /** 单文件网页壁纸已由服务层保存，这里只记录元数据 */
+    setBackgroundWeb: (web: WebAsset | null) => void;
+    /** 手动调整展示参数：会清掉「当前预设」标记，避免显示成预设原样 */
+    setBackgroundOptions: (patch: Partial<BackgroundOptions>) => void;
+    /** 把当前展示参数存成命名预设（上限 30 个） */
+    saveBackgroundPreset: (name: string) => void;
+    applyBackgroundPreset: (id: string) => void;
+    renameBackgroundPreset: (id: string, name: string) => void;
+    removeBackgroundPreset: (id: string) => void;
+    /** 导入外部预设（已由解析器归一化） */
+    addBackgroundPreset: (preset: BackgroundPreset) => void;
+    /** 恢复默认背景：清当前视频与参数，保留用户命名的预设 */
+    resetBackground: () => void;
     /** 安装（导入）一个皮肤 */
     installSkin: (skin: ThemeSkin) => void;
     removeSkin: (skinId: string) => void;
@@ -325,6 +356,13 @@ export interface PlayerActions {
     markUnplayable: (message?: string) => void;
     /** 重试当前曲目：重新解析全部候选音源并继续播放 */
     retryPlayback: () => void;
+    /**
+     * 当前候选都不可播时，按「歌名 + 歌手」跨源搜索并合并新的候选。
+     *
+     * 只在用户点「换源」时调用（不是失败自动触发）：一次失败不应该自动放大成
+     * 一轮全源网络请求。榜单/收藏/历史曲目通常没有 candidates，正是这个方法补的。
+     */
+    findAlternatives: () => Promise<void>;
     seek: (seconds: number) => void;
     stop: () => void;
     /** 手动切换当前曲目的音源 */

@@ -86,7 +86,8 @@
     padding: var(--space-3);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
-    background: var(--bg-elevated);
+    background: var(--surface-drawer);
+    backdrop-filter: var(--surface-drawer-blur);
     box-shadow: var(--shadow-lg);
 }
 

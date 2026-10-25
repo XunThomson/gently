@@ -11,10 +11,11 @@
     max-height: var(--panel-max-height);
     overflow: hidden;
     padding: var(--panel-padding);
-    background: var(--bg-elevated);
+    background: var(--surface-drawer);
     border: 1px solid var(--border-subtle);
     border-radius: var(--panel-radius);
     box-shadow: var(--shadow-panel);
+    backdrop-filter: var(--surface-drawer-blur);
     animation: panelIn var(--motion-fast);
 }
 

@@ -3,7 +3,7 @@
 .sidebar {
     display: flex;
     flex-direction: column;
-    width: var(--sidebar-width);
+    width: 100%;
     height: 100%;
     padding: var(--sidebar-padding);
     box-sizing: border-box;
@@ -12,6 +12,44 @@
     overflow-x: hidden;
     background: var(--surface-chrome);
     backdrop-filter: var(--surface-blur);
+}
+
+/*
+ * 紧凑模式：区域宽度由外壳按 `sidebar.compactWidth` 给（64px），
+ * 这里只负责把行变成居中的图标格。分组标题 / 计数 / 行内操作全部收起，
+ * 悬浮提示由 JSX 上的 `title` 提供。
+ */
+.compact {
+    padding: var(--space-2) 0;
+    align-items: center;
+}
+
+.compact .item {
+    justify-content: center;
+    padding: 0;
+}
+
+.compact .itemLabel,
+.compact .count,
+.compact .groupHead,
+.compact .createRow,
+.compact .empty,
+.compact .rowAction {
+    display: none;
+}
+
+.compact .group {
+    width: 100%;
+    margin-top: var(--space-3);
+}
+
+.compact .group + .group {
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border-subtle);
+}
+
+.compact .menu {
+    width: 100%;
 }
 
 .menu {

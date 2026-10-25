@@ -82,6 +82,7 @@ store.subscribe(() => {
         downloadQualityFallback,
         downloadMaxConcurrent,
         customSkins,
+        background,
     } = store.getState().ui;
 
     const key = [
@@ -97,6 +98,7 @@ store.subscribe(() => {
         downloadQualityFallback,
         String(downloadMaxConcurrent),
         customSkins.map((skin) => `${skin.id}:${skin.name}`).join(','),
+        JSON.stringify(background),
     ].join('|');
     if (key === lastPersistedKey) return;
     lastPersistedKey = key;
@@ -114,6 +116,7 @@ store.subscribe(() => {
         downloadQualityFallback,
         downloadMaxConcurrent,
         customSkins,
+        background,
     });
 });
 

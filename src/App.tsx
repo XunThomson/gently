@@ -1,7 +1,8 @@
-import {useEffect} from "react";
+import {useEffect, useState} from "react";
 import {Outlet} from "react-router";
 import {LMRLayout, TMBLayout} from "./components/layout";
 import {BackgroundVideo} from "./components/shell/background";
+import {MiniPlayer} from "./components/shell/mini-player";
 import {ConfirmHost} from "./components/ui/dialog";
 import {TitleBar} from "./components/shell/title-bar";
 import {Sidebar} from "./components/shell/sidebar";
@@ -12,14 +13,21 @@ import {usePlayerEngine} from "./hooks/usePlayerEngine";
 import {useAudioEngine} from "./hooks/useAudioEngine";
 import {useDownloadEngine} from "./hooks/useDownloadEngine";
 import {useDesktopLyricsBridge} from "./hooks/useDesktopLyricsBridge";
+import {useShellMode} from "./hooks/useShellMode";
 import {useActions} from "./store";
-import {probeCore} from "./services";
+import {isTauri, probeCore, windowService} from "./services";
 import {useTheme} from "./theme";
 import './App.css';
 
 /**
  * 应用外壳：动态背景 / 标题栏 / 侧边导航 + 路由内容 / 播放条。
  * 布局尺寸取自「主题配置 + 主题市场预设」解析后的结果，因此预设可以改变密度。
+ *
+ * 窗口尺寸决定外壳形态（`useShellMode`）：
+ * - 完整界面 / 紧凑界面（侧栏收成图标栏）仍走同一套路由与播放条；
+ * - 迷你播放器替换整个外壳，只保留封面、标题、控制、进度与歌词。
+ *   在桌面端点「展开」会把窗口恢复成普通尺寸；浏览器预览里没有原生窗口，
+ *   用一个本地开关回到完整界面（形态再次变化时重新按断点判定）。
  */
 export default function App() {
     const {config} = useTheme();
@@ -28,6 +36,14 @@ export default function App() {
     const {load: loadPlugins} = useActions().plugin;
     /* 下载任务也要在启动时加载：业务列表的「已下载」标记依赖它，不能等用户先点开下载页 */
     const {load: loadDownloads} = useActions().download;
+    const mode = useShellMode();
+
+    /* 浏览器预览没有原生窗口可 resize：展开后先用本地开关回到完整界面；
+       形态变化（如再次跨过断点）才清除，避免每个像素的 resize 都重渲染外壳。 */
+    const [forceRegular, setForceRegular] = useState(false);
+    useEffect(() => {
+        setForceRegular(false);
+    }, [mode]);
 
     useAudioEngine();
     usePlayerEngine();
@@ -47,8 +63,27 @@ export default function App() {
         void probeCore();
     }, []);
 
+    const restoreFull = () => {
+        void windowService.restoreFromMini();
+        if (!isTauri()) setForceRegular(true);
+    };
+
+    if (mode === "mini" && !forceRegular) {
+        return (
+            <div className="app" data-shell="mini">
+                <BackgroundVideo/>
+                <div className="app__content">
+                    <MiniPlayer onExpand={restoreFull}/>
+                </div>
+                <ConfirmHost/>
+            </div>
+        );
+    }
+
+    const compact = mode === "compact";
+
     return (
-        <div className="app">
+        <div className="app" data-shell={mode}>
             <BackgroundVideo/>
 
             <div className="app__content">
@@ -59,20 +94,30 @@ export default function App() {
                         main: {size: "ratio", value: 1, resizable: false},
                         bottom: {size: "fixed", value: playerBar.height, resizable: false, scroll: false},
                     }}
-                    top={<TitleBar/>}
+                    top={<TitleBar compact={compact}/>}
                     main={
                         <LMRLayout
                             config={{
                                 gap: 0,
-                                left: {size: "fixed", value: sidebar.width, resizable: false, scroll: false},
+                                left: {
+                                    size: "fixed",
+                                    value: compact ? sidebar.compactWidth : sidebar.width,
+                                    resizable: false,
+                                    scroll: false,
+                                },
                                 main: {size: "ratio", value: 1, resizable: false},
                                 right: {size: "hidden", resizable: false, scroll: false},
                             }}
-                            left={<Sidebar mainMenu={buildMenuRoutes(appRoutes)}/>}
+                            left={
+                                <Sidebar
+                                    mainMenu={buildMenuRoutes(appRoutes)}
+                                    compact={compact}
+                                />
+                            }
                             main={<Outlet/>}
                         />
                     }
-                    bottom={<PlayerBar/>}
+                    bottom={<PlayerBar compact={compact}/>}
                 />
             </div>
 

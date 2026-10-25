@@ -146,6 +146,8 @@ export interface ComponentTokens {
     };
     sidebar: {
         width: number;
+        /** 紧凑模式下的图标栏宽度 */
+        compactWidth: number;
         padding: number;
         itemHeight: number;
         itemGap: number;
@@ -219,7 +221,6 @@ export interface ComponentTokens {
     };
     lyrics: {
         fontSize: number;
-        activeFontSize: number;
         lineGap: number;
         paddingX: number;
         paddingY: number;
@@ -227,15 +228,31 @@ export interface ComponentTokens {
         hoverColor: string;
         activeColor: string;
         activeWeight: number;
-        /** 当前行背景（药丸高亮） */
-        activeBg: string;
-        /** 当前行上下虚线引导线 */
-        guideColor: string;
-        guideWidth: number;
         /** 非当前行透明度 */
         inactiveOpacity: number;
         linePaddingX: number;
         linePaddingY: number;
+        /** 译文比原文小一号 */
+        translationFontSize: number;
+        translationGap: number;
+    };
+    /** 迷你播放器（窗口小于断点后替换整个外壳） */
+    miniPlayer: {
+        padding: number;
+        headerHeight: number;
+        /** 封面是随窗口高度伸缩的尺寸表达式（如 clamp(...)） */
+        coverSize: string;
+        coverRadius: string;
+        titleFontSize: number;
+        artistFontSize: number;
+        lyricsFontSize: number;
+        lyricsLineGap: number;
+        lyricsPaddingY: number;
+        /** 三行窗口里空槽（当前行在首/尾）的高度 */
+        lyricsSlotHeight: number;
+        controlSize: number;
+        iconButtonSize: number;
+        windowButtonSize: number;
     };
     /** 下拉菜单 / 抽屉列表（音源、音质、筛选抽屉共用） */
     menu: {
@@ -302,6 +319,12 @@ export interface ComponentTokens {
         scrim: string;
         /** 外壳玻璃化的背景模糊半径 */
         surfaceBlurPx: number;
+        /** 背景开启时内容表面的不透明度；只作用于背景色，不影响文字 */
+        contentOpacity: number;
+        /** 背景开启时抽屉/浮层表面的不透明度；与内容表面独立 */
+        drawerOpacity: number;
+        /** 抽屉/浮层的默认虚化半径；用户可在背景设置里单独覆盖 */
+        drawerBlurPx: number;
     };
     view: {
         titleFontSize: number;
@@ -370,6 +393,18 @@ export interface ComponentTokens {
     /** 专辑 / 歌单详情头图 */
     collection: {
         coverSize: number;
+    };
+
+    /** 歌词页（封面 + 歌词） */
+    nowPlaying: {
+        coverMinWidth: number;
+        coverMaxWidth: number;
+        /** 首列占内容宽度的比例（如 44%），窄窗口按它收缩但不少于最小值 */
+        coverWidthRatio: string;
+        /** 强制展开成单列时的封面上限 */
+        coverStackMaxWidth: number;
+        /** 歌词卡片高度表达式（固定高度才能把当前行滚到中间） */
+        lyricsPanelHeight: string;
     };
 
     /** 业务列表（数据表格）：标题列左边的封面缩略图 */

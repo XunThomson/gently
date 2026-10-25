@@ -37,6 +37,8 @@ const CACHE_LIMIT_OPTIONS = [
 ];
 import {QUALITIES_DESC, qualityLabelKey} from '../../utils/quality';
 import {DiagnosticsCard} from './components/diagnostics-card';
+import {BackgroundCard} from './components/background-card';
+import {WallpaperAssistant} from './components/wallpaper-assistant';
 import styles from './setting.module.css';
 
 const THEME_MODES: ThemeMode[] = ['light', 'dark', 'system'];
@@ -224,6 +226,9 @@ export default function SettingView() {
                 </div>
                 <p className={styles.hint}>{t('page.setting.confirmHint')}</p>
             </section>
+
+            <BackgroundCard/>
+            <WallpaperAssistant/>
 
             {/* ---------- 桌面歌词 ---------- */}
             <section className={styles.card}>

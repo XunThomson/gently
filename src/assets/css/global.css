@@ -57,15 +57,35 @@ body {
 
 /* ----- 外壳表面层 -----
    默认使用不透明表面；开启动态背景时切换为半透明 + 背景模糊（玻璃化），
-   组件只需消费 --surface-chrome / --surface-blur，无需感知背景是否开启。 */
+   组件只需消费 --surface-* / --surface-blur，无需感知背景是否开启。
+   抽屉/浮层使用独立的 --surface-drawer / --surface-drawer-blur。 */
 :root {
     --surface-chrome: var(--bg-surface);
+    --surface-content: var(--bg-surface);
+    --surface-content-alt: var(--bg-surface-alt);
+    --surface-elevated: var(--bg-elevated);
+    --surface-drawer: var(--bg-elevated);
     --surface-blur: none;
+    --surface-drawer-blur: none;
 }
 
 html[data-video-bg='on'] {
     --surface-chrome: var(--bg-surface-translucent);
     --surface-blur: blur(var(--bg-surface-blur)) saturate(140%);
+    --surface-drawer-blur: blur(var(--bg-surface-blur)) saturate(140%);
+}
+
+/* 内容表面透明度：只改背景色的 alpha，文字/图标保持不透明。
+   用 color-mix 从当前主题的实色表面推导，避免为每个 scheme/皮肤硬编码 rgba。
+   浏览器不支持 color-mix 时继续用上面的 0.66 半透明表面。 */
+@supports (color: color-mix(in srgb, red, blue)) {
+    html[data-video-bg='on'] {
+        --surface-chrome: color-mix(
+            in srgb,
+            var(--bg-surface) var(--bg-content-opacity),
+            transparent
+        );
+    }
 }
 
 /* ----- 排版 ----- */

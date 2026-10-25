@@ -146,7 +146,7 @@ pub fn search(
     }
 
     let source_count = targets.len();
-    let (tx, rx) = mpsc::channel::<(String, u32, Vec<Value>, Option<CoreError>)>();
+    let (tx, rx) = mpsc::channel::<(String, u32, Vec<String>, Vec<Value>, Option<CoreError>)>();
 
     for (id, priority, qualities) in &targets {
         let tx = tx.clone();
@@ -164,7 +164,7 @@ pub fn search(
             .name(format!("gently-search-{id}"))
             .spawn(move || {
                 if cancel.load(Ordering::Relaxed) {
-                    let _ = tx.send((id, priority, Vec::new(), None));
+                    let _ = tx.send((id, priority, qualities, Vec::new(), None));
                     return;
                 }
 
@@ -182,7 +182,7 @@ pub fn search(
                                 "dropped": dropped, "qualities": qualities,
                             }),
                         );
-                        let _ = tx.send((id, priority, tracks, None));
+                        let _ = tx.send((id, priority, qualities, tracks, None));
                     }
                     Err(error) => {
                         // 单个源失败不是整体失败：推一条带 failed 的 partial，由 UI 展示「该源不可用」
@@ -190,7 +190,7 @@ pub fn search(
                             events::CATALOG_SEARCH_PARTIAL,
                             json!({ "searchId": search_id, "source": id, "tracks": [], "failed": error }),
                         );
-                        let _ = tx.send((id, priority, Vec::new(), Some(error)));
+                        let _ = tx.send((id, priority, qualities, Vec::new(), Some(error)));
                     }
                 }
             })
@@ -209,18 +209,18 @@ pub fn search(
         thread::Builder::new()
             .name("gently-search-merge".into())
             .spawn(move || {
-                let mut collected: Vec<(String, u32, Vec<Value>)> = Vec::new();
+                let mut collected: Vec<(String, u32, Vec<String>, Vec<Value>)> = Vec::new();
                 let mut failed: Vec<String> = load_failed;
                 let mut ok_sources: Vec<String> = Vec::new();
 
                 for _ in 0..source_count {
                     match rx.recv() {
-                        Ok((id, priority, tracks, error)) => {
+                        Ok((id, priority, qualities, tracks, error)) => {
                             if error.is_some() {
                                 failed.push(id);
                             } else {
                                 ok_sources.push(id.clone());
-                                collected.push((id, priority, tracks));
+                                collected.push((id, priority, qualities, tracks));
                             }
                         }
                         Err(_) => break,
@@ -228,7 +228,7 @@ pub fn search(
                 }
 
                 // 候选优先级：数值小的在前（与 playback.resolve 的回退顺序一致）
-                collected.sort_by_key(|(_, priority, _)| *priority);
+                collected.sort_by_key(|(_, priority, _, _)| *priority);
                 let items = merge_tracks(collected);
 
                 events.emit(
@@ -489,11 +489,11 @@ fn format_mmss(seconds: u64) -> String {
 
 /// 跨源合并：同一首歌（标题+歌手归一化后相同）合成一条 `GroupedTrack`，
 /// `candidates` 按插件优先级排序——**候选顺序即播放回退顺序**。
-fn merge_tracks(collected: Vec<(String, u32, Vec<Value>)>) -> Vec<Value> {
+fn merge_tracks(collected: Vec<(String, u32, Vec<String>, Vec<Value>)>) -> Vec<Value> {
     let mut order: Vec<String> = Vec::new();
-    let mut groups: HashMap<String, Vec<(String, u32, Value)>> = HashMap::new();
+    let mut groups: HashMap<String, Vec<(String, u32, Vec<String>, Value)>> = HashMap::new();
 
-    for (source, priority, tracks) in collected {
+    for (source, priority, qualities, tracks) in collected {
         for track in tracks {
             let key = format!(
                 "{}|{}",
@@ -507,10 +507,10 @@ fn merge_tracks(collected: Vec<(String, u32, Vec<Value>)>) -> Vec<Value> {
             /* 同一个源在一组里只留第一条：音乐站的搜索接口经常对同一首歌返回多个专辑版本
                （实测网易云「海阔天空」一组里 4 条全是同一个源），全都塞进候选会让
                「4 个音源」这种数字骗人，也会让封面兜底在同一个源的重复条目之间空转。 */
-            if entry.iter().any(|(member_source, _, _)| member_source == &source) {
+            if entry.iter().any(|(member_source, _, _, _)| member_source == &source) {
                 continue;
             }
-            entry.push((source.clone(), priority, track));
+            entry.push((source.clone(), priority, qualities.clone(), track));
         }
     }
 
@@ -518,17 +518,17 @@ fn merge_tracks(collected: Vec<(String, u32, Vec<Value>)>) -> Vec<Value> {
         .into_iter()
         .filter_map(|key| {
             let mut members = groups.remove(&key)?;
-            members.sort_by_key(|(_, priority, _)| *priority);
+            members.sort_by_key(|(_, priority, _, _)| *priority);
 
-            let (_, _, base) = members.first()?.clone();
+            let (_, _, _, base) = members.first()?.clone();
             let candidates: Vec<Value> = members
                 .iter()
-                .map(|(source, _, track)| {
+                .map(|(source, _, qualities, track)| {
                     json!({
                         "source": source,
                         "track": track,
-                        // 该源支持的音质档位（由清单给出；M2b 起由源能力细化）
-                        "qualities": ["standard"],
+                        // 该源声明的音质档位（来自清单）；实际档位仍以 resolve 返回为准
+                        "qualities": qualities,
                     })
                 })
                 .collect();
@@ -540,7 +540,7 @@ fn merge_tracks(collected: Vec<(String, u32, Vec<Value>)>) -> Vec<Value> {
                ——取决于哪个源排在前面（R73 用户报的「封面大多数都有」）。 */
             let fallback_artwork = members
                 .iter()
-                .map(|(_, _, track)| track_artwork(track))
+                .map(|(_, _, _, track)| track_artwork(track))
                 .find(|value| !value.is_empty());
             let base_artwork_empty = grouped["artwork"].as_str().map(str::trim).unwrap_or("").is_empty();
             if base_artwork_empty {
@@ -599,11 +599,13 @@ mod merge_tests {
             (
                 "music-src".to_string(),
                 1,
+                vec!["high".to_string(), "standard".to_string()],
                 vec![track("music-src", "同一首歌", ""), track("music-src", "同一首歌", "")],
             ),
             (
                 "video-src".to_string(),
                 2,
+                vec!["standard".to_string()],
                 vec![track("video-src", "同一首歌", "https://example.com/a.jpg")],
             ),
         ]);
@@ -611,6 +613,9 @@ mod merge_tests {
         let group = &merged[0];
         assert_eq!(group["sourceCount"], json!(2), "两个源，不是三条：{group}");
         assert_eq!(group["candidates"].as_array().unwrap().len(), 2, "{group}");
+        // 音质来自各源清单，不能统一写成 standard（否则 high 源会被按 standard 播放/下载）
+        assert_eq!(group["candidates"][0]["qualities"], json!(["high", "standard"]), "{group}");
+        assert_eq!(group["candidates"][1]["qualities"], json!(["standard"]), "{group}");
         // 主条目（music-src）没有封面 → 取 video-src 的
         assert_eq!(group["artwork"], json!("https://example.com/a.jpg"), "{group}");
     }

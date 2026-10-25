@@ -3,11 +3,12 @@ import {useTranslation} from 'react-i18next';
 import {useNavigate, useLocation} from 'react-router';
 import {useClickOutside} from '../../../hooks/useClickOutside';
 import {appConfig} from '../../../config/app.config';
-import {useActions, usePlayerState, useSelect} from '../../../store';
+import {useActions, useSelect} from '../../../store';
 import {useTheme} from '../../../theme';
 import type {RepeatMode} from '../../../types';
 import {Cover} from '../../ui/cover';
 import {fmt} from '../../../utils/helpers';
+import {playbackFailureText} from '../../../utils/playbackFailure';
 import {
     IconHeart,
     IconList,
@@ -31,6 +32,25 @@ const NEXT_REPEAT: Record<RepeatMode, RepeatMode> = {off: 'all', all: 'one', one
 
 type PanelKind = 'queue' | 'actions';
 
+/**
+ * 播放进度只让两个小节点订阅：进度条与时间。
+ *
+ * 播放条本身不该因为 `timeupdate` 每 250ms 重渲染——它含有音源/音质/队列等
+ * 一组控件，重渲染会把 memo 之外的所有按钮都带着走一遍。
+ */
+function PlayerSeekBar({skin}: {skin: string}) {
+    const elapsed = useSelect((s) => s.player.elapsed);
+    const duration = useSelect((s) => s.player.duration);
+    const seek = useActions().player.seek;
+    return <SeekBar elapsed={elapsed} duration={duration} skin={skin} onSeek={seek}/>;
+}
+
+function PlayerTime() {
+    const elapsed = useSelect((s) => s.player.elapsed);
+    const duration = useSelect((s) => s.player.duration);
+    return <>{fmt(elapsed)} / {duration > 0 ? fmt(duration) : '0:00'}</>;
+}
+
 /** 歌词页路径（路由表里同一个字面量） */
 const NOW_PLAYING_PATH = '/now-playing';
 
@@ -51,13 +71,24 @@ export function shouldOpenNowPlaying(pathname: string): boolean {
  * - 进度条贴在播放条顶边（bilibili 式，默认无焦点，悬浮才显示）；
  * - 歌曲信息（标题 / 歌手 / 专辑 / 时长 / 来源）随播放在此展示；
  * - 功能性操作收敛到「功能抽屉」，播放队列收敛到「播放列表抽屉」。
+ *
+ * `compact`（窗口进入紧凑模式）只做两件事：把右栏（音源 / 音质 / 模式 / 队列 / 功能）
+ * 的宽度权重提高、收掉重复的收藏按钮（功能抽屉里还有一份）。
+ * 音源 / 音质 / 循环 / 队列 / 功能**一个都不藏**——它们在别处没有替代入口（R53 的教训）。
  */
-export function PlayerBar() {
+export function PlayerBar({compact = false}: {compact?: boolean}) {
     const {t} = useTranslation();
     const navigate = useNavigate();
     const location = useLocation();
-    const player = usePlayerState();
-    const {toggle, next, prev, setRepeat, setVolume, seek, retryPlayback} = useActions().player;
+    const current = useSelect((s) => s.player.current);
+    const detail = useSelect((s) => s.player.detail);
+    const playing = useSelect((s) => s.player.playing);
+    const repeat = useSelect((s) => s.player.repeat);
+    const volume = useSelect((s) => s.player.volume);
+    const playbackError = useSelect((s) => s.player.playbackError);
+    const resolving = useSelect((s) => s.player.resolving);
+    const {toggle, next, prev, setRepeat, setVolume, retryPlayback, findAlternatives} =
+        useActions().player;
     const {toggleFavorite} = useActions().collection;
     const isFavorite = useSelect(
         (s) =>
@@ -80,7 +111,6 @@ export function PlayerBar() {
     }, [panel]);
 
     const {config} = useTheme();
-    const {current, detail, playing, elapsed, duration, repeat, volume, playbackError} = player;
     /* 封面优先用**源侧详情**（`catalog.track` 补的元数据）：列表快照常常没有封面 */
     const artwork = detail ?? current;
     const progressSkin = config.components.playerBar.progressThumbSkin;
@@ -91,14 +121,7 @@ export function PlayerBar() {
         if (playbackError) retryPlayback();
         else toggle();
     };
-    const failureHint = playbackError
-        ? [
-            playbackError.kind === 'noSource'
-                ? t('player.failureNoSource', {count: playbackError.failedSources.length})
-                : t('player.failureMedia'),
-            ...(playbackError.detail ? [playbackError.detail] : []),
-        ].join(' · ')
-        : '';
+    const failureHint = playbackError ? playbackFailureText(playbackError, t) : '';
 
     const repeatLabel =
         repeat === 'one'
@@ -123,9 +146,14 @@ export function PlayerBar() {
     };
 
     return (
-        <div className={styles.player} ref={rootRef}>
-            {/* 顶边进度条 */}
-            <SeekBar elapsed={elapsed} duration={duration} skin={progressSkin} onSeek={seek}/>
+        <div
+            className={[styles.player, compact ? styles.playerCompact : '']
+                .filter(Boolean)
+                .join(' ')}
+            ref={rootRef}
+        >
+            {/* 顶边进度条：只订阅 elapsed/duration 的小节点，避免整条播放条随进度重渲染 */}
+            <PlayerSeekBar skin={progressSkin}/>
 
             {panel === 'queue' && <QueuePanel onClose={() => setPanel(null)}/>}
             {panel === 'actions' && <ActionsPanel onClose={() => setPanel(null)}/>}
@@ -175,17 +203,24 @@ export function PlayerBar() {
                             )}
                             {/* 播不出来就直说：以前这里什么提示都没有，进度条却还在走 */}
                             {playbackError && (
-                                <button
-                                    type="button"
-                                    className={styles.failure}
-                                    title={failureHint}
-                                    onClick={retryPlayback}
-                                >
+                                <span className={styles.failure} title={failureHint}>
                                     {t('player.playbackFailed')}
-                                    <span className={styles.failureRetry}>
+                                    <button
+                                        type="button"
+                                        className={styles.failureAction}
+                                        onClick={retryPlayback}
+                                    >
                                         {t('player.retry')}
-                                    </span>
-                                </button>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={styles.failureAction}
+                                        onClick={() => void findAlternatives()}
+                                        disabled={resolving}
+                                    >
+                                        {resolving ? t('player.findingSource') : t('player.findSource')}
+                                    </button>
+                                </span>
                             )}
                         </div>
                     </div>
@@ -239,7 +274,7 @@ export function PlayerBar() {
                     </button>
 
                     <span className={styles.time}>
-                        {fmt(elapsed)} / {duration > 0 ? fmt(duration) : '0:00'}
+                        <PlayerTime/>
                     </span>
                 </div>
 

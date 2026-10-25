@@ -50,10 +50,11 @@
     max-height: var(--menu-max-height);
     overflow-y: auto;
     padding: var(--menu-padding);
-    background: var(--bg-elevated);
+    background: var(--surface-drawer);
     border: 1px solid var(--border-subtle);
     border-radius: var(--menu-radius);
     box-shadow: var(--shadow-panel);
+    backdrop-filter: var(--surface-drawer-blur);
     animation: pickerMenuIn var(--motion-fast);
 }
 
@@ -126,7 +127,7 @@
     flex: none;
     padding: 1px 6px;
     border-radius: var(--radius-full);
-    background: var(--bg-surface-alt);
+    background: var(--surface-content-alt);
     color: var(--text-tertiary);
     font-size: var(--player-chip-font-size);
 }

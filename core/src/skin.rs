@@ -269,6 +269,18 @@ fn download_url(ctx: &CoreContext, url: &str) -> Fallible<Vec<u8>> {
 
 // ---------------------------------------------------------------- 校验
 
+/// 已退役的组件令牌：旧版皮肤仍可能带它们。
+///
+/// **不能直接当未知键拒绝**：`validate` 对任何 `rejected` 都返回整份 `skin.token_rejected`，
+/// 那样 R84 之前合法、只是后来删掉的视觉键会让用户皮肤整份导不进来。
+/// 这里按明确名单接受但丢弃（并给 warning），名单只增不减、不得放宽成「未知键都接受」。
+const RETIRED_COMPONENT_TOKENS: &[&str] = &[
+    "components.lyrics.activeFontSize",
+    "components.lyrics.activeBg",
+    "components.lyrics.guideColor",
+    "components.lyrics.guideWidth",
+];
+
 /// 校验并规范化一份皮肤文档；被拒的键名走 `skin.token_rejected`。
 pub fn validate(document: &Value) -> Fallible<(Value, Vec<String>)> {
     let Some(object) = document.as_object() else {
@@ -338,7 +350,7 @@ pub fn validate(document: &Value) -> Fallible<(Value, Vec<String>)> {
         let Some(value) = object.get(group) else { continue };
         let expected = config.get(group).unwrap_or(&Value::Null);
         // 空组不进结果（避免皮肤里出现一堆没用的空对象）
-        if let Some(normalized) = validate_group(group, value, expected, &mut rejected)? {
+        if let Some(normalized) = validate_group(group, value, expected, &mut rejected, &mut warnings)? {
             skin.insert(group.to_string(), normalized);
         }
     }
@@ -362,6 +374,7 @@ fn validate_group(
     value: &Value,
     expected: &Value,
     rejected: &mut Vec<String>,
+    warnings: &mut Vec<String>,
 ) -> Fallible<Option<Value>> {
     if group == "scheme" {
         let Some(object) = value.as_object() else {
@@ -374,7 +387,7 @@ fn validate_group(
                 continue;
             }
             let expected_scheme = expected.get(scheme).unwrap_or(&Value::Null);
-            if let Some(normalized) = validate_tokens(&format!("scheme.{scheme}"), tokens, expected_scheme, rejected)? {
+            if let Some(normalized) = validate_tokens(&format!("scheme.{scheme}"), tokens, expected_scheme, rejected, warnings)? {
                 out.insert(scheme.clone(), normalized);
             }
         }
@@ -393,7 +406,7 @@ fn validate_group(
                 continue;
             };
             if let Some(normalized) =
-                validate_tokens(&format!("components.{component}"), fields, expected_component, rejected)?
+                validate_tokens(&format!("components.{component}"), fields, expected_component, rejected, warnings)?
             {
                 out.insert(component.clone(), normalized);
             }
@@ -401,7 +414,7 @@ fn validate_group(
         return Ok((!out.is_empty()).then(|| Value::Object(out)));
     }
 
-    validate_tokens(group, value, expected, rejected)
+    validate_tokens(group, value, expected, rejected, warnings)
 }
 
 /// 校验一组「令牌名 → 值」：键名必须在白名单里，值类型必须与主题配置一致。
@@ -410,6 +423,7 @@ fn validate_tokens(
     value: &Value,
     expected: &Value,
     rejected: &mut Vec<String>,
+    warnings: &mut Vec<String>,
 ) -> Fallible<Option<Value>> {
     let Some(tokens) = value.as_object() else {
         return Err(invalid(&format!("{path} 必须是对象")));
@@ -421,8 +435,14 @@ fn validate_tokens(
 
     let mut out = serde_json::Map::new();
     for (token, token_value) in tokens {
+        let full_path = format!("{path}.{token}");
+        if RETIRED_COMPONENT_TOKENS.contains(&full_path.as_str()) {
+            // 旧皮肤里仍可能出现：丢弃但不让整份皮肤失败
+            warnings.push(format!("{full_path} 已废弃，已忽略"));
+            continue;
+        }
         let Some(reference) = allowed.get(token) else {
-            rejected.push(format!("{path}.{token}"));
+            rejected.push(full_path);
             continue;
         };
         if !same_type(reference, token_value) {
@@ -513,6 +533,35 @@ mod tests {
         let (normalized, _warnings) = validate(&skin).expect("合法皮肤应通过");
         assert_eq!(normalized["palette"]["brand"], json!("#ff0000"));
         assert_eq!(normalized["components"]["sidebar"]["width"], json!(200));
+    }
+
+    #[test]
+    fn retired_lyric_tokens_are_accepted_but_dropped() {
+        // R84 删掉的四个键在旧皮肤里仍然合法过：不能因为一个废弃键拒绝整份皮肤。
+        let skin = json!({
+            "id": "legacy-skin",
+            "name": "旧皮肤",
+            "components": {
+                "lyrics": {
+                    "fontSize": 17,
+                    "activeFontSize": 19,
+                    "activeBg": "{brand.soft}",
+                    "guideColor": "#fff",
+                    "guideWidth": 1
+                }
+            }
+        });
+        let (normalized, warnings) = validate(&skin).expect("旧皮肤应能导入");
+        assert_eq!(normalized["components"]["lyrics"]["fontSize"], json!(17));
+        let lyrics = &normalized["components"]["lyrics"];
+        assert!(lyrics.get("activeFontSize").is_none(), "{lyrics}");
+        assert!(lyrics.get("activeBg").is_none(), "{lyrics}");
+        assert!(lyrics.get("guideColor").is_none(), "{lyrics}");
+        assert!(lyrics.get("guideWidth").is_none(), "{lyrics}");
+        assert!(
+            warnings.iter().any(|warning| warning.contains("activeFontSize")),
+            "{warnings:?}"
+        );
     }
 
     #[test]

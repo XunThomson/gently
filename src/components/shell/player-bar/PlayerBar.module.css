@@ -116,12 +116,12 @@
     flex: none;
 }
 
-/* 播放失败：一句能看懂的话 + 「重试」。不能只在控制台里说——
+/* 播放失败：一句能看懂的话 + 「重试 / 换源」。不能只在控制台里说——
    用户看到的应该是「无法播放」，而不是一个还在走的进度条 */
 .failure {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-1);
+    gap: var(--space-2);
     flex: none;
     padding: 1px 7px;
     border: 1px solid var(--danger);
@@ -130,22 +130,33 @@
     color: var(--danger);
     font-family: inherit;
     font-size: var(--player-chip-font-size);
-    cursor: pointer;
-    transition: background-color var(--motion-fast);
+    white-space: nowrap;
 }
 
-.failure:hover {
-    background: var(--bg-hover);
-}
-
-.failureRetry {
+.failureAction {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--danger);
+    font-family: inherit;
+    font-size: inherit;
     text-decoration: underline;
+    cursor: pointer;
+}
+
+.failureAction:hover:not(:disabled) {
+    color: var(--text-primary);
+}
+
+.failureAction:disabled {
+    opacity: 0.55;
+    cursor: default;
 }
 
 .chip {
     padding: 1px 7px;
     border-radius: var(--radius-full);
-    background: var(--bg-surface-alt);
+    background: var(--surface-content-alt);
     color: var(--text-tertiary);
     font-size: var(--player-chip-font-size);
     font-variant-numeric: tabular-nums;
@@ -316,4 +327,22 @@
     .right {
         gap: var(--space-1);
     }
+}
+
+/* ---------- 紧凑模式 ----------
+   窗口 720–960 时右栏要放下「音源 / 音质 / 循环 / 队列 / 功能」五组入口，
+   左栏的收藏按钮在功能抽屉里还有一份，这里收掉它并给右栏更高的宽度权重。 */
+
+.playerCompact .row {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr);
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
+}
+
+.playerCompact .favorite {
+    display: none;
+}
+
+.playerCompact .right {
+    gap: var(--space-1);
 }

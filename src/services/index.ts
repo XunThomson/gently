@@ -6,6 +6,12 @@ export type {SkinImportOutcome} from './skin.service';
 export {audioEngine} from './audio.service';
 export type {AudioHandlers} from './audio.service';
 export {fileService} from './file.service';
+export {backgroundService} from './background.service';
+export type {
+    BackgroundSaveError,
+    BackgroundSaveResult,
+    WebSaveResult,
+} from './background.service';
 export {
     windowService,
     isTauri,

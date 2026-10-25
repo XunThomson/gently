@@ -1,6 +1,6 @@
 ---
 status: active
-last_verified: 2026-10-07
+last_verified: 2026-10-25
 owner: gently
 scope: 架构骨架、数据流、扩展点
 token_budget: 2400
@@ -47,10 +47,10 @@ theme.config.json          presets.json                app.config.ts
    ├── radius / spacing       └── swatches（预览色块）      ├── download / lyrics
    ├── shadow / motion                                     ├── mock（数据规模）
    ├── zIndex                                              └── latency
-   └── components（18 组）
+   └── components（24 组）
         ↓  resolveTheme(config, presetId)      ← 按组浅合并，未声明字段继承
         ↓  buildCssVars(config, scheme)
-   CSS 变量（--table-row-min-height、--lyrics-active-font-size、--player-progress-thumb-size …）
+   CSS 变量（--table-row-min-height、--lyrics-font-size、--mini-player-cover-size …）
         ↓  ThemeProvider / applyInitialTheme()
    <html style="--…"> + data-theme + data-preset + color-scheme
 ```
@@ -79,13 +79,69 @@ theme.config.json          presets.json                app.config.ts
 并挂载时在 `<html>` 上打 `data-video-bg="on"`。外壳组件统一消费 `--surface-chrome`：
 
 ```css
-:root { --surface-chrome: var(--bg-surface); }              /* 默认不透明 */
+:root {
+  --surface-chrome: var(--bg-surface);       /* 默认不透明 */
+  --surface-content: var(--bg-surface);      /* 内容表面：搜索框 / 卡片 / 标签 */
+  --surface-content-alt: var(--bg-surface-alt);
+  --surface-elevated: var(--bg-elevated);
+  --surface-drawer: var(--bg-elevated);      /* 抽屉 / 浮层：菜单 / 面板 / 搜索建议 */
+  --surface-blur: none;
+  --surface-drawer-blur: none;
+}
 html[data-video-bg='on'] { --surface-chrome: var(--bg-surface-translucent); }
 ```
 
 因此「是否开启动态背景」只是 token 切换，组件无需条件分支。
 透明度 / 模糊 / 遮罩由 `components.background`（opacity / blurPx / scrim）配置，
 并在 `prefers-reduced-motion: reduce` 下自动关闭视频。
+内容表面（搜索框、标签、主题卡片及卡片标签）走 `--surface-content*`；
+抽屉/浮层（SourcePicker / SourceFilter 菜单、播放队列/功能 Panel、搜索建议、收藏夹选择器、
+歌词工具抽屉）走独立的 `--surface-drawer` 与 `--surface-drawer-blur`，两者可在设置页分别调整。
+只有表面背景变化，文字/图标保持清晰。
+
+**用户视频 / 静态网页（P1）**：设置页 `BackgroundCard` 让用户通过 WebView 文件选择器导入
+mp4 / webm / m4v / ogg；`backgroundService` 校验类型与大小后把 Blob 存 IndexedDB，
+localStorage 只保存元数据、展示参数和预设。`kind` 选择视频或网页：视频缺省回退内置 `bgc.mp4`，
+网页只接受**单文件静态 HTML/CSS**，同样存 IndexedDB 的 `pages` store。
+`BackgroundVideo` 的优先级是「用户选择的视频 / 网页 → 内置 `bgc.mp4` → 不渲染」；播放速度、填充方式、
+不透明度、虚化是**每个用户预设**，其中 opacity / blur 为 `null` 时继续跟随主题 token。
+`prefers-reduced-motion` 默认阻止背景，但设置页提供「仍然播放」显式覆盖；
+背景开启时 `--surface-chrome` 使用更透明的表面（0.66），让背景铺满标题栏 / 侧栏 / 播放条。
+外部 Share JSON 只映射已知展示键，未知键保留在 `unmapped` 并提示。
+网页的包装层在 `utils/backgroundWeb.ts`：去掉全部 `meta` / `base`（含实体编码的 `meta refresh`），注入
+`default-src 'none'` / `script-src 'none'` / `connect-src 'none'` 的 CSP，iframe 用空 `sandbox`；
+只允许内联 CSS 与 `data:/blob:` 资源，脚本和外链都不执行。**带 JS 的网页壁纸仍不做**：
+iframe 沙箱挡不住脚本自我导航到外网，需要独立 WebView + 导航拦截；
+`.pkg/.tex` 解析、RePKG 等外部工具同样不做。
+
+**壁纸准备助手（R86）**：`views/setting/components/wallpaper-assistant.tsx` 让用户通过
+`<input webkitdirectory>` 选择静态网页目录，`utils/wallpaperInline.ts` 在浏览器内
+把本机 CSS/图片/字体内联成 data URI；脚本、iframe/object/embed/form、`meta`/`base`、
+外部资源、`srcset`、`@import` 全部移除。结果可直接交给 `backgroundService.saveWeb`
+存进 IndexedDB，或下载单文件 HTML。没有新增核心命令，也没有扫描用户没有选择的目录；
+Scene 只给“导出/录屏成视频”的指引，不解析 `.pkg`。
+
+### 播放进度与合成开销
+
+- 进度由音频 `timeupdate` 回写（约 4Hz）；`NowPlayingView` 只订阅曲目/播放态，
+  `NowPlayingLyrics` 单独订阅 `elapsed/lyricsOffset`；播放条的进度条与时间拆成
+  `PlayerSeekBar` / `PlayerTime`，避免整条播放条随进度重渲染。
+- 歌词行用 `memo`；`SourcePicker` / `QualityPicker` 也用 `memo`，父级进度更新不带着它们重渲染。
+- 动态背景在窗口失焦 / 最小化时**暂停视频但保持挂载**（恢复焦点自动继续）；
+  静态网页 iframe 不卸载，壁纸不会因为切出窗口而消失。窗口真正 hidden 时由 WebView 停止绘制。
+- 内容表面透明度/虚化由 `background.options.contentOpacity / contentBlurPx`（或主题默认）驱动；
+  抽屉/浮层由独立的 `drawerOpacity / drawerBlurPx`（或主题默认）驱动。
+  `BackgroundVideo` 在背景开启时直接写 `--surface-chrome`、`--surface-content`、
+  `--surface-content-alt`、`--surface-elevated`、`--surface-drawer`（均为 `color-mix`），
+  以及 `--surface-blur` / `--surface-drawer-blur`；它们只改变表面背景，
+  **文字/图标仍不透明、不模糊**，虚化 0 直接 `none` 以省 GPU。
+  覆盖范围：标题栏/侧栏/播放条、搜索框、标签、主题卡片与卡片标签走 content；
+  菜单、面板、搜索建议、收藏夹选择器、歌词工具抽屉走 drawer。
+  **不要把这些动态值做成 ThemeProvider 注入的 token**：切深浅色时 ThemeProvider 会重注入 token，
+  同名变量会把用户值覆盖掉（实测会表现为内容透明度/虚化重置）。
+- `backdrop-filter` 只在 `html[data-video-bg='on']` 时启用（`--surface-blur` /
+  `--surface-drawer-blur`），无背景时都是 `none`；高负载下的毛玻璃/视频策略仍需真实 WebView2
+  性能数据再调。
 
 ## 3. 集中式状态
 
@@ -162,15 +218,20 @@ plugins/index.ts        顶层判定 Tauri 宿主：没有宿主才动态注册�
 ```
 点击播放 → player.start(track)
   candidates = track.candidates（聚合结果）或 [单候选]
-  按「优先音源」排序 → 依次 catalogService.resolveUrl(candidate.track, 期望音质, candidate.source)
-     ├── 返回 ResolvedSource → 可播放：写入 audioUrl / activeSource / quality
-     └── 返回 null（该源此曲不可播）→ 记入 failedSources，继续下一个候选
-  全部失败 → 退回模拟时钟（进度照常推进，UI 不卡死）
+  按「优先音源」排序 → 对每个候选：
+    quality = pickQuality(candidate.qualities, 期望音质)
+    catalogService.resolveUrl(candidate.track, quality, candidate.source)
+      ├── 返回 ResolvedSource → 可播放：写入 audioUrl / activeSource / quality
+      └── 返回 null（该源此曲不可播）→ 记入 failedSources，继续下一个候选
+  全部失败 → 停表并写 playbackError；只有浏览器预览（没有核心）才保留模拟时钟
 ```
 
-- 音质：`utils/quality.pickQuality(源支持的档位, 期望档位)` —— 期望档位不可用时**按源能力降级**，
-  实际在播档位显示在播放条上。
+- 候选 qualities 由**核心按各插件清单**带出（`catalog::merge_tracks` / 详情 / 收藏），
+  前端再按该源能力降级；清单只是声明，实际档位仍以 `getMediaSource` 返回为准。
 - 手动切换：播放条的音源选择器可指定某个候选源（只试该源），失败的源在列表里标记「不可用」。
+- **换源**：榜单 / 收藏 / 历史通常只有一个候选；播放失败后用户点「换源」，
+  前端按「歌名 + 歌手」走一次现有 `catalog.search`，把其它源合并进候选再解析。
+  这是用户动作，不在失败时自动打满所有源。
 - 启用/停用：插件管理页的开关会写入注册表，**注册表才是「哪些源参与聚合与回退」的唯一来源**。
 
 ### UI 入口
@@ -228,6 +289,38 @@ views/
 | `/setting` | 设置 | **仅**工具栏齿轮（侧边栏不再重复提供） |
 
 `hideInMenu: true` 的路由不会进入主菜单；冒烟测试对此有断言守护。
+
+### 响应式外壳（窗口尺寸 → 三种形态）
+
+窗口尺寸由 `hooks/useShellMode.ts` 订阅（`useSyncExternalStore`，首帧按 1180×760 兜底），
+阈值是**行为配置**，放在 `appConfig.window.breakpoints`，不写进 CSS：
+
+| 形态 | 条件 | 外壳 |
+|---|---|---|
+| `regular` | 宽 ≥ 960 且高 ≥ 640 | 侧栏 232 + 标题栏 + 播放条，即下方「播放条结构」 |
+| `compact` | 宽 < 960（且未到迷你） | 侧栏收成 64px 图标栏（悬浮提示用原生 `title`）；标题栏只留品牌图形标；播放条收掉重复的收藏按钮（功能抽屉里还有一份），并把右栏宽度权重提到 1.2，保证音源 / 音质 / 循环 / 队列 / 功能一个都不藏 |
+| `mini` | 宽 < 720 或高 < 480 | 整个外壳替换为 `MiniPlayer`：封面 / 标题 / 上一首·播放·下一首 / 进度 / 歌词，右上角「展开 / 最小化 / 关闭」；展开调用 `windowService.restoreFromMini()`（恢复 1180×760、取消置顶、窗口居中） |
+
+- `tauri.conf.json` 主窗口最小尺寸随之降到 **360×260**，用户可以直接把窗口拖进迷你模式；
+- 浏览器预览没有原生窗口可 resize，迷你模式的「展开」退回一个本地 `forceRegular` 开关，
+  窗口尺寸一旦再变化就重新按断点判定；
+- 迷你播放器复用播放条的 `SeekBar`（皮肤跟随主题）与歌词的紧凑模式（`<Lyrics compact/>`），
+  不另写一套进度条 / 歌词渲染。
+
+### 歌词页与跟随滚动
+
+`/now-playing` 只有封面 + 歌词（歌曲信息与功能操作在播放条，AGENTS #9）。歌词列表的视觉参考
+Netodia：**左对齐、无药丸 / 虚线 / 缩放**，当前行只加粗提亮，行距与内边距拉开。
+
+跟随滚动不再用 `scrollIntoView({behavior:'smooth'})`，而是 `Lyrics` 自己的缓动：
+
+- 目标位置 = 当前整行（含译文）在视口中居中，算法在 `utils/lyricsScroll.ts`（纯函数，冒烟覆盖）；
+- 每帧向目标靠近 22%，距离 ≤ 1px 直接落位（避免亚像素尾帧写满每一帧）；
+- 用户滚轮 / 触摸 / 拖动滚动条时**暂停跟随 4 秒**，读完再从停下的位置滑回当前行；
+- 窗口尺寸变化由 `ResizeObserver` 触发一次无动画居中；换歌 / 换歌词回到顶部。
+
+迷你播放器不复用这份滚动列表：它只显示「上一 / 当前 / 下一」三行（`MiniLyrics` +
+`miniLyricSlots`），当前行固定中间，首尾用空槽占位；长歌词也不会创建整份 DOM。
 
 ### 播放条结构（bottom）
 

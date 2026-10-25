@@ -94,10 +94,11 @@
     max-height: var(--menu-max-height);
     overflow-y: auto;
     padding: var(--menu-padding);
-    background: var(--bg-elevated);
+    background: var(--surface-drawer);
     border: 1px solid var(--border-subtle);
     border-radius: var(--menu-radius);
     box-shadow: var(--shadow-panel);
+    backdrop-filter: var(--surface-drawer-blur);
     animation: sourceMenuIn var(--motion-fast);
 }
 

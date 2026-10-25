@@ -1,6 +1,7 @@
 import {appConfig} from '../../config/app.config';
 import {audioEngine, catalogService, coreAvailable, libraryService} from '../../services';
 import type {GroupedTrack, NowPlaying, Track, TrackCandidate} from '../../types';
+import {pickQuality} from '../../utils/quality';
 import {clampLyricsOffset, readLyricsOffset, writeLyricsOffset} from '../../utils/lyricsOffset';
 import {
     appliedLyricsRef,
@@ -46,6 +47,12 @@ function candidatesOf(track: Track): TrackCandidate[] {
             qualities: [...catalogService.sourceQualities(track.source)],
         },
     ];
+}
+
+/** 跨源换源时判断“同一首歌”：忽略大小写、空白与全半角差异之外的装饰。 */
+function sameTrackText(left: string, right: string): boolean {
+    const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, '');
+    return normalize(left) === normalize(right);
 }
 
 /** 播放条切片：当前曲目、队列、进度、歌词、音源与音质 */
@@ -197,9 +204,16 @@ export function createPlayerSlice(ctx: StoreCtx) {
         for (const candidate of ordered) {
             if (failed.includes(candidate.source)) continue;
 
+            /*
+             * 按**该源声明的音质**挑档，而不是把全局首选档位原样丢给每个源。
+             * 以前这里永远传 preferredQuality（默认 high）：只实现 standard 的插件
+             * 会把 high 当成不支持，返回 null → 整首歌被判“无法播放”。
+             * 空 qualities 表示来源没声明，保留首选档位交给插件自己处理。
+             */
+            const quality = pickQuality(candidate.qualities, preferredQuality) ?? preferredQuality;
             const resolved = await catalogService.resolveUrl(
                 candidate.track,
-                preferredQuality,
+                quality,
                 candidate.source,
             );
 
@@ -474,6 +488,67 @@ export function createPlayerSlice(ctx: StoreCtx) {
                 playable: false,
             });
             void resolveWithFallback(candidates, current.playId);
+        },
+
+        async findAlternatives() {
+            const {current, candidates, failedSources} = ctx.getState().player;
+            if (!current) return;
+
+            /*
+             * 只从**用户点「换源」**开始跨源搜索：播放失败时自动去搜所有源，
+             * 会把一次失败放大成一轮网络请求；这里把动作交给用户，也便于解释。
+             *
+             * 榜单/收藏/历史里的曲目通常只有一个候选（它们不是聚合搜索的结果），
+             * 这正是网易云会员/版权曲目失败后 MusicFree 能“换个源”而我们卡住的原因。
+             */
+            patch({resolving: true});
+            const keyword = `${current.title} ${current.artist}`.trim();
+            let groups: Awaited<ReturnType<typeof catalogService.searchAll>> = [];
+            try {
+                groups = await catalogService.searchAll(keyword);
+            } catch (err) {
+                console.warn('[player] 换源搜索失败', err);
+            }
+
+            // 搜索期间切歌/停止：丢弃结果
+            if (ctx.getState().player.current?.playId !== current.playId) return;
+
+            const match =
+                groups.find(
+                    (group) =>
+                        sameTrackText(group.title, current.title) &&
+                        sameTrackText(group.artist, current.artist),
+                ) ?? groups.find((group) => sameTrackText(group.title, current.title));
+
+            const extras = (match?.candidates ?? []).filter(
+                (candidate) =>
+                    !candidates.some(
+                        (existing) =>
+                            existing.source === candidate.source &&
+                            existing.track.id === candidate.track.id,
+                    ),
+            );
+
+            if (extras.length === 0) {
+                patch({
+                    resolving: false,
+                    playbackError: {
+                        kind: 'noSource',
+                        failedSources: failedSources.length > 0 ? failedSources : candidates.map((item) => item.source),
+                    },
+                });
+                return;
+            }
+
+            const merged = [...candidates, ...extras];
+            patch({
+                candidates: merged,
+                failedSources: [],
+                playbackError: null,
+                resolving: false,
+                playing: true,
+            });
+            void resolveWithFallback(merged, current.playId, {keepElapsed: true});
         },
 
         seek(seconds) {

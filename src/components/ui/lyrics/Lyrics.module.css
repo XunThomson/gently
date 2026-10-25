@@ -1,9 +1,11 @@
-/* 歌词列表：纵向滚动，隐藏滚动条；上下留白让首行 / 末行也能滚到中线 */
+/* 歌词列表：纵向滚动，隐藏滚动条；上下留白让首行 / 末行也能滚到中线。
+   视觉参考 Netodia：左对齐、无药丸 / 虚线 / 缩放，当前行只加粗提亮，
+   靠行距与缩进区分层次。 */
 
 .root {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     gap: var(--lyrics-line-gap);
     width: 100%;
     height: 100%;
@@ -11,6 +13,7 @@
     padding: var(--lyrics-padding-y) var(--lyrics-padding-x);
     scrollbar-width: none;
     -ms-overflow-style: none;
+    overscroll-behavior: contain;
     /* 上下渐隐：暗示列表在视口外继续延伸，当前行即“你在这里” */
     -webkit-mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
     mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
@@ -21,61 +24,51 @@
 }
 
 /*
- * 行 = 整行宽度的块级按钮（align-self: stretch 让虚线导引横跨整行）。
- * border-top / border-bottom 在非激活行用透明色占位，激活时只改颜色，
- * 避免虚线出现 / 消失时整列歌词跳动。
+ * 行 = 整行宽度的块级按钮，左对齐。
+ * 字号在激活前后保持一致：换字号会把整列歌词顶得跳一下，
+ * 当前行靠字重与颜色已经足够突出。
  */
 .line {
     align-self: stretch;
     flex-shrink: 0;
     width: 100%;
     padding: var(--lyrics-line-padding-y) var(--lyrics-line-padding-x);
-    border-top: var(--lyrics-guide-width) dashed transparent;
-    border-bottom: var(--lyrics-guide-width) dashed transparent;
-    border-radius: var(--radius-lg);
+    border: 0;
+    border-radius: var(--radius-md);
     background: transparent;
     font-family: inherit;
     font-size: var(--lyrics-font-size);
     font-weight: var(--font-weight-normal);
     line-height: var(--line-height-relaxed);
-    text-align: center;
+    text-align: left;
     color: var(--lyrics-inactive-color);
+    opacity: var(--lyrics-inactive-opacity);
     cursor: pointer;
     transition:
         color var(--motion-fast),
         opacity var(--motion-fast),
-        font-size var(--motion-fast),
-        background-color var(--motion-fast),
-        border-color var(--motion-fast),
-        transform var(--motion-fast);
+        background-color var(--motion-fast);
 }
 
-/* 非激活行整体压暗；悬浮时恢复满不透明度并提亮文字 */
-.line:not([data-active='true']) {
-    opacity: var(--lyrics-inactive-opacity);
-}
-
+/* 非激活行压暗；悬浮时提亮并给出可点击的底色 */
 .line:hover {
     opacity: 1;
     color: var(--lyrics-hover-color);
+    background: var(--bg-hover);
 }
 
-/* 当前行：品牌色 + 放大字号字重 + 药丸底色 + 上下虚线圈出 */
+/* 当前行：只加粗提亮，不加底色 / 边框 / 缩放 */
 .line[data-active='true'] {
     color: var(--lyrics-active-color);
-    font-size: var(--lyrics-active-font-size);
     font-weight: var(--lyrics-active-weight);
-    background-color: var(--lyrics-active-bg);
-    border-top-color: var(--lyrics-guide-color);
-    border-bottom-color: var(--lyrics-guide-color);
-    transform: scale(1.02);
+    opacity: 1;
 }
 
-/* 译文：比原文小一号、颜色更弱，仍随同行高亮而提亮 */
+/* 译文：比原文小一号、颜色更弱，仍与原文一起被居中 */
 .translation {
     display: block;
-    margin-top: var(--lyrics-line-padding-y);
-    font-size: var(--font-size-xs);
+    margin-top: var(--lyrics-translation-gap);
+    font-size: var(--lyrics-translation-font-size);
     font-weight: var(--font-weight-normal);
     color: var(--lyrics-inactive-color);
 }

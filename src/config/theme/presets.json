@@ -266,7 +266,7 @@
         "dataTable": { "fontSize": 15, "headerFontSize": 13, "headerColor": "{text.secondary}", "rowMinHeight": 50 },
         "sidebar": { "fontSize": 15, "sectionTitleFontSize": 13 },
         "view": { "subtitleFontSize": 14 },
-        "lyrics": { "fontSize": 17, "activeFontSize": 19, "inactiveOpacity": 0.75 }
+        "lyrics": { "fontSize": 17, "inactiveOpacity": 0.75 }
       }
     }
   ]

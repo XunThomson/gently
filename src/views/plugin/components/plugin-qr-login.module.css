@@ -5,7 +5,7 @@
     padding: var(--space-3);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
-    background: var(--bg-surface-alt);
+    background: var(--surface-content);
 }
 
 .title {

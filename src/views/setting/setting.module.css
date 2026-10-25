@@ -43,7 +43,7 @@
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
-    background: var(--bg-surface-alt);
+    background: var(--surface-content-alt);
     color: var(--text-primary);
     font-family: inherit;
     font-size: var(--font-size-sm);
@@ -89,4 +89,105 @@
     font-size: var(--font-size-xs);
     line-height: var(--line-height-relaxed);
     color: var(--text-secondary);
+}
+
+.error {
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+    color: var(--danger);
+}
+
+/* 背景设置：滑杆宽度跟随内容区，窄窗口下不撑破卡片 */
+.range {
+    width: min(calc(var(--space-12) * 4.5), 100%);
+    accent-color: var(--brand);
+    cursor: pointer;
+}
+
+.valueText {
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.blockDivider {
+    height: 1px;
+    background: var(--border-subtle);
+}
+
+.subTitle {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+
+.presetList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.presetRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+    background: var(--surface-content-alt);
+}
+
+.presetName {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    min-width: 0;
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+}
+
+.presetActive {
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: var(--font-size-xs);
+}
+
+.presetMeta {
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+}
+
+.textarea {
+    width: min(var(--search-box-max-width), 100%);
+    min-height: calc(var(--space-10) * 2 + var(--space-2));
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--surface-content-alt);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-normal);
+    resize: vertical;
+}
+
+.textarea::placeholder {
+    color: var(--text-tertiary);
+}
+
+/* 壁纸准备助手：只读提示列表，不引入新的颜色/尺寸字面量 */
+.assistantList {
+    margin: 0;
+    padding-left: var(--space-4);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
 }

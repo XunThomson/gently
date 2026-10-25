@@ -50,7 +50,7 @@
 .tag {
     padding: 2px var(--space-2);
     border-radius: var(--radius-full);
-    background: var(--bg-surface-alt);
+    background: var(--surface-content-alt);
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
 }

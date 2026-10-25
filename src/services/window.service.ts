@@ -51,6 +51,20 @@ async function run(action: (win: Awaited<ReturnType<typeof currentWindow>>) => P
     }
 }
 
+type NativeWindow = Awaited<ReturnType<typeof currentWindow>>;
+
+/** 统一「改尺寸 + 置顶 + 可选居中」的顺序，避免两个入口各写一遍 */
+async function applyWindowSize(
+    win: NativeWindow,
+    size: {width: number; height: number},
+    options: {alwaysOnTop: boolean; center?: boolean},
+): Promise<void> {
+    const {LogicalSize} = await import('@tauri-apps/api/window');
+    await win.setAlwaysOnTop(options.alwaysOnTop);
+    await win.setSize(new LogicalSize(size.width, size.height));
+    if (options.center) await win.center();
+}
+
 export const windowService = {
     minimize: () => run((w) => w.minimize()),
     toggleMaximize: () => run((w) => w.toggleMaximize()),
@@ -66,6 +80,23 @@ export const windowService = {
             return await (await currentWindow()).isMaximized();
         } catch (err) {
             console.warn('[window] 读取最大化状态失败', err);
+            return false;
+        }
+    },
+
+    /**
+     * 当前窗口是否置顶。
+     * 浏览器 / `vite dev` 没有原生窗口，恒为 `false`。
+     *
+     * 用途：迷你模式由窗口尺寸触发，但用户也可能先点「画中画」再手动把窗口拖大；
+     * 标题栏重新挂载时据此恢复按钮的按下态，而不是默认成未置顶。
+     */
+    isAlwaysOnTop: async (): Promise<boolean> => {
+        if (!isTauri()) return false;
+        try {
+            return await (await currentWindow()).isAlwaysOnTop();
+        } catch (err) {
+            console.warn('[window] 读取置顶状态失败', err);
             return false;
         }
     },
@@ -90,11 +121,23 @@ export const windowService = {
     /** 悬浮小窗：置顶 + 缩小尺寸 */
     setCompact: (value: boolean) =>
         run(async (w) => {
-            const {LogicalSize} = await import('@tauri-apps/api/window');
             const {compact, normal} = appConfig.window;
-            const size = value ? compact : normal;
-            await w.setAlwaysOnTop(value);
-            await w.setSize(new LogicalSize(size.width, size.height));
+            await applyWindowSize(w, value ? compact : normal, {alwaysOnTop: value});
+        }),
+
+    /**
+     * 从迷你播放器回到完整界面：恢复普通尺寸、取消置顶，并把窗口放回屏幕中间。
+     *
+     * 为什么单独一条而不是复用 `setCompact(false)`：迷你模式可能是用户**手动拖小**的，
+     * 不一定是「悬浮小窗」；恢复时窗口可能停在屏幕角落，放大后有一半在屏幕外。
+     * 居中一次能保证「展开」之后立刻看得见完整界面。
+     */
+    restoreFromMini: () =>
+        run(async (w) => {
+            await applyWindowSize(w, appConfig.window.normal, {
+                alwaysOnTop: false,
+                center: true,
+            });
         }),
 
     /* ---------------- 桌面歌词窗口 ---------------- */

@@ -22,6 +22,7 @@
  */
 
 import type {PluginSummary} from '../api';
+import type {TrackQuality} from '../types';
 import {coreAvailable, corePlugin} from './core.bridge';
 
 /** 核心最近一次报告的已安装插件（`null` = 核心不可用 / 读失败 / 还没读到过）。 */
@@ -91,6 +92,18 @@ export function coreSourceIds(enabledOnly = false): string[] {
 /** 这个音源是不是由核心提供的（核心不可用或清单里没有 → 走前端本地实现）。 */
 export function isCoreSource(id: string): boolean {
     return coreAvailable() && installed !== null && installed.some((plugin) => plugin.id === id);
+}
+
+/**
+ * 核心音源声明的音质档位（来自 `plugin.list` 的 manifest）。
+ *
+ * 前端注册表只装浏览器演示源，桌面上核心插件不在里面；只查注册表会得到空，
+ * 播放/下载就只能按全局首选档位盲试。空数组表示“还没读到”，调用方应保留首选档位。
+ */
+export function coreSourceQualities(id: string): readonly TrackQuality[] {
+    if (!coreAvailable() || installed === null) return [];
+    const plugin = installed.find((item) => item.id === id);
+    return plugin?.manifest?.qualities ?? [];
 }
 
 /**

@@ -33,7 +33,11 @@
 
 .layout {
     display: grid;
-    grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+    /* 首列在宽窗口给到上限，窄窗口按比例收缩但不少于下限——歌词栏始终留得下文字 */
+    grid-template-columns:
+        minmax(var(--now-playing-cover-min),
+            min(var(--now-playing-cover-max), var(--now-playing-cover-ratio)))
+        minmax(0, 1fr);
     gap: var(--space-8);
     align-items: start;
 }
@@ -104,7 +108,7 @@
     gap: var(--space-4);
     min-width: 0;
     /* 固定高度：歌词需要确定的可滚动区域才能把当前行滚到中间 */
-    height: min(64vh, 580px);
+    height: var(--now-playing-lyrics-height);
     padding: var(--space-5);
     background: var(--surface-chrome);
     backdrop-filter: var(--surface-blur);
@@ -141,7 +145,8 @@
     padding: var(--space-3);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
-    background: var(--bg-surface-alt);
+    background: var(--surface-drawer);
+    backdrop-filter: var(--surface-drawer-blur);
 }
 
 /* 收起时只是「藏起来」，不卸载：刚搜到的结果与关键词留着 */
@@ -390,14 +395,13 @@
     min-height: 96px;
 }
 
-@media (max-width: 900px) {
-    .layout {
-        grid-template-columns: minmax(0, 1fr);
-        gap: var(--space-6);
-    }
+/* 只在「被强制展开成完整界面」的迷你尺寸才单列；断点来自 useShellMode，不再与 CSS 双写 */
+.layout[data-stack='true'] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+}
 
-    .cover {
-        max-width: 320px;
-        margin: 0 auto;
-    }
+.layout[data-stack='true'] .cover {
+    max-width: var(--now-playing-cover-stack-max);
+    margin: 0 auto;
 }

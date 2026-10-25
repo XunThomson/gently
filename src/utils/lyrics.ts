@@ -13,6 +13,37 @@ export function activeLyricIndex(lines: LyricLine[], elapsed: number): number {
     return -1;
 }
 
+export interface MiniLyricSlot {
+    index: number;
+    line: LyricLine | null;
+}
+
+/**
+ * 迷你播放器的三行窗口：上/当前/下。
+ *
+ * 为什么不是渲染整份歌词再滚动：迷你视口只够三行，整份歌词会创建几百个按钮，
+ * 滚动跟随也没有意义。固定三槽让当前行永远在中间；当前行在首/尾时用空槽占位，
+ * 保持纵向位置不跳。
+ */
+export function miniLyricSlots(
+    lines: LyricLine[],
+    activeIndex: number,
+): [MiniLyricSlot, MiniLyricSlot, MiniLyricSlot] {
+    if (lines.length === 0) {
+        return [
+            {index: -1, line: null},
+            {index: -1, line: null},
+            {index: -1, line: null},
+        ];
+    }
+    const current = activeIndex < 0 ? 0 : Math.min(lines.length - 1, activeIndex);
+    const slot = (index: number): MiniLyricSlot => ({
+        index,
+        line: index >= 0 && index < lines.length ? lines[index] : null,
+    });
+    return [slot(current - 1), slot(current), slot(current + 1)];
+}
+
 /**
  * 当前行已经唱到的比例（0~1）：桌面歌词的「逐字展开」用它算遮罩宽度。
  *

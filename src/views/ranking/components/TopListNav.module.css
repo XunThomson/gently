@@ -37,7 +37,7 @@
     padding: var(--space-1) var(--space-3);
     border: 1px solid transparent;
     border-radius: var(--radius-full);
-    background: var(--bg-surface-alt);
+    background: var(--surface-content-alt);
     font-family: inherit;
     font-size: var(--font-size-sm);
     color: var(--text-secondary);

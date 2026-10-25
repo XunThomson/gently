@@ -7,7 +7,7 @@
     padding: 0 var(--space-3);
     border: 1px solid var(--border-default);
     border-radius: var(--search-box-radius);
-    background: var(--bg-surface);
+    background: var(--surface-content);
     color: var(--text-primary);
     font-family: var(--font-sans);
     font-size: var(--search-box-font-size);
@@ -16,7 +16,7 @@
 
 .search:focus {
     border-color: var(--brand);
-    background: var(--bg-elevated);
+    background: var(--surface-elevated);
 }
 
 /* 真正的文件选择由「从文件选择…」触发 */
@@ -37,7 +37,8 @@
     padding: var(--panel-padding);
     border: 1px solid var(--border-default);
     border-radius: var(--panel-radius);
-    background: var(--bg-surface);
+    background: var(--surface-content);
+    backdrop-filter: var(--surface-blur);
 }
 
 .importTabs {
@@ -66,7 +67,7 @@
     padding: var(--space-3);
     border: 1px solid var(--border-default);
     border-radius: var(--panel-item-radius);
-    background: var(--bg-app);
+    background: var(--surface-content-alt);
     color: var(--text-primary);
     font-family: var(--font-sans);
     font-size: var(--font-size-sm);
@@ -81,7 +82,7 @@
     padding: 0 var(--space-3);
     border: 1px solid var(--border-default);
     border-radius: var(--search-box-radius);
-    background: var(--bg-app);
+    background: var(--surface-content-alt);
     color: var(--text-primary);
     font-family: var(--font-sans);
     font-size: var(--font-size-sm);
@@ -119,7 +120,7 @@
     padding: var(--space-1) var(--space-3);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-full);
-    background: var(--bg-surface);
+    background: var(--surface-content);
     color: var(--text-secondary);
     font-family: var(--font-sans);
     font-size: var(--font-size-xs);
@@ -156,9 +157,10 @@
     align-items: flex-start;
     gap: var(--space-2);
     padding: var(--space-4);
-    background: var(--bg-surface);
+    background: var(--surface-content);
     border: 1px solid var(--border-subtle);
     border-radius: var(--card-radius);
+    backdrop-filter: var(--surface-blur);
     transition: border-color var(--motion-fast), background-color var(--motion-fast);
 }
 
@@ -229,7 +231,7 @@
     padding: 0 var(--space-2);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
-    background: var(--bg-subtle);
+    background: var(--surface-content-alt);
     color: var(--text-tertiary);
     font-size: var(--font-size-xs);
 }

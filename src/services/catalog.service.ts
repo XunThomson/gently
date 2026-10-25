@@ -48,7 +48,7 @@ import {
     coreTopLists,
     coreTrackDetail,
 } from './core.catalog';
-import {coreSourceIds, ensureCoreSources, isCorePlayableSource, isCoreSource} from './core.sources';
+import {coreSourceIds, coreSourceQualities, ensureCoreSources, isCorePlayableSource, isCoreSource} from './core.sources';
 import {groupTracks, sortCandidates} from '../utils/track';
 
 /**
@@ -108,7 +108,10 @@ export const catalogService = {
     },
 
     sourceQualities(id: string): readonly TrackQuality[] {
-        return getMusicSourceQualities(id);
+        // 浏览器演示源在前端注册表；桌面插件只在核心清单里（注册表为空）。
+        // 两边都查：否则核心源的候选音质会被当成空数组，播放/下载只能盲试首选档位。
+        const local = getMusicSourceQualities(id);
+        return local.length > 0 ? local : coreSourceQualities(id);
     },
 
     /** 注册一个音源（真实插件接入时使用） */
@@ -336,6 +339,33 @@ export const catalogService = {
         const plugin = sourceId ? getMusicSource(sourceId) : getActiveMusicSource();
         if (!plugin) return [];
         return plugin.search(keyword);
+    },
+
+    /**
+     * 搜索建议：默认只问一个源（优先用户指定/正在播的源），别把每个按键放大成全源搜索。
+     *
+     * 桌面端前端注册表是空的（真实插件在核心里），`searchIn(keyword)` 不带 source
+     * 会找不到任何实现，搜索建议因此永远是“没有结果”。这里优先走核心的指定源
+     * （或第一个启用源）；没有核心时才退回浏览器演示源。
+     */
+    async suggest(keyword: string, sourceId?: string, limit = 8): Promise<Track[]> {
+        const needle = keyword.trim();
+        if (!needle) return [];
+
+        await ensureCoreSources();
+        const coreIds = coreSourceIds(true);
+        if (coreIds.length > 0) {
+            const target = sourceId && coreIds.includes(sourceId) ? sourceId : coreIds[0];
+            const viaCore = await coreSearch(needle, {sources: [target], limit: 12});
+            if (!viaCore) return [];
+            return viaCore.items
+                .flatMap((item) => item.candidates.map((candidate) => candidate.track))
+                .slice(0, limit);
+        }
+
+        const plugin = sourceId ? getMusicSource(sourceId) : getActiveMusicSource();
+        if (!plugin) return [];
+        return (await plugin.search(needle)).slice(0, limit);
     },
 
     /** 多源推荐 → 聚合去重 */

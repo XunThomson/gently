@@ -11,6 +11,18 @@
 - 音乐源以 **插件** 形式接入：内嵌 QuickJS 沙箱、清单声明权限与域名白名单，
   安装必须「预览 → 用户显式同意 → 落盘」；兼容 MusicFree / LX 生态的 CommonJS 插件
   （双轨制见 [`docs/adr/0006-plugin-format-dual-track.md`](docs/adr/0006-plugin-format-dual-track.md)）。
+  播放按各源声明的音质降级；榜单/收藏曲目失败时可在播放条点「换源」按歌名歌手重新找源，
+  不会在失败时自动打满所有音源。
+- **本地视频 / 静态网页背景**：可导入 mp4 / webm / m4v，或单文件静态 HTML/CSS；背景铺满整窗，
+  可调整填充方式、速度、不透明度、虚化、**内容透明度 / 内容虚化**（只改卡片/外壳背景，
+  文字不透明也不模糊），并保存/重命名/导出命名预设；
+  支持粘贴外部壁纸工具的 Share JSON（只映射已知展示参数）。
+  系统开启「减少动态效果」时默认不播放，可在设置里显式选择「仍然播放」。
+  窗口失焦时视频**暂停而不是消失**，回到窗口继续播放。
+  网页壁纸在 `sandbox` + CSP 里渲染，脚本、外链、表单都不执行；不解析 `.pkg` 专有格式，
+  不做带 JS / 多文件的网页壁纸。
+- **壁纸准备助手**：选择静态网页目录后，把本机 CSS/图片内联成单个 HTML（脚本、外部资源、
+  `@import` 会被移除），可直接设为背景或下载；Scene 只接受用户导出/录屏的视频，不解析 `.pkg`。
 
 ## 结构
 
@@ -41,7 +53,7 @@ pnpm tauri dev     # 桌面端：真实核心 + 本地 SQLite + 插件沙箱
 | 命令 | 作用 |
 |---|---|
 | `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm smoke` | 冒烟测试：状态层断言 + 全部组件可渲染 + i18n / CSS token / 契约守卫（362 项；含 **2.x 宠物接口** 6 项、**第三方授权** 9 项、**源收藏** 8 项与**缓存上限** 2 项——宿主空态 / 同 id 覆盖 / 旧注销不误删 / 只读快照 / 授权四条命令与参数 / 授权地址交给系统浏览器 / `auth:changed` 刷新状态；末尾用**假宿主**把「核心优先读 / 核心在时不退回 mock / 下载被拒 / 下载设置与并发 / 歌词搜索 / 缓存管理 / 桌面歌词载荷 / 皮肤裁决」等桌面端分支也跑一遍） |
+| `pnpm smoke` | 冒烟测试：状态层断言 + 全部组件可渲染 + i18n / CSS token / 契约守卫（448 项；含 **2.x 宠物接口** 6 项、**第三方授权** 9 项、**源收藏** 8 项与**缓存上限** 2 项——宿主空态 / 同 id 覆盖 / 旧注销不误删 / 只读快照 / 授权四条命令与参数 / 授权地址交给系统浏览器 / `auth:changed` 刷新状态；末尾用**假宿主**把「核心优先读 / 核心在时不退回 mock / 下载被拒 / 下载设置与并发 / 歌词搜索 / 缓存管理 / 桌面歌词载荷 / 皮肤裁决」等桌面端分支也跑一遍） |
 | `pnpm check:contract` | 契约守卫：文档 ↔ Rust 命令/事件清单 ↔ 前端服务层与事件常量（含事件名字符集，双向） |
 | `pnpm check:reachability` | 界面可达性守卫：每条契约能力是否**真的能从界面走到**（有实现有封装、却没人调用 → 失败；白名单要写理由） |
 | `pnpm verify` | 交付前一次跑完**五道关卡**：typecheck + smoke + check:contract + check:reachability + `cargo test -p gently-core` |
@@ -49,7 +61,7 @@ pnpm tauri dev     # 桌面端：真实核心 + 本地 SQLite + 插件沙箱
 | `pnpm ui:capture` | （仅 Windows）截屏/驱动打包版做视觉走查：`pnpm ui:capture -- -Launch -AssertRendered -Output release/screenshots/boot.png -Kill` |
 | `pnpm package:portable` | **离线可用的分发产物**：便携版 zip（输出在 `release/`） |
 | `pnpm tauri build` | 出 MSI / NSIS 安装包（首次需要联网取打包工具，见下） |
-| `cargo test -p gently-core` | 核心单测（218 项，不依赖 tauri，秒级） |
+| `cargo test -p gently-core` | 核心单测（不依赖 tauri，秒级） |
 
 ### 离线构建约定
 
@@ -75,6 +87,8 @@ pnpm tauri build          # → MSI / NSIS 安装包（首次需要联网下载 
 | [`docs/contracts/local-core-api.md`](docs/contracts/local-core-api.md) | **本机核心契约**：命令 / 事件 / 错误码 / 插件与皮肤模型 |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 分层、数据流、播放链路、i18n、契约边界 |
 | [`docs/STATE.md`](docs/STATE.md) | 当前迭代状态：本轮做了什么、验证结果、下一步 |
+| [`docs/GOTCHAS.md`](docs/GOTCHAS.md) | 非显然的坑与规避方式（现象 → 根因 → 验证） |
+| [`docs/archive/rounds/`](docs/archive/rounds/) | 历史轮次的完整过程与证据（默认不读） |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | M0–M5 里程碑与退出标准 |
 | [`docs/adr/`](docs/adr/) | 架构决策记录（无服务器、本机存储、中立立场、插件双轨制…） |
 
@@ -101,3 +115,4 @@ pnpm tauri build          # → MSI / NSIS 安装包（首次需要联网下载 
 ## 许可
 
 MIT（见 [`Cargo.toml`](Cargo.toml)）。
+

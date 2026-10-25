@@ -24,8 +24,8 @@
       "surfaceAlt": "#f3f4f6",
       "subtle": "#f7f8fa",
       "elevated": "#ffffff",
-      "surfaceTranslucent": "rgba(255, 255, 255, 0.82)",
-      "videoScrim": "rgba(244, 246, 250, 0.55)",
+      "surfaceTranslucent": "rgba(255, 255, 255, 0.66)",
+      "videoScrim": "rgba(244, 246, 250, 0.62)",
       "hover": "rgba(0, 0, 0, 0.04)",
       "active": "rgba(0, 0, 0, 0.08)",
       "textPrimary": "#1a1a1a",
@@ -44,8 +44,8 @@
       "surfaceAlt": "#2a2a2a",
       "subtle": "#141414",
       "elevated": "#2a2a2a",
-      "surfaceTranslucent": "rgba(20, 20, 24, 0.74)",
-      "videoScrim": "rgba(8, 10, 14, 0.52)",
+      "surfaceTranslucent": "rgba(20, 20, 24, 0.66)",
+      "videoScrim": "rgba(8, 10, 14, 0.62)",
       "hover": "rgba(255, 255, 255, 0.06)",
       "active": "rgba(255, 255, 255, 0.10)",
       "textPrimary": "#ffffff",
@@ -167,6 +167,7 @@
 
     "sidebar": {
       "width": 232,
+      "compactWidth": 64,
       "padding": 12,
       "itemHeight": 38,
       "itemGap": 10,
@@ -210,6 +211,22 @@
       "progressGlowColor": "{brand.soft}"
     },
 
+    "miniPlayer": {
+      "padding": 14,
+      "headerHeight": 30,
+      "coverSize": "clamp(64px, 25vh, 104px)",
+      "coverRadius": "18px",
+      "titleFontSize": 15,
+      "artistFontSize": 12,
+      "lyricsFontSize": 14,
+      "lyricsLineGap": 6,
+      "lyricsPaddingY": 8,
+      "lyricsSlotHeight": 30,
+      "controlSize": 38,
+      "iconButtonSize": 28,
+      "windowButtonSize": 26
+    },
+
     "panel": {
       "width": 340,
       "maxHeight": 340,
@@ -235,21 +252,19 @@
     },
 
     "lyrics": {
-      "fontSize": 15,
-      "activeFontSize": 17,
-      "lineGap": 14,
+      "fontSize": 16,
+      "lineGap": 12,
       "paddingX": 20,
       "paddingY": 40,
-      "inactiveColor": "{text.tertiary}",
-      "hoverColor": "{text.secondary}",
-      "activeColor": "{brand}",
+      "inactiveColor": "{text.secondary}",
+      "hoverColor": "{text.primary}",
+      "activeColor": "{text.primary}",
       "activeWeight": 600,
-      "activeBg": "{brand.soft}",
-      "guideColor": "{border.default}",
-      "guideWidth": 1,
-      "inactiveOpacity": 0.55,
+      "inactiveOpacity": 0.72,
       "linePaddingX": 12,
-      "linePaddingY": 6
+      "linePaddingY": 8,
+      "translationFontSize": 12,
+      "translationGap": 4
     },
 
     "menu": {
@@ -315,7 +330,10 @@
       "opacity": 0.55,
       "blurPx": 0,
       "scrim": "{scrim}",
-      "surfaceBlurPx": 22
+      "surfaceBlurPx": 22,
+      "contentOpacity": 0.66,
+      "drawerOpacity": 0.66,
+      "drawerBlurPx": 22
     },
 
     "view": {
@@ -386,6 +404,14 @@
 
     "collection": {
       "coverSize": 140
+    },
+
+    "nowPlaying": {
+      "coverMinWidth": 220,
+      "coverMaxWidth": 360,
+      "coverWidthRatio": "44%",
+      "coverStackMaxWidth": 320,
+      "lyricsPanelHeight": "min(58vh, 580px)"
     },
 
     "table": {

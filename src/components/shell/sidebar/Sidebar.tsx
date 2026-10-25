@@ -10,6 +10,11 @@ import styles from './Sidebar.module.css';
 export interface SidebarProps {
     /** 主菜单（由路由 meta 派生，保证菜单与路由单一来源） */
     mainMenu: MenuRoute[];
+    /**
+     * 紧凑模式：只显示图标栏，文字 / 计数 / 分组标题 / 行内操作都收起，
+     * 每个入口用原生 `title` 提供悬浮提示。窗口低于断点时由外壳传入。
+     */
+    compact?: boolean;
 }
 
 /**
@@ -18,7 +23,7 @@ export interface SidebarProps {
  * - 收藏 / 歌单来自集中式 store 的 collection 切片，支持新建、删除、查看数量；
  * - 分组折叠状态集中在 store 的 ui.collapsedGroups。
  */
-export function Sidebar({mainMenu}: SidebarProps) {
+export function Sidebar({mainMenu, compact = false}: SidebarProps) {
     const {t} = useTranslation();
     const navigate = useNavigate();
     const {toggleGroup} = useActions().ui;
@@ -38,6 +43,7 @@ export function Sidebar({mainMenu}: SidebarProps) {
         <li key={item.key}>
             <NavLink
                 to={item.path}
+                title={compact ? t(item.labelKey) : undefined}
                 className={({isActive}) =>
                     [styles.item, isActive ? styles.itemActive : ''].filter(Boolean).join(' ')
                 }
@@ -80,7 +86,10 @@ export function Sidebar({mainMenu}: SidebarProps) {
     };
 
     return (
-        <nav className={styles.sidebar}>
+        <nav
+            className={[styles.sidebar, compact ? styles.compact : ''].filter(Boolean).join(' ')}
+            data-compact={compact ? 'true' : 'false'}
+        >
             <ul className={styles.menu}>{mainMenu.map(renderItem)}</ul>
 
             {/* ---------- 我的收藏 ---------- */}
@@ -91,6 +100,7 @@ export function Sidebar({mainMenu}: SidebarProps) {
                         <li>
                             <NavLink
                                 to="/favorites"
+                                title={compact ? t('sidebar.favorites') : undefined}
                                 className={({isActive}) =>
                                     [styles.item, isActive ? styles.itemActive : '']
                                         .filter(Boolean)
@@ -169,6 +179,7 @@ export function Sidebar({mainMenu}: SidebarProps) {
                                     <li key={playlist.id} className={styles.playlistRow}>
                                         <NavLink
                                             to={`/playlist/${playlist.id}`}
+                                            title={compact ? playlist.name : undefined}
                                             className={({isActive}) =>
                                                 [styles.item, isActive ? styles.itemActive : '']
                                                     .filter(Boolean)

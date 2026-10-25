@@ -176,7 +176,6 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--toolbar-divider-color': t(c.toolbar.dividerColor),
 
         /* ---------- 组件：侧边栏 ---------- */
-        '--sidebar-width': px(c.sidebar.width),
         '--sidebar-padding': px(c.sidebar.padding),
         '--sidebar-item-height': px(c.sidebar.itemHeight),
         '--sidebar-item-gap': px(c.sidebar.itemGap),
@@ -241,7 +240,6 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
 
         /* ---------- 组件：歌词 ---------- */
         '--lyrics-font-size': px(c.lyrics.fontSize),
-        '--lyrics-active-font-size': px(c.lyrics.activeFontSize),
         '--lyrics-line-gap': px(c.lyrics.lineGap),
         '--lyrics-padding-x': px(c.lyrics.paddingX),
         '--lyrics-padding-y': px(c.lyrics.paddingY),
@@ -249,12 +247,26 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--lyrics-hover-color': t(c.lyrics.hoverColor),
         '--lyrics-active-color': t(c.lyrics.activeColor),
         '--lyrics-active-weight': String(c.lyrics.activeWeight),
-        '--lyrics-active-bg': t(c.lyrics.activeBg),
-        '--lyrics-guide-color': t(c.lyrics.guideColor),
-        '--lyrics-guide-width': px(c.lyrics.guideWidth),
         '--lyrics-inactive-opacity': String(c.lyrics.inactiveOpacity),
         '--lyrics-line-padding-x': px(c.lyrics.linePaddingX),
         '--lyrics-line-padding-y': px(c.lyrics.linePaddingY),
+        '--lyrics-translation-font-size': px(c.lyrics.translationFontSize),
+        '--lyrics-translation-gap': px(c.lyrics.translationGap),
+
+        /* ---------- 组件：迷你播放器 ---------- */
+        '--mini-player-padding': px(c.miniPlayer.padding),
+        '--mini-player-header-height': px(c.miniPlayer.headerHeight),
+        '--mini-player-cover-size': px(c.miniPlayer.coverSize),
+        '--mini-player-cover-radius': c.miniPlayer.coverRadius,
+        '--mini-player-title-font-size': px(c.miniPlayer.titleFontSize),
+        '--mini-player-artist-font-size': px(c.miniPlayer.artistFontSize),
+        '--mini-player-lyrics-font-size': px(c.miniPlayer.lyricsFontSize),
+        '--mini-player-lyrics-line-gap': px(c.miniPlayer.lyricsLineGap),
+        '--mini-player-lyrics-padding-y': px(c.miniPlayer.lyricsPaddingY),
+        '--mini-player-lyrics-slot-height': px(c.miniPlayer.lyricsSlotHeight),
+        '--mini-player-control-size': px(c.miniPlayer.controlSize),
+        '--mini-player-icon-button-size': px(c.miniPlayer.iconButtonSize),
+        '--mini-player-window-button-size': px(c.miniPlayer.windowButtonSize),
 
         /* ---------- 组件：菜单 / 抽屉列表 ---------- */
         '--menu-width': px(c.menu.width),
@@ -313,6 +325,7 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--bg-video-blur': px(c.background.blurPx),
         '--bg-video-scrim': t(c.background.scrim),
         '--bg-surface-blur': px(c.background.surfaceBlurPx),
+        '--bg-content-opacity': `${Math.round(c.background.contentOpacity * 100)}%`,
 
         /* ---------- 组件：页面容器 ---------- */
         '--view-title-size': px(c.view.titleFontSize),
@@ -377,6 +390,13 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
 
         /* ---------- 组件：专辑/歌单详情 ---------- */
         '--collection-cover-size': px(c.collection.coverSize),
+
+        /* ---------- 组件：歌词页 ---------- */
+        '--now-playing-cover-min': px(c.nowPlaying.coverMinWidth),
+        '--now-playing-cover-max': px(c.nowPlaying.coverMaxWidth),
+        '--now-playing-cover-ratio': c.nowPlaying.coverWidthRatio,
+        '--now-playing-cover-stack-max': px(c.nowPlaying.coverStackMaxWidth),
+        '--now-playing-lyrics-height': c.nowPlaying.lyricsPanelHeight,
 
         /* ---------- 组件：业务列表（表格） ---------- */
         '--table-cover-size': px(c.table.coverSize),

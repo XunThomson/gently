@@ -30,7 +30,7 @@
 | 7 | `src/views/` | 页面（含各自私有组件） |
 | 8 | `docs/contracts/local-core-api.md` | **本机核心契约**：命令/事件清单、错误码、插件与皮肤模型 |
 | 9 | `src/api/index.ts` | 上述契约的前端类型（只有类型，无实现） |
-| 10 | `docs/ARCHITECTURE.md`、`docs/ROADMAP.md` | 架构与数据流；开发计划（M0–M5） |
+| 10 | `docs/ARCHITECTURE.md`、`docs/ROADMAP.md`、`docs/GOTCHAS.md` | 架构与数据流；开发计划（M0–M5）；非显然的坑与规避 |
 
 ## 3. 硬约束（改代码前必读）
 
@@ -69,7 +69,7 @@
 
 ```bash
 pnpm typecheck   # tsc --noEmit（只读）
-pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染 + i18n/CSS token 守卫 + 假宿主下的桌面端分支（423 项）
+pnpm smoke       # 冒烟测试：状态层断言 + 全部组件可渲染 + i18n/CSS token 守卫 + 假宿主下的桌面端分支（448 项）
 pnpm check:contract  # 契约守卫：文档 ↔ Rust 命令/事件清单 ↔ 前端服务层与事件常量（含事件名字符集，双向）
 pnpm check:reachability  # 界面可达性守卫：每条契约能力是否真能从界面走到（有封装却没人调用 → 失败）
 pnpm verify      # 一次跑完：typecheck + smoke + check:contract + check:reachability + cargo test -p gently-core
@@ -96,3 +96,4 @@ pnpm ui:capture -- -Launch -AssertRendered -Output release/screenshots/boot.png 
 - 不把 mock 数据写进组件；不留 `TODO` 代替实现。
 - 不引入重量级依赖；引入前先确认是否能用现有工具解决。
 - 改动 `theme.config.json` 的 token 名必须全仓搜索旧名，避免出现失效变量。
+

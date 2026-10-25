@@ -14,6 +14,21 @@ export const appConfig = {
     window: {
         compact: {width: 420, height: 320},
         normal: {width: 1180, height: 760},
+        /**
+         * 外壳形态阈值（行为配置，不是样式）。
+         *
+         * - 宽 < miniWidth 或高 < miniHeight → 迷你播放器（整个外壳替换）；
+         * - 否则宽 < compactWidth → 紧凑模式（侧栏收成图标栏、标题栏收紧）；
+         * - 其余 → 完整界面。
+         *
+         * 紧凑只看宽度：侧栏 / 标题栏挤不挤是横向问题；窗口矮的时候直接进迷你，
+         * 不为了「矮」把宽窗口的侧栏标签无故收掉。
+         */
+        breakpoints: {
+            compactWidth: 960,
+            miniWidth: 720,
+            miniHeight: 480,
+        },
     },
 
     player: {
@@ -66,6 +81,22 @@ export const appConfig = {
         defaultQualityFallback: 'lower',
     },
 
+    background: {
+        /** 本地视频背景上限（超过就拒绝导入，避免把用户磁盘/内存拖垮） */
+        maxVideoBytes: 512 * 1024 * 1024,
+        /** 单文件网页壁纸上限（HTML 会进 IndexedDB，过大会拖慢启动） */
+        maxWebBytes: 1024 * 1024,
+        /** 视频背景允许的播放速度范围 */
+        minPlaybackRate: 0.25,
+        maxPlaybackRate: 2,
+        /** 背景虚化上限（CSS 全屏 blur 很贵，不给无界滑杆） */
+        maxBlurPx: 24,
+        /** 内容表面透明度下限：再低文字会失去可读背景 */
+        minContentOpacity: 0.1,
+        /** 抽屉/浮层表面透明度下限；与内容表面独立控制 */
+        minDrawerOpacity: 0.1,
+    },
+
     /** 歌词 mock 生成参数（接入真实歌词后仅保留展示相关配置） */
     lyrics: {
         /** 首行歌词前的留白（秒） */
@@ -75,6 +106,15 @@ export const appConfig = {
         verseLines: 6,
         verseRepeatLines: 4,
         outroLines: 2,
+        /**
+         * 自动跟随的滚动缓动：每帧向目标靠近的比例（0~1）。
+         * 0.22 在 60fps 下约 0.35s 走完大半距离，读起来像滑行而不是跳转。
+         */
+        followStep: 0.22,
+        /** 用户手动滚动后，暂停自动跟随的时长（毫秒） */
+        followSuspendMs: 4000,
+        /** 距目标小于该像素即认为已对齐，停止动画（避免亚像素抖动写满每一帧） */
+        followSettlePx: 1,
     },
 
     /** mock 数据规模：调大可直接看密集列表的排版表现 */

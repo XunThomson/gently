@@ -32,12 +32,29 @@ import type {PluginSummary} from '../src/api';
 import {rememberCoreSources as rememberCoreSourceList} from '../src/services/core.sources';
 import {canDownload} from '../src/hooks/useTrackActions';
 import {pickQuality, pickQualityWithFallback} from '../src/utils/quality';
+import {playbackFailureText} from '../src/utils/playbackFailure';
+import {
+    createBackgroundPreset,
+    normalizeBackgroundOptions,
+    normalizeBackgroundSettings,
+} from '../src/utils/backgroundSettings';
+import {parseExternalBackgroundPreset, exportExternalBackgroundPreset} from '../src/utils/backgroundPreset';
+import {wrapWebWallpaper} from '../src/utils/backgroundWeb';
+import {
+    normalizeWebPath,
+    resolveWebAssetPath,
+    rewriteCssAssets,
+} from '../src/utils/wallpaperInline';
+import {appConfig} from '../src/config/app.config';
+import {resolveShellMode} from '../src/utils/shellMode';
+import {lyricsScrollStep, lyricsScrollTarget} from '../src/utils/lyricsScroll';
 import {getThemeSkin, parseSkin, resolveTheme as resolveSkin, serializeSkin} from '../src/theme';
 import type {ThemeSkin} from '../src/theme';
 
 import {TitleBar, Toolbar} from '../src/components/shell/title-bar';
 import {Sidebar} from '../src/components/shell/sidebar';
 import {PlayerBar, shouldOpenNowPlaying} from '../src/components/shell/player-bar';
+import {MiniPlayer} from '../src/components/shell/mini-player';
 import {DesktopLyricsApp, LyricsLineView, type DesktopLyricsPayload} from '../src/widgets/desktop-lyrics';
 import {desktopLyricsPayload} from '../src/hooks/useDesktopLyricsBridge';
 import {
@@ -318,6 +335,8 @@ const DYNAMIC_PREFIXES = [
     'quality.',
     // src/i18n/errors.ts 的 errorKey()：错误码的点号换成下划线后拼接
     'errors.',
+    // 壁纸准备助手的 warning code 由 inliner 返回，模板字符串拼接
+    'page.background.assistantWarn.',
 ];
 
 function flattenKeys(obj: Record<string, unknown>, prefix = ''): string[] {
@@ -638,6 +657,7 @@ async function main(): Promise<void> {
     catalogService.setSourceEnabled('netease', true);
 
     check('quality: 期望档位超出源能力时降级', pickQuality(['high', 'standard'], 'hires') === 'high');
+    check('quality: 只支持 standard 的源在首选 high 时降到 standard', pickQuality(['standard'], 'high') === 'standard');
     check('quality: 期望档位可用时取该档', pickQuality(['hires', 'lossless', 'high'], 'high') === 'high');
     check('quality: 源不支持任何档位返回 null', pickQuality([], 'high') === null);
 
@@ -1849,8 +1869,11 @@ async function main(): Promise<void> {
 
     /* ---------------- 组件渲染 ---------------- */
     render('TitleBar', <TitleBar/>);
+    render('TitleBar（紧凑）', <TitleBar compact/>);
     render('Sidebar', <Sidebar mainMenu={buildMenuRoutes(appRoutes)}/>);
+    render('Sidebar（紧凑图标栏）', <Sidebar mainMenu={buildMenuRoutes(appRoutes)} compact/>);
     render('PlayerBar', <PlayerBar/>);
+    render('MiniPlayer（无播放时的空态）', <MiniPlayer onExpand={() => undefined}/>);
     render('DesktopLyricsApp（无窗口时的空态）', <DesktopLyricsApp/>);
 
     /* ---------------- 窗口控制（无边框窗口的两个真实 bug） ---------------- */
@@ -1884,6 +1907,54 @@ async function main(): Promise<void> {
         check(
             '窗口：桌面歌词按钮有独立入口与按下态',
             lyricsTitle.includes(i18n.t('toolbar.desktopLyrics')),
+        );
+
+        /* 尺寸阈值：参考 Netodia 的响应式外壳，完整 / 紧凑 / 迷你三档 */
+        const bp = appConfig.window.breakpoints;
+        check(
+            '窗口：1180×760 是完整界面',
+            resolveShellMode(1180, 760, bp) === 'regular',
+        );
+        check(
+            '窗口：小于紧凑阈值收成图标栏（只由宽度决定）',
+            resolveShellMode(800, 700, bp) === 'compact' &&
+                resolveShellMode(1100, 600, bp) === 'regular',
+        );
+        check(
+            '窗口：小于迷你阈值切换到迷你播放器',
+            resolveShellMode(700, 700, bp) === 'mini' &&
+                resolveShellMode(1000, 470, bp) === 'mini',
+        );
+        check(
+            '窗口：断点边界与无尺寸兜底',
+            resolveShellMode(960, 640, bp) === 'regular' &&
+                resolveShellMode(959, 640, bp) === 'compact' &&
+                resolveShellMode(720, 480, bp) === 'compact' &&
+                resolveShellMode(719, 480, bp) === 'mini' &&
+                resolveShellMode(0, 0, bp) === 'regular',
+        );
+
+        const compactTitle = renderToString(
+            <MemoryRouter>
+                <ThemeProvider><TitleBar compact/></ThemeProvider>
+            </MemoryRouter>,
+        );
+        check(
+            '窗口：紧凑标题栏只保留品牌图形标',
+            compactTitle.includes('data-compact="true"') &&
+                !compactTitle.includes('>Gently<'),
+        );
+        const compactSidebar = renderToString(
+            <MemoryRouter>
+                <ThemeProvider>
+                    <Sidebar mainMenu={buildMenuRoutes(appRoutes)} compact/>
+                </ThemeProvider>
+            </MemoryRouter>,
+        );
+        check(
+            '窗口：紧凑侧栏带图标栏标记与悬浮提示',
+            compactSidebar.includes('data-compact="true"') &&
+                compactSidebar.includes('title="'),
         );
     }
     render('RankingView', <RankingView/>);
@@ -2051,7 +2122,31 @@ async function main(): Promise<void> {
     actions.player.play(s().library.local[2], s().library.local);
     await new Promise((resolve) => setTimeout(resolve, 220));
     render('NowPlayingView（含歌词）', <NowPlayingView/>);
+    render('MiniPlayer（含歌词）', <MiniPlayer onExpand={() => undefined}/>);
     check('页面：歌曲详情渲染时歌词已就绪', s().player.lyrics.length > 0);
+
+    /* 歌词跟随的滚动算术（纯函数）：居中 / 顶部夹紧 / 缓动收敛 */
+    check(
+        '歌词跟随：整行在视口中居中，目标不越过顶部',
+        lyricsScrollTarget(1000, 40, 400) === 820 &&
+            lyricsScrollTarget(10, 40, 400) === 0,
+    );
+    check(
+        '歌词跟随：每帧按比例靠近，进入 1px 内直接落位',
+        Math.abs(lyricsScrollStep(0, 100, 0.2, 1) - 20) < 1e-9 &&
+            lyricsScrollStep(99.5, 100, 0.2, 1) === 100,
+    );
+
+    /* 播放失败文案：播放条与迷你播放器共用，不能一边只说「无法播放」 */
+    check(
+        '播放失败：两处共用同一段原因（含失败源数与 detail）',
+        playbackFailureText({kind: 'noSource', failedSources: ['a', 'b']}, i18n.t) ===
+            i18n.t('player.failureNoSource', {count: 2}) &&
+            playbackFailureText(
+                {kind: 'media', failedSources: [], detail: 'MEDIA_ERR_SRC_NOT_SUPPORTED'},
+                i18n.t,
+            ).endsWith('MEDIA_ERR_SRC_NOT_SUPPORTED'),
+    );
 
     /* 播放条的两块抽屉 + 独立搜索视图 */
     render('QueuePanel', <QueuePanel onClose={() => undefined}/>);
@@ -2084,6 +2179,162 @@ async function main(): Promise<void> {
     check('store: 主题市场预设写入 ui 切片', s().ui.themePresetId === 'sakura');
     actions.ui.setThemePreset(themePresets[0].id);
     check('store: 预设可切回默认', s().ui.themePresetId === themePresets[0].id);
+
+    /* ---------------- 背景：外部预设映射 + 归一化 + store ---------------- */
+    {
+        const parsed = parseExternalBackgroundPreset(
+            '{"playbackrate": 2, "alignment": "contain", "opacity": 40, "camera": 1}',
+        );
+        check(
+            'background: 外部 JSON 只映射已知键，未知键保留',
+            parsed.ok &&
+                parsed.preset.options.playbackRate === 2 &&
+                parsed.preset.options.fit === 'contain' &&
+                parsed.preset.options.opacity === 0.4 &&
+                parsed.preset.unmapped.includes('camera'),
+        );
+        check(
+            'background: 没有可映射参数时不伪造预设',
+            parseExternalBackgroundPreset('{"camera": 1}').ok === false,
+        );
+        {
+            const exported = exportExternalBackgroundPreset(
+                '导出测试',
+                {fit: 'contain', playbackRate: 0.75, opacity: null, blurPx: null, contentOpacity: 0.5, contentBlurPx: 8, drawerOpacity: 0.25, drawerBlurPx: 4},
+                {opacity: 0.6, blurPx: 4, contentOpacity: 0.66, contentBlurPx: 22, drawerOpacity: 0.7, drawerBlurPx: 18},
+            );
+            const reparsed = parseExternalBackgroundPreset(exported);
+            check(
+                'background: 导出 JSON 可被自己的解析器完整读回',
+                reparsed.ok &&
+                    reparsed.preset.options.fit === 'contain' &&
+                    reparsed.preset.options.playbackRate === 0.75 &&
+                    reparsed.preset.options.opacity === 0.6 &&
+                    reparsed.preset.options.blurPx === 4 &&
+                    reparsed.preset.options.contentOpacity === 0.5 &&
+                    reparsed.preset.options.contentBlurPx === 8 &&
+                    reparsed.preset.options.drawerOpacity === 0.25 &&
+                    reparsed.preset.options.drawerBlurPx === 4 &&
+                    reparsed.preset.unmapped.length === 0,
+            );
+        }
+        {
+            const independent = normalizeBackgroundOptions({
+                contentOpacity: 0.4,
+                contentBlurPx: 2,
+                drawerOpacity: 0.9,
+                drawerBlurPx: 12,
+            });
+            check(
+                'background: 抽屉透明度/虚化独立于内容表面',
+                independent.contentOpacity === 0.4 &&
+                    independent.contentBlurPx === 2 &&
+                    independent.drawerOpacity === 0.9 &&
+                    independent.drawerBlurPx === 12,
+            );
+        }
+        {
+            const wrapped = wrapWebWallpaper(
+                '<meta http-equiv="ref&#114;esh" content="0;url=https://evil.invalid">' +
+                    '<base href="https://evil.invalid/">' +
+                    '<script>document.body.textContent="ok"</script><div>static</div>',
+            );
+            check(
+                'background: 网页壁纸包装禁脚本/网络并去掉 meta/base',
+                wrapped.includes('Content-Security-Policy') &&
+                    wrapped.includes("script-src 'none'") &&
+                    wrapped.includes("connect-src 'none'") &&
+                    wrapped.includes('<div>static</div>') &&
+                    !wrapped.includes('https://evil.invalid') &&
+                    !wrapped.includes('ref&#114;esh'),
+            );
+        }
+
+        {
+            check(
+                'background: 网页目录路径归一化并拒绝越界',
+                normalizeWebPath('css/../img/a.png') === 'img/a.png' &&
+                    normalizeWebPath('../outside.png') === null &&
+                    resolveWebAssetPath('index.html', '../outside.png') === null &&
+                    resolveWebAssetPath('css/main.css', '../img/a.png') === 'img/a.png',
+            );
+            const rewritten = await rewriteCssAssets(
+                'a{background:url(../img/a.png)} b{background:url(https://example.com/x.png)}',
+                'css/main.css',
+                (path) => (path === 'img/a.png' ? 'data:image/png;base64,AA==' : null),
+            );
+            check(
+                'background: 网页 CSS 只内联本机资源，外部引用不留下网络请求',
+                rewritten.css.includes('data:image/png;base64,AA==') &&
+                    rewritten.css.includes('url("data:,")') &&
+                    rewritten.inlined === 1 &&
+                    rewritten.removedExternal === 1,
+            );
+        }
+
+        const normalized = normalizeBackgroundSettings({
+            enabled: false,
+            playWhenReducedMotion: true,
+            asset: {
+                id: 'a',
+                name: 'v.mp4',
+                size: 1024,
+                type: 'video/mp4',
+                importedAt: 1,
+            },
+            options: {fit: 'contain', playbackRate: 99, opacity: 2, blurPx: 999, contentOpacity: 0, contentBlurPx: 999, drawerOpacity: 0, drawerBlurPx: 999},
+            presets: [
+                createBackgroundPreset('p', {fit: 'cover', playbackRate: 1, opacity: null, blurPx: null}),
+                {id: 'bad'},
+            ],
+            activePresetId: 'missing',
+        });
+        check(
+            'background: 坏数据被钳制，悬空 active 清空',
+            normalized.enabled === false &&
+                normalized.playWhenReducedMotion === true &&
+                normalized.options.playbackRate === 2 &&
+                normalized.options.opacity === 1 &&
+                normalized.options.blurPx === 24 &&
+                normalized.options.contentOpacity === 0.1 &&
+                normalized.options.contentBlurPx === 24 &&
+                normalized.options.drawerOpacity === 0.1 &&
+                normalized.options.drawerBlurPx === 24 &&
+                normalized.presets.length === 1 &&
+                normalized.activePresetId === null,
+        );
+
+        const before = s().ui.background;
+        const expectedPresets = before.presets.length + 1;
+        actions.ui.setBackgroundOptions({playbackRate: 10, opacity: 2});
+        actions.ui.setBackgroundPlayWhenReducedMotion(true);
+        const after = s().ui.background;
+        check(
+            'background: 手动参数越界被钳制；减少动态效果可显式覆盖',
+            after.options.playbackRate === 2 &&
+                after.options.opacity === 1 &&
+                after.playWhenReducedMotion === true,
+        );
+        actions.ui.saveBackgroundPreset('测试预设');
+        const savedPresetId = s().ui.background.presets[s().ui.background.presets.length - 1].id;
+        actions.ui.renameBackgroundPreset(savedPresetId, '改名后的预设');
+        check(
+            'background: 保存预设后标记为使用中，并可重命名',
+            s().ui.background.presets.length === expectedPresets &&
+                s().ui.background.activePresetId === savedPresetId &&
+                s().ui.background.presets.some(
+                    (preset) => preset.id === savedPresetId && preset.name === '改名后的预设',
+                ),
+        );
+        actions.ui.resetBackground();
+        check(
+            'background: 恢复默认保留命名预设',
+            s().ui.background.asset === null &&
+                s().ui.background.options.playbackRate === 1 &&
+                s().ui.background.playWhenReducedMotion === false &&
+                s().ui.background.presets.length === expectedPresets,
+        );
+    }
 
     /* 核心桥接：浏览器（无 Tauri）下必须安全降级，且**永远不抛异常** */
     check('core: 浏览器环境判定为不可用', coreAvailable() === false);
@@ -3302,9 +3553,10 @@ async function main(): Promise<void> {
                     </MemoryRouter>,
                 );
                 check(
-                    'player-bar: 播放失败时显示「无法播放」与「重试」',
+                    'player-bar: 播放失败时显示「无法播放」「重试」与「换源」',
                     barHtml.includes(i18n.getFixedT('zh')('player.playbackFailed')) &&
                         barHtml.includes(i18n.getFixedT('zh')('player.retry')) &&
+                        barHtml.includes(i18n.getFixedT('zh')('player.findSource')) &&
                         barHtml.includes(i18n.getFixedT('zh')('player.failureNoSource', {count: 1})),
                     barHtml.slice(0, 200),
                 );

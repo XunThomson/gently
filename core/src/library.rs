@@ -153,7 +153,13 @@ pub fn favorites_list(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     let items: Vec<Value> = page
         .items
         .iter()
-        .map(|row| grouped_track(&row.stored, &ctx.streams))
+        .map(|row| {
+            grouped_track(
+                &row.stored,
+                &ctx.streams,
+                &ctx.plugins.qualities(&row.stored.source),
+            )
+        })
         .collect();
     Ok(page_json(items, page.next_cursor, page.total))
 }
@@ -396,14 +402,19 @@ fn text_field(track: &Value, key: &str, fallback: &str) -> Value {
 }
 
 /// 收藏/历史条目下发成 `GroupedTrack`：详情来自一个源，但形状与搜索结果一致。
-fn grouped_track(stored: &StoredTrack, streams: &crate::media::StreamRegistry) -> Value {
+fn grouped_track(
+    stored: &StoredTrack,
+    streams: &crate::media::StreamRegistry,
+    qualities: &[crate::plugin::TrackQuality],
+) -> Value {
     let track = normalized(stored, streams);
     let mut grouped = track.clone();
     grouped["sourceCount"] = json!(1);
     grouped["candidates"] = json!([{
         "source": stored.source,
         "track": track,
-        "qualities": ["standard"],
+        // 收藏快照不带清单；用当前已加载插件的声明补齐（未加载时为空，前端保留首选档位）
+        "qualities": qualities,
     }]);
     grouped
 }

@@ -1,4 +1,5 @@
 import type {ThemeMode, ThemeSkin} from '../theme/types';
+import type {BackgroundSettings} from '../utils/backgroundSettings';
 import type {
     DownloadQualityFallback,
     SourceDisplayMode,
@@ -28,6 +29,8 @@ export interface PersistedUi {
     downloadMaxConcurrent?: number;
     /** 用户导入的皮肤（体积小，直接存本地） */
     customSkins?: ThemeSkin[];
+    /** 背景元数据 + 展示参数 + 预设（视频 / 网页正文在 IndexedDB，不进 localStorage） */
+    background?: BackgroundSettings;
 }
 
 export function readPersistedUi(): PersistedUi {

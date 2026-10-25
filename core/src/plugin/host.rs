@@ -230,6 +230,15 @@ impl PluginHost {
         self.handles.lock().ok()?.get(id).map(|handle| handle.manifest.clone())
     }
 
+    /// 插件声明的音质档位（由高到低）。
+    ///
+    /// 这是「该源**声称**支持什么」而不是「某一首**实际**能拿到什么」：
+    /// 实际档位仍以 `getMediaSource` 返回值 / `ResolvedMedia.quality` 为准。
+    /// 未加载的源返回空，由调用方回退到默认档位。
+    pub fn qualities(&self, id: &str) -> Vec<super::manifest::TrackQuality> {
+        self.manifest_of(id).map(|manifest| manifest.qualities).unwrap_or_default()
+    }
+
     /// 调用插件里的一个函数。`args_json` 是调用参数的 JSON 数组。
     ///
     /// 返回值的 JSON 文本；错误按语义区分：

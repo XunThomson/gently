@@ -1,0 +1,220 @@
+/* 迷你播放器：窗口小于断点后替换整个外壳。尺寸全部来自 theme.config.json 的 miniPlayer 段 */
+
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: 100%;
+    height: 100%;
+    padding: var(--mini-player-padding);
+    box-sizing: border-box;
+    overflow: hidden;
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
+}
+
+/* ---------- 顶栏：品牌 + 展开 / 窗口控制（整窗拖动由根节点提供） ---------- */
+
+.header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: none;
+    height: var(--mini-player-header-height);
+}
+
+.brand {
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.08em;
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-left: auto;
+}
+
+.action {
+    display: grid;
+    place-items: center;
+    width: var(--mini-player-window-button-size);
+    height: var(--mini-player-window-button-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.action:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+/* ---------- 正在播放 ---------- */
+
+.now {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: none;
+    min-width: 0;
+}
+
+.cover {
+    width: var(--mini-player-cover-size);
+    height: var(--mini-player-cover-size);
+    border-radius: var(--mini-player-cover-radius);
+    box-shadow: var(--shadow-md);
+}
+
+.meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    flex: 1;
+    min-width: 0;
+}
+
+.title {
+    color: var(--text-primary);
+    font-size: var(--mini-player-title-font-size);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.artist {
+    color: var(--text-tertiary);
+    font-size: var(--mini-player-artist-font-size);
+    line-height: var(--line-height-tight);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 播放失败：一句能看懂的话 + 重试；不在迷你模式里退回「看起来停着」 */
+.failure {
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 1px var(--space-2);
+    border: 1px solid var(--danger);
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--danger);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition: background-color var(--motion-fast);
+}
+
+.failure:hover {
+    background: var(--bg-hover);
+}
+
+.transport {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: none;
+}
+
+.ctrl {
+    display: grid;
+    place-items: center;
+    width: var(--mini-player-icon-button-size);
+    height: var(--mini-player-icon-button-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.ctrl:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.ctrlMain {
+    display: grid;
+    place-items: center;
+    width: var(--mini-player-control-size);
+    height: var(--mini-player-control-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: var(--brand);
+    color: var(--brand-contrast);
+    cursor: pointer;
+    transition: background-color var(--motion-fast), transform var(--motion-fast);
+}
+
+.ctrlMain:hover {
+    background: var(--brand-hover);
+    transform: scale(1.05);
+}
+
+/* ---------- 歌词 / 进度 ---------- */
+
+.lyrics {
+    flex: 1;
+    min-height: 0;
+}
+
+.footer {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: none;
+}
+
+/* SeekBar 自己是 absolute 的，这里只给它一个定位上下文 */
+.seek {
+    position: relative;
+    flex: 1;
+    height: var(--player-progress-hover-height);
+}
+
+.time {
+    flex: none;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* ---------- 没在播放 ---------- */
+
+.empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    color: var(--text-tertiary);
+    text-align: center;
+}
+
+.emptyTitle {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.emptyHint {
+    font-size: var(--font-size-xs);
+}

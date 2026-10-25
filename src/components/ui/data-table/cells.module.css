@@ -34,17 +34,17 @@
     font-size: var(--font-size-xs);
     line-height: 1.6;
     white-space: nowrap;
-    background: var(--bg-surface-alt);
+    background: var(--surface-content-alt);
     color: var(--text-secondary);
 }
 
 .badge_default {
-    background: var(--bg-surface-alt);
+    background: var(--surface-content-alt);
     color: var(--text-secondary);
 }
 
 .badge_muted {
-    background: var(--bg-surface-alt);
+    background: var(--surface-content-alt);
     color: var(--text-tertiary);
 }
 
