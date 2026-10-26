@@ -169,7 +169,7 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
 - 验证：`r86-wallpaper-assistant.png`；设为背景后 `index-inline.html` 的 iframe `srcdoc`
   不含 `<script>`，且 `sandbox=""`。
 
-## 19. 内容透明度不能用容器的 `opacity`（R86）
+## 19. 内容/抽屉透明度不能用容器的 `opacity`（R86）
 
 - 现象：想调卡片/外壳透明度，直接给容器 `opacity`，文字、图标、边框一起变淡，违反
   “不包括字体”的要求。

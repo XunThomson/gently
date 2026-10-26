@@ -63,6 +63,8 @@ tldr: 当前 R86：插件音质/换源、搜索层级与壁纸准备助手；WE 
   搜索建议面板实测 alpha .7 + blur 4，卡片仍 alpha .2 + blur 8（两者互不影响）；
   SourcePicker/SourceFilter 菜单、播放队列/功能 Panel、收藏夹选择器、歌词工具抽屉都走
   `--surface-drawer`；
+- 打包版实测：设置页可见「内容透明度 / 内容虚化 / 抽屉透明度 / 抽屉虚化」四组控件；
+  截屏 `r86-surface-controls-packaged.png`（1280×800，真实 WebView2 + 内置/网页背景）；
 - 最新浅/深色复测：灯泡从 light 切到 dark 后 `--surface-content` 仍为
   `color-mix(in srgb, #1e1e1e 20%, transparent)`，主题卡片 alpha 仍 .2、
   `backdropFilter` 仍 `blur(8px) saturate(1.4)`，标签 alpha 仍 .2；
@@ -83,6 +85,7 @@ tldr: 当前 R86：插件音质/换源、搜索层级与壁纸准备助手；WE 
 | `r86-content-blur.png` | 内容虚化 8px：只模糊表面背景，文字保持清晰 |
 | `r86-surface-consistency.png` | 背景开启 + 内容 20% / 虚化 8px：设置页滑杆与搜索框同步生效 |
 | `r86-surface-drawer.png` | 抽屉独立 70% / 4px：搜索建议面板比主题卡片更实、模糊更轻 |
+| `r86-surface-controls-packaged.png` | 打包版设置页：四组独立滑杆（内容/抽屉 × 透明度/虚化） |
 | `r86-surface-theme-light.png` | 浅色主题市场：卡片/标签半透明 + 背景视频仍可见（文字清晰） |
 | `r86-surface-theme-dark.png` | 切到深色后同一组值仍保持：卡片 alpha .2、blur 8px、标签 alpha .2 |
 
