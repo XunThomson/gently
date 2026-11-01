@@ -162,10 +162,13 @@ export interface PlayerState {
     playbackError: PlaybackFailure | null;
 }
 
-/** 播放失败：要么所有候选源都解析不到地址，要么媒体元素自己报错 */
+/**
+ * 播放失败：要么所有候选源都解析不到地址，要么媒体元素自己报错，
+ * 要么**系统把播放管道掐了**（安卓锁屏/后台一段时间后 `play()` 既不成也不报错）。
+ */
 export interface PlaybackFailure {
-    kind: 'noSource' | 'media';
-    /** 已经试过的音源 id（界面可以说「3 个源都试过了」） */
+    kind: 'noSource' | 'media' | 'interrupted';
+    /** 已经试过的音源 id（界面可以说「3 个源都试过了」）；`interrupted` 时为空。 */
     failedSources: string[];
     /** 媒体的原始错误（错误码 / 异常文本），只作为次要说明 */
     detail?: string;
@@ -383,6 +386,13 @@ export interface PlayerActions {
     markUnplayable: (message?: string) => void;
     /** 重试当前曲目：重新解析全部候选音源并继续播放 */
     retryPlayback: () => void;
+    /**
+     * 系统掐断播放管道（不是源的错）时如实停表：安卓锁屏 / 后台一段时间后，
+     * 媒体元素的 `play()` 既不会成功也不会报错，界面会一直显示「播放中、进度不动」。
+     *
+     * 与 `markUnplayable` 的区别：**不换源**——地址是好的，换源只会白打一轮网络请求。
+     */
+    markInterrupted: () => void;
     /**
      * 「接着播」：系统休眠 / 长时间失焦回来、媒体元素已经停了时由播放引擎调用。
      *

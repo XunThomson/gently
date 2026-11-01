@@ -6,6 +6,8 @@
  * 非浏览器环境（冒烟测试 / SSR）下所有方法都是安全空操作。
  */
 
+import {isStalled, STALL_THRESHOLD_MS, type StallSample} from '../utils/playbackStall';
+
 export interface AudioHandlers {
     /** 播放进度（秒） */
     onTime?: (currentTime: number, duration: number) => void;
@@ -15,10 +17,25 @@ export interface AudioHandlers {
     onError?: (message: string) => void;
 }
 
+/**
+ * `play()` 的等待上限。
+ *
+ * 为什么要给它一个上限：安卓上「锁屏 / 后台一段时间」之后，媒体管道会被系统掐掉，
+ * 此时 `play()` 返回的 Promise **既不 resolve 也不 reject**（实测 CDY-AN00：唤醒后
+ * 二十多秒仍挂在那里）。谁 await 它就永远不会往下走——看门狗拿不到结果，
+ * 于是界面一直显示「播放中」、进度纹丝不动，用户只能杀掉重来（R111 真机定位）。
+ */
+const PLAY_TIMEOUT_MS = 3000;
+
+/** `play()` 的三种结局：真的开始播 / 明确被拒 / 超时（管道坏了） */
+type PlayOutcome = 'ok' | 'rejected' | 'timeout';
+
 class AudioEngine {
     private el: HTMLAudioElement | null = null;
     private handlers: AudioHandlers = {};
     private volume = 1;
+    /** 最近一次「位置真的变了」的采样（僵死判定用） */
+    private lastSample: StallSample | null = null;
 
     setHandlers(handlers: AudioHandlers): void {
         this.handlers = handlers;
@@ -45,6 +62,11 @@ class AudioEngine {
         const el = this.el;
         if (!el) return;
         const duration = Number.isFinite(el.duration) ? el.duration : 0;
+        /* 位置变了就记一笔：僵死判定（`isStalled`）靠这组采样，而不是靠 `paused`
+           ——元素可能「以为自己在播」，位置却一动不动（R111 真机）。 */
+        if (!this.lastSample || this.lastSample.position !== el.currentTime) {
+            this.lastSample = {position: el.currentTime, at: Date.now()};
+        }
         this.handlers.onTime?.(el.currentTime, duration);
     };
 
@@ -72,6 +94,7 @@ class AudioEngine {
 
         el.dataset.src = url;
         el.src = url;
+        this.lastSample = null;
         this.safeSetVolume(el);
         el.load();
     }
@@ -82,34 +105,67 @@ class AudioEngine {
         const url = el?.dataset.src;
         if (!el || !url) return;
         el.src = url;
+        this.lastSample = null;
         this.safeSetVolume(el);
         el.load();
     }
 
     /**
-     * 试着从「被系统中断」的状态里恢复播放（窗口重新聚焦 / 页面重新可见时调用）。
+     * 「位置卡住了」的第一次抢救：**先硬重载再播**。
+     *
+     * 与 `resume()` 的分工：`resume()` 面向「元素停着」（`paused`），这里面向
+     * 「元素以为自己在播、位置却不动」（R111 真机上的僵死）。这种状态先 `reload()`
+     * 才可能把管道拉回来——单纯 `play()` 会立刻「成功」（因为它本来就没暂停）。
+     */
+    async hardRecover(): Promise<'ok' | 'failed'> {
+        const el = this.ensure();
+        if (!el || !el.dataset.src) return 'failed';
+        try {
+            this.reload();
+        } catch {
+            return 'failed';
+        }
+        return (await this.tryPlay(el)) === 'ok' ? 'ok' : 'failed';
+    }
+
+    /**
+     * 带超时的 `play()`：**绝不让调用方无限等**（见 `PLAY_TIMEOUT_MS` 的注释）。
+     *
+     * 超时不算失败结论——调用方（看门狗）会决定是重载、重新解析还是如实停表。
+     */
+    private tryPlay(el: HTMLAudioElement): Promise<PlayOutcome> {
+        let timer: number | undefined;
+        const timeout = new Promise<PlayOutcome>((resolve) => {
+            timer = window.setTimeout(() => resolve('timeout'), PLAY_TIMEOUT_MS);
+        });
+        const started = Promise.resolve()
+            .then(() => el.play())
+            .then<PlayOutcome>(() => 'ok')
+            .catch<PlayOutcome>(() => 'rejected');
+        return Promise.race([started, timeout]).finally(() => {
+            if (timer !== undefined) window.clearTimeout(timer);
+        });
+    }
+
+    /**
+     * 试着从「被系统中断」的状态里恢复播放（窗口重新聚焦 / 页面重新可见 / 看门狗轮询）。
      *
      * - `ok`：元素只是被暂停了，直接播起来；
-     * - `reloaded`：元素处在 error 状态，硬重载后播起来了；
-     * - `failed`：这个地址真的不能用了——调用方应让核心**重新解析**一次（进度保留）。
+     * - `reloaded`：元素处在 error 态（或 play 超时），硬重载后播起来了；
+     * - `failed`：这个地址真的不能用了——调用方应让核心**重新解析**一次（进度保留），
+     *   若连重新解析也不行，就该如实停表而不是继续显示「播放中」。
      */
     async resume(): Promise<'ok' | 'reloaded' | 'failed'> {
         const el = this.ensure();
         if (!el || !el.dataset.src) return 'failed';
 
         if (!el.error) {
-            try {
-                await el.play();
-                return 'ok';
-            } catch {
-                /* 落到下面的硬重载 */
-            }
+            if ((await this.tryPlay(el)) === 'ok') return 'ok';
         }
 
         try {
             this.reload();
-            await el.play();
-            return 'reloaded';
+            return (await this.tryPlay(el)) === 'ok' ? 'reloaded' : 'failed';
         } catch {
             return 'failed';
         }
@@ -118,12 +174,11 @@ class AudioEngine {
     play(): void {
         const el = this.ensure();
         if (!el) return;
-        const result = el.play();
-        if (result && typeof result.catch === 'function') {
-            result.catch((err: unknown) => {
-                this.handlers.onError?.(err instanceof Error ? err.message : String(err));
-            });
-        }
+        void this.tryPlay(el).then((outcome) => {
+            /* 超时不在这里报错：那会把「系统掐断」误报成「这个源坏了」，
+               于是白白换源。留给看门狗判断（它会先重载、再重新解析、最后才停表）。 */
+            if (outcome === 'rejected') this.handlers.onError?.('播放被拒（自动播放策略或地址失效）');
+        });
     }
 
     pause(): void {
@@ -168,6 +223,19 @@ class AudioEngine {
     /** 元素是否还停着（没有元素也算停着） */
     isPausedNow(): boolean {
         return !this.el || this.el.paused;
+    }
+
+    /**
+     * 元素是否**以为自己在播、位置却不动**（僵死）。
+     *
+     * 与 `isPausedNow()` 互补：安卓锁屏/后台一段时间后，元素既不报错也不暂停，
+     * 只是 `currentTime` 再也不前进——只看 `paused` 会漏掉这种，界面就永远「播放中」。
+     */
+    isStalledNow(thresholdMs: number = STALL_THRESHOLD_MS): boolean {
+        const el = this.el;
+        if (!el || !el.dataset.src) return false;
+        if (el.error || el.paused) return false;
+        return isStalled(this.lastSample, el.currentTime, Date.now(), thresholdMs);
     }
 
     /**

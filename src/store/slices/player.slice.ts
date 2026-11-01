@@ -513,6 +513,17 @@ export function createPlayerSlice(ctx: StoreCtx) {
             });
         },
 
+        markInterrupted() {
+            const {current, playing} = ctx.getState().player;
+            if (!current || !playing) return;
+            /* 只改「在播却没在播」这一种状态：已经停了就不该覆盖别的原因。
+               `audioUrl` / `candidates` 都留着——用户点「重试」时走 `retryPlayback`。 */
+            patch({
+                playing: false,
+                playbackError: {kind: 'interrupted', failedSources: []},
+            });
+        },
+
         retryPlayback() {
             const {current, candidates} = ctx.getState().player;
             if (!current) return;

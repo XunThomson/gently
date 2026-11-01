@@ -42,6 +42,7 @@ import {canDownload} from '../src/hooks/useTrackActions';
 import {isInDownloadQueue, trackReference} from '../src/utils/downloadQueue';
 import {pickQuality, pickQualityWithFallback} from '../src/utils/quality';
 import {playbackFailureText} from '../src/utils/playbackFailure';
+import {isStalled, STALL_THRESHOLD_MS} from '../src/utils/playbackStall';
 import {
     createBackgroundPreset,
     normalizeBackgroundOptions,
@@ -2758,6 +2759,17 @@ async function main(): Promise<void> {
             lyricsScrollStep(99.5, 100, 0.2, 1) === 100,
     );
 
+    /* 僵死判定（R111）：安卓锁屏后元素「以为自己在播」、位置却不动，只判 paused 会漏掉 */
+    check(
+        '播放僵死：位置在阈值内没变才算僵死（动了/倒退都不算）',
+        isStalled({position: 12, at: 1000}, 12, 1000 + STALL_THRESHOLD_MS - 1) === false &&
+            isStalled({position: 12, at: 1000}, 12, 1000 + STALL_THRESHOLD_MS) === true &&
+            isStalled({position: 12, at: 1000}, 18, 1000 + 60_000) === false &&
+            isStalled({position: 12, at: 1000}, 5, 1000 + 60_000) === false &&
+            /* 第一次采样（还没有基准）不能判死，否则刚播就被「救」一次 */
+            isStalled(null, 12, 999_999) === false,
+    );
+
     /* 播放失败文案：播放条与迷你播放器共用，不能一边只说「无法播放」 */
     check(
         '播放失败：两处共用同一段原因（含失败源数与 detail）',
@@ -2768,6 +2780,44 @@ async function main(): Promise<void> {
                 i18n.t,
             ).endsWith('MEDIA_ERR_SRC_NOT_SUPPORTED'),
     );
+    /* 第三种失败：系统掐断播放管道（安卓锁屏/后台后 play() 既不成功也不报错）。
+       它必须有自己的文案——说成「音频加载失败」会把人引到「换源」上去，而地址是好的。 */
+    check(
+        '播放失败：被系统中断有独立文案（不误导去换源）',
+        playbackFailureText({kind: 'interrupted', failedSources: []}, i18n.t) ===
+            i18n.t('player.failureInterrupted') &&
+            playbackFailureText({kind: 'interrupted', failedSources: []}, i18n.t) !==
+                i18n.t('player.failureMedia'),
+    );
+
+    /* 系统中断后 store 要**如实停表**，并保留曲目（点播放 = 重试，不是重头再来） */
+    {
+        const actions = useActions();
+        const before = store.getState().player;
+        actions.player.play({
+            id: 'smoke:interrupted',
+            title: '中断用例',
+            artist: '测试',
+            album: '',
+            duration: '',
+            durationSec: 180,
+            source: 'mock',
+            gradient: 'linear-gradient(#111, #333)',
+            tags: [],
+        } as never);
+        store.setState({player: {...store.getState().player, playing: true}});
+        actions.player.markInterrupted();
+        const after = store.getState().player;
+        check(
+            '播放中断：停表 + 写 interrupted 原因 + 曲目还在',
+            after.playing === false &&
+                after.playbackError?.kind === 'interrupted' &&
+                after.current?.id === 'smoke:interrupted',
+            JSON.stringify(after.playbackError),
+        );
+        // 复原现场：后面的 SourcePicker / QualityPicker 依赖当前曲目的候选列表
+        store.setState({player: before});
+    }
 
     /* 播放条的两块抽屉 + 独立搜索视图 */
     render('QueuePanel', <QueuePanel onClose={() => undefined}/>);

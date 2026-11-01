@@ -4,10 +4,44 @@ last_verified: 2026-11-01
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R110（安卓播放链路定案）：R108/R109 一直把「安卓播不出声」当解码/Content-Type 问题查，本轮用**真机 CDP**（新工具 `scripts/android-cdp.mjs`）把链路拆开——`fetch` 回环地址成功（opaque），`new Audio(同地址)` 报 `code=4`；打开代理日志才看到真凶：上游用 **HTTP 200 + HTML 错误页**回应媒体地址（取出来正是网易云的「网页找不到」页，102 752 字节）。于是核心侧补齐：`Content-Type` 按**字节**嗅探（fMP4/ID3/fLaC/OggS/RIFF-WAVE/ADTS/webm）、`Range: bytes=0-` 也嗅探、嗅探前缀原样回吐、插件 `mimeType` 不再丢失、回环代理放宽 CORS、响应日志写清「回了什么」+ 非音频 WARN。**移动端播放链路已在真机验证**：本地文件经同一条代理 206 播放，`aria-valuenow/max` 5→13 / 271。核心单测 84；`pnpm verify` 8 道全绿。
+tldr: 当前 R111（P2 入口条件的实测 + 中断恢复）：按计划先测「锁屏后 WebView `<audio>` 还能活多久」——真机数据是**熄屏后正常播了约 2.8 分钟然后停住**，进程没死、`ActivityRecord` 还在栈顶；回前台后 `play()` 的 Promise **既不 resolve 也不 reject**（探针挂到 CDP 超时都没回来），于是旧的 `await el.play()` 永久卡住，界面一直显示「播放中、进度不动」。**P2 的技术路线据此定为「WebView 播放 + 前台服务（foreground service）+ MediaSession」**，不做原生播放器。本轮先把前端的中断恢复做对：`play()` 一律带 3 秒上限（`ok/rejected/timeout`），`timeout` 不算「源坏了」——重载一次 → 重新解析一次 → 仍不行就 `markInterrupted` 如实停表，文案「播放被系统中断（点播放继续）」。smoke 525 → **527**。
 ---
 
 # STATE
+
+## 本轮目标（第一百一十一轮）
+
+> 起点：R110 把「播不出声」定案成上游问题。剩下的真问题是 P2——
+> 但计划里 P2 的入口条件写得很清楚：**先实测，再选路线**。本轮先测，再修测出来的 bug。
+
+### 1. 本轮做了什么
+
+| 层 | 改动 |
+|---|---|
+| 实测（P2 入口条件） | 真机（`CDY-AN00`）播放 271 秒本地曲目 → 熄屏 → 定时用 `android-cdp.mjs eval` 读 `[role=slider]` 的 `aria-valuenow`。**三个包测出三种形态**：① R110 包：`4`→`33`→`171`，解锁回前台仍 `171`（音频停住）；② R111 首包：`4`→`56`→`226`，解锁后仍 `226`，元素 **`paused === false`** 也没报错（位置不动 = 僵死）；③ R111 带僵死看门狗：解锁回前台**进度是 `0`**——页面被系统整页重载，播放状态全丢。三种都不是进程死亡（`pidof` 一直没变） |
+| 结论 | **P2 必须做前台服务（foreground service）+ MediaSession**，技术路线「WebView 播放 + 保活」；另有一条新发现：**页面被重载后播放状态全丢**，P2 落地时要持久化「上次在放什么 / 放到哪」并恢复 |
+| 根因（第二层） | 形态 1 里 `HTMLMediaElement.play()` 返回的 Promise **既不 resolve 也不 reject**（探针挂到 CDP 超时都没回来）；旧代码 `await el.play()` 永远停在那一步，看门狗拿不到结论——不重载、不换源、不停表 |
+| 前端（`audio.service.ts`） | 新增 `tryPlay()`：`play()` 一律带 **3 秒上限**（`ok / rejected / timeout`）；`resume()` 同套、超时算 `failed`；新增 `hardRecover()`（**先 reload 再 play**，治「以为在播、位置不动」）；`timeupdate` 里维护「位置采样」 |
+| 前端（`utils/playbackStall.ts`） | 新增纯函数 `isStalled(previous, position, now, threshold)`：**只判 `paused` 会漏掉形态 2**，所以按「位置 8 秒没变」判僵死（正常缓冲抖动被阈值滤掉；倒退/前进都算在动） |
+| 前端（`useAudioEngine.ts`） | 看门狗两条路：`isPausedNow()` → `resume()`；`isStalledNow()` → `hardRecover()`。都以「有 `MediaError` 给 2 次重新解析、只有超时/僵死给 1 次」收尾，仍不行 `markInterrupted()` |
+| store / 文案 | 新增 `player.markInterrupted()`（**只停表、不换源**，曲目与候选都留着）、`PlaybackFailure.kind` 增加 `'interrupted'`、`playbackFailureText()` 三路分支、`player.failureInterrupted` 中英文案（「播放被系统中断（点播放继续）」）。点播放走既有 `retryPlayback` |
+| 测试 | 冒烟 +3：`isStalled` 边界（动了/倒退/首次采样都不算）；三种失败各有文案且 `interrupted ≠ media`；`markInterrupted` 停表 + 写原因 + **曲目还在**（用例前后保存/复原 player 切片，不污染后面依赖候选列表的渲染用例） |
+
+### 2. 验证
+
+- `pnpm typecheck` 通过；`pnpm smoke`：**528**（525 → +3，全绿）；`pnpm verify` 8 道全绿；
+- 真机三种形态的时间点与读数已逐条记进 `ANDROID-PLAN.md` §7.4（含 `pidof`、`ActivityRecord` 证据）；
+- **诚实边界**：形态 3（页面被系统重载）下恢复逻辑没有机会执行——本轮的修复覆盖的是「页面还活着」的形态 1/2；
+  让播放真正活下来要靠 P2 的前台服务。所以本轮的验证是「smoke 钉死逻辑 + 真机钉死现象」，不是「真机证明已修复」。
+
+### 3. 未做 / 值得你知道的
+
+- **P2 本体（前台服务 + MediaSession + 通知栏控制）还没做**：下一步在 `gen/android` 里加 Kotlin
+  `Service` + 通知 + MediaSession，用 Tauri 的 `register_android_plugin()` 桥接（`run_mobile_plugin`），
+  前端只在播放状态变化时推一次；这需要新增 Android 侧代码与 Gradle 配置；
+- **播放状态持久化**（形态 3 暴露的）：页面被重载后要能恢复「上次在放什么 / 放到哪 / 暂停态」；
+- 通知栏歌词（P4）依赖 P2 的前台服务；SAF 导入（P3）需要原生文件选择器；
+- 「上游返回的不是音频」仍只进日志（R110 记的候选任务）。
 
 ## 本轮目标（第一百一十轮）
 
@@ -327,9 +361,9 @@ tldr: 当前 R110（安卓播放链路定案）：R108/R109 一直把「安卓�
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
-| R110 | 安卓播放链路定案 | 「播不出声」不是解码问题：上游用 **HTTP 200 + HTML 错误页**冒充媒体；核心改为**按字节嗅探** `Content-Type`（含 `Range: bytes=0-` 路径）、插件 `mimeType` 不再丢、代理放宽 CORS、响应日志写清「回了什么」+ 非音频 WARN。真机用本地文件验证播放链路（206 + `aria-valuenow` 5→13/271）。新增真机 CDP 工具 `scripts/android-cdp.mjs`；核心单测 84 | [本轮](#本轮目标第一百一十轮) |
+| R111 | P2 入口条件实测 + 中断恢复 | 真机测出**熄屏后三种形态**（音频停住 → 位置僵死 → 页面被重载），进程全程没死 → **P2 定为「WebView 播放 + 前台服务 + MediaSession」**；前端修对中断恢复：`play()` 带 3 秒上限、`isStalled()` 治「以为在播却不动」、`markInterrupted()` 如实停表并给「点播放继续」；smoke 528 | [本轮](#本轮目标第一百一十一轮) |
+| R110 | 安卓播放链路定案 | 「播不出声」不是解码问题：上游用 **HTTP 200 + HTML 错误页**冒充媒体；核心改为**按字节嗅探** `Content-Type`（含 `Range: bytes=0-` 路径）、插件 `mimeType` 不再丢、代理放宽 CORS、响应日志写清「回了什么」+ 非音频 WARN。真机用本地文件验证播放链路（206 + `aria-valuenow` 5→13/271）。新增真机 CDP 工具 `scripts/android-cdp.mjs`；核心单测 84 | [下方](#本轮目标第一百一十轮) |
 | R109 | 安卓 P1 收尾（P1-4/5/6） | 手机列表换成两行式三列（`mobileColumns`，由 `resolveColumns` 按形态裁决）、行内动作收进 ⋯ 底部面板、SeekBar 常显焦点 + 32px 热区、桌面窗口动作在移动端 no-op；真机上修掉三个只在设备出现的问题（单元格内边距裁字、button 遮罩不涂色、播放条`.bar` 缺定位祖先）；smoke 525 | [下方](#本轮目标第一百零九轮) |
-| R108 | 安卓 P1 外壳（P1-1/2/3） | `mobile` 第 4 形态 + 左侧抽屉 8 项 + 搜索作 home + 常驻播放条；真机截图 `r108-android-*.png`（证据在 ANDROID-PLAN §7.1） | [ANDROID-PLAN](ANDROID-PLAN.md) |
 
 ## 历史轮次
 

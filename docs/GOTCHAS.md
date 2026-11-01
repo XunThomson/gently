@@ -568,6 +568,27 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
   面板渲染成 shell 的兄弟节点），`position: absolute; inset: 0` 落到 `.app__content`
   （`position: relative`，整屏）。同理：桌面歌词/宠物的窗口浮层不要塞进滚动容器。
 
+
+
+
+## 55. 别拿「铺满屏幕的 `<button>`」当遮罩：真机上它既不涂背景、也收不到点击（R109）
+
+- 现象：底部操作面板 / 导航抽屉的遮罩在浏览器预览里正常（浅色方案下也压暗），
+  **装到 `CDY-AN00`（Android 10）后完全看不见**——面板像浮在半空，列表一点没暗；
+  把遮罩色挪走后更暴露了第二半问题：**点面板外的空白也关不掉**（点遮罩的 `onClick` 不触发）。
+  像素实测：`#FFFFFF` → `#FFFFFF`（浏览器里同一份 CSS 是 `#1E1E1E` → `#101010`）。
+- 定位过程（省下次别重走）：token 有、CSS 有（`dist` 里能 grep 到 `--modal-scrim`）、
+  `inset: 0` 在该 WebView 上是支持的（抽屉定位正常）。把同一个 `background: var(--modal-scrim)`
+  从 `<button>` 挪到它的**父 `<div>`** 上，立刻生效——问题在「button + 全屏 + 不涂色」这一组合。
+- 规避（两条都要）：① **遮罩色永远画在容器 `<div>` 上**，`<button>` 只当额外的 a11y 取消入口；
+  ② **关闭动作挂在根 `<div>` 的 `onClick` 上**（面板自己 `stopPropagation`），再给一个显式的 ✕。
+  `ConfirmDialog` 一直是「div 遮罩 + 按钮在弹窗里」的结构，所以它的压暗与取消在真机都正常。
+  这条同时解释了「同一份 CSS 在浏览器对、真机不对」——别先怀疑主题 token。
+
+
+
+
+
 ## 56. 「播不出声」先看代理回了什么：上游常用 **HTTP 200 + HTML 错误页** 冒充媒体（R110）
 
 - 现象：真机点播放 → 播放条出现、进度在走，但没声音；logcat 里是
@@ -591,20 +612,18 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
   点播放后看 `媒体响应（本地文件） status=206`，再用 `scripts/android-cdp.mjs eval` 读
   `[role=slider]` 的 `aria-valuenow/aria-valuemax`（实测 38/271 → 44/271，说明真的在播）。
 
-## 55. 别拿「铺满屏幕的 `<button>`」当遮罩：真机上它既不涂背景、也收不到点击（R109）
+## 57. 安卓上 `play()` 可能**既不成功也不报错**：谁 await 它谁永久卡住（R111）
 
-- 现象：底部操作面板 / 导航抽屉的遮罩在浏览器预览里正常（浅色方案下也压暗），
-  **装到 `CDY-AN00`（Android 10）后完全看不见**——面板像浮在半空，列表一点没暗；
-  把遮罩色挪走后更暴露了第二半问题：**点面板外的空白也关不掉**（点遮罩的 `onClick` 不触发）。
-  像素实测：`#FFFFFF` → `#FFFFFF`（浏览器里同一份 CSS 是 `#1E1E1E` → `#101010`）。
-- 定位过程（省下次别重走）：token 有、CSS 有（`dist` 里能 grep 到 `--modal-scrim`）、
-  `inset: 0` 在该 WebView 上是支持的（抽屉定位正常）。把同一个 `background: var(--modal-scrim)`
-  从 `<button>` 挪到它的**父 `<div>`** 上，立刻生效——问题在「button + 全屏 + 不涂色」这一组合。
-- 规避（两条都要）：① **遮罩色永远画在容器 `<div>` 上**，`<button>` 只当额外的 a11y 取消入口；
-  ② **关闭动作挂在根 `<div>` 的 `onClick` 上**（面板自己 `stopPropagation`），再给一个显式的 ✕。
-  `ConfirmDialog` 一直是「div 遮罩 + 按钮在弹窗里」的结构，所以它的压暗与取消在真机都正常。
-  这条同时解释了「同一份 CSS 在浏览器对、真机不对」——别先怀疑主题 token。
-
-
-
-
+- 现象：手机熄屏放歌，约 2.8 分钟后声音停了；解锁回前台，界面**一直显示「播放中」但进度不动**，
+  点什么都不动（只能杀进程重来）。进程没死（`pidof` 一直在），`ActivityRecord` 也在栈顶。
+- 根因：媒体管道被系统掐掉之后，`HTMLMediaElement.play()` 返回的 Promise **既不 resolve 也不 reject**。
+  一个 `await new Audio(url).play()` 的探针挂到 CDP 超时都没回来，而旧的恢复逻辑正是
+  `await el.play()` → 永远不往下走 → 看门狗拿不到结论 → 没有重载、没有换源、没有停表。
+- 规避（R111 已落地）：**任何 `play()` 都要带超时**（`audio.service.ts` 的 `tryPlay()`，3 秒，
+  三种结局 `ok / rejected / timeout`）。超时**不能**当「这个源坏了」——那会白换一轮源；
+  应该：先重载一次 → 仍不行就让 store 重新解析一次 → 还不行就 `markInterrupted` 如实停表
+  （文案「播放被系统中断（点播放继续）」，点播放走 `retryPlayback`）。
+- 顺带记下测量结论（P2 入口条件）：**熄屏后音频还能正常播约 2.8 分钟**，之后停住；
+  真机前台服务（foreground service）+ MediaSession 是 P2 的正解（详见 `ANDROID-PLAN.md` §7.4）。
+- 排查口径：判断「是不是真的在播」别信界面，用 `node scripts/android-cdp.mjs eval` 读
+  `[role=slider]` 的 `aria-valuenow`；连着两次一样就是没在播。

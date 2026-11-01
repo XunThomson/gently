@@ -15,7 +15,7 @@ export function useAudioEngine(): void {
     const playing = useSelect((s) => s.player.playing);
     const playable = useSelect((s) => s.player.playable);
     const volume = useSelect((s) => s.player.volume);
-    const {setProgress, next, markUnplayable, recoverPlayback} = useActions().player;
+    const {setProgress, next, markUnplayable, recoverPlayback, markInterrupted} = useActions().player;
 
     /* 引擎事件 → store */
     useEffect(() => {
@@ -92,25 +92,40 @@ export function useAudioEngine(): void {
         let recoveredPlayId: number | null = null;
         let attempts = 0;
 
+        const escalate = (result: 'ok' | 'reloaded' | 'failed') => {
+            if (result !== 'failed') return;
+
+            if (recoveredPlayId !== playId) {
+                recoveredPlayId = playId;
+                attempts = 0;
+            }
+
+            /* 有 `MediaError`：地址确实坏了（token/直链过期、上游 403）——重新解析。
+               没有 `MediaError`、只是 `play()` 超时 / 位置不动：**系统把管道掐了**
+               （安卓锁屏/后台）。这种也值得重新解析一次（新地址 + 新的 load 能把管道拉回来），
+               但只给一次机会，之后如实停表并说明是「被系统中断」，而不是假装还在播。 */
+            const budget = audioEngine.hadError() ? 2 : 1;
+            if (attempts < budget) {
+                attempts += 1;
+                recoverPlayback();
+                return;
+            }
+            markInterrupted();
+        };
+
         const resumeIfStalled = () => {
             // 页面在后台时不抢播放：切回来（visibilitychange 会再触发一次）才恢复
             if (document.visibilityState === 'hidden') return;
-            // 元素还在播就什么都不做：只有「界面说在播、元素却停着」才是要修的状态
-            if (!audioEngine.isPausedNow()) return;
-
-            void audioEngine.resume().then((result) => {
-                if (result !== 'failed') return;
-                // 只有**错误态**才值得重新解析地址；单纯被暂停/被策略拦下换 URL 也没用
-                if (!audioEngine.hadError()) return;
-                if (playId !== null && recoveredPlayId === playId && attempts >= 2) return;
-                if (recoveredPlayId !== playId) {
-                    recoveredPlayId = playId;
-                    attempts = 0;
-                }
-                attempts += 1;
-                // 地址已经作废：交给核心重新解析（保留进度），用户不需要手动重播
-                recoverPlayback();
-            });
+            // 1) 元素停着（被暂停 / 被策略拦下）：叫它继续
+            if (audioEngine.isPausedNow()) {
+                void audioEngine.resume().then(escalate);
+                return;
+            }
+            /* 2) 元素**以为自己在播、位置却不动**（安卓锁屏/后台后的僵死）。
+               只判 `paused` 会漏掉这一种——界面就永远「播放中、进度不动」（R111 真机）。 */
+            if (audioEngine.isStalledNow()) {
+                void audioEngine.hardRecover().then((outcome) => escalate(outcome === 'ok' ? 'ok' : 'failed'));
+            }
         };
 
         window.addEventListener('focus', resumeIfStalled);
@@ -125,5 +140,5 @@ export function useAudioEngine(): void {
             document.removeEventListener('visibilitychange', resumeIfStalled);
             window.clearInterval(timer);
         };
-    }, [audioUrl, playing, playable, playId, recoverPlayback]);
+    }, [audioUrl, playing, playable, playId, recoverPlayback, markInterrupted]);
 }

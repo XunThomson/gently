@@ -416,6 +416,38 @@ pnpm tauri android build --debug -t aarch64 --apk
 | 截图 | `r110-android-local-list.png`（扫描面板 + 扫到的曲目）、`r110-android-local-playing.png`（播放中，进度条有拇指与填充） |
 | 未做 | 「上游不是音频」还**没进 UI 文案**（现在只会显示「无法播放 / 重试 / 换源」）。要让它可读，需要在 `playback.resolve` 里先探一次（自动换下一个候选）或加一个契约事件；这是下一步的候选任务 |
 
+### 7.4 R111：后台播放的实测（P2 入口条件）+ 中断恢复
+
+> 计划里 P2 的入口条件是「先实测：锁屏 5 分钟 WebView `<audio>` 是否还活着」。
+> 本轮把它做了，结论直接决定 P2 的技术路线。
+
+| 项 | 实测 |
+|---|---|
+| 设备 / 包 | `CDY-AN00` · Android 10 · `pnpm tauri android build --debug -t aarch64 --apk` |
+| 步骤 | 播放本地 271 秒的测试曲目 → `svc power stayon false` + `KEYCODE_POWER` 熄屏 → 定时用 `android-cdp.mjs eval` 读 `[role=slider]` 的 `aria-valuenow` |
+| 形态 1（R110 包） | 21:25:48 熄屏时 `4` → 21:26:17 `33` → 21:29:05 `171`；**21:33 / 21:34（已解锁并切回前台）仍是 `171`**。进程存活（`pidof` 未变、`ActivityRecord` 在栈顶） |
+| 形态 2（R111 首个包） | 熄屏后 21:43:00 起播 `4` → 21:43:51 `56` → 21:46:36（解锁）`226` → 21:47:00 仍 `226`。元素 **`paused === false`**、也没有 `MediaError`：只是位置不动 |
+| 形态 3（R111 带僵死看门狗） | 21:53:31 熄屏起播 `4` → 21:58:21 解锁回前台：**进度是 `0`**，核心日志没有新的启动记录、`pid` 也没变 → **WebView 页面被系统整页重载了**（渲染进程被杀后的恢复），播放状态全丢 |
+| 三种形态的共同点 | 都不是「进程死亡」：`pidof` 一直在。是**系统的后台策略**在掐「WebView 里的媒体」——先让音频停住（形态 1/2），时间再长一点直接把渲染进程回收（形态 3） |
+| 结论 | **P2 必须做前台服务（foreground service）+ MediaSession**：让系统把它当「正在放音的应用」，既不被挂起也不被回收。技术路线定为「WebView 播放 + 保活」，不做原生播放器 |
+| 附带结论（形态 3 暴露的） | 页面一旦被重载，**播放状态就全丢了**（当前曲目、进度、队列）。P2 落地时要把「上次在放什么 / 放到哪」持久化并在启动时如实恢复（暂停态、进度、可重试的候选），否则用户切回来只会看到一个空播放条 |
+
+**顺带修掉的中断恢复（本轮，前端）**
+
+- `audio.service.ts`：`play()` 一律走 `tryPlay()`（3 秒上限，三种结局 `ok / rejected / timeout`）——
+  **绝不让调用方无限等**（形态 1/2 里 `play()` 的 Promise 既不 resolve 也不 reject）；
+  `resume()` 用同一套，超时算 `failed`；新增 `hardRecover()`（**先 reload 再 play**，治「以为在播、位置不动」）。
+- 新增 `utils/playbackStall.ts`（纯函数 `isStalled`）：**只判 `paused` 会漏掉形态 2**——
+  元素不暂停、不报错，位置却一动不动。判定用「位置在 8 秒内没变」，采样由引擎的 `timeupdate` 维护。
+- `useAudioEngine.ts` 看门狗：先看 `isPausedNow()`（→ `resume()`），再看 `isStalledNow()`（→ `hardRecover()`）；
+  两条都以「有 `MediaError` 给 2 次重新解析、只有超时/僵死给 1 次」收尾，仍不行就 `markInterrupted()`。
+- 新增 `markInterrupted()` 与 `player.failureInterrupted` 文案（中/英）：界面从「假装在播、进度不动」
+  变成「播放被系统中断（点播放继续）」，点播放走既有的 `retryPlayback`。
+- 冒烟 +3：`isStalled` 的边界（动了/倒退/首次采样都不算僵死）；三种失败各有文案且 `interrupted ≠ media`；
+  `markInterrupted` 停表 + 保留曲目。
+- **诚实边界**：形态 3 下页面被重载，恢复逻辑没有机会执行——所以这套修复解决的是「页面还活着」的形态 1/2；
+  真正让播放活下来要靠 P2 的前台服务。两者的验证分别落在 smoke（逻辑）与真机（§7.4 三种形态）。
+
 **拆分（每片独立可交付）**
 
 | 片 | 内容 | 完成标准 |
