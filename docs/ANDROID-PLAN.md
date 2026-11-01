@@ -253,13 +253,87 @@ pnpm tauri android build --debug -t aarch64 --apk
 
 宠物（pet-core）在移动端的渲染器属于 ADR 0010 的未决项，**不在 P0–P4 里**。
 
+### 7.1 P1 细化方案（2026-11-01 提出，**待批准后动手**）
+
+**目标**：真机上从「一个迷你播放器空态」变成「能看能用」—— 5 个底部 tab 能进 6 个主路由 + 设置，
+列表可点可播，播放条常驻。
+
+**形态判定（第 4 种 `mobile`）**
+
+- `src/utils/shellMode.ts` 的 `resolveShellMode` 加**第 4 个入参** `platform?: 'desktop' | 'mobile'`：
+  `platform === 'mobile'` → 恒 `mobile`（不看尺寸）；其余逻辑与现在完全一致（纯函数，smoke 直接钉）。
+- 平台来源：`system.status.platform`（真机实测 `android-aarch64`）→ 新增 `src/services/platform.service.ts`
+  缓存一次探测结果；`isTauri()` 为假时按 `desktop`。**不引入 `@tauri-apps/plugin-os`**（新依赖）。
+- `App.tsx`：`mobile` 分支渲染 `<MobileShell/>`（底部 tab + 内容 + 常驻播放条）；`mini` 分支在移动端**不再触发**。
+
+**导航结构（5 tab，避免新造页面）**
+
+| tab | 路由 | 说明 |
+|---|---|---|
+| 排行 | `/ranking` | 现有视图 |
+| 发现 | `/hot` | 现有视图（触摸语义改造见下） |
+| 搜索 | `/search` | 现有视图（桌面由标题栏搜索框进入，移动端升为 tab） |
+| 本地 | `/local` | 现有视图 |
+| 更多 | 抽屉（不是路由页） | 列出：最近播放 `/recent`、下载管理 `/download`、插件管理 `/plugin`、收藏 `/favorites`、主题市场 `/theme`、设置 `/setting` |
+
+抽屉复用 `components/ui` 的现有抽屉/面板模式（与播放条「功能抽屉」同款），**不新造导航组件族**。
+
+**播放条与歌词页**
+
+- 移动端播放条 = 现有 `MiniPlayer` 的**紧凑版**（封面 + 标题 + 播放/暂停 + 下一首），常驻 tab 上方；
+  点击主体 → `/now-playing`。**复用同一个组件与 CSS Module**，只按形态加 `data-shell="mobile"` 的尺寸覆盖，
+  不再写第二套播放条。
+- `/now-playing` 现有的「功能抽屉」保留（收藏/下载/歌单），触摸下改为点击展开。
+
+**触摸语义（只改交互层，不改 store）**
+
+- `SeekBar`：触屏常显手柄（`@media (hover: none)` 或 `data-shell` 开关），拖拽热区 ≥ 24px；桌面保持悬浮才显示。
+- 列表行：「点当前曲目 = 播放/暂停、点其他 = 切歌」**语义不变**（`useTrackActions` 不动）；
+  行内动作按钮在移动端**不渲染**，改由「点行右侧 ⋯ → 底部操作面板」复用 `useTrackActions` 的同一批动作。
+- 所有 `:hover` 反馈在 `data-shell="mobile"` 下退化为 `:active`（新增 token 驱动，不硬编码颜色）。
+- 发现页「划过即试听」：触摸下「点一下 = 试听」（不再需要 hover 进入）。
+
+**列表宽度**
+
+- `src/config/table.config.tsx` 旁加一份 `mobileColumns`（两行式：标题/歌手 + 右侧时长），
+  由 `useShellMode()` 决定用哪一份；**视图里不写 `@media`**，也不新增 `useViewport`。
+
+**窗口能力（全部按平台分支，桌面行为不变）**
+
+- `title-bar`：移动端不渲染窗口按钮与拖动区，退化为页面标题 + 右侧「⋯」（打开 更多 抽屉）。
+- `window.service.ts`：`minimize / toggleMaximize / setAlwaysOnTop / pip / restoreFromMini` 在移动端 no-op 并如实返回。
+- 桌面歌词 / 宠物窗口：移动端 `useDesktopLyricsBridge` / `usePetWindowBridge` 直接不挂（P4 再做替代品）。
+
+**验收（缺一不算）**
+
+1. `pnpm typecheck && pnpm smoke` 绿，且新增断言：`resolveShellMode` 四形态、移动端不渲染窗口按钮、
+   底部 tab 数量与路由映射、桌面三形态**不回归**；
+2. 真机 `android build --debug -t aarch64 --apk` 装机后：5 个 tab 逐一点到、进设置、进播放条 → 歌词页；
+3. 截图 ≥ 6 张（5 tab + 歌词页）存 `release/screenshots/r108-android-*.png`（`release/` 不入库，引用写进 STATE）；
+4. 桌面端不得变：完整界面截图与 P0 前一致（`pnpm ui:capture` 对打包版各来一张）。
+
+**拆分（每片独立可交付）**
+
+| 片 | 内容 | 完成标准 |
+|---|---|---|
+| P1-1 | `resolveShellMode` 第 4 形态 + `platform.service` + App 分支骨架 | typecheck/smoke 绿；真机上出现 `mobile` 骨架（空内容也可） |
+| P1-2 | `MobileShell`：底部 5 tab + 内容区 + 更多抽屉 | 真机能进 6 个主路由 |
+| P1-3 | 移动播放条（复用 MiniPlayer）+ `/now-playing` 入口 | 点播放条进歌词页，返回不丢状态 |
+| P1-4 | 触摸语义：SeekBar 常显手柄、行内动作收进底部面板、hover→active | 真机可拖进度、可收藏/下载（走底部面板） |
+| P1-5 | `mobileColumns` + 各列表两行式呈现 | 列表在 360px 宽下不横向溢出 |
+| P1-6 | 窗口能力 no-op + 桥不挂 + 截图与文档 | 真机无报错；桌面截图无变化 |
+
+**P1 不做**：后台播放（P2）、SAF 导入（P3）、通知栏/悬浮窗歌词（P4）、平板横屏专用布局（先用 `compact` 顶）、
+宠物渲染器、armv7 打包。
+
 ## 8. 结论
 
 1. **QuickJS 绑定：选 B（vendored patch），已落地并已跨平台验证**。桌面端 `cargo test -p gently-core` 全绿；
    **arm64 Android 构建也通过**（日志里 `Compiling rquickjs-sys v0.7.0 (…\vendor\rquickjs-sys)`）。
    还剩「运行时正确性」（P0-8：真机导一次 demo 插件）与 armv7 绑定（风险 9）。
 2. **P0 已完成**（2026-11-01）：工具链、构建、安装、启动、真机日志、界面渲染六件都有证据（§1、§6）。
-3. **下一步是 P1**（等用户决定）：当前真机上只有一个迷你播放器空态，「能跑不能用」——P1 做完才算能看能用。
+3. **下一步是 P1**（用户 2026-11-01 已选「进 P1」）：细化方案见 §7.1，**等批准后**按 P1-1…P1-6 逐片推进。
+   当前真机上只有一个迷你播放器空态，「能跑不能用」——P1 做完才算能看能用。
 
 ## 9. 相关文档
 
