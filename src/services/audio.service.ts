@@ -186,7 +186,11 @@ class AudioEngine {
     }
 
     seek(seconds: number): void {
-        const el = this.el;
+        /* **不要**因为元素还没建就放弃：恢复上次播放位置（R113）时，
+           调用顺序是「先 seek 再 load」——此时引擎还是新的、`el` 为 null，
+           如果直接 return，用户点播放就会从 0 开始（真机实测过：恢复 30 秒，点了从 0 播）。
+           用 `ensure()` 建出来，下面的 `readyState === 0` 分支会把定位挂到 `loadedmetadata` 上。 */
+        const el = this.ensure();
         if (!el) return;
 
         const apply = () => {

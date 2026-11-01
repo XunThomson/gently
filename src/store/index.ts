@@ -1,5 +1,6 @@
 import {createStore, shallowEqual, useStore, type StoreApi} from './createStore';
 import {readPersistedUi, writePersistedUi} from './persist';
+import {readLastPlayback} from '../utils/lastPlayback';
 import {createCollectionSlice} from './slices/collection.slice';
 import {createDialogSlice} from './slices/dialog.slice';
 import {createDownloadSlice} from './slices/download.slice';
@@ -33,7 +34,9 @@ const ctx: StoreCtx = {
 const persisted = readPersistedUi();
 
 const ui = createUiSlice(ctx, persisted);
-const player = createPlayerSlice(ctx);
+/* 上次在放什么 / 放到哪（R113）：手机上系统回收渲染进程后页面会整页重载，
+   内存里的 store 全丢——从持久化里恢复成**暂停态**，用户点播放就能接着听。 */
+const player = createPlayerSlice(ctx, readLastPlayback());
 const ranking = createRankingSlice(ctx);
 const download = createDownloadSlice(ctx);
 const plugin = createPluginSlice(ctx);

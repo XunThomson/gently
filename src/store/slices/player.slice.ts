@@ -17,6 +17,12 @@ import type {
     PlayerState,
     StoreCtx,
 } from '../types';
+import {
+    clearLastPlayback,
+    LAST_PLAYBACK_WRITE_MS,
+    writeLastPlayback,
+    type LastPlaybackSnapshot,
+} from '../../utils/lastPlayback';
 
 let playSeq = 0;
 
@@ -65,23 +71,29 @@ function sameTrackText(left: string, right: string): boolean {
 }
 
 /** 播放条切片：当前曲目、队列、进度、歌词、音源与音质 */
-export function createPlayerSlice(ctx: StoreCtx) {
+export function createPlayerSlice(
+    ctx: StoreCtx,
+    /** 上次退出时正在放的曲目（手机页面被系统重载 / 关掉应用再打开时用） */
+    restored: LastPlaybackSnapshot | null = null,
+) {
     const state: PlayerState = {
-        current: null,
-        detail: null,
+        current: restored ? {...restored.track, playId: ++playSeq} : null,        detail: null,
+        /* 恢复出来的是**暂停态**：自动出声既违反自动播放策略，也不是用户要的 */
         playing: false,
         queue: [],
         index: -1,
         repeat: 'off',
         volume: appConfig.player.defaultVolume,
-        elapsed: 0,
-        duration: 0,
+        elapsed: restored?.position ?? 0,
+        duration: restored?.track.durationSec ?? 0,
         lyrics: [],
         lyricsSource: null,
         lyricsOffset: 0,
         audioUrl: null,
         playable: false,
-        candidates: [],
+        /* 恢复出来的曲目也要有**候选**：点播放时 `recoverPlayback` 靠它去解析地址，
+           否则「恢复了一首歌却点不动」（R113 真机发现：候选列表没跟着恢复） */
+        candidates: restored ? candidatesOf(restored.track) : [],
         activeSource: null,
         quality: null,
         failedSources: [],
@@ -91,6 +103,25 @@ export function createPlayerSlice(ctx: StoreCtx) {
 
     const patch = (partial: Partial<PlayerState>) => {
         ctx.setState({player: {...ctx.getState().player, ...partial}});
+    };
+
+    /**
+     * 记下「上次在放什么 / 放到哪」（R113）。
+     *
+     * 只在两处写：换歌（`start`）与位置（`setProgress`，10 秒节流），
+     * 再加暂停/恢复（`toggle`）。写太勤会把 `localStorage` 变成每秒一次写盘。
+     */
+    let lastWrittenAt = 0;
+    const rememberPlayback = (force = false) => {
+        const {current, elapsed} = ctx.getState().player;
+        if (!current) {
+            clearLastPlayback();
+            return;
+        }
+        const now = Date.now();
+        if (!force && now - lastWrittenAt < LAST_PLAYBACK_WRITE_MS) return;
+        lastWrittenAt = now;
+        writeLastPlayback({track: current, position: elapsed});
     };
 
     /** 音源 id → 显示名（插件列表来自核心/注册表；拿不到就退回 id） */
@@ -359,6 +390,8 @@ export function createPlayerSlice(ctx: StoreCtx) {
         void loadDetail(track, current.playId);
         void resolveWithFallback(candidates, current.playId);
         ctx.getActions().library.recordPlay(track);
+        // 换歌立刻落盘：下一次冷启动/页面重载要能显示这一首
+        rememberPlayback(true);
     };
 
     /** 按偏移量切换队列曲目，返回是否成功 */
@@ -398,11 +431,19 @@ export function createPlayerSlice(ctx: StoreCtx) {
         },
 
         toggle() {
-            const {playing, current} = ctx.getState().player;
+            const {playing, current, audioUrl} = ctx.getState().player;
             if (!current) return;
+            /* 还没有音频地址（刚恢复上次的曲目 / 上一次被判播不了）：点播放要**先解析地址**，
+               否则界面翻成「在播」却一点声音都没有。`recoverPlayback` 会保留当前进度。 */
+            if (!playing && !audioUrl) {
+                actions.recoverPlayback();
+                return;
+            }
             // 暂停即一次播放结束（恢复播放算新的一次）：历史里记到的是真实听过的秒数
             if (playing) reportPlayback();
             patch({playing: !playing});
+            // 暂停/恢复都是一次「用户离开前的状态」，立刻落盘
+            rememberPlayback(true);
         },
 
         next() {
@@ -458,6 +499,8 @@ export function createPlayerSlice(ctx: StoreCtx) {
             const patchDuration =
                 duration > 0 && Math.abs(duration - ctx.getState().player.duration) > 0.5;
             patch(patchDuration ? {elapsed, duration} : {elapsed});
+            // 位置每 10 秒落一次盘：「上次放到哪」只值这个精度（见 `rememberPlayback`）
+            rememberPlayback();
         },
 
         markUnplayable(message) {
@@ -645,6 +688,8 @@ export function createPlayerSlice(ctx: StoreCtx) {
                 resolving: false,
                 playbackError: null,
             });
+            // 用户主动清空播放：下次启动不该「接着放」一首他已经关掉的歌
+            clearLastPlayback();
         },
 
         applyLyrics(lines, source) {

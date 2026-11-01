@@ -475,6 +475,28 @@ pnpm tauri android build --debug -t aarch64 --apk
 用 Tauri 的 `trigger` 或事件回前端，**播放状态仍需回 store 才算数**）；通知图标换成应用自己的；
 `POST_NOTIFICATIONS` 的运行时授权入口（设置页）；P4 的通知栏歌词复用同一套前台服务。
 
+### 7.6 R113：页面被系统重载后的「续播」
+
+> 前台服务挡住了「后台被挂起」，但挡不住「渲染进程被回收 → 页面整页重载」。
+> 那一下内存里的 store 全没了，用户切回来会看到空播放条（§7.4 形态 3）。本轮补上这一半。
+
+| 层 | 内容 |
+|---|---|
+| 持久化 | `utils/lastPlayback.ts`：`gently:last-playback` 存「一首歌 + 位置」，**纯函数** `parseLastPlayback()` 做校验（坏数据一律当没有、位置夹在时长内、位置上限 1 小时）；只存恢复需要的字段，不存队列 |
+| 写盘时机 | 换歌（立刻）/ 暂停恢复（立刻）/ 位置（10 秒节流）/ `stop()`（清空）。`setProgress` 每秒都在跑，不节流会把 localStorage 变成每秒一次写盘 |
+| 恢复 | `createPlayerSlice(ctx, restored)` 把曲目 + 位置装进**暂停态**（`playing: false`、`audioUrl: null`），并用 `candidatesOf(track)` 补一条候选——否则点播放会判「没有音源」 |
+| 点播放 | `toggle()` 新增一个分支：**没有 `audioUrl` 的暂停** → `recoverPlayback()`（重新解析、保留进度），而不是把界面翻成「在播」却没声音 |
+| 引擎 | `audio.service.seek()` 不再在元素还没建时 return（恢复的调用顺序是「先 seek 再 load」），定位挂到 `loadedmetadata` |
+
+**真机验证（冷启动 = `am force-stop` + `am start`，localStorage 保留）**
+
+| 步骤 | 读数 |
+|---|---|
+| 播放到 150 秒 | `aria-valuenow=150` |
+| 冷启动后 | 播放条显示 `probe`、位置 `150`、**暂停态**（`audioUrl` 为空） |
+| 点播放 | 核心重新解析（日志 `媒体响应（本地文件） status=206`）→ `156/271`：**从恢复位置接着放** |
+| 截图 | `r113-android-resume.png`（搜索页 + 播放条里 `probe` 的进度已过半） |
+
 **拆分（每片独立可交付）**
 
 | 片 | 内容 | 完成标准 |
@@ -487,6 +509,7 @@ pnpm tauri android build --debug -t aarch64 --apk
 | P1-6 | 窗口能力 no-op + 桥不挂 + 截图与文档 | 真机无报错；桌面截图无变化 |
 | P2-1 | **前台服务**保活 + 常驻通知（Kotlin Service + Tauri 移动插件桥） | 熄屏/后台继续播（实测熄屏 4 分钟 +253 秒）；停播即退出服务 |
 | P2-2 | MediaSession + 通知栏传输控制 + 通知图标 | 通知上能播放/暂停/上下曲，且状态回写 store |
+| P2-3 | 页面被系统重载后的续播（R113 已落地） | 冷启动后播放条有歌、位置正确、点播放从该位置接着放 |
 
 **P1 不做**：后台播放（P2）、SAF 导入（P3）、通知栏/悬浮窗歌词（P4）、平板横屏专用布局（先用 `compact` 顶）、
 宠物渲染器、armv7 打包。

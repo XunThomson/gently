@@ -4,10 +4,42 @@ last_verified: 2026-11-01
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R112（P2-1 前台服务落地）：按 R111 的实测结论，把「保活」做出来了 —— Kotlin `PlaybackService`（前台服务 + `gently-playback` 通知渠道 + 常驻通知）经 `PlaybackPlugin`（`@TauriPlugin`/`@Command`）由 Rust 的 `register_android_plugin` + `run_mobile_plugin` 驱动，宿主新增命令 `playback_banner`，前端 `services/playbackBanner.service.ts` 只在「在播/停/换歌」时推一次（不跟随进度，Kotlin 不读位置、不计时）。真机验证：`dumpsys activity services` 看到 `isForeground=true foregroundId=1001`；**熄屏 4 分钟后进度 5/271 → 258/271（+253 秒）**（R111 同一测量是停住/僵死/整页重载）；HOME 后台 1 分钟 `4 → 68`；曲目放完服务自动退出。smoke 528 → **529**。
+tldr: 当前 R113（续播 / P2-3）：前台服务挡住了「后台被挂起」，但挡不住「渲染进程被回收 → 页面整页重载」，那一下 store 全没了、播放条变空（R111 形态 3）。本轮把「上次在放什么 / 放到哪」落进 localStorage（`utils/lastPlayback.ts`，纯函数校验、10 秒节流、只存一首歌不存队列），启动时恢复成**暂停态**并补一条候选音源；`toggle()` 新增「没有音频地址的暂停 → `recoverPlayback()`」分支，`audio.service.seek()` 不再在元素未建时放弃（恢复的调用顺序是「先 seek 再 load」）。真机：播放到 `150/271` → 冷启动 `restored=150` → 点播放 `156/271`（接着放）。smoke 529 → **534**。
 ---
 
 # STATE
+
+## 本轮目标（第一百一十三轮）
+
+> 起点：R112 的前台服务让「熄屏/后台还在放」成立，但 R111 记下的第三种形态仍然存在——
+> 系统回收渲染进程后页面整页重载，内存里的 store 归零，用户回来只看到空播放条。
+
+### 1. 本轮做了什么
+
+| 层 | 改动 |
+|---|---|
+| 持久化（`utils/lastPlayback.ts`） | 新模块：`gently:last-playback` 存「一首歌 + 位置」；`parseLastPlayback()` **纯函数**做校验（坏数据一律当「没有」、位置夹在时长内、上限 1 小时）；只存恢复需要的字段（不存歌词缓存、不存队列） |
+| 写盘（`player.slice.ts`） | `rememberPlayback()`：换歌与暂停恢复**立刻**写，位置每 `10s` 写一次（`setProgress` 每秒都在跑），`stop()` 清空（用户主动关掉的歌不该下次自己冒出来） |
+| 恢复（`store/index.ts` + slice 初值） | `createPlayerSlice(ctx, readLastPlayback())`：曲目 + 位置装进**暂停态**（`playing:false`、`audioUrl:null`），并用 `candidatesOf(track)` 补一条候选——否则点播放会判「没有音源」 |
+| 点播放（`toggle()`） | 新分支：「没有 `audioUrl` 的暂停」→ `recoverPlayback()`（重新解析、**保留进度**），不再把界面翻成「在播」却没声音 |
+| 引擎（`audio.service.seek()`） | 不再在元素还没建时 `return`：恢复的调用顺序是「先 seek 再 load」，以前定位被丢掉，用户点了就从 0 播。现在走 `ensure()`，定位挂到 `loadedmetadata` |
+| 测试 | 冒烟 +5：快照往返、坏数据一律当没有、位置夹在时长内、恢复态是暂停的、恢复的曲目**带候选** |
+
+### 2. 验证
+
+- `pnpm typecheck` 通过；`pnpm smoke`：**534**（529 → +5，全绿）；
+- **真机（`CDY-AN00`）冷启动续播**：播放到 `aria-valuenow=150` → `am force-stop` + `am start` →
+  播放条显示 `probe`、位置 `150`、暂停态 → 点播放（核心日志 `媒体响应（本地文件） status=206`）→ `156/271`。
+  截图 `r113-android-resume.png`；
+- 两个坑都是真机才暴露的（都写进 GOTCHAS §59）：恢复的曲目**没有候选** → 点不动；
+  `seek()` 在元素未建时 return → 从 0 播。
+
+### 3. 未做 / 值得你知道的
+
+- **不恢复队列**：队列可能上千条、来自随时会变的源；恢复一首歌 + 位置就够（`next` 在单曲队列里会停）；
+- 「上次在放什么」是**跨设备无关**的本机偏好，存在 localStorage：清缓存/换设备就没了；
+- P2-2（MediaSession + 通知栏传输控制 + 自定义通知图标 + `POST_NOTIFICATIONS` 授权入口）仍未做；
+  P3 SAF 导入、P4 通知栏歌词、R110 的「上游不是音频」进 UI 文案也还挂着。
 
 ## 本轮目标（第一百一十二轮）
 
@@ -398,9 +430,9 @@ tldr: 当前 R112（P2-1 前台服务落地）：按 R111 的实测结论，把�
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
-| R112 | P2-1 前台服务（保活 + 通知） | Kotlin `PlaybackService` + `PlaybackPlugin` 经 Tauri 移动插件桥由宿主命令 `playback_banner` 驱动；前端只在「在播/停/换歌」推一次。真机：`isForeground=true foregroundId=1001`，**熄屏 4 分钟 5→258/271（+253 秒）**，HOME 后台 1 分钟 4→68，放完自动退出；smoke 529 | [本轮](#本轮目标第一百一十二轮) |
+| R113 | 页面重载后的续播（P2-3） | 「上次在放什么 / 放到哪」落进 localStorage（纯函数校验、10 秒节流、不存队列），启动恢复成**暂停态**并补候选；`toggle()` 对「没有地址的暂停」走 `recoverPlayback()`；`seek()` 不再在元素未建时放弃。真机：`150/271` → 冷启动 `restored=150` → 点播放 `156/271`；smoke 534 | [本轮](#本轮目标第一百一十三轮) |
+| R112 | P2-1 前台服务（保活 + 通知） | Kotlin `PlaybackService` + `PlaybackPlugin` 经 Tauri 移动插件桥由宿主命令 `playback_banner` 驱动；前端只在「在播/停/换歌」推一次。真机：`isForeground=true foregroundId=1001`，**熄屏 4 分钟 5→258/271（+253 秒）**，HOME 后台 1 分钟 4→68，放完自动退出；smoke 529 | [下方](#本轮目标第一百一十二轮) |
 | R111 | P2 入口条件实测 + 中断恢复 | 真机测出**熄屏后三种形态**（音频停住 → 位置僵死 → 页面被重载），进程全程没死 → **P2 定为「WebView 播放 + 前台服务 + MediaSession」**；前端修对中断恢复：`play()` 带 3 秒上限、`isStalled()` 治「以为在播却不动」、`markInterrupted()` 如实停表并给「点播放继续」；smoke 528 | [下方](#本轮目标第一百一十一轮) |
-| R110 | 安卓播放链路定案 | 「播不出声」不是解码问题：上游用 **HTTP 200 + HTML 错误页**冒充媒体；核心改为**按字节嗅探** `Content-Type`（含 `Range: bytes=0-` 路径）、插件 `mimeType` 不再丢、代理放宽 CORS、响应日志写清「回了什么」+ 非音频 WARN。真机用本地文件验证播放链路（206 + `aria-valuenow` 5→13/271）。新增真机 CDP 工具 `scripts/android-cdp.mjs`；核心单测 84 | [下方](#本轮目标第一百一十轮) |
 
 ## 历史轮次
 

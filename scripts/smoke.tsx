@@ -43,6 +43,8 @@ import {isInDownloadQueue, trackReference} from '../src/utils/downloadQueue';
 import {pickQuality, pickQualityWithFallback} from '../src/utils/quality';
 import {playbackFailureText} from '../src/utils/playbackFailure';
 import {isStalled, STALL_THRESHOLD_MS} from '../src/utils/playbackStall';
+import {parseLastPlayback} from '../src/utils/lastPlayback';
+import {createPlayerSlice} from '../src/store/slices/player.slice';
 import {
     createBackgroundPreset,
     normalizeBackgroundOptions,
@@ -2781,6 +2783,82 @@ async function main(): Promise<void> {
             threw = err;
         }
         check('播放通知：没有宿主时是静默空操作（不抛、不发 IPC）', threw === null, String(threw));
+    }
+
+    /* 「上次在放什么 / 放到哪」（R113）：手机页面被系统重载后要能从持久化里恢复成暂停态 */
+    {
+        const raw = JSON.stringify({
+            track: {
+                id: 'smoke:resume',
+                title: '续播用例',
+                artist: '测试',
+                album: '',
+                duration: '03:00',
+                durationSec: 180,
+                source: 'mock',
+                gradient: 'linear-gradient(#111, #333)',
+                tags: [],
+            },
+            position: 42.5,
+            at: 1,
+        });
+        const parsed = parseLastPlayback(raw);
+        check(
+            '续播：快照能原样读回（曲目 + 位置）',
+            parsed?.track.id === 'smoke:resume' && parsed?.position === 42.5,
+            JSON.stringify(parsed),
+        );
+        check(
+            '续播：坏数据一律当「没有」（不塞半个曲目进播放条）',
+            parseLastPlayback(null) === null &&
+                parseLastPlayback('not json') === null &&
+                parseLastPlayback(JSON.stringify({track: {id: 'x'}, position: 5})) === null &&
+                parseLastPlayback(JSON.stringify({track: {id: 'x', title: 't', artist: 'a'}})) ===
+                    null,
+        );
+        check(
+            '续播：位置被夹在时长内（不会一恢复就停在结尾）',
+            parseLastPlayback(
+                JSON.stringify({
+                    track: {
+                        id: 'x',
+                        title: 't',
+                        artist: 'a',
+                        album: '',
+                        duration: '',
+                        durationSec: 100,
+                        source: 's',
+                        gradient: '',
+                        tags: [],
+                    },
+                    position: 999,
+                }),
+            )?.position === 99,
+        );
+
+        /* store 侧：恢复出来的必须是**暂停态**，并且点播放会去解析地址（而不是把界面翻成在播） */
+        const before = store.getState().player;
+        const restored = createPlayerSlice(
+            {getState: () => store.getState(), setState: (patch) => store.setState(patch), getActions: () => useActions()},
+            parsed,
+        );
+        check(
+            '续播：恢复态是暂停的、位置与时长都在',
+            restored.state.current?.id === 'smoke:resume' &&
+                restored.state.playing === false &&
+                restored.state.elapsed === 42.5 &&
+                restored.state.duration === 180 &&
+                restored.state.audioUrl === null,
+        );
+        /* 恢复出来的曲目必须带**候选**：点播放靠它去解析地址（R113 真机：候选没恢复 → 点不动） */
+        check(
+            '续播：恢复的曲目带候选音源（点了才能解析）',
+            restored.state.candidates.length === 1 &&
+                restored.state.candidates[0].source === 'mock' &&
+                restored.state.candidates[0].track.id === 'smoke:resume',
+            JSON.stringify(restored.state.candidates.map((candidate) => candidate.source)),
+        );
+        store.setState({player: before});
     }
 
     /* 播放失败文案：播放条与迷你播放器共用，不能一边只说「无法播放」 */
