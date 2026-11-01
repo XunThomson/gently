@@ -97,7 +97,8 @@ export default function NowPlayingView() {
 
             <div
                 className={styles.layout}
-                data-stack={mode === 'mini' ? 'true' : 'false'}
+                /* 单列：迷你尺寸（被强制展开）与手机都放不下「封面 + 歌词」两栏 */
+                data-stack={mode === 'mini' || mode === 'mobile' ? 'true' : 'false'}
             >
                 <section className={styles.artwork}>
                     <Cover

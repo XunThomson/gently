@@ -226,6 +226,7 @@ pnpm tauri android build --debug -t aarch64 --apk
 | 8 | 离线约定被打破 | cargo 缓存缺 crate、Gradle 要联网 | P0 期间允许联网；本次联网项：NDK、rust std、Gradle 发行包 + AGP、crates（Android 专用 crate 已在缓存里） |
 | 9 | **armv7 绑定缺失** | `couldn't read …/armv7-linux-androideabi.rs` | 只出 `-t aarch64`（当前设备够用）；要支持 32 位老机时，需要按同样办法补 armv7 绑定（不能用 i686 那份顶替：ARM EABI 的 double 对齐与 i386 不同），并处理 `-latomic` |
 | 10 | 用 dev 包验收 UI | APK 里只有 `assets/tauri.conf.json`；dev server 不在就白屏 | 验收 UI 一律用 `android build --debug`；`dev` 只用于热更新开发 |
+| 11 | **安卓 WebView 播不出声（未解）** | 点搜索结果后播放条出现曲目，但音频元素报 `DEMUXER_ERROR_COULD_NOT_OPEN: FFmpegDemuxer: open context failed` / `error_code = 102_091005 ... Network error`，随后 `pauseForBindings` | 已排除「连不上代理」：核心日志有 `本地流代理已启动（仅回环） port=…` + `媒体连接已接受` + `媒体请求 method=GET target=/m/…`；debug 包 `usesCleartextTraffic=true`（build.gradle 里占位符，debug 段为 true）。**下一步**：① 先在桌面同源上抓一次 `playback.resolve` 的 origin 与 `effective_content_type` 结果（`core/src/media.rs` 在「上游给 octet-stream 且地址没有扩展名」时**不发 Content-Type**，安卓 Chromium 可能因此拒绝）；② 换 `bili-audio` 源再试（`wangyiyun` 的取流可能需要登录，返回的不是音频）；③ 必要时开 `GENTLY_LOG=debug` 看代理回的状态码 |
 
 ## 6. 执行记录（每完成一步就贴在这里，一条都不要省）
 
@@ -335,8 +336,17 @@ pnpm tauri android build --debug -t aarch64 --apk
 | P1-2 左侧抽屉（8 项） | ✅ | 真机截图：抽屉列出 8 项，「搜索」高亮 |
 | P1-3 常驻播放条 + 搜索行 | ✅ | 真机截图：`还没有播放歌曲 / 从列表里挑一首开始`；搜索框 + 蓝色「搜索」按钮 |
 | P1-4 触摸语义（SeekBar 常显手柄、行内动作收进底部面板） | ⬜ 待做 | |
-| P1-5 `mobileColumns` 列表两行式 | ⬜ 待做 | |
+| P1-5 `mobileColumns` 列表两行式 | ⬜ 待做（真机已复现：搜索表 7 列在 360px 下被右侧裁掉） | `r108-android-search.png` |
 | P1-6 窗口能力 no-op 收尾 + 桌面截图比对 | ⬜ 部分（桥已不挂） | |
+
+**真机走查（2026-11-01，`r108-android-*.png`）**
+
+- ✅ 抽屉 8 项 + 搜索作 home（`-home` / `-drawer`）
+- ✅ 搜索：输入 `love` → 共 39 首，音源筛选 chips 正常（`-search`）
+- ✅ 点行播放：播放条显示 `Love / Keyshia Cole` + 封面（`-playing`）
+- ✅ 播放条 → 歌词页：封面 + 歌名 + 歌词面板（已改单列，`-nowplaying`）
+- ❌ **音频解码失败**（风险 11，未解）
+- 🐞 已修：返回键把 `?q=` 弹掉但输入框还留着旧词（现在 URL 是唯一权威）；歌词页两栏挤成竖排（`data-stack` 现在含 `mobile`）
 
 **拆分（每片独立可交付）**
 
