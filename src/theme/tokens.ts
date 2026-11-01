@@ -414,6 +414,9 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--now-playing-cover-ratio': c.nowPlaying.coverWidthRatio,
         '--now-playing-cover-stack-max': px(c.nowPlaying.coverStackMaxWidth),
         '--now-playing-lyrics-height': c.nowPlaying.lyricsPanelHeight,
+        '--now-playing-mobile-cover-opacity': String(c.nowPlaying.mobileCoverOpacity),
+        '--now-playing-mobile-cover-blur': px(c.nowPlaying.mobileCoverBlur),
+        '--now-playing-mobile-lyrics-height': c.nowPlaying.mobileLyricsPanelHeight,
 
         /* ---------- 组件：业务列表（表格） ---------- */
         '--table-cover-size': px(c.table.coverSize),

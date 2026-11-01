@@ -427,7 +427,10 @@
       "coverMaxWidth": 360,
       "coverWidthRatio": "44%",
       "coverStackMaxWidth": 320,
-      "lyricsPanelHeight": "min(58vh, 580px)"
+      "lyricsPanelHeight": "min(58vh, 580px)",
+      "mobileCoverOpacity": 0.22,
+      "mobileLyricsPanelHeight": "min(72vh, 720px)",
+      "mobileCoverBlur": "26px"
     },
 
     "table": {

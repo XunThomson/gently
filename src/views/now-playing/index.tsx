@@ -1,4 +1,4 @@
-import {useCallback, useState} from 'react';
+import {useCallback, useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
 import {Button} from '../../components/ui/button';
@@ -9,6 +9,7 @@ import {useActions, useSelect} from '../../store';
 import {useShellMode} from '../../hooks/useShellMode';
 import {Cover} from '../../components/ui/cover';
 import {LyricsToolsDrawer} from './components/LyricsToolsDrawer';
+import {readCoverMode, saveCoverMode, subscribeCoverMode, type CoverMode} from '../../utils/nowPlayingCover';
 import styles from './now-playing.module.css';
 
 /**
@@ -50,6 +51,17 @@ export default function NowPlayingView() {
     const {toggle} = useActions().player;
     /* 只有「被强制展开成完整界面」的迷你尺寸才需要单列；断点与外壳同一份配置 */
     const mode = useShellMode();
+    const isMobile = mode === 'mobile';
+
+    /* 手机端封面策略：默认不显示（歌词才是主角），可切成「作为背景」。
+       偏好是这个页面自己的事，存 localStorage（与桌面歌词窗口设置同一种做法）。 */
+    const [coverMode, setCoverMode] = useState<CoverMode>(readCoverMode);
+    useEffect(() => subscribeCoverMode(setCoverMode), []);
+    const toggleCover = () => {
+        const next: CoverMode = coverMode === 'background' ? 'hidden' : 'background';
+        saveCoverMode(next);
+        setCoverMode(next);
+    };
 
     /* 抽屉：`mounted` 一旦为 true 就不再回退（惰性挂载 + 保留内部状态） */
     const [toolsOpen, setToolsOpen] = useState(false);
@@ -89,17 +101,45 @@ export default function NowPlayingView() {
     const artwork = detail ?? current;
 
     return (
-        <div className={styles.page}>
-            <button type="button" className={styles.back} onClick={goBack}>
-                <IconChevronLeft size={16}/>
-                {t('common.back')}
-            </button>
+        <div className={styles.page} data-cover={isMobile ? coverMode : 'inline'}>
+            {isMobile && coverMode === 'background' && (
+                <div className={styles.coverBackdrop} aria-hidden="true">
+                    <Cover
+                        className={styles.coverBackdropImage}
+                        artwork={artwork.artwork}
+                        gradient={artwork.gradient}
+                        title={artwork.title}
+                        artist={artwork.artist}
+                    />
+                </div>
+            )}
+
+            <div className={styles.topbar}>
+                <button type="button" className={styles.back} onClick={goBack}>
+                    <IconChevronLeft size={16}/>
+                    {t('common.back')}
+                </button>
+                {isMobile && (
+                    <button
+                        type="button"
+                        className={styles.coverToggle}
+                        aria-pressed={coverMode === 'background'}
+                        onClick={toggleCover}
+                    >
+                        {coverMode === 'background'
+                            ? t('page.nowPlaying.coverBackground')
+                            : t('page.nowPlaying.coverHidden')}
+                    </button>
+                )}
+            </div>
 
             <div
                 className={styles.layout}
                 /* 单列：迷你尺寸（被强制展开）与手机都放不下「封面 + 歌词」两栏 */
                 data-stack={mode === 'mini' || mode === 'mobile' ? 'true' : 'false'}
             >
+                {/* 手机端永远不把封面放进正文：默认省略（高度还给歌词），开启后只作背景 */}
+                {!isMobile && (
                 <section className={styles.artwork}>
                     <Cover
                         className={styles.cover}
@@ -120,6 +160,7 @@ export default function NowPlayingView() {
                     </Cover>
                     <p className={styles.caption}>{current.title}</p>
                 </section>
+                )}
 
                 <section className={styles.lyricsPanel}>
                     <div className={styles.lyricsHeader}>

@@ -562,6 +562,8 @@
       "lyricsOffsetValue": "{{value}} 秒",
       "lyricsApplied": "已使用「{{title}}」的歌词",
       "toolsToggle": "歌词工具",
+      "coverHidden": "封面已省略",
+      "coverBackground": "封面作为背景",
       "syncTitle": "时间轴校正",
       "syncRemembered": "只对这一首生效，已记住",
       "syncEarlier": "− 更早",

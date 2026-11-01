@@ -7,6 +7,66 @@
     margin: 0 auto;
     padding: var(--view-padding-y) var(--view-padding-x) var(--space-8);
     box-sizing: border-box;
+    /* 「封面作为背景」时铺满整页（见 .coverBackdrop） */
+    position: relative;
+}
+
+/* ---------- 顶部一行：返回 + 手机端的封面开关 ---------- */
+
+.topbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.coverToggle {
+    margin-left: auto;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+}
+
+.coverToggle[aria-pressed='true'] {
+    border-color: var(--brand);
+    color: var(--brand);
+}
+
+.coverToggle:active {
+    background: var(--bg-active);
+}
+
+/* ---------- 手机端「封面作为背景」：铺满、压暗 + 虚化，歌词压在上面 ---------- */
+
+.coverBackdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: var(--now-playing-mobile-cover-opacity);
+    filter: blur(var(--now-playing-mobile-cover-blur));
+}
+
+.coverBackdropImage {
+    width: 100%;
+    height: 100%;
+}
+
+/* 手机端默认不看封面：把省下来的高度还给歌词卡片 */
+.page[data-cover='hidden'] {
+    --now-playing-lyrics-height: var(--now-playing-mobile-lyrics-height);
+}
+
+/* 背景层不参与布局层级：内容必须在它上面 */
+.page[data-cover='background'] .topbar,
+.page[data-cover='background'] .layout {
+    position: relative;
+    z-index: 1;
 }
 
 .back {

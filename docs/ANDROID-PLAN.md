@@ -297,6 +297,12 @@ pnpm tauri android build --debug -t aarch64 --apk
   （`Cover`、`SeekBar`、store 的 player 切片与 actions），只按手机宽度重排；点主体 → `/now-playing`。
   ⚠️ 与原计划「复用 MiniPlayer 整页」不同：MiniPlayer 是整页布局（含窗口按钮与歌词块），塞不进 62px 的条，
   所以复用的是**零件与状态**，不是那一页。
+- **手机歌词页默认省略封面**（用户 2026-11-01 要求：歌词才是主角），歌词卡片改用更高的高度
+  （`--now-playing-mobile-lyrics-height`，把封面省下的高度还回来）；右上角一个开关可在
+  「封面已省略 / 封面作为背景」之间切换，开启后封面铺满、压暗 + 虚化作为背景层
+  （`--now-playing-mobile-cover-opacity` / `-blur`），歌词压在上面。
+  偏好只影响手机、存 localStorage（`utils/nowPlayingCover.ts`，与桌面歌词窗口设置同一种做法），
+  桌面仍是「封面 + 歌词」两栏。**这个开关在桌面端不存在**。
 - `/now-playing` 现有的「功能抽屉」保留（收藏/下载/歌单），触摸下改为点击展开。
 
 **触摸语义（只改交互层，不改 store）**
@@ -345,6 +351,7 @@ pnpm tauri android build --debug -t aarch64 --apk
 - ✅ 搜索：输入 `love` → 共 39 首，音源筛选 chips 正常（`-search`）
 - ✅ 点行播放：播放条显示 `Love / Keyshia Cole` + 封面（`-playing`）
 - ✅ 播放条 → 歌词页：封面 + 歌名 + 歌词面板（已改单列，`-nowplaying`）
+- ✅ **手机歌词页默认无封面**（歌词占满，`-lyrics-no-cover`），右上角开关切「作为背景」后封面虚化压暗铺底（`-lyrics-cover-bg`）
 - ❌ **音频解码失败**（风险 11，未解）
 - 🐞 已修：返回键把 `?q=` 弹掉但输入框还留着旧词（现在 URL 是唯一权威）；歌词页两栏挤成竖排（`data-stack` 现在含 `mobile`）
 

@@ -562,6 +562,8 @@
       "lyricsOffsetValue": "{{value}} s",
       "lyricsApplied": "Using lyrics for “{{title}}”",
       "toolsToggle": "Lyrics tools",
+      "coverHidden": "Cover hidden",
+      "coverBackground": "Cover as background",
       "syncTitle": "Timeline sync",
       "syncRemembered": "This track only · remembered",
       "syncEarlier": "− Earlier",

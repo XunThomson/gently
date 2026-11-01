@@ -424,6 +424,12 @@ export interface ComponentTokens {
         coverStackMaxWidth: number;
         /** 歌词卡片高度表达式（固定高度才能把当前行滚到中间） */
         lyricsPanelHeight: string;
+        /** 手机端「封面作为背景」时的不透明度（默认不显示封面） */
+        mobileCoverOpacity: number;
+        /** 手机端「封面作为背景」时的虚化半径 */
+        mobileCoverBlur: string;
+        /** 手机端（默认不看封面）时的歌词卡片高度：把封面省下来的高度还给歌词 */
+        mobileLyricsPanelHeight: string;
     };
 
     /** 业务列表（数据表格）：标题列左边的封面缩略图 */
