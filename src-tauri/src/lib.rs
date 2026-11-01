@@ -10,6 +10,7 @@
 //! `core_invoke` → `gently_core::dispatch`，`pet_invoke` → `pet_core::dispatch`。
 
 pub mod pet_watch;
+pub mod playback;
 pub mod state;
 pub mod web_login;
 
@@ -106,10 +107,23 @@ fn app_restart(app: tauri::AppHandle) {
     app.request_restart();
 }
 
+/// 宿主命令：**同步播放通知 / 前台服务**（Android，P2-1）。
+///
+/// 前端只在「开始播放 / 停止」时调一次（`services/playbackBanner.service.ts`），
+/// 不是每秒调用——播放位置不归 Kotlin 管，播放状态仍以前端 store 为唯一权威。
+/// 桌面端与浏览器里这条命令要么不存在、要么是空操作，前端只在手机宿主上调用。
+#[tauri::command]
+fn playback_banner(active: bool, title: String, artist: String) -> Result<(), String> {
+    playback::update(active, &title, &artist)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        /* 播放通知插件：Android 注册 Kotlin 侧 PlaybackPlugin（前台服务保活），
+           其它平台是空插件——桌面端因此不需要任何 cfg 分支 */
+        .plugin(playback::plugin())
         .setup(|app| {
             /* 数据目录：三种来源按优先级裁决（`paths::resolve_data_paths`）——
                环境变量 > 迁移指针 > 便携版（exe 同目录有 `portable.txt`）> 系统默认。
@@ -214,6 +228,7 @@ pub fn run() {
             core_invoke,
             pet_invoke,
             app_restart,
+            playback_banner,
             web_login::web_login
         ])
         .build(tauri::generate_context!())

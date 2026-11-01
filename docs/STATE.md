@@ -4,10 +4,47 @@ last_verified: 2026-11-01
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R111（P2 入口条件的实测 + 中断恢复）：按计划先测「锁屏后 WebView `<audio>` 还能活多久」——真机数据是**熄屏后正常播了约 2.8 分钟然后停住**，进程没死、`ActivityRecord` 还在栈顶；回前台后 `play()` 的 Promise **既不 resolve 也不 reject**（探针挂到 CDP 超时都没回来），于是旧的 `await el.play()` 永久卡住，界面一直显示「播放中、进度不动」。**P2 的技术路线据此定为「WebView 播放 + 前台服务（foreground service）+ MediaSession」**，不做原生播放器。本轮先把前端的中断恢复做对：`play()` 一律带 3 秒上限（`ok/rejected/timeout`），`timeout` 不算「源坏了」——重载一次 → 重新解析一次 → 仍不行就 `markInterrupted` 如实停表，文案「播放被系统中断（点播放继续）」。smoke 525 → **527**。
+tldr: 当前 R112（P2-1 前台服务落地）：按 R111 的实测结论，把「保活」做出来了 —— Kotlin `PlaybackService`（前台服务 + `gently-playback` 通知渠道 + 常驻通知）经 `PlaybackPlugin`（`@TauriPlugin`/`@Command`）由 Rust 的 `register_android_plugin` + `run_mobile_plugin` 驱动，宿主新增命令 `playback_banner`，前端 `services/playbackBanner.service.ts` 只在「在播/停/换歌」时推一次（不跟随进度，Kotlin 不读位置、不计时）。真机验证：`dumpsys activity services` 看到 `isForeground=true foregroundId=1001`；**熄屏 4 分钟后进度 5/271 → 258/271（+253 秒）**（R111 同一测量是停住/僵死/整页重载）；HOME 后台 1 分钟 `4 → 68`；曲目放完服务自动退出。smoke 528 → **529**。
 ---
 
 # STATE
+
+## 本轮目标（第一百一十二轮）
+
+> 起点：R111 把 P2 的路线测清楚了（WebView 播放 + 前台服务保活），
+> 本轮把这条路线的最小可用版**做出来并在真机证明它有效**。
+
+### 1. 本轮做了什么
+
+| 层 | 改动 |
+|---|---|
+| Kotlin（`src-tauri/gen/android/app/src/main/java/com/xun/gently/`） | 新增 `PlaybackService.kt`：前台服务 + `gently-playback` 渠道（IMPORTANCE_LOW）+ 常驻通知（标题/歌手、`category=transport`、`setOngoing`、点一下回应用）；`onStartCommand` 里立刻 `startForeground`（5 秒硬限），停止指令直接退出。新增 `PlaybackPlugin.kt`：`@TauriPlugin` + `@InvokeArg` 参数 + `@Command fun update`，按 `active` 起/停服务，异常 `invoke.reject` |
+| 清单 | 三条权限（`FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MEDIA_PLAYBACK` / `POST_NOTIFICATIONS`）+ `<service android:name=".PlaybackService" android:foregroundServiceType="mediaPlayback" android:exported="false"/>`。`targetSdk = 36`：缺 `FOREGROUND_SERVICE_MEDIA_PLAYBACK` 在 API 34+ 会 `SecurityException` |
+| Rust 宿主 | 新增 `src-tauri/src/playback.rs`：`tauri::plugin::Builder::new("gently-playback")` + `register_android_plugin("com.xun.gently","PlaybackPlugin")` + `run_mobile_plugin("update", …)`；非 Android 是空插件/空操作。`lib.rs` 注册插件与宿主命令 `playback_banner(active,title,artist)` |
+| 前端 | 新增 `services/playbackBanner.service.ts`：只在「在播 / 停 / 换歌」时推一次（同一状态去重），没有宿主时**静默空操作**；`useAudioEngine` 订阅 `playing + 标题/歌手` 调它。播放状态仍以 store 为唯一权威 |
+| 文档 | `ARCHITECTURE.md` §12 补「播放通知 / 前台服务」这条宿主边界；`ANDROID-PLAN.md` §7.5 落地记录 + 拆分表加 P2-1/P2-2；`GOTCHAS.md` §58（原生代码在 `gen/android`、Rust↔Kotlin 只有命令方向、前台服务两道硬门槛、怎么验） |
+
+### 2. 验证
+
+- `pnpm typecheck` 通过；`pnpm smoke`：**529**（528 → +1「没有宿主时静默空操作」）；
+- **真机（`CDY-AN00`，arm64 debug 包）**：
+
+  | 项 | 结果 |
+  |---|---|
+  | 服务真的在前台 | `dumpsys activity services`：`ServiceRecord{… com.xun.gently/.PlaybackService}` + `isForeground=true foregroundId=1001 foregroundNoti=Notification(channel=gently-playback … category=transport vis=PUBLIC)` |
+  | 通知内容 | `r112-android-notification.png`：通知栏里 `▷ gently / probe`；`dumpsys notification`：`icon=android:drawable/ic_media_play`、`contentIntent=… startActivity` |
+  | **熄屏 4 分钟** | `5/271` → **`258/271`**（≈ +253 秒）；截图 `r112-android-lockscreen.png`（进度条几乎填满、拇指在右端）。**R111 同一测量是停住/僵死/整页重载** |
+  | HOME 后台 1 分钟 | `4/271` → `68/271`（+64 秒），回前台进度对得上 |
+  | 收尾 | 曲目放完后 `dumpsys activity services` 里已无 `PlaybackService`，进度归 `0`（停播即退出，不常驻） |
+
+### 3. 未做 / 值得你知道的
+
+- **通知上没有播放/暂停按钮**（P2-2）：加传输控制要 `MediaSession` + `PendingIntent` 回服务，
+  再经 `Plugin.trigger`/`Channel` 回到前端 store——**播放状态必须回 store 才算数**，不能只有通知在变；
+- 通知小图标暂用系统的 `android.R.drawable.ic_media_play`（P2-2 换应用自己的）；
+- `POST_NOTIFICATIONS` 还没有运行时授权入口（API 33+ 不授权时通知不可见，但保活仍生效）；
+- 安卓原生改动不进 `pnpm verify`，只能靠 `tauri android build` + 真机（已在 GOTCHAS §58 写明）；
+- 「上游返回的不是音频」仍只进日志（R110 记的候选任务）；SAF 导入（P3）、通知栏歌词（P4）未动。
 
 ## 本轮目标（第一百一十一轮）
 
@@ -361,9 +398,9 @@ tldr: 当前 R111（P2 入口条件的实测 + 中断恢复）：按计划先测
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
-| R111 | P2 入口条件实测 + 中断恢复 | 真机测出**熄屏后三种形态**（音频停住 → 位置僵死 → 页面被重载），进程全程没死 → **P2 定为「WebView 播放 + 前台服务 + MediaSession」**；前端修对中断恢复：`play()` 带 3 秒上限、`isStalled()` 治「以为在播却不动」、`markInterrupted()` 如实停表并给「点播放继续」；smoke 528 | [本轮](#本轮目标第一百一十一轮) |
+| R112 | P2-1 前台服务（保活 + 通知） | Kotlin `PlaybackService` + `PlaybackPlugin` 经 Tauri 移动插件桥由宿主命令 `playback_banner` 驱动；前端只在「在播/停/换歌」推一次。真机：`isForeground=true foregroundId=1001`，**熄屏 4 分钟 5→258/271（+253 秒）**，HOME 后台 1 分钟 4→68，放完自动退出；smoke 529 | [本轮](#本轮目标第一百一十二轮) |
+| R111 | P2 入口条件实测 + 中断恢复 | 真机测出**熄屏后三种形态**（音频停住 → 位置僵死 → 页面被重载），进程全程没死 → **P2 定为「WebView 播放 + 前台服务 + MediaSession」**；前端修对中断恢复：`play()` 带 3 秒上限、`isStalled()` 治「以为在播却不动」、`markInterrupted()` 如实停表并给「点播放继续」；smoke 528 | [下方](#本轮目标第一百一十一轮) |
 | R110 | 安卓播放链路定案 | 「播不出声」不是解码问题：上游用 **HTTP 200 + HTML 错误页**冒充媒体；核心改为**按字节嗅探** `Content-Type`（含 `Range: bytes=0-` 路径）、插件 `mimeType` 不再丢、代理放宽 CORS、响应日志写清「回了什么」+ 非音频 WARN。真机用本地文件验证播放链路（206 + `aria-valuenow` 5→13/271）。新增真机 CDP 工具 `scripts/android-cdp.mjs`；核心单测 84 | [下方](#本轮目标第一百一十轮) |
-| R109 | 安卓 P1 收尾（P1-4/5/6） | 手机列表换成两行式三列（`mobileColumns`，由 `resolveColumns` 按形态裁决）、行内动作收进 ⋯ 底部面板、SeekBar 常显焦点 + 32px 热区、桌面窗口动作在移动端 no-op；真机上修掉三个只在设备出现的问题（单元格内边距裁字、button 遮罩不涂色、播放条`.bar` 缺定位祖先）；smoke 525 | [下方](#本轮目标第一百零九轮) |
 
 ## 历史轮次
 

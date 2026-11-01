@@ -77,7 +77,7 @@ import {
 } from '../src/config/table.config';
 import {resolveColumns, type ColumnDef} from '../src/components/ui/data-table';
 import {MobileRowActions, RowActionsProvider} from '../src/components/ui/row-actions';
-import {desktopWindowActionsAvailable} from '../src/services';
+import {desktopWindowActionsAvailable, syncPlaybackBanner} from '../src/services';
 import {lyricsScrollStep, lyricsScrollTarget} from '../src/utils/lyricsScroll';
 import {getThemeSkin, parseSkin, resolveTheme as resolveSkin, serializeSkin} from '../src/theme';
 import type {ThemeSkin} from '../src/theme';
@@ -2769,6 +2769,19 @@ async function main(): Promise<void> {
             /* 第一次采样（还没有基准）不能判死，否则刚播就被「救」一次 */
             isStalled(null, 12, 999_999) === false,
     );
+
+    /* 播放通知（P2-1）：浏览器/桌面没有宿主，调用必须是**静默空操作**——
+       既不能抛（会把一次播放变成失败），也不能在浏览器预览里凭空发 IPC。 */
+    {
+        let threw: unknown = null;
+        try {
+            await syncPlaybackBanner(true, '测试曲目', '测试歌手');
+            await syncPlaybackBanner(false, '', '');
+        } catch (err) {
+            threw = err;
+        }
+        check('播放通知：没有宿主时是静默空操作（不抛、不发 IPC）', threw === null, String(threw));
+    }
 
     /* 播放失败文案：播放条与迷你播放器共用，不能一边只说「无法播放」 */
     check(

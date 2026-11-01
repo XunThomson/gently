@@ -634,6 +634,14 @@ OpenAPI-over-HTTP 代码生成、Postgres/Redis/BullMQ/Docker。**新增**的必
   拷贝（跳过 cache/logs/SQLite 旁挂文件）→ 数据库副本 `PRAGMA quick_check` 自检 →
   写指针 → **下次启动生效**；旧目录不删。重启由宿主命令 `app_restart`（`AppHandle::request_restart`）
   发起，核心不认识「进程」。
+- **播放通知 / 前台服务（R112，仅 Android）**：链路是
+  `services/playbackBanner.service.ts` → 宿主命令 `playback_banner`（`src-tauri/src/lib.rs`）
+  → `src-tauri/src/playback.rs` 用一个 Tauri 插件把调用转发给 Kotlin
+  （`run_mobile_plugin("update", …)` → `gen/android/.../PlaybackPlugin.kt` → `PlaybackService.kt`）。
+  为什么要过宿主这一层：Tauri 的移动端桥只有「Rust → Kotlin」一个方向，而「开始播放」是前端的用户动作；
+  播放状态仍以 store 为唯一权威，Kotlin 只负责「保持前台服务 + 显示通知」，不读位置、不计时。
+  非 Android 平台该插件是空插件、命令是空操作，前端不必分平台。
+  原生代码住在 `src-tauri/gen/android/`（这是 Tauri 生成的工程，但**自定义原生代码就放在这里**）。
 
 ## 13. 遗留与归档
 

@@ -448,6 +448,33 @@ pnpm tauri android build --debug -t aarch64 --apk
 - **诚实边界**：形态 3 下页面被重载，恢复逻辑没有机会执行——所以这套修复解决的是「页面还活着」的形态 1/2；
   真正让播放活下来要靠 P2 的前台服务。两者的验证分别落在 smoke（逻辑）与真机（§7.4 三种形态）。
 
+### 7.5 R112：P2-1 前台服务（保活 + 通知）—— 已落地并真机验证
+
+> 按 §7.4 的结论做的最小可用版：**让系统把应用当「正在放音的应用」**。
+> MediaSession 与通知栏传输控制留给 P2-2。
+
+| 层 | 内容 |
+|---|---|
+| Kotlin（`src-tauri/gen/android/app/src/main/java/com/xun/gently/`） | `PlaybackService.kt`：前台服务（`startForeground` 必须在 `startForegroundService` 后 5 秒内调）+ `gently-playback` 通知渠道（IMPORTANCE_LOW）+ 常驻通知（标题/歌手、`category=transport`、点一下回应用、`setOngoing`）；`PlaybackPlugin.kt`：`@TauriPlugin` + `@Command fun update(invoke)`，按 `active` 起/停服务 |
+| 清单 | `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MEDIA_PLAYBACK`（`targetSdk = 36`，API 34+ 缺了会 `SecurityException`）+ `POST_NOTIFICATIONS`（API 33+ 只是看不见通知，不影响保活）；`<service ... android:foregroundServiceType="mediaPlayback" android:exported="false"/>` |
+| Rust 宿主 | `src-tauri/src/playback.rs`：`tauri::plugin::Builder::new("gently-playback").setup(|_, api| api.register_android_plugin("com.xun.gently","PlaybackPlugin"))` + `run_mobile_plugin("update", …)`；非 Android 返回空插件。`lib.rs` 新增宿主命令 `playback_banner(active,title,artist)` |
+| 前端 | `services/playbackBanner.service.ts`：只在「在播 / 停 / 换歌」时推一次（**不跟随进度**，同一状态去重）；没有宿主时静默空操作。`useAudioEngine` 订阅 `playing + 曲目标题/歌手` 调用它 |
+| 边界 | 播放状态仍以 store 为唯一权威；Kotlin 不读位置、不计时、不发事件回来。通知没有播放/暂停按钮（P2-2 随 MediaSession 一起加） |
+
+**真机验证（`CDY-AN00`，包 `app-universal-debug.apk`）**
+
+| 项 | 结果 |
+|---|---|
+| 前台服务起来了吗 | `dumpsys activity services`：`ServiceRecord{… com.xun.gently/.PlaybackService}` + `isForeground=true foregroundId=1001 foregroundNoti=Notification(channel=gently-playback … category=transport vis=PUBLIC)` |
+| 通知长什么样 | 通知栏截图 `r112-android-notification.png`：`▷ gently / probe`；`dumpsys notification` 里 `icon=android:drawable/ic_media_play`、`contentIntent=PendingIntent{… startActivity}` |
+| **熄屏 4 分钟还在播吗** | 熄屏时进度 `5/271` → 4 分钟后 `258/271`（≈ +253 秒）。**同一套测量在 R111（无服务）时是「停住/僵死/页面被回收」** |
+| 切到后台（HOME）1 分钟 | `4/271` → `68/271`（+64 秒），回来时进度对得上 |
+| 播放结束会收尾吗 | 曲目放完后 `dumpsys activity services` 里已无 `PlaybackService`，进度归 `0` —— 停播即退出，不常驻 |
+
+**下一步（P2-2 / P4）**：MediaSession + 通知栏的播放/暂停/上一首/下一首（`PendingIntent` 回服务 →
+用 Tauri 的 `trigger` 或事件回前端，**播放状态仍需回 store 才算数**）；通知图标换成应用自己的；
+`POST_NOTIFICATIONS` 的运行时授权入口（设置页）；P4 的通知栏歌词复用同一套前台服务。
+
 **拆分（每片独立可交付）**
 
 | 片 | 内容 | 完成标准 |
@@ -458,6 +485,8 @@ pnpm tauri android build --debug -t aarch64 --apk
 | P1-4 | 触摸语义：SeekBar 常显手柄、行内动作收进底部面板、hover→active | 真机可拖进度、可收藏/下载（走底部面板） |
 | P1-5 | `mobileColumns` + 各列表两行式呈现 | 列表在 360px 宽下不横向溢出 |
 | P1-6 | 窗口能力 no-op + 桥不挂 + 截图与文档 | 真机无报错；桌面截图无变化 |
+| P2-1 | **前台服务**保活 + 常驻通知（Kotlin Service + Tauri 移动插件桥） | 熄屏/后台继续播（实测熄屏 4 分钟 +253 秒）；停播即退出服务 |
+| P2-2 | MediaSession + 通知栏传输控制 + 通知图标 | 通知上能播放/暂停/上下曲，且状态回写 store |
 
 **P1 不做**：后台播放（P2）、SAF 导入（P3）、通知栏/悬浮窗歌词（P4）、平板横屏专用布局（先用 `compact` 顶）、
 宠物渲染器、armv7 打包。

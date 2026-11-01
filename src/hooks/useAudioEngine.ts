@@ -1,6 +1,6 @@
 import {useEffect} from 'react';
 import {useActions, useSelect} from '../store';
-import {audioEngine} from '../services/audio.service';
+import {audioEngine, syncPlaybackBanner} from '../services';
 
 /**
  * 把 store 的播放状态与真实音频引擎对接：
@@ -50,6 +50,19 @@ export function useAudioEngine(): void {
         if (playId === null) return;
         audioEngine.seek(0);
     }, [playId]);
+
+    /**
+     * 手机的「播放通知 / 前台服务」（P2-1）。
+     *
+     * 只在「在播 / 换歌」时推一次：安卓那边把它当前台服务用——熄屏、切后台之后
+     * 系统才不会把 WebView 里的媒体挂起（真机实测见 `docs/ANDROID-PLAN.md` §7.4）。
+     * 桌面端与浏览器里是空操作。
+     */
+    const trackTitle = useSelect((s) => s.player.current?.title ?? '');
+    const trackArtist = useSelect((s) => s.player.current?.artist ?? '');
+    useEffect(() => {
+        void syncPlaybackBanner(playing, trackTitle, trackArtist);
+    }, [playing, trackTitle, trackArtist]);
 
     /**
      * 看门狗：音源解析成功、界面也切到「播放中」，但**媒体元素其实还停着**时兜底。

@@ -627,3 +627,24 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
   真机前台服务（foreground service）+ MediaSession 是 P2 的正解（详见 `ANDROID-PLAN.md` §7.4）。
 - 排查口径：判断「是不是真的在播」别信界面，用 `node scripts/android-cdp.mjs eval` 读
   `[role=slider]` 的 `aria-valuenow`；连着两次一样就是没在播。
+
+## 58. 安卓原生代码住在 `gen/android`，且「保活」必须靠前台服务（R112）
+
+- **不要以为 `src-tauri/gen/android/` 是「生成目录、碰不得」**：Tauri CLI 只在缺失时生成它，
+  之后它就是工程的一部分。自定义 Service / Plugin / 清单权限都加在这里（本项目 R112 就是这么做的：
+  `PlaybackService.kt` + `PlaybackPlugin.kt` + 清单里的 `<service>` 与三条权限）。改了要连带
+  `pnpm tauri android build --debug -t aarch64 --apk` 真机验一次——**它不进 `pnpm verify`**。
+- **Rust ↔ Kotlin 只有「命令」一个方向**：`tauri::plugin::Builder::new(名字).setup(|_, api| api
+  .register_android_plugin("com.xun.gently", "PlaybackPlugin"))` 注册，之后用
+  `PluginHandle::run_mobile_plugin("update", payload)` 调 Kotlin 的 `@Command`；
+  Kotlin 侧 `@TauriPlugin class X(activity: Activity) : Plugin(activity)`，参数类标 `@InvokeArg`。
+  **Kotlin 主动通知前端**得靠 `Plugin.trigger` + 前端 `Channel`，别指望 `emit` 一个系统事件。
+- **`targetSdk = 36` 的前台服务有两道硬门槛**：清单里必须有
+  `FOREGROUND_SERVICE_MEDIA_PLAYBACK` 权限与 `<service android:foregroundServiceType="mediaPlayback">`，
+  否则 API 34+ 直接 `SecurityException`；`startForegroundService` 之后 **5 秒内**必须
+  `startForeground(id, notification)`。API 33+ 还要 `POST_NOTIFICATIONS` 才能看见通知
+  （不影响保活，只是通知不显示）。
+- **效果怎么验**（别只看界面）：`adb shell dumpsys activity services com.xun.gently` 要看到
+  `isForeground=true foregroundId=…`；再用「熄屏 4 分钟之后读 `aria-valuenow`」对比——
+  没有前台服务时 R111 实测停在 171/226 或整页重载，加了服务后同一测量是 5 → 258（+253 秒）。
+
