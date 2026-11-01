@@ -257,6 +257,22 @@ export interface ComponentTokens {
         iconButtonSize: number;
         windowButtonSize: number;
     };
+    /** 手机外壳（左侧导航抽屉 + 常驻播放条） */
+    mobile: {
+        headerHeight: number;
+        tabBarHeight: number;
+        playerBarHeight: number;
+        coverSize: number;
+        coverRadius: string;
+        titleFontSize: number;
+        metaFontSize: number;
+        controlSize: number;
+        iconButtonSize: number;
+        tabIconSize: number;
+        paddingX: number;
+        sheetItemHeight: number;
+        drawerWidth: number;
+    };
     /** 下拉菜单 / 抽屉列表（音源、音质、筛选抽屉共用） */
     menu: {
         width: number;

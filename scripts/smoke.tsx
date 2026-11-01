@@ -64,6 +64,7 @@ import {
 import {canPreview, mediaKindOf, previewWindow, PREVIEW_SECONDS} from '../src/utils/discoverMedia';
 import {appConfig} from '../src/config/app.config';
 import {resolveShellMode} from '../src/utils/shellMode';
+import {activeNavKey, MOBILE_HOME_PATH, mobileNavItems} from '../src/components/shell/mobile/nav';
 import {lyricsScrollStep, lyricsScrollTarget} from '../src/utils/lyricsScroll';
 import {getThemeSkin, parseSkin, resolveTheme as resolveSkin, serializeSkin} from '../src/theme';
 import type {ThemeSkin} from '../src/theme';
@@ -2350,6 +2351,41 @@ async function main(): Promise<void> {
                 resolveShellMode(720, 480, bp) === 'compact' &&
                 resolveShellMode(719, 480, bp) === 'mini' &&
                 resolveShellMode(0, 0, bp) === 'regular',
+        );
+
+        /* 手机：平台优先于尺寸。412×915 本来会落进 mini（那是「窗口缩小」的桌面语义），
+           安卓端要的是第 4 种形态 mobile。 */
+        check(
+            '窗口：手机竖屏是移动外壳而不是迷你播放器',
+            resolveShellMode(412, 915, bp, 'mobile') === 'mobile' &&
+                resolveShellMode(412, 915, bp, 'desktop') === 'mini',
+        );
+        check(
+            '窗口：移动端不看尺寸（横屏/大屏同样是 mobile）',
+            resolveShellMode(1180, 760, bp, 'mobile') === 'mobile' &&
+                resolveShellMode(0, 0, bp, 'mobile') === 'mobile',
+        );
+        check(
+            '窗口：桌面端三档不因新增形态而改变',
+            resolveShellMode(1180, 760, bp) === 'regular' &&
+                resolveShellMode(800, 700, bp) === 'compact' &&
+                resolveShellMode(700, 700, bp) === 'mini',
+        );
+        check(
+            '移动外壳：左侧抽屉 8 个入口，搜索是 home',
+            mobileNavItems.length === 8 &&
+                MOBILE_HOME_PATH === '/search' &&
+                mobileNavItems[0].path === MOBILE_HOME_PATH &&
+                mobileNavItems.map((item) => item.path).join(',') ===
+                    '/search,/local,/download,/recent,/favorites,/plugin,/theme,/setting' &&
+                !mobileNavItems.some((item) => item.path === '/ranking' || item.path === '/hot'),
+        );
+        check(
+            '移动外壳：抽屉高亮按前缀匹配（子路由不丢高亮）',
+            activeNavKey('/download') === 'download' &&
+                activeNavKey('/download/downloading') === 'download' &&
+                activeNavKey('/setting') === 'setting' &&
+                activeNavKey('/ranking') === null,
         );
 
         const compactTitle = renderToString(

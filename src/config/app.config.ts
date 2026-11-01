@@ -14,6 +14,7 @@ export const appConfig = {
     window: {
         compact: {width: 420, height: 320},
         normal: {width: 1180, height: 760},
+
         /**
          * 外壳形态阈值（行为配置，不是样式）。
          *
@@ -29,6 +30,18 @@ export const appConfig = {
             miniWidth: 720,
             miniHeight: 480,
         },
+    },
+
+    /**
+     * 手机外壳的行为参数（非样式；尺寸/配色仍走 `theme.config.json`）。
+     *
+     * `statusBarInset`：安卓端是 edge-to-edge（webview 铺到状态栏底下），
+     * 所以顶部要多留一条，否则标题会被状态栏的时钟压住（实测 2026-11-01）。
+     * 这是**设备量出来的近似值**（1080×2400 / dpr 3 → 30 CSS px）；
+     * 精确值要靠宿主上报状态栏高度，等 P2 接前台服务时一起做。
+     */
+    mobile: {
+        statusBarInset: 30,
     },
 
     player: {

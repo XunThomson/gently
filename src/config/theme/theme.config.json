@@ -227,6 +227,22 @@
       "windowButtonSize": 26
     },
 
+    "mobile": {
+      "headerHeight": 44,
+      "tabBarHeight": 56,
+      "playerBarHeight": 62,
+      "coverSize": 40,
+      "coverRadius": "10px",
+      "titleFontSize": 13,
+      "metaFontSize": 11,
+      "controlSize": 34,
+      "iconButtonSize": 30,
+      "tabIconSize": 18,
+      "paddingX": 12,
+      "sheetItemHeight": 48,
+      "drawerWidth": 280
+    },
+
     "panel": {
       "width": 340,
       "maxHeight": 340,

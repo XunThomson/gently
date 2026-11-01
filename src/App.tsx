@@ -3,6 +3,7 @@ import {Outlet} from "react-router";
 import {LMRLayout, TMBLayout} from "./components/layout";
 import {BackgroundVideo} from "./components/shell/background";
 import {MiniPlayer} from "./components/shell/mini-player";
+import {MobileShell} from "./components/shell/mobile";
 import {ConfirmHost} from "./components/ui/dialog";
 import {TitleBar} from "./components/shell/title-bar";
 import {Sidebar} from "./components/shell/sidebar";
@@ -78,12 +79,26 @@ export default function App() {
     const petEnabled = useSelect((s) => s.ui.petEnabled);
     /** 设置页改过宠物（安装/切换/卸载）后 +1 → 宠物窗口据此重挂渲染器 */
     const petRevision = useSelect((s) => s.ui.petRevision);
-    usePetWindowBridge(petEnabled, petRevision);
+    /* 手机端没有「独立宠物窗口」这种东西（P4 才谈替代方案），所以桥直接不启用 */
+    usePetWindowBridge(petEnabled && mode !== "mobile", petRevision);
 
     const restoreFull = () => {
         void windowService.restoreFromMini();
         if (!isTauri()) setForceRegular(true);
     };
+
+    if (mode === "mobile") {
+        /* 手机外壳：导航换成底部 tab，路由 / store / 服务层与桌面完全共用 */
+        return (
+            <div className="app" data-shell="mobile">
+                <BackgroundVideo/>
+                <div className="app__content">
+                    <MobileShell/>
+                </div>
+                <ConfirmHost/>
+            </div>
+        );
+    }
 
     if (mode === "mini" && !forceRegular) {
         return (

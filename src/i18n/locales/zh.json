@@ -61,7 +61,8 @@
     "plugin": "插件管理",
     "recent": "最近播放",
     "setting": "设置",
-    "theme": "主题市场"
+    "theme": "主题市场",
+    "search": "搜索"
   },
   "common": {
     "refresh": "刷新",
@@ -115,6 +116,11 @@
     "expand": "展开完整界面",
     "noTrack": "还没有播放歌曲",
     "pickSong": "点右上角「展开」回到完整界面选一首歌"
+  },
+  "mobile": {
+    "menu": "导航",
+    "openPlayer": "打开播放页",
+    "pickSong": "从列表里挑一首开始"
   },
   "sidebar": {
     "playlists": "我的歌单",

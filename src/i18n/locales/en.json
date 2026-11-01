@@ -61,7 +61,8 @@
     "plugin": "Plugins",
     "recent": "Recently Played",
     "setting": "Settings",
-    "theme": "Theme Market"
+    "theme": "Theme Market",
+    "search": "Search"
   },
   "common": {
     "refresh": "Refresh",
@@ -115,6 +116,11 @@
     "expand": "Expand full view",
     "noTrack": "Nothing is playing",
     "pickSong": "Use Expand to pick a song in the full view"
+  },
+  "mobile": {
+    "menu": "Navigation",
+    "openPlayer": "Open player",
+    "pickSong": "Pick a song from a list"
   },
   "sidebar": {
     "playlists": "My playlists",

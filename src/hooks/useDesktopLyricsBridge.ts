@@ -1,5 +1,6 @@
 import {useEffect, useRef} from 'react';
 import {activeLyricIndex} from '../utils/lyrics';
+import {isMobilePlatform} from '../utils/platform';
 import {DESKTOP_LYRICS_EVENTS, isTauri} from '../services';
 import {useActions, usePlayerState, useSelect} from '../store';
 import type {PlayerState} from '../store/types';
@@ -70,7 +71,8 @@ export function useDesktopLyricsBridge(): void {
     const source = player.lyricsSource?.sourceName ?? '';
 
     useEffect(() => {
-        if (!isTauri()) return;
+        /* 手机端没有「第二个透明置顶窗口」（P4 才谈通知栏/悬浮窗替代），桥一律不挂 */
+        if (!isTauri() || isMobilePlatform()) return;
         let disposed = false;
 
         const push = () => {
@@ -108,7 +110,7 @@ export function useDesktopLyricsBridge(): void {
        偏移也算：暂停时调偏移，`active` 可能不变，但桌上那行必须马上跟着挪（否则要等 1s 心跳，
        用户会以为「校正没生效」）。 */
     useEffect(() => {
-        if (!isTauri()) return;
+        if (!isTauri() || isMobilePlatform()) return;
         void events().then(({emit}) => {
             void emit(DESKTOP_LYRICS_EVENTS.update, payloadRef.current);
         });

@@ -1,0 +1,95 @@
+/* 移动端常驻播放条：进度条压在顶边，一行「封面 + 标题/歌手 + 播放/下一首」 */
+
+.bar {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+    height: var(--mobile-player-bar-height);
+    border-top: 1px solid var(--divider);
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
+}
+
+.seek {
+    padding: 0 var(--mobile-padding-x);
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 1;
+    min-height: 0;
+    padding: 0 var(--mobile-padding-x);
+}
+
+/* 主体（封面 + 文字）是一个按钮：点它进歌词页，和桌面播放条点封面一致 */
+.main {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.cover {
+    flex: none;
+    width: var(--mobile-cover-size);
+    height: var(--mobile-cover-size);
+    border-radius: var(--mobile-cover-radius);
+    overflow: hidden;
+}
+
+.meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.title {
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: var(--mobile-title-font-size);
+    font-weight: var(--font-weight-medium);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.artist {
+    overflow: hidden;
+    color: var(--text-tertiary);
+    font-size: var(--mobile-meta-font-size);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.control {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: var(--mobile-control-size);
+    height: var(--mobile-control-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.control:active:not(:disabled) {
+    background: var(--bg-active);
+    color: var(--text-primary);
+}
+
+.control:disabled {
+    opacity: 0.4;
+    cursor: default;
+}

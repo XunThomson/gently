@@ -1,0 +1,150 @@
+/* 手机外壳：顶部（抽屉按钮 + 标题）/ 搜索行 / 单栏内容 / 常驻播放条 / 左侧导航抽屉。
+   尺寸与配色全部来自 theme.config.json 的 `mobile` 段与语义色板，不写死数值。 */
+
+.shell {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
+}
+
+/* ---------- 顶部：抽屉按钮 + 标题 ---------- */
+
+.header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: none;
+    height: var(--mobile-header-height);
+    padding: 0 var(--mobile-padding-x);
+    border-bottom: 1px solid var(--divider);
+}
+
+.brand {
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.08em;
+}
+
+.headerAction {
+    display: grid;
+    place-items: center;
+    width: var(--mobile-icon-button-size);
+    height: var(--mobile-icon-button-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.headerAction:active {
+    background: var(--bg-active);
+    color: var(--text-primary);
+}
+
+/* ---------- 搜索行（只在 /search 下出现） ---------- */
+
+.searchRow {
+    flex: none;
+    padding: var(--space-2) var(--mobile-padding-x);
+    border-bottom: 1px solid var(--divider);
+}
+
+/* ---------- 内容区（单栏，可滚动） ---------- */
+
+.content {
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* ---------- 左侧导航抽屉 ---------- */
+
+.drawerRoot {
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-overlay);
+    display: flex;
+}
+
+.drawerScrim {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    padding: 0;
+    background: var(--overlay-scrim);
+    cursor: pointer;
+}
+
+.drawer {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    width: var(--mobile-drawer-width);
+    max-width: 82%;
+    height: 100%;
+    padding: var(--space-3) var(--space-2);
+    box-sizing: border-box;
+    overflow-y: auto;
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-panel);
+}
+
+.drawerHeader {
+    display: flex;
+    align-items: center;
+    height: var(--mobile-header-height);
+    padding: 0 var(--space-2) var(--space-2);
+}
+
+.drawerItem,
+.drawerItemActive {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: none;
+    height: var(--mobile-sheet-item-height);
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    text-align: left;
+    cursor: pointer;
+}
+
+.drawerItem:active {
+    background: var(--bg-active);
+}
+
+.drawerItemActive {
+    background: var(--bg-active);
+    color: var(--brand);
+    font-weight: var(--font-weight-semibold);
+}
+
+.drawerItemIcon {
+    display: grid;
+    place-items: center;
+    color: var(--text-secondary);
+}
+
+.drawerItemActive .drawerItemIcon {
+    color: var(--brand);
+}
+
+.drawerItemLabel {
+    flex: 1;
+    min-width: 0;
+}

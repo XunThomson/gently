@@ -274,7 +274,10 @@ tldr: 当前 R106（完善 pet-core）：把三处「声明了但不生效」的
    界面渲染出迷你播放器空态。拦路虎 `rquickjs-sys` 缺 android 绑定已用 **vendored patch** 解决
    （GOTCHAS §48）；新踩的坑见 §50–§52（多窗口→白屏、dev 包不含资源、取证与数据目录）。
    计划与执行记录在 [`ANDROID-PLAN.md`](ANDROID-PLAN.md)（§6 有逐条证据），自检
-   `pwsh -File scripts/android-env.ps1`。**下一步 P1（移动外壳）**，等用户确认。
+   `pwsh -File scripts/android-env.ps1`。**P1 进行中**：P1-1/2/3 已落地并在真机验证 ——
+   手机外壳 = **左侧抽屉导航（8 项）+ 搜索作 home + 常驻播放条**（按用户要求不做推荐/排行榜），
+   证据 `release/screenshots/r108-android-home.png` / `-drawer.png`；
+   smoke 509 → **514**（新增四形态 / 抽屉 / home / 高亮断言）。剩 P1-4 触摸语义、P1-5 `mobileColumns`、P1-6 收尾。
 4. **工程债**：`GOTCHAS.md` 47 条按域拆分；截图证据改成「seeded 数据 + 可深链 + 固定浅/深基线」，不再靠手算坐标；
    拖动/悬停这类**注入式输入验证不了**的交互，补一份人工验收清单。
 5. 背景 P2（带 JS / 多文件网页壁纸）与迷你歌词视觉细调仍挂着，未排期。

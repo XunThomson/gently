@@ -253,36 +253,49 @@ pnpm tauri android build --debug -t aarch64 --apk
 
 宠物（pet-core）在移动端的渲染器属于 ADR 0010 的未决项，**不在 P0–P4 里**。
 
-### 7.1 P1 细化方案（2026-11-01 提出，**待批准后动手**）
+### 7.1 P1 细化方案（2026-11-01 **已按用户要求改过两版**，P1-1/2/3 已落地）
 
-**目标**：真机上从「一个迷你播放器空态」变成「能看能用」—— 5 个底部 tab 能进 6 个主路由 + 设置，
-列表可点可播，播放条常驻。
+> 用户的两次要求（都已生效）：
+> ① **安卓不做推荐与排行榜**（`/ranking`、`/hot` 不进移动导航）；
+> ② **搜索页就是 home**，**导航放左侧抽屉**（不要底部 tab）。
 
 **形态判定（第 4 种 `mobile`）**
 
 - `src/utils/shellMode.ts` 的 `resolveShellMode` 加**第 4 个入参** `platform?: 'desktop' | 'mobile'`：
   `platform === 'mobile'` → 恒 `mobile`（不看尺寸）；其余逻辑与现在完全一致（纯函数，smoke 直接钉）。
-- 平台来源：`system.status.platform`（真机实测 `android-aarch64`）→ 新增 `src/services/platform.service.ts`
-  缓存一次探测结果；`isTauri()` 为假时按 `desktop`。**不引入 `@tauri-apps/plugin-os`**（新依赖）。
-- `App.tsx`：`mobile` 分支渲染 `<MobileShell/>`（底部 tab + 内容 + 常驻播放条）；`mini` 分支在移动端**不再触发**。
+- 平台来源：`src/utils/platform.ts` 的**同步**判定（安卓 WebView 的 UA 含 `Android`）。
+  为什么不用异步的 `system.status.platform`：外壳形态要在**首帧**定下来，异步会先闪一下桌面三栏；
+  数据能力仍一律以核心为准。**不引入 `@tauri-apps/plugin-os`**。
+- `App.tsx`：`mobile` 分支渲染 `<MobileShell/>`（抽屉 + 内容 + 常驻播放条）；`mini` 分支在移动端**不再触发**。
+- 根路径：手机端重定向到 **`/search`**（`MOBILE_HOME_PATH`），桌面端仍是 `/ranking`。
 
-**导航结构（5 tab，避免新造页面）**
+**导航结构（左侧抽屉，8 项；数据只在 `nav.tsx` 一处）**
 
-| tab | 路由 | 说明 |
+| # | 入口 | 路由 |
 |---|---|---|
-| 排行 | `/ranking` | 现有视图 |
-| 发现 | `/hot` | 现有视图（触摸语义改造见下） |
-| 搜索 | `/search` | 现有视图（桌面由标题栏搜索框进入，移动端升为 tab） |
-| 本地 | `/local` | 现有视图 |
-| 更多 | 抽屉（不是路由页） | 列出：最近播放 `/recent`、下载管理 `/download`、插件管理 `/plugin`、收藏 `/favorites`、主题市场 `/theme`、设置 `/setting` |
+| 1 | 搜索（**home**） | `/search` |
+| 2 | 本地音乐 | `/local` |
+| 3 | 下载管理 | `/download` |
+| 4 | 最近播放 | `/recent` |
+| 5 | 我的收藏 | `/favorites` |
+| 6 | 插件管理 | `/plugin` |
+| 7 | 主题市场 | `/theme` |
+| 8 | 设置 | `/setting` |
 
-抽屉复用 `components/ui` 的现有抽屉/面板模式（与播放条「功能抽屉」同款），**不新造导航组件族**。
+抽屉 = 遮罩 + 左滑面板（宽 `--mobile-drawer-width`，最大 82%），点遮罩关闭；高亮按**前缀**匹配
+（`/download/downloading` 仍算「下载管理」）。不做成路由页：它只是导航，做成页面会多一层返回。
+
+**搜索框放哪**
+
+桌面搜索框长在标题栏里；手机没有标题栏，所以 `MobileSearchBar` 在 **`/search` 下**单独一行
+（其余页面不占这一行高度）。搜索历史 / 防抖参数与桌面**同源**（`theme.config.json` 的 `searchBox` 段）。
 
 **播放条与歌词页**
 
-- 移动端播放条 = 现有 `MiniPlayer` 的**紧凑版**（封面 + 标题 + 播放/暂停 + 下一首），常驻 tab 上方；
-  点击主体 → `/now-playing`。**复用同一个组件与 CSS Module**，只按形态加 `data-shell="mobile"` 的尺寸覆盖，
-  不再写第二套播放条。
+- 移动端播放条：**新写一个紧凑条**（`MobilePlayerBar`），与桌面 `PlayerBar` / `MiniPlayer` **共用零件**
+  （`Cover`、`SeekBar`、store 的 player 切片与 actions），只按手机宽度重排；点主体 → `/now-playing`。
+  ⚠️ 与原计划「复用 MiniPlayer 整页」不同：MiniPlayer 是整页布局（含窗口按钮与歌词块），塞不进 62px 的条，
+  所以复用的是**零件与状态**，不是那一页。
 - `/now-playing` 现有的「功能抽屉」保留（收藏/下载/歌单），触摸下改为点击展开。
 
 **触摸语义（只改交互层，不改 store）**
@@ -290,8 +303,8 @@ pnpm tauri android build --debug -t aarch64 --apk
 - `SeekBar`：触屏常显手柄（`@media (hover: none)` 或 `data-shell` 开关），拖拽热区 ≥ 24px；桌面保持悬浮才显示。
 - 列表行：「点当前曲目 = 播放/暂停、点其他 = 切歌」**语义不变**（`useTrackActions` 不动）；
   行内动作按钮在移动端**不渲染**，改由「点行右侧 ⋯ → 底部操作面板」复用 `useTrackActions` 的同一批动作。
-- 所有 `:hover` 反馈在 `data-shell="mobile"` 下退化为 `:active`（新增 token 驱动，不硬编码颜色）。
-- 发现页「划过即试听」：触摸下「点一下 = 试听」（不再需要 hover 进入）。
+- 所有 `:hover` 反馈在 `data-shell="mobile"` 下退化为 `:active`。
+- 发现页「划过即试听」：移动端不提供该页（不做推荐），所以这条在安卓端不需要。
 
 **列表宽度**
 
@@ -300,17 +313,30 @@ pnpm tauri android build --debug -t aarch64 --apk
 
 **窗口能力（全部按平台分支，桌面行为不变）**
 
-- `title-bar`：移动端不渲染窗口按钮与拖动区，退化为页面标题 + 右侧「⋯」（打开 更多 抽屉）。
+- `title-bar`：移动端不渲染（外壳自己只有一个「抽屉按钮 + 标题」）。
 - `window.service.ts`：`minimize / toggleMaximize / setAlwaysOnTop / pip / restoreFromMini` 在移动端 no-op 并如实返回。
 - 桌面歌词 / 宠物窗口：移动端 `useDesktopLyricsBridge` / `usePetWindowBridge` 直接不挂（P4 再做替代品）。
+- 状态栏：安卓是 edge-to-edge，`app.config.mobile.statusBarInset = 30`（本机量出来的近似值）用来让出状态栏高度；
+  精确值等宿主上报（P2）。
 
 **验收（缺一不算）**
 
-1. `pnpm typecheck && pnpm smoke` 绿，且新增断言：`resolveShellMode` 四形态、移动端不渲染窗口按钮、
-   底部 tab 数量与路由映射、桌面三形态**不回归**；
-2. 真机 `android build --debug -t aarch64 --apk` 装机后：5 个 tab 逐一点到、进设置、进播放条 → 歌词页；
-3. 截图 ≥ 6 张（5 tab + 歌词页）存 `release/screenshots/r108-android-*.png`（`release/` 不入库，引用写进 STATE）；
+1. `pnpm typecheck && pnpm smoke` 绿，且新增断言：`resolveShellMode` 四形态、抽屉 8 项且不含推荐/排行榜、
+   `MOBILE_HOME_PATH === '/search'`、抽屉高亮前缀匹配、桌面三形态**不回归**；
+2. 真机 `android build --debug -t aarch64 --apk` 装机后：抽屉 8 项逐一点到、搜索能出结果、播放条 → 歌词页；
+3. 截图（首页 + 抽屉 + 若干页面）存 `release/screenshots/r108-*.png`（`release/` 不入库，引用写进 STATE）；
 4. 桌面端不得变：完整界面截图与 P0 前一致（`pnpm ui:capture` 对打包版各来一张）。
+
+**进度（2026-11-01）**
+
+| 片 | 状态 | 证据 |
+|---|---|---|
+| P1-1 形态 + 平台 + home 重定向 | ✅ | `resolveShellMode(412,915,bp,'mobile')==='mobile'`；真机落到 `/search` |
+| P1-2 左侧抽屉（8 项） | ✅ | 真机截图：抽屉列出 8 项，「搜索」高亮 |
+| P1-3 常驻播放条 + 搜索行 | ✅ | 真机截图：`还没有播放歌曲 / 从列表里挑一首开始`；搜索框 + 蓝色「搜索」按钮 |
+| P1-4 触摸语义（SeekBar 常显手柄、行内动作收进底部面板） | ⬜ 待做 | |
+| P1-5 `mobileColumns` 列表两行式 | ⬜ 待做 | |
+| P1-6 窗口能力 no-op 收尾 + 桌面截图比对 | ⬜ 部分（桥已不挂） | |
 
 **拆分（每片独立可交付）**
 
@@ -332,8 +358,9 @@ pnpm tauri android build --debug -t aarch64 --apk
    **arm64 Android 构建也通过**（日志里 `Compiling rquickjs-sys v0.7.0 (…\vendor\rquickjs-sys)`）。
    还剩「运行时正确性」（P0-8：真机导一次 demo 插件）与 armv7 绑定（风险 9）。
 2. **P0 已完成**（2026-11-01）：工具链、构建、安装、启动、真机日志、界面渲染六件都有证据（§1、§6）。
-3. **下一步是 P1**（用户 2026-11-01 已选「进 P1」）：细化方案见 §7.1，**等批准后**按 P1-1…P1-6 逐片推进。
-   当前真机上只有一个迷你播放器空态，「能跑不能用」——P1 做完才算能看能用。
+3. **P1 进行中**（2026-11-01）：P1-1/2/3 已落地并在真机验证（手机外壳 = 左侧抽屉 + 搜索作 home +
+   常驻播放条；不含推荐/排行榜）。剩下 P1-4（触摸语义）、P1-5（`mobileColumns`）、P1-6（窗口能力收尾 + 桌面比对），
+   详见 §7.1 的进度表。
 
 ## 9. 相关文档
 

@@ -81,6 +81,8 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--border-strong': s.borderStrong,
         '--divider': s.divider,
         '--scrollbar-thumb': s.scrollbarThumb,
+        /* 浮层遮罩（抽屉 / 面板压住内容时用）：与背景视频遮罩同源，跟随明暗方案 */
+        '--overlay-scrim': s.videoScrim,
 
         /* ---------- 品牌与状态色 ---------- */
         '--brand': config.palette.brand,
@@ -267,6 +269,21 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--mini-player-control-size': px(c.miniPlayer.controlSize),
         '--mini-player-icon-button-size': px(c.miniPlayer.iconButtonSize),
         '--mini-player-window-button-size': px(c.miniPlayer.windowButtonSize),
+
+        /* ---------- 组件：手机外壳（底部 tab / 常驻播放条 / 更多抽屉） ---------- */
+        '--mobile-header-height': px(c.mobile.headerHeight),
+        '--mobile-tab-bar-height': px(c.mobile.tabBarHeight),
+        '--mobile-player-bar-height': px(c.mobile.playerBarHeight),
+        '--mobile-cover-size': px(c.mobile.coverSize),
+        '--mobile-cover-radius': c.mobile.coverRadius,
+        '--mobile-title-font-size': px(c.mobile.titleFontSize),
+        '--mobile-meta-font-size': px(c.mobile.metaFontSize),
+        '--mobile-control-size': px(c.mobile.controlSize),
+        '--mobile-icon-button-size': px(c.mobile.iconButtonSize),
+        '--mobile-tab-icon-size': px(c.mobile.tabIconSize),
+        '--mobile-padding-x': px(c.mobile.paddingX),
+        '--mobile-sheet-item-height': px(c.mobile.sheetItemHeight),
+        '--mobile-drawer-width': px(c.mobile.drawerWidth),
 
         /* ---------- 组件：菜单 / 抽屉列表 ---------- */
         '--menu-width': px(c.menu.width),
