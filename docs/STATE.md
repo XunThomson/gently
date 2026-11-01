@@ -4,7 +4,7 @@ last_verified: 2026-11-01
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R106（完善 pet-core）：把三处「声明了但不生效」的地方做成真的 —— ① `minPetCoreVersion` 现在**真的比较**（新错误码 `pet.incompatible`，界面有 zh/en 文案），`version` 必须能解析；② `Condition::SilentFor{ms}` 以前等于「没在播就算」，现在真的按静默时长判断（播放一恢复就归零）；③ 打断型动画（点击/换歌）**必须演完一遍**再让状态机接管，否则「点一下抖一下」；另外 `pet.json` 原文限 512 KiB、`pet.state` 带 `coreVersion`（调试面板可见），宠物错误码全量本地化并由 smoke 守卫。**安卓已重启**（用户 2026-11-01 决定）：只做 P0 工具链，计划与真机验收见 `docs/ANDROID-PLAN.md`。核心 75 命令；smoke 509；宠物 **72** 项测试（+宿主 5 项）；verify **8** 道全绿。
+tldr: 当前 R106（完善 pet-core）：把三处「声明了但不生效」的地方做成真的 —— ① `minPetCoreVersion` 现在**真的比较**（新错误码 `pet.incompatible`，界面有 zh/en 文案），`version` 必须能解析；② `Condition::SilentFor{ms}` 以前等于「没在播就算」，现在真的按静默时长判断（播放一恢复就归零）；③ 打断型动画（点击/换歌）**必须演完一遍**再让状态机接管，否则「点一下抖一下」；另外 `pet.json` 原文限 512 KiB、`pet.state` 带 `coreVersion`（调试面板可见），宠物错误码全量本地化并由 smoke 守卫。**安卓已重启并跑通 P0**（用户 2026-11-01 决定）：arm64 debug 包已装真机、核心日志与界面都有证据，计划见 `docs/ANDROID-PLAN.md`。核心 75 命令；smoke 509；宠物 **72** 项测试（+宿主 5 项）；verify **8** 道全绿。
 ---
 
 # STATE
@@ -268,13 +268,13 @@ tldr: 当前 R106（完善 pet-core）：把三处「声明了但不生效」的
    要做只是把「宿主入口 / 渲染器 / 文案」搬一遍；触发条件是安卓决定重启。
 2. **宠物玩法打磨（小步、随时可做）**：`minPetCoreVersion` 真版本比较、atlas 瘦身（1.5 MB）、
    走路时避让窗口/任务栏、多宠物 UI（存储与 API 已预留）、宠物包自定义文案词表、逐像素 alpha 命中。
-3. **安卓（进行中，只做 P0）**：用户 2026-11-01 决定重启，形态定为**同一仓库 `src-tauri/gen/android`**、
-   验收用**真机 USB**（`CDY_AN00` · API 29 · arm64，已连）。逐步命令 / 期望输出 / 风险 / 执行记录在
-   [`ANDROID-PLAN.md`](ANDROID-PLAN.md)，自检 `pwsh -File scripts/android-env.ps1`。
-   当前缺：NDK、`aarch64-linux-android` target、`gen/android`；P0-4 的拦路虎
-   `rquickjs-sys 0.7` 缺 android FFI 绑定（GOTCHAS §48）**已按「vendored patch」解决**
-   （`vendor/rquickjs-sys/` + `[patch.crates-io]`，桌面端 `cargo test -p gently-core` 全绿；
-   Android 侧编译/运行仍待 P0-3/4/8）。
+3. **安卓（进行中）**：用户 2026-11-01 决定重启，形态定为**同一仓库 `src-tauri/gen/android`**、
+   验收用**真机 USB**（`CDY_AN00` · API 29 · arm64）。**P0 当天已跑通**：NDK r28c + 4 个 target +
+   `gen/android` + arm64 debug APK 装机启动，真机日志 8 条迁移 / `数据库就绪 version=8` / `宠物核心就绪`，
+   界面渲染出迷你播放器空态。拦路虎 `rquickjs-sys` 缺 android 绑定已用 **vendored patch** 解决
+   （GOTCHAS §48）；新踩的坑见 §50–§52（多窗口→白屏、dev 包不含资源、取证与数据目录）。
+   计划与执行记录在 [`ANDROID-PLAN.md`](ANDROID-PLAN.md)（§6 有逐条证据），自检
+   `pwsh -File scripts/android-env.ps1`。**下一步 P1（移动外壳）**，等用户确认。
 4. **工程债**：`GOTCHAS.md` 47 条按域拆分；截图证据改成「seeded 数据 + 可深链 + 固定浅/深基线」，不再靠手算坐标；
    拖动/悬停这类**注入式输入验证不了**的交互，补一份人工验收清单。
 5. 背景 P2（带 JS / 多文件网页壁纸）与迷你歌词视觉细调仍挂着，未排期。

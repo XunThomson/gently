@@ -72,6 +72,12 @@ tldr: 分层已经适合（core 不依赖 tauri、`crate-type` 已含 cdylib）�
 > `dl.google.com/dl/android/maven2` 的 200（走 `web_fetch`）。逐端点的复测请在普通终端里跑 `scripts/android-env.ps1`。
 > 另一条：`maven.google.com` TCP 不通，但它只是网页索引，Gradle 的 `google()` 用的是 `dl.google.com/dl/android/maven2`。
 
+> 一句话（2026-11-01 更新）：**P0 已跑通**——NDK r28c、4 个 android target、`gen/android`、arm64 debug APK
+> 装到 `CDY-AN00`（API 29）并启动，真机日志有 8 条迁移 + `数据库就绪 version=8` + `宠物核心就绪`，
+> 界面渲染出迷你播放器空态。过程中确认：多窗口配置下移动端会加载 `?window=pet` → 白屏（需
+> `tauri.android.conf.json` 单窗），`--apk` 默认四 ABI 而 **armv7 仍缺 QuickJS 绑定**（只出 `-t aarch64`）。
+> 剩余缺口是产品级的：**第 4 种外壳形态**（P1）、后台播放（P2）、SAF/Keystore（P3）。
+
 ## 3. 前端：哪些地方是「桌面专属」的（按文件列出）
 
 ### 3.1 外壳形态（**最关键**）

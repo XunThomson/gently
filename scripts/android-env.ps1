@@ -137,7 +137,9 @@ if ($androidHome -and (Test-Path $androidHome)) {
         $buildTools = Get-ChildItem (Join-Path $androidHome 'build-tools') -Directory | Select-Object -ExpandProperty Name
     }
     if (Test-Path (Join-Path $androidHome 'ndk')) {
-        $ndkDirs = Get-ChildItem (Join-Path $androidHome 'ndk') -Directory | Sort-Object Name | Select-Object -ExpandProperty Name
+        # 注意：单个目录时管道结果是字符串而不是数组，必须 @() 包一层，
+        # 否则 `$ndkDirs[-1]` 会取到字符串的最后一个字符（曾经误报 ndk\8）
+        $ndkDirs = @(Get-ChildItem (Join-Path $androidHome 'ndk') -Directory | Sort-Object Name | Select-Object -ExpandProperty Name)
     }
     if ($platforms.Count -gt 0 -and $buildTools.Count -gt 0) {
         Add-Check 'Android SDK' 'OK' ('platforms ' + ($platforms -join '/') + ' · build-tools ' + ($buildTools -join '/'))
@@ -159,10 +161,14 @@ if ($ndkHome) {
         $line = Select-String -Path $prop -Pattern '^Pkg\.Revision' | Select-Object -First 1
         if ($line) { $rev = $line.Line.Trim() }
     }
-    $clang = Join-Path $ndkHome 'toolchains\llvm\prebuilt\windows-x86_64\bin\aarch64-linux-android24-clang.cmd'
-    $ar = Join-Path $ndkHome 'toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-ar.exe'
-    if ((Test-Path $clang) -and (Test-Path $ar)) {
+    $binDir = Join-Path $ndkHome 'toolchains\llvm\prebuilt\windows-x86_64\bin'
+    $clang24 = Join-Path $binDir 'aarch64-linux-android24-clang.cmd'
+    $clang21 = Join-Path $binDir 'aarch64-linux-android21-clang.cmd'
+    $ar = Join-Path $binDir 'llvm-ar.exe'
+    if ((Test-Path $clang24) -and (Test-Path $ar)) {
         Add-Check 'NDK' 'OK' ($ndkHome + $(if ($rev) { " · $rev" } else { '' }))
+    } elseif ((Test-Path $clang21) -and (Test-Path $ar)) {
+        Add-Check 'NDK' 'WAIT' "$ndkHome 只有 API 21 的 clang 包装器（没有 24）" '设置 CC_/AR_/CARGO_TARGET_*_LINKER 显式指到 …android21-clang；或换一个带 24 的 NDK'
     } else {
         Add-Check 'NDK' 'MISS' "$ndkHome 缺 aarch64-linux-android24-clang.cmd 或 llvm-ar.exe" 'NDK 包不完整（或版本太老：需要 r23+ 的 standalone clang）'
     }
@@ -233,6 +239,25 @@ if ((Test-Path $gradlew) -and (Test-Path $buildGradle)) {
     Add-Check 'gen/android' 'MISS' 'src-tauri/gen/android 还不存在' 'pnpm tauri android init（需要 ANDROID_HOME + NDK_HOME，ANDROID-PLAN P0-5）'
 }
 
+# ---- 6b. 移动端单窗配置（多窗口时移动端会加载错窗口 → 白屏）--------------------
+$androidConf = Join-Path $RepoRoot 'src-tauri\tauri.android.conf.json'
+if (Test-Path $androidConf) {
+    $winCount = 0
+    try {
+        $conf = Get-Content $androidConf -Raw | ConvertFrom-Json
+        $winCount = @($conf.app.windows).Count
+    } catch { $winCount = -1 }
+    if ($winCount -eq 1) {
+        Add-Check '移动端单窗配置' 'OK' 'tauri.android.conf.json 只声明 1 个窗口'
+    } elseif ($winCount -gt 1) {
+        Add-Check '移动端单窗配置' 'MISS' "tauri.android.conf.json 声明了 $winCount 个窗口（移动端只有一个 webview）" '只留 main 窗口，见 ANDROID-PLAN §3.3'
+    } else {
+        Add-Check '移动端单窗配置' 'WAIT' 'tauri.android.conf.json 解析失败或没有 app.windows' '检查 JSON'
+    }
+} else {
+    Add-Check '移动端单窗配置' 'MISS' '没有 src-tauri/tauri.android.conf.json → 移动端会按 tauri.conf.json 的三窗配置加载（实测白屏）' '加一份只含 main 窗口的 android 专属配置'
+}
+
 # ---- 7. Gradle 缓存（首次构建必须联网拉一次）----------------------------------
 $gradleCaches = Join-Path $env:USERPROFILE '.gradle\caches'
 if (Test-Path $gradleCaches) {
@@ -251,6 +276,11 @@ if ($cargoHome) { $registrySrc += (Join-Path $cargoHome 'registry\src') }
 $registrySrc += (Join-Path $env:USERPROFILE '.cargo\registry\src')
 if (Test-Path $vendoredBinding) {
     Add-Check 'QuickJS 绑定' 'OK' 'vendor/rquickjs-sys 已含 aarch64-linux-android.rs（由 [patch.crates-io] 接管）'
+    # 32 位 ARM 的绑定仍然缺：`--apk` 默认四 ABI 一起编时会在这里失败（实测）
+    $armv7Binding = Join-Path $RepoRoot 'vendor\rquickjs-sys\src\bindings\armv7-linux-androideabi.rs'
+    if (-not (Test-Path $armv7Binding)) {
+        Add-Check 'QuickJS 绑定(armv7)' 'INFO' '没有 armv7-linux-androideabi.rs → 只出 arm64 时用 `-t aarch64`；四 ABI 全出会失败' ''
+    }
 } else {
     $sysDir = $null
     foreach ($r in $registrySrc) {

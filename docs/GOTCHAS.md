@@ -514,4 +514,36 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
   别只信命令输出；③ 网络只信 TCP 连通性与 `web_fetch`，逐端点 HTTP 码留给普通终端复测。
 - 验证：`scripts/android-env.ps1` 把这两类降级成 WAIT（而不是 MISS），避免把会话限制报成环境缺失。
 
+## 50. 移动端只有一个 webview：多窗口配置会让它加载「最后一个」窗口 → 整屏白（R107）
+
+- 现象：安卓端 APK 装好、进程活着、核心日志一切正常（8 条迁移、数据库就绪、宠物就绪），但屏幕**全白**。
+- 根因：`tauri.conf.json` 有三个窗口（`main` / `desktop-lyrics` / `pet`），移动端只起一个 webview，
+  实测加载的是**最后一项** `index.html?window=pet` → `main.tsx` 走 `PetWindowApp` 分支，
+  没有宠物时什么都不画。ACL 没报错、日志没报错，所以极具误导性。
+- 规避：给移动端单独一份 `src-tauri/tauri.android.conf.json`，`app.windows` **只留 `main`**（数组整体替换）。
+  验证口径：解包 APK 看 `assets/tauri.conf.json` 的 `windows` 是否只剩一项；`scripts/android-env.ps1`
+  的「移动端单窗配置」一行会直接判。
+- 附带症状：白屏期间 logcat 里 `Tauri/Console` 会刷 `Couldn't find callback id …`（宠物页在轮询），
+  看到这串说明**加载的确实是 pet 页**。
+
+## 51. `tauri android dev` 的包不含前端资源：离开 dev server 就是白屏（R107）
+
+- 现象：把 dev 流程装上的 APK 留在手机上，隔一会儿再打开 → 白屏；但核心日志照常写。
+- 根因：dev 包只带 `assets/tauri.conf.json`（解包可见 `assets/` 下就这一个文件），页面从
+  `devUrl`（实测是宿主 LAN IP，如 `http://192.168.x.x:1420/`）加载；dev server 不在就没内容。
+- 规避：**验收 UI 用 `pnpm tauri android build --debug -t aarch64 --apk`**（自带 `dist/`），
+  `dev` 只用于热更新开发。另注：`dev` 的 `beforeDevCommand` 独占 1420，上一轮 vite 没退就会
+  `Port 1420 is already in use`。
+
+## 52. 安卓取证两件小事：熄屏会截出纯白图；数据目录不是 `files/`（R107）
+
+- `adb exec-out screencap -p` 在设备熄屏时不会报错，只会给你一张**纯白图**（10 KB 左右）。
+  取证前先 `adb shell svc power stayon true` + `input keyevent KEYCODE_WAKEUP`，截完再
+  `svc power stayon false` 还原。判断是否熄屏：`dumpsys power` 里的 `mWakefulness=` / `Display Power: state=`。
+- 应用数据目录是 **`/data/user/0/com.xun.gently`**（`gently.db`、`logs/`、`pet/`、`plugins/`…），
+  不是 `/data/data/…/files/`（那里只有 `profileInstalled`）。`adb shell run-as com.xun.gently cat logs/gently.log.<日期>`。
+- 另外「数据目录：…（来源 …）」那行是 `eprintln!`（日志初始化之前），**只进 logcat、不进日志文件**；
+  拿它当验收项会永远搜不到。
+
+
 
