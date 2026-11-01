@@ -17,8 +17,31 @@ export {
     isTauri,
     DESKTOP_LYRICS_LABEL,
     DESKTOP_LYRICS_EVENTS,
+    PET_WINDOW_LABEL,
+    PET_WINDOW_EVENTS,
+    PET_WINDOW_POSITION_KEY,
+    readPetPosition,
 } from './window.service';
-export {coreAvailable, corePlugin, coreSystem, describeError, invokeCore, probeCore} from './core.bridge';
+export {
+    coreAvailable,
+    corePlugin,
+    coreSystem,
+    describeError,
+    hostRestartApp,
+    invokeCore,
+    probeCore,
+} from './core.bridge';
+/* 宠物域是**独立引擎**的独立门面（`pet_invoke`），与音乐核心并列 */
+export {petInvoke, petService} from './core.pet';
+export type {
+    PetEnvelope,
+    PetFrameDto,
+    PetProfileDto,
+    PetSpecDto,
+    PetStateDto,
+    PetTickInput,
+    PetTickResult,
+} from './core.pet';
 export {oauthBegin, oauthCancel, oauthListen, oauthSignOut, oauthStatus} from './core.oauth';
 export type {OAuthChangedPayload} from './core.oauth';
 export {

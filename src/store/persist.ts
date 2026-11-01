@@ -31,6 +31,13 @@ export interface PersistedUi {
     customSkins?: ThemeSkin[];
     /** 背景元数据 + 展示参数 + 预设（视频 / 网页正文在 IndexedDB，不进 localStorage） */
     background?: BackgroundSettings;
+    /**
+     * 「发现」视图聚焦时是否自动试听高潮片段（默认开启）。
+     * 显式可关：有人不希望鼠标划过一首歌就出声。
+     */
+    discoverAutoPreview?: boolean;
+    /** 宠物实验开关（默认关；2.x 形态，1.x 阶段只用于预开发验证） */
+    petEnabled?: boolean;
 }
 
 export function readPersistedUi(): PersistedUi {

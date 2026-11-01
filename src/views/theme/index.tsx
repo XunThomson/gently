@@ -7,12 +7,14 @@ import {UnderlineRadioGroup} from '../../components/ui/radio-group';
 import {EmptyState} from '../../components/ui/empty-state';
 import {IconTrash} from '../../components/ui/icon';
 import {useConfirm} from '../../hooks/useConfirm';
+import {useSkinBackground} from '../../hooks/useSkinBackground';
 import {errorText} from '../../i18n/errors';
 import {coreSystem, isTauri, skinService} from '../../services';
 import {useTheme} from '../../theme';
 import type {ThemeSkin} from '../../theme';
 import {copyText} from '../../utils/clipboard';
 import {matchesQuery} from '../../utils/helpers';
+import {backgroundKindOfFile, pickSkinPackageFiles} from '../../utils/skinPackage';
 import styles from './theme.module.css';
 
 /** 导入 / 删除后的提示停留时长 */
@@ -46,6 +48,26 @@ export default function ThemeView() {
     const [sourceMode, setSourceMode] = useState<'json' | 'path'>('json');
     const [sourceText, setSourceText] = useState('');
     const [busy, setBusy] = useState(false);
+
+    /* 主题包背景：导入时绑定素材，切主题时自动应用（见 hooks/useSkinBackground） */
+    const {bindSkinBackground, applySkinBackground} = useSkinBackground();
+
+    /**
+     * 切到另一套皮肤时**自动应用它的背景**。
+     *
+     * 首次挂载刻意跳过：`ui.background` 里是用户上次的微调结果，
+     * 启动时拿皮肤的默认值把它盖掉，等于每次开应用都把用户的调整抹掉一次。
+     */
+    const lastSkinId = useRef<string | null>(null);
+    useEffect(() => {
+        if (lastSkinId.current === null) {
+            lastSkinId.current = skin.id;
+            return;
+        }
+        if (lastSkinId.current === skin.id) return;
+        lastSkinId.current = skin.id;
+        void applySkinBackground(skin);
+    }, [skin, applySkinBackground]);
 
     /* 提示自动消失：定时器只在 effect 内注册，SSR 下不会执行 */
     useEffect(() => {
@@ -117,13 +139,43 @@ export default function ThemeView() {
 
     const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
         const input = event.currentTarget;
-        const file = input.files?.[0];
+        const files = Array.from(input.files ?? []);
         /* 先清空 value，保证同一个文件可以被再次导入 */
         input.value = '';
-        if (!file) return;
+        if (files.length === 0) return;
+
+        /* **主题包**（R87）：可以一次选中 `skin.json` + `bg.mp4`（也可以只选 JSON）。
+           JSON 走原来的导入/校验链路；背景素材按皮肤 id 存进 IndexedDB 并立刻应用，
+           用户不需要（也不该）再跑去设置页手动导入一遍背景。 */
+        const picked = pickSkinPackageFiles(files.map((file) => file.name));
+        if (!picked.json) {
+            setStatus(t(picked.reason === 'ambiguous-json' ? 'skin.packageAmbiguous' : 'skin.packageNoJson'));
+            return;
+        }
+
+        const jsonFile = files.find((file) => file.name === picked.json || file.name.endsWith(`/${picked.json}`) || file.name.endsWith(`\\${picked.json}`));
+        const backgroundFile = picked.background
+            ? files.find((file) => file.name === picked.background || file.name.endsWith(`/${picked.background}`) || file.name.endsWith(`\\${picked.background}`))
+            : undefined;
+        if (!jsonFile) {
+            setStatus(t('skin.packageNoJson'));
+            return;
+        }
 
         /* 桌面端由**本机核心**校验（结构 + 令牌键名白名单）；浏览器预览用本地解析兜底 */
-        applyOutcome(await skinService.importFromText(await file.text()));
+        const outcome = await skinService.importFromText(await jsonFile.text());
+        applyOutcome(outcome);
+
+        const kind = backgroundFile ? backgroundKindOfFile(backgroundFile.name) : null;
+        if (!outcome.ok || !outcome.skin || !backgroundFile || !kind) return;
+
+        if (await bindSkinBackground(outcome.skin.id, backgroundFile, kind)) {
+            // 素材刚存好：可能刚才那次自动应用只拿到了参数，这里补一次（用的是同一套皮肤）
+            await applySkinBackground(outcome.skin);
+            setStatus(
+                t('skin.packageImported', {name: outcome.skin.name, background: backgroundFile.name}),
+            );
+        }
     };
 
     /**
@@ -210,7 +262,9 @@ export default function ThemeView() {
                         ref={fileRef}
                         className={styles.fileInput}
                         type="file"
-                        accept=".json,application/json"
+                        /* 主题包：一个 JSON（必需）+ 一个背景素材（可选，视频或单文件网页） */
+                        multiple
+                        accept=".json,application/json,.mp4,.webm,.m4v,.ogg,.html,.htm"
                         onChange={handleImport}
                     />
                 </>

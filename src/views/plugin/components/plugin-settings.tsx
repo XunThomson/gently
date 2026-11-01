@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
-import type {PluginCredentialStatus, PluginSummary} from '../../../api';
+import type {PluginCredentialStatus} from '../../../api';
+import type {PluginInfo} from '../../../types';
 import {Button} from '../../../components/ui/button';
 import {BadgeCell, TextCell} from '../../../components/ui/data-table';
 import {errorText} from '../../../i18n/errors';
@@ -29,7 +30,7 @@ import {PluginWebLogin} from './plugin-web-login';
  * 2. 值不经我方任何服务器，落点是本机 `CredentialStore`——**当前是内存实现，重启即失效**，
  *    因此这里必须明说，不能让用户以为填过就一劳永逸。
  */
-export function PluginSettings({plugin}: {plugin: PluginSummary}) {
+export function PluginSettings({plugin}: {plugin: PluginInfo}) {
     const {t} = useTranslation();
 
     const [credentials, setCredentials] = useState<PluginCredentialStatus[] | null>(null);

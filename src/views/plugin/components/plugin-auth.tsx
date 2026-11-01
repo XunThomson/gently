@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
-import type {OAuthStatus, PluginSummary} from '../../../api';
+import type {OAuthStatus} from '../../../api';
+import type {PluginInfo} from '../../../types';
 import {Button} from '../../../components/ui/button';
 import {BadgeCell, TextCell} from '../../../components/ui/data-table';
 import {useConfirm} from '../../../hooks/useConfirm';
@@ -22,11 +23,12 @@ import styles from '../plugin.module.css';
  * 4. 落点是系统凭据库；降级为进程内存储时界面如实说「重启后失效」；
  * 5. 等待回调有 180s 上限，可以取消；取消后按钮回到「授权」。
  */
-export function PluginAuth({plugin}: {plugin: PluginSummary}) {
+export function PluginAuth({plugin}: {plugin: PluginInfo}) {
     const {t} = useTranslation();
     const confirm = useConfirm();
 
-    const declared = plugin.manifest.oauth;
+    /* 清单可能还没读到（浏览器预览的演示源没有 manifest）：没有声明就是不显示 */
+    const declared = plugin.manifest?.oauth;
     const [status, setStatus] = useState<OAuthStatus | null>(null);
     const [busy, setBusy] = useState(false);
     const [waiting, setWaiting] = useState(false);

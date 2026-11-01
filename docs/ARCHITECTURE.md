@@ -503,6 +503,11 @@ play_history 表 → 最近播放视图 / 推荐画像输入
   两条路径返回**同一形状**（`SkinImportOutcome`），视图不分支；真机上一律以核心为准；
 - 导入只做校验、不执行任何代码；解析失败给出具体原因，被拒的令牌键名**逐条列出**
   （`skin.token_rejected`，见契约 §7）。
+- **主题包（R87）**：皮肤 JSON 可带 `background:{kind:"video"|"web", file?, options?}`——
+  背景属于皮肤，用户导入一套主题就该连背景一起得到。`file` 只是包内**纯文件名**（带路径一律拒绝，
+  核心把它当作 `META_FIELDS` 里的元数据校验并原样存下）；素材本身留在用户机器上，由前端以
+  `skin:<皮肤 id>` 存进 IndexedDB，切到该主题时自动应用（`hooks/useSkinBackground`）。
+  设置页的背景参数仍然保留，作为**微调**：皮肤只覆盖它显式给了值的项。
 
 ## 11. 本机核心契约（无服务器形态）
 
@@ -622,6 +627,13 @@ OpenAPI-over-HTTP 代码生成、Postgres/Redis/BullMQ/Docker。**新增**的必
 - `services/window.service.ts` 封装最小化 / 最大化 / 关闭 / 置顶 / 小窗；
   浏览器环境为安全空操作，仅在 Tauri 宿主动态 `import('@tauri-apps/api/window')`。
 - 后续本地文件、下载落盘、插件运行时等能力同样从 `services/` 进入，视图不直接调用 Tauri API。
+- **数据目录（R87）**：根目录由 `core/src/paths.rs::resolve_data_paths` 裁决，
+  优先级 `GENTLY_DATA_DIR` 环境变量 > 迁移指针文件 > 便携版（exe 同目录有 `portable.txt`
+  → `<exe>/data`）> 系统默认（`app_data_dir`）。`src-tauri/src/lib.rs` 只负责把
+  「默认目录 / exe 目录 / 环境变量」三样喂给它。迁移走 `system.dataDir.move`：
+  拷贝（跳过 cache/logs/SQLite 旁挂文件）→ 数据库副本 `PRAGMA quick_check` 自检 →
+  写指针 → **下次启动生效**；旧目录不删。重启由宿主命令 `app_restart`（`AppHandle::request_restart`）
+  发起，核心不认识「进程」。
 
 ## 13. 遗留与归档
 

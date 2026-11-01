@@ -79,17 +79,25 @@ impl CredentialStore for MemoryCredentialStore {
 /// 系统 API 调用失败（如凭据库被策略禁用）。**不静默降级**——调用方会看到日志，
 /// 界面上的凭据提示也据此显示「重启后需要重新填写」。
 pub fn open_store() -> std::sync::Arc<dyn CredentialStore> {
-    match super::keyring::OsCredentialStore::open() {
-        Ok(store) => {
-            tracing::info!(backend = store.backend(), "凭据存储已就绪");
-            std::sync::Arc::new(store)
-        }
-        Err(err) => {
-            tracing::warn!(
+    #[cfg(target_os = "android")]
+    {
+        std::sync::Arc::new(MemoryCredentialStore::new())
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        match super::keyring::OsCredentialStore::open() {
+            Ok(store) => {
+                tracing::info!(backend = store.backend(), "凭据存储已就绪");
+                std::sync::Arc::new(store)
+            }
+            Err(err) => {
+                tracing::warn!(
                 %err,
                 "系统凭据库不可用，凭据降级为进程内存储（重启后需要重新填写）"
             );
-            std::sync::Arc::new(MemoryCredentialStore::new())
+                std::sync::Arc::new(MemoryCredentialStore::new())
+            }
         }
     }
 }

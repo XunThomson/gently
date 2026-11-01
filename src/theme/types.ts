@@ -5,6 +5,9 @@
  * 运行时由 `ThemeProvider` 解析为 CSS 变量并注入 `<html>`。
  */
 
+/* 主题包背景的形状来自背景模块（同一条数据在设置页也用它）：只借类型，不引运行时依赖 */
+import type {SkinBackgroundHint} from '../utils/skinPackage';
+
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 /** 解析后的实际配色方案（system 会被解析成 light / dark） */
@@ -473,6 +476,14 @@ export interface ThemeSkin extends SkinOverrides {
     swatches: string[];
     /** 是否内置 */
     builtin?: boolean;
+    /**
+     * 主题包自带的背景（R87）：`{kind, file?, options?}`。
+     *
+     * 背景属于皮肤——用户导入一套主题就该连背景一起得到，而不是再去设置页手动导入一次。
+     * 素材本身不进 JSON：`file` 只是主题包内的文件名，前端按皮肤 id 把它绑定到 IndexedDB。
+     * 设置页的背景参数仍然保留，用于**微调**。
+     */
+    background?: SkinBackgroundHint;
 }
 
 /** 兼容旧命名 */

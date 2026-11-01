@@ -5,3 +5,123 @@
     z-index: var(--z-overlay);
     pointer-events: none;
 }
+
+/* ---------------------------- 内置宠物（M1 程序化渲染） ---------------------------- */
+
+/* 停在窗口右下角（将来的宠物包会用 pet.json 的锚点，这里先给一个不挡内容的默认位置） */
+.builtin {
+    position: absolute;
+    right: var(--space-6);
+    bottom: calc(var(--player-bar-height) + var(--space-4));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    pointer-events: auto;
+}
+
+/* 独立宠物窗口里：窗口本身就是「一小块桌面」，不再让出播放条的高度 */
+:global(html[data-window='pet']) .builtin {
+    right: var(--space-2);
+    bottom: var(--space-2);
+}
+
+/* 小家伙本体：可点、有焦点环（无障碍：它是个按钮） */
+.body {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    padding: 0;
+    font-size: var(--font-size-xl);
+    color: var(--text-inverse);
+    background: var(--brand);
+    border: 0;
+    border-radius: var(--radius-full);
+    box-shadow: var(--shadow-md);
+    cursor: pointer;
+    transition:
+        transform var(--motion-base),
+        background-color var(--motion-base);
+    will-change: transform;
+}
+
+.body:hover {
+    background: var(--brand-hover);
+}
+
+.body:focus-visible {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 3px;
+}
+
+/* 「高兴」形态：颜色更亮 + 圆角略变化（程序化宠物只有这两种状态） */
+.body[data-animation='1'] {
+    background: var(--brand-hover);
+}
+
+/* 有图集时：精灵图自己就是宠物，按钮只负责「可点 + 焦点环」。
+   否则程序化的圆形底色会从精灵图后面透出来（实测就是一个大方块后面顶着个紫球）。 */
+.body.sprite {
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    transition: transform var(--motion-base);
+    /* 像素画必须关掉平滑缩放：双线性插值会在深色描边旁边产生「黑色颗粒/毛边」。
+       `pixelated` 让浏览器取最近像素；再配合整数倍缩放（见 frame-layout 的 104px）才干净。 */
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    /* 告诉用户「这个可以拖」 */
+    cursor: grab;
+    /* 盒子可能比单帧大（有的行动画放大）：必须裁掉溢出，否则会露出旁边格子的像素 */
+    position: relative;
+    overflow: hidden;
+}
+
+/* 精灵图层：只有「格子大小」，背景（整张图集）挂在这里，位置由 frame-layout 算好 */
+.spriteLayer {
+    position: absolute;
+    background-repeat: no-repeat;
+    pointer-events: none;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+.body.sprite:active {
+    cursor: grabbing;
+}
+
+/* 正在被拖：光标保持「抓住」的样子（位置由渲染器自己搬窗口，不再用系统拖动） */
+.body.sprite.dragging {
+    cursor: grabbing;
+}
+
+.body.sprite:hover {
+    background: transparent;
+}
+
+/* 气泡：只显示核心给的文案键翻出来的文本；不挡点击 */
+.bubble {
+    max-width: 180px;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+    color: var(--text-primary);
+    text-align: center;
+    background: var(--surface-drawer);
+    backdrop-filter: var(--surface-drawer-blur);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    pointer-events: none;
+}
+
+/* 系统要求减少动态效果时不上下浮动（信息仍在动画状态与气泡里） */
+@media (prefers-reduced-motion: reduce) {
+    .body {
+        transform: none !important;
+        transition: none;
+    }
+}
+
+
+

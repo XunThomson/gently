@@ -1,0 +1,19 @@
+[package]
+name = "pet-core"
+version = "1.0.0"
+edition.workspace = true
+license.workspace = true
+description = "pet-core：宠物系统的核心引擎（不依赖 UI，也不依赖音乐核心）"
+
+# 独立性是**硬约束**（ADR 0010）：这个 crate 只能依赖通用库。
+# - 不允许 `path = ".."` 之类的本仓库相对依赖（否则永远拆不出去）；
+# - 不允许 `tauri`（渲染层可替换）；
+# - 不允许 `gently-core`（音乐数据处理与宠物养成是两个领域）。
+# 这条约束由 `scripts/check-pet-independence.mjs`（`pnpm check:pet`）机械校验。
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+# 宠物自己的库文件（独立于音乐库）：刻意复用同一个 bundled 版本，避免多编一份 SQLite
+rusqlite = { workspace = true }
+

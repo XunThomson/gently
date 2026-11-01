@@ -2,7 +2,30 @@
   "app": {
     "title": "Gently"
   },
+  "pet": {
+    "name": "Gently 小助",
+    "bubble": {
+      "idle": "在听什么呀？",
+      "petted": "嗯～",
+      "hungry": "有点饿了…",
+      "fed": "好吃！",
+      "feedCooldown": "还不饿呢，等会儿再喂"
+    },
+    "mood": {
+      "shy": "拘谨",
+      "friendly": "熟悉",
+      "close": "亲近",
+      "devoted": "依赖"
+    }
+  },
   "errors": {
+      "pet_invalid_argument": "这个操作需要的信息不对，请检查后重试",
+      "pet_not_found": "找不到这只宠物（可能已被移除），刷新设置页再试",
+      "pet_invalid_package": "宠物包不合法：缺少必需字段，或行为引用了不存在的动画",
+      "pet_incompatible": "这个宠物包要求的宠物核心版本比当前高，先升级应用再安装",
+      "pet_limit_exceeded": "宠物包超出限制（体积 / 动画数 / 帧数）",
+      "pet_io_error": "宠物数据读写失败，检查数据目录是否可写",
+      "pet_internal": "宠物核心内部错误（理论上不该发生），重开应用再试",
     "common_invalid_argument": "参数不合法",
     "common_not_found": "找不到对应的资源",
     "common_conflict": "数据已被其它操作改动，请刷新后重试",
@@ -156,7 +179,11 @@
     "deleteSkinTitle": "删除皮肤",
     "deleteSkinDesc": "「{{name}}」将被移除。",
     "removeSubscriptionTitle": "移除订阅源",
-    "removeSubscriptionDesc": "将移除订阅「{{name}}」及其缓存的索引；已安装的插件不受影响。"
+    "removeSubscriptionDesc": "将移除订阅「{{name}}」及其缓存的索引；已安装的插件不受影响。",
+    "removePetTitle": "移除宠物",
+    "removePetDesc": "将移除「{{name}}」以及它的好感度记录与素材；此操作不可撤销。",
+    "dataDirMoveTitle": "迁移数据目录",
+    "dataDirMoveDesc": "将把数据拷贝到 {{path}}，重启后生效；原目录的数据会保留（不会自动删除）。"
   },
   "skin": {
     "import": "导入皮肤",
@@ -181,6 +208,9 @@
     "pathPlaceholder": "C:\\path\\to\\skin.json",
     "pathHint": "路径直接粘贴即可；也可以从文件选择器挑一个。校验与落盘都在本机核心完成。",
     "fromFile": "从文件选择…",
+    "packageNoJson": "主题包里没找到皮肤 JSON：请选择 skin.json（或任意 .json）再导入。",
+    "packageAmbiguous": "选中的 JSON 不止一个：请只选主题包里的那一份（建议命名为 skin.json）。",
+    "packageImported": "已导入主题「{{name}}」，并应用了主题包内的背景（{{background}}）。",
     "submit": "导入",
     "submitting": "导入中…",
     "close": "收起"
@@ -227,8 +257,6 @@
     "playedAt": "播放时间",
     "playCount": "次数",
     "version": "版本",
-    "author": "作者",
-    "description": "说明",
     "actions": "操作"
   },
   "page": {
@@ -248,7 +276,19 @@
       "emptyTitle": "还没有足够的收听记录",
       "emptyHint": "播放几首歌、收藏几张专辑，或到「本地音乐」扫描一下，这里就会按你的口味排序",
       "searchEmptyTitle": "没有找到匹配的歌曲",
-      "searchEmptyHint": "试试其他关键词"
+      "searchEmptyHint": "试试其他关键词",
+      "tabRecommend": "热门推荐",
+      "tabDiscover": "发现",
+      "discoverTitle": "发现",
+      "discoverSubtitle": "唱片架：竖着插在架上的是每首歌的包装，聚焦即试听高潮片段",
+      "discoverShelf": "唱片架",
+      "discoverEmpty": "还没有可陈列的歌曲：先去听几首，或者接上音源",
+      "discoverPickHint": "从架上挑一张包装，或点右侧列表",
+      "discoverPreviewIdle": "聚焦即试听（可在设置里关闭）",
+      "discoverPreviewPlaying": "试听中 · 高潮段（位置为估计）",
+      "discoverPreviewUnavailable": "这首暂时无法试听（没有取到可播地址或时长）",
+      "discoverPreviewOff": "自动试听已关闭（设置 → 发现页试听）",
+      "discoverStopPreview": "停止试听"
     },
     "download": {
       "title": "下载管理",
@@ -272,7 +312,7 @@
       "subtitle": "共 {{count}} 首",
       "revealInDir": "在文件夹中显示",
       "remove": "移除",
-      "empty": "还没有本地音乐——在上面填入音乐目录并扫描",
+      "empty": "还没有本地音乐——展开上方「扫描本地目录」，填入音乐目录后扫描",
       "scanTitle": "扫描本地目录",
       "scanHint": "每行一个目录。只认音频扩展名（mp3/flac/m4a/m4s/mp4/aac/ogg/opus/wav…）；大小没变的文件不会重读标签；读不到标签的文件照样入库（标题退回文件名）。路径直接粘贴即可——原生文件选择器需要额外的桌面插件，当前依赖里没有。",
       "scanPlaceholder": "D:\\Music\nE:\\无损",
@@ -283,7 +323,10 @@
       "scanRunning": "正在扫描 {{dir}}（已发现 {{found}} 个文件）",
       "scanRunningPercent": "正在扫描 {{dir}}（{{percent}}% · 已发现 {{found}} 个文件）",
       "scanResult": "上次扫描：扫描 {{scanned}} 个文件，新增 {{added}}，更新 {{updated}}，移除 {{removed}}，跳过 {{skipped}}，读不了 {{unreadable}}，非音频文件 {{ignored}}",
-      "scanNeedsDesktop": "扫描本地目录需要桌面端（浏览器预览展示的是示例数据）。"
+      "scanNeedsDesktop": "扫描本地目录需要桌面端（浏览器预览展示的是示例数据）。",
+      "scanBriefIdle": "展开后可填写音乐目录并扫描",
+      "scanBriefRunning": "扫描中 · 已发现 {{found}} 个文件{{percent}}",
+      "scanBriefResult": "上次扫描 {{scanned}} 个文件，新增 {{added}}"
     },
     "plugin": {
       "coreTitle": "本机核心插件",
@@ -324,14 +367,12 @@
       "required": "必填",
       "warnings": "提示",
       "replaces": "将覆盖同 id 的已安装插件",
-      "installed": "已导入的插件（核心）",
       "installedEmpty": "还没有导入任何插件；应用不预置任何音源，需要你自己导入。",
       "disclaimer": "插件由第三方提供，与本软件无关；请自行确认你有权访问相应内容。",
       "needSource": "请先填写插件内容或地址",
       "moveUp": "上移",
       "moveDown": "下移",
       "reload": "重载",
-      "settings": "凭据与配置",
       "settingsClose": "收起设置",
       "save": "保存",
       "qrTitle": "二维码登录",
@@ -419,6 +460,13 @@
       "subtitle": "音乐源以插件形式接入，共 {{count}} 个",
       "builtinTag": "内置",
       "thirdPartyTag": "第三方",
+      "inUse": "正在使用",
+      "openImport": "导入插件",
+      "manage": "管理",
+      "manageTitle": "插件管理：{{name}}",
+      "priorityLabel": "回退顺序",
+      "priorityHint": "越靠前越优先：播放时按这个顺序尝试各音源，前一个不可用就自动换下一个。",
+      "installDone": "已导入「{{name}}」，现在就可以搜索与播放（不需要重启）。",
       "empty": "还没有安装任何插件"
     },
     "recent": {
@@ -655,6 +703,61 @@
       "preferredQuality": "优先音质",
       "confirmDestructive": "危险操作前二次确认",
       "confirmHint": "关闭后，删除 / 清空 / 卸载类操作会立即执行",
+      "discoverPreview": "发现页自动试听",
+      "discoverPreviewHint": "开启时，在「发现」里聚焦一张包装就会试听 20 秒（压低音量、不影响正在播放的歌曲）。起播位置按歌曲中段估计（源里没有高潮时间戳）；没有取到可播地址或时长时不发声。",
+      "petSection": "宠物（Beta）",
+      "petBeta": "Beta 1.0",
+      "petToggle": "宠物",
+      "petHint": "打开后宠物会出现在**独立置顶小窗**里（不占音乐界面，主窗口最小化它也在）：会看向鼠标、透明的地方点击穿透。左键摸一下，右键喂食。宠物走独立引擎与独立数据库，和音乐核心互不依赖；默认关闭。",
+      "petNeedsDesktop": "宠物需要桌面端本机核心；浏览器预览里没有宠物引擎，因此不可用。",
+      "petInstalled": "已安装",
+      "petNone": "还没有宠物（打开开关时会自动装一只内置的）",
+      "petCount": "共 {{count}} 只（同一时刻只展示一只）",
+      "petActive": "出战",
+      "petIdle": "休息",
+      "petAffection": "好感 {{value}}",
+      "petSwitch": "换成这只",
+      "petRemove": "移除",
+      "petImport": "导入宠物包",
+      "petImportClose": "收起导入",
+      "petLock": "点击穿透（锁定宠物窗口）",
+      "petLockHint": "打开后鼠标点击会穿过宠物窗口，宠物不会被点到；宠物窗口也拖不动了——解锁入口只在这里。",
+      "petDebug": "调试面板（开发）",
+      "petDebugOpen": "展开",
+      "petDebugPet": "出战宠物",
+      "petDebugWindow": "宠物窗口",
+      "petDebugVisible": "可见",
+      "petDebugHidden": "隐藏",
+      "petDebugOff": "关",
+      "petDebugOn": "开",
+      "petDebugRequires": "包要求 ≥",
+      "petDebugCore": "宠物核心",
+      "petDebugAnyCore": "包没写版本要求",
+      "petDebugSwitches": "窗口开关",
+      "petDebugSaved": "记住的位置",
+      "petDebugAtlas": "图集",
+      "petDebugNoAtlas": "没有图集（程序化渲染）",
+      "petDebugFrame": "最近一帧",
+      "petDebugNoProbe": "还没读到（点「探测一帧」重试）",
+      "petDebugProbe": "探测一帧",
+      "petDebugTouch": "摸一下",
+      "petDebugReset": "重置窗口位置",
+      "petDebugNone": "—",
+      "petDebugOk": "完成",
+      "petDebugFailed": "失败",
+      "petDebugHint": "只读信息来自三处：核心资料、宿主窗口、渲染层的最近一帧。「探测一帧」是调一次 pet.tick（dtMs = 0），不会推进动画。",      "petRoam": "在屏幕上走动",
+      "petRoamHint": "打开后宠物会每隔十几秒自己走到桌面底部的另一个位置（优先用 runLeft / runRight 两个动作）；光标放在它身上时会停住。",
+      "petDropHint": "把 pet.json 和 spritesheet.webp 拖到这里（也可以直接粘贴 JSON、点下面选图集）",
+      "petImportTitle": "宠物包（pet.json + 可选图集；也支持 Codex Pet v1）",
+      "petSpecPlaceholder": "把 pet.json 的内容粘贴到这里（我们的格式，或 Codex Pet v1 的 {id, displayName, spritesheetPath}）",
+      "petAtlasLabel": "选择图集图片（png / webp，可选）",
+      "petAtlasHint": "图集可选：横向帧条或 sprite sheet（帧数由 animations / Codex 约定决定）；白底图会自动去底，没有图集时用程序化渲染。",
+      "petAtlasPicked": "已选择 {{name}}",
+      "petInstall": "安装",
+      "petImported": "宠物包已安装",
+      "petNeedSpec": "请先粘贴 pet.json 的内容",
+      "petFeed": "喂食",
+      "petHungry": "饿了",
       "lyricsSection": "桌面歌词",
       "lyricsLock": "锁定歌词窗口（鼠标点击穿透）",
       "lyricsLockOff": "不锁定",
@@ -719,7 +822,29 @@
       "cacheClearConfirm": "清理缓存",
       "cacheClearDesc": "缓存会按需重新生成（播放过的歌曲需要再次联网才能重新缓存）；已下载的文件不受影响。",
       "cacheCleared": "已清理 {{files}} 个文件（{{size}}）",
-      "cacheUnavailable": "缓存管理需要桌面端本机核心；浏览器预览没有本地缓存。"
+      "cacheUnavailable": "缓存管理需要桌面端本机核心；浏览器预览没有本地缓存。",
+      "dataDirTitle": "数据目录",
+      "dataDirHint": "数据库、插件、皮肤、下载与缓存都放在这个目录里。默认在用户目录下；想换到别的盘就在这里迁移。",
+      "dataDirCurrent": "当前位置",
+      "dataDirSource": "来源",
+      "dataDirSourceDefault": "系统默认位置",
+      "dataDirSourcePortable": "便携版（跟着程序目录走）",
+      "dataDirSourcePointer": "迁移后的位置（由指针文件记住）",
+      "dataDirSourceOverride": "环境变量 GENTLY_DATA_DIR 指定",
+      "dataDirDefaultBase": "默认位置",
+      "dataDirPortableHint": "当前是便携版：数据默认放在程序所在目录的 data 子目录里。放一个空的 portable.txt 到 exe 旁边即可启用。",
+      "dataDirTarget": "迁移到",
+      "dataDirTargetPlaceholder": "D:/gently-data",
+      "dataDirMove": "迁移到该目录",
+      "dataDirMoving": "正在迁移…",
+      "dataDirMoveHint": "迁移会把数据拷贝到新目录并记住它，重启后生效；原目录的数据会被保留，确认无误后你可以自行删除。",
+      "dataDirNeedTarget": "请先填写目标目录（绝对路径，例如 D:/gently-data）",
+      "dataDirOpen": "打开目录",
+      "dataDirMoved": "已拷贝 {{files}} 个文件（{{size}}）到 {{path}}，重启后生效。",
+      "dataDirKept": "原目录 {{path}} 的数据没有被删除。",
+      "dataDirRestart": "让新位置生效",
+      "dataDirRestartAction": "立即重启应用",
+      "dataDirUnavailable": "数据目录迁移需要桌面端本机核心；浏览器预览没有数据目录可迁移。"
     }
   },
   "desktopLyrics": {
@@ -735,3 +860,20 @@
     "en": "English"
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

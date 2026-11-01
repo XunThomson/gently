@@ -28,6 +28,15 @@ export function createRankingSlice(ctx: StoreCtx) {
     /** 正在进行的请求键：避免同一条件重复请求（含 StrictMode 双调用） */
     let inflight: string | null = null;
 
+    /**
+     * 请求代号：**每次换源 / 换分类 / 重新加载都 +1**。
+     *
+     * 快速连点分类时（A → B），A 的响应可能比 B 晚到：以前这里谁后到谁写 store，
+     * 结果就是「左侧选中的是 B、右边列表是 A 的歌」——用户报的「tab 与内容不一致」。
+     * 现在回来的结果必须仍是最新那一次，否则整份丢弃。
+     */
+    let epoch = 0;
+
     const patch = (partial: Partial<RankingState>) => {
         ctx.setState({ranking: {...ctx.getState().ranking, ...partial}});
     };
@@ -36,11 +45,14 @@ export function createRankingSlice(ctx: StoreCtx) {
     const fetchPage = async (sourceId: string, itemId: string, page: number, append: boolean) => {
         const requestKey = `${sourceId}|${itemId}|${page}`;
         if (inflight === requestKey) return;
+        const ticket = epoch;
         inflight = requestKey;
 
         patch({loading: true});
         try {
             const {page: result, error} = await catalogService.fetchTopList(sourceId, itemId, page);
+            // 期间又点了别的分类 / 换了源：这份结果已经过期
+            if (ticket !== epoch) return;
             const previous = append ? ctx.getState().ranking.rows : [];
             patch({
                 rows: [...previous, ...result.items],
@@ -52,6 +64,7 @@ export function createRankingSlice(ctx: StoreCtx) {
             });
         } catch (err) {
             console.error('[ranking] 榜单加载失败', err);
+            if (ticket !== epoch) return;
             patch({rows: append ? ctx.getState().ranking.rows : [], hasMore: false, loading: false, loaded: true});
         } finally {
             if (inflight === requestKey) inflight = null;
@@ -97,9 +110,13 @@ export function createRankingSlice(ctx: StoreCtx) {
             const current = ctx.getState().ranking;
             if (current.loaded && current.sourceId === sourceId) return;
 
+            // 换源：作废所有在途请求（旧源的分类树/列表不能再写回来）
+            epoch += 1;
             patch({
                 loading: true,
                 sourceId,
+                groups: [],
+                selectedId: null,
                 rows: [],
                 hasMore: false,
                 nextPage: undefined,
@@ -107,6 +124,8 @@ export function createRankingSlice(ctx: StoreCtx) {
             });
 
             const {groups, error} = await catalogService.fetchTopLists(sourceId);
+            // 期间又切了源：这份分类树属于上一个源，丢弃
+            if (ctx.getState().ranking.sourceId !== sourceId) return;
             // 默认选中第一个分类（树为空说明该源没有提供榜单，视图给空态/错误提示）
             const first = groups.flatMap((group) => group.items)[0] ?? null;
             patch({
@@ -125,6 +144,8 @@ export function createRankingSlice(ctx: StoreCtx) {
             const {sourceId, selectedId} = ctx.getState().ranking;
             if (!sourceId || itemId === selectedId) return;
 
+            // 换分类：作废在途请求，并立刻清空列表（宁可显示加载中，也不显示别的分类的歌）
+            epoch += 1;
             patch({selectedId: itemId, rows: [], hasMore: false, nextPage: undefined, error: null});
             await fetchPage(sourceId, itemId, 1, false);
         },

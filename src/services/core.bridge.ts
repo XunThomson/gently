@@ -19,6 +19,8 @@ import type {
     CoreError,
     CoreErrorCode,
     CoreResult,
+    DataDirInfoDto,
+    DataDirMigrationDto,
     ImportSource,
     PluginImportPreview,
     PluginImportResult,
@@ -83,7 +85,27 @@ export const coreSystem = {
         invokeCore<CacheClearResultDto>('system.cacheClear', {kind}),
     /** 改播放缓存上限；核心立即按新上限淘汰并返回最新状态 */
     cacheConfig: (limitBytes: number) => invokeCore<CacheStatusDto>('system.cacheConfig', {limitBytes}),
+    /** 数据目录：现在在哪、为什么在那儿（`default` / `portable` / `pointer` / `override`） */
+    dataDir: () => invokeCore<DataDirInfoDto>('system.dataDir'),
+    /** 迁移数据目录：拷贝 + 写指针，**下次启动生效**；只拷贝不删除 */
+    dataDirMove: (target: string) => invokeCore<DataDirMigrationDto>('system.dataDir.move', {target}),
 };
+
+/**
+ * 宿主命令：**重启应用**（数据目录迁移后由设置页调用）。
+ *
+ * 为什么必须是宿主命令：核心不知道「进程」这回事，重启只能由 Tauri 宿主发起。
+ * 浏览器预览是安全空操作（没有进程可重启）。
+ */
+export async function hostRestartApp(): Promise<void> {
+    if (!coreAvailable()) return;
+    try {
+        const {invoke} = await import('@tauri-apps/api/core');
+        await invoke('app_restart');
+    } catch (err) {
+        console.warn('[core] 重启应用失败', err);
+    }
+}
 
 /**
  * 调用一条**桌面层**命令（`generate_handler!` 里与 `core_invoke` 并列注册的那几个）。

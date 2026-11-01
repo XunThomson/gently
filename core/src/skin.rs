@@ -38,8 +38,22 @@ const OVERRIDE_GROUPS: [&str; 9] = [
 ];
 
 /// 元数据字段（不是令牌组）。
-const META_FIELDS: [&str; 8] =
-    ["id", "name", "description", "author", "version", "tags", "swatches", "builtin"];
+/// 元数据字段：**不是令牌**，原样带到结果里（界面自己解释）。
+///
+/// `background`（R87）也在这里：主题包可以自带背景（视频 / 单文件网页）与一套展示参数，
+/// 它与「令牌」的区别是——背景不是 CSS 变量，前端要按 `kind` 去 IndexedDB / 文件里取素材。
+/// 允许它是元数据而不是令牌组，是为了让**旧皮肤**（没有这个字段）继续原样通过。
+const META_FIELDS: [&str; 9] = [
+    "id",
+    "name",
+    "description",
+    "author",
+    "version",
+    "tags",
+    "swatches",
+    "builtin",
+    "background",
+];
 
 fn theme_config() -> &'static Value {
     static CONFIG: OnceLock<Value> = OnceLock::new();
@@ -312,6 +326,39 @@ pub fn validate(document: &Value) -> Fallible<(Value, Vec<String>)> {
         }
     } else {
         warnings.push("皮肤未声明 swatches（主题卡片的预览色块会留空）".into());
+    }
+
+    /* ---- 主题包自带背景（R87）----
+       形状：`{kind:"video"|"web", file?: <包内文件名>, options?: {fit, playbackRate, opacity, blurPx, …}}`。
+       核心**不碰素材本身**（视频/网页留在用户机器上，前端存进 IndexedDB 并按 id 绑定），
+       只保证字段形状合法、文件名不带路径（否则一个包就能让前端去读任意路径）。 */
+    if let Some(background) = object.get("background") {
+        let Some(meta) = background.as_object() else {
+            return Err(invalid("background 必须是对象").with_details(json!({ "field": "background" })));
+        };
+        let kind = meta.get("kind").and_then(Value::as_str).unwrap_or_default();
+        if kind != "video" && kind != "web" {
+            return Err(invalid("background.kind 只能是 video 或 web")
+                .with_details(json!({ "field": "background.kind", "value": kind })));
+        }
+        if let Some(file) = meta.get("file") {
+            let file = file.as_str().unwrap_or_default().trim();
+            if file.is_empty() || file.contains('/') || file.contains('\\') || file.contains("..") {
+                return Err(invalid("background.file 只能是包内的纯文件名")
+                    .with_details(json!({ "field": "background.file" })));
+            }
+        }
+        if let Some(options) = meta.get("options") {
+            if !options.is_object() {
+                return Err(invalid("background.options 必须是对象")
+                    .with_details(json!({ "field": "background.options" })));
+            }
+        }
+        for key in meta.keys() {
+            if !["kind", "file", "options"].contains(&key.as_str()) {
+                warnings.push(format!("background.{key} 不是已知字段，已忽略"));
+            }
+        }
     }
     if object.get("builtin").and_then(Value::as_bool) == Some(true) {
         // 内置标记由应用自己决定，用户皮肤不能自称内置

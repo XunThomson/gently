@@ -30,6 +30,14 @@ const ERROR_RS = 'core/src/contract/error.rs';
 const API_TS = 'src/api/index.ts';
 const EVENTS_TS = 'src/services/core.events.ts';
 
+/* 宠物域是**独立命名空间**（ADR 0010）：自己的契约文档、自己的错误码表、自己的命令清单。
+   两者并列而不是包含关系，因此这里分开守——但同样双向比对，
+   避免「加了 pet 命令却没人守」这种契约退化。 */
+const PET_CONTRACT = 'docs/contracts/pet-core-api.md';
+const PET_COMMANDS_RS = 'pet-core/src/contract.rs';
+const PET_ERROR_RS = 'pet-core/src/error.rs';
+const PET_DOMAIN = 'pet';
+
 /** Tauri 的事件名校验字符集（`is_event_name_valid`）：超出就当事件丢失处理 */
 const TRANSPORT_SAFE = /^[A-Za-z0-9\-/:_]+$/;
 
@@ -69,6 +77,31 @@ function rustCommandNames(source) {
     const block = source.slice(source.indexOf('pub const COMMAND_NAMES'));
     const body = block.slice(0, block.indexOf('];'));
     return new Set([...body.matchAll(/"([^"]+)"/g)].map((m) => m[1]));
+}
+
+/** 读任意 `pub const XXX: &[&str] = &[...]` 清单（宠物域复用） */
+function rustConstList(source, constName) {
+    const start = source.indexOf(`pub const ${constName}`);
+    if (start < 0) return null;
+    const body = source.slice(start, source.indexOf('];', start));
+    return new Set([...body.matchAll(/"([^"]+)"/g)].map((m) => m[1]));
+}
+
+/** 文档里「表格行首列的反引号名字」：宠物契约与音乐契约都按这个写法解析 */
+function docTableNames(sectionText) {
+    const names = new Set();
+    for (const line of sectionText.split('\n')) {
+        const trimmed = line.trimStart();
+        if (!trimmed.startsWith('|')) continue;
+        const match = trimmed.match(/\|\s*`([a-z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9]+)+(?:\{[^}]*\})?)`/);
+        if (!match) continue;
+        // 单元格里写作 `pet.tick{petId, dtMs}`：花括号是参数提示，不属于命令名
+        const name = match[1].split('{')[0];
+        if (name.split('.')[0] !== PET_DOMAIN) continue;
+        if (FILE_LIKE.test(name)) continue;
+        names.add(name);
+    }
+    return names;
 }
 
 /** `pub const NAME: &str = "value";` → Map(NAME → value)：用于解析事件的标识符引用 */
@@ -234,6 +267,46 @@ if (unbridged.length > 0) {
     note(`契约命令没有前端封装 → ${unbridged.join(', ')}`);
 } else {
     console.log(`  ok   契约命令全部有前端封装（${known.size} 项）`);
+}
+
+/* ---------------- 宠物域：独立命名空间（ADR 0010） ---------------- */
+
+const petMarkdown = read(PET_CONTRACT);
+const petDocCommands = docTableNames(section(petMarkdown, '## 2. 命令清单'));
+const petRustCommands = rustConstList(read(PET_COMMANDS_RS), 'PET_COMMAND_NAMES');
+if (petRustCommands === null) {
+    note(`读不到 ${PET_COMMANDS_RS} 的 PET_COMMAND_NAMES：宠物域契约清单必须存在于代码里`);
+} else {
+    diff('宠物命令清单（文档 ↔ Rust）', petDocCommands, petRustCommands, '宠物命令要先登记契约文档 §2，再改进程清单');
+}
+
+diff(
+    '宠物错误码',
+    docTokens(section(petMarkdown, '## 1. 信封与错误码'), /`(pet\.[a-z_]+)`/g),
+    rustErrorCodes(read(PET_ERROR_RS)),
+    '请同步 `pet-core/src/error.rs` 的 as_str() 与文档 §1',
+);
+
+/* 前端服务层一旦出现 `pet.*` 字面量，就必须是已登记的命令（M1 起生效）。
+   注意排除宠物**错误码**：它们也是 `pet.*` 形状，但不是命令。 */
+const petErrorCodes = rustErrorCodes(read(PET_ERROR_RS));
+const petLiterals = new Set();
+{
+    const dir = join(root, 'src/services');
+    for (const name of readdirSync(dir).filter((entry) => entry.endsWith('.ts'))) {
+        const source = readFileSync(join(dir, name), 'utf8');
+        for (const m of source.matchAll(/'((?:pet)\.[a-zA-Z0-9.]+)'/g)) {
+            if (!petErrorCodes.has(m[1])) petLiterals.add(m[1]);
+        }
+    }
+}
+const strayPet = petRustCommands
+    ? [...petLiterals].filter((name) => !petRustCommands.has(name))
+    : [...petLiterals];
+if (strayPet.length > 0) {
+    note(`前端服务层使用了宠物契约外的命令名 → ${strayPet.join(', ')}`);
+} else {
+    console.log(`  ok   宠物命令（文档 ↔ Rust ↔ 前端字面量，${petRustCommands?.size ?? 0} 项）`);
 }
 
 if (failures.length > 0) {

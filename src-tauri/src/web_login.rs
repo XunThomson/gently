@@ -38,81 +38,83 @@ pub async fn web_login(
     state: State<'_, AppState>,
     source: String,
 ) -> Result<Value, String> {
-    let core = std::sync::Arc::clone(&state.core);
+    #[cfg(desktop)]
+    {
+        let core = std::sync::Arc::clone(&state.core);
 
-    // 1) 问核心要计划（登录页 / Cookie 名 / 凭据键）——地址来自插件清单，不在代码里
-    let plan = {
-        let core = std::sync::Arc::clone(&core);
-        let source = source.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            envelope(gently_core::dispatch(&core, "catalog.loginWeb", json!({ "source": source })))
-        })
-        .await
-        .map_err(|err| format!("命令执行被中止：{err}"))?
-    };
-    if plan.get("ok").and_then(Value::as_bool) != Some(true) {
-        /* 没声明 / 插件不存在：原样把信封交回去，界面按错误码说话 */
-        return Ok(plan);
-    }
-    let plan = plan.get("data").cloned().unwrap_or(Value::Null);
-
-    let url_text = plan.get("url").and_then(Value::as_str).unwrap_or("").to_string();
-    let credential_key = plan.get("credentialKey").and_then(Value::as_str).unwrap_or("").to_string();
-    let title = plan.get("title").and_then(Value::as_str).unwrap_or("登录").to_string();
-    let cookie_names: Vec<String> = plan
-        .get("cookieNames")
-        .and_then(Value::as_array)
-        .map(|items| items.iter().filter_map(|one| one.as_str().map(str::to_string)).collect())
-        .unwrap_or_default();
-
-    let url = tauri::Url::parse(&url_text).map_err(|err| format!("登录页地址不合法：{err}"))?;
-
-    // 2) 开一个真正的登录页窗口（重复调用时先把旧的关掉，避免叠窗）
-    if let Some(old) = app.get_webview_window(WINDOW_LABEL) {
-        let _ = old.close();
-    }
-    let window = tauri::WebviewWindowBuilder::new(&app, WINDOW_LABEL, tauri::WebviewUrl::External(url.clone()))
-        .title(format!("登录 · {title}"))
-        .inner_size(1040.0, 780.0)
-        .center()
-        .build()
-        .map_err(|err| format!("打开登录窗口失败：{err}"))?;
-
-    // 3) 轮询 Cookie 罐：等「要求的名字」都出现
-    let poll_window = window.clone();
-    let poll_url = url.clone();
-    let poll_names = cookie_names.clone();
-    let found = tauri::async_runtime::spawn_blocking(move || {
-        let started = std::time::Instant::now();
-        loop {
-            // 用户关掉窗口 = 放弃
-            if poll_window.app_handle().get_webview_window(WINDOW_LABEL).is_none() {
-                return None;
-            }
-            if let Ok(cookies) = poll_window.cookies() {
-                let session = pick(&cookies, &poll_url, &poll_names);
-                if !session.is_empty() {
-                    return Some(session);
-                }
-            }
-            if started.elapsed() > WAIT_TIMEOUT {
-                return None;
-            }
-            std::thread::sleep(POLL_INTERVAL);
+        // 1) 问核心要计划（登录页 / Cookie 名 / 凭据键）——地址来自插件清单，不在代码里
+        let plan = {
+            let core = std::sync::Arc::clone(&core);
+            let source = source.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                envelope(gently_core::dispatch(&core, "catalog.loginWeb", json!({ "source": source })))
+            })
+                .await
+                .map_err(|err| format!("命令执行被中止：{err}"))?
+        };
+        if plan.get("ok").and_then(Value::as_bool) != Some(true) {
+            /* 没声明 / 插件不存在：原样把信封交回去，界面按错误码说话 */
+            return Ok(plan);
         }
-    })
-    .await
-    .map_err(|err| format!("等待登录被中止：{err}"))?;
+        let plan = plan.get("data").cloned().unwrap_or(Value::Null);
 
-    // 4) 收尾：关窗口
-    if let Some(open) = app.get_webview_window(WINDOW_LABEL) {
-        let _ = open.close();
-    }
+        let url_text = plan.get("url").and_then(Value::as_str).unwrap_or("").to_string();
+        let credential_key = plan.get("credentialKey").and_then(Value::as_str).unwrap_or("").to_string();
+        let title = plan.get("title").and_then(Value::as_str).unwrap_or("登录").to_string();
+        let cookie_names: Vec<String> = plan
+            .get("cookieNames")
+            .and_then(Value::as_array)
+            .map(|items| items.iter().filter_map(|one| one.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
 
-    let Some(session) = found else {
-        /* 没拿到会话：**什么都不写**（宁可失败，也不留一份假凭据） */
-        let canceled = app.get_webview_window(WINDOW_LABEL).is_none();
-        return Ok(json!({
+        let url = tauri::Url::parse(&url_text).map_err(|err| format!("登录页地址不合法：{err}"))?;
+
+        // 2) 开一个真正的登录页窗口（重复调用时先把旧的关掉，避免叠窗）
+        if let Some(old) = app.get_webview_window(WINDOW_LABEL) {
+            let _ = old.close();
+        }
+        let window = tauri::WebviewWindowBuilder::new(&app, WINDOW_LABEL, tauri::WebviewUrl::External(url.clone()))
+            .title(format!("登录 · {title}"))
+            .inner_size(1040.0, 780.0)
+            .center()
+            .build()
+            .map_err(|err| format!("打开登录窗口失败：{err}"))?;
+
+        // 3) 轮询 Cookie 罐：等「要求的名字」都出现
+        let poll_window = window.clone();
+        let poll_url = url.clone();
+        let poll_names = cookie_names.clone();
+        let found = tauri::async_runtime::spawn_blocking(move || {
+            let started = std::time::Instant::now();
+            loop {
+                // 用户关掉窗口 = 放弃
+                if poll_window.app_handle().get_webview_window(WINDOW_LABEL).is_none() {
+                    return None;
+                }
+                if let Ok(cookies) = poll_window.cookies() {
+                    let session = pick(&cookies, &poll_url, &poll_names);
+                    if !session.is_empty() {
+                        return Some(session);
+                    }
+                }
+                if started.elapsed() > WAIT_TIMEOUT {
+                    return None;
+                }
+                std::thread::sleep(POLL_INTERVAL);
+            }
+        })
+            .await
+            .map_err(|err| format!("等待登录被中止：{err}"))?;
+
+        // 4) 收尾：关窗口
+        if let Some(open) = app.get_webview_window(WINDOW_LABEL) {
+            let _ = open.close();
+        }
+
+        let Some(session) = found else {
+            /* 没拿到会话：**什么都不写**（宁可失败，也不留一份假凭据） */
+            let canceled = app.get_webview_window(WINDOW_LABEL).is_none();
+            return Ok(json!({
             "ok": true,
             "data": {
                 "source": source,
@@ -121,31 +123,37 @@ pub async fn web_login(
                 "credentialKey": credential_key,
             }
         }));
-    };
+        };
 
-    // 5) 落库（走核心的凭据命令：它自己会校验「这个键是插件声明过的」）
-    let set_result = {
-        let core = std::sync::Arc::clone(&state.core);
-        let source = source.clone();
-        let key = credential_key.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            envelope(gently_core::dispatch(
-                &core,
-                "plugin.credentials.set",
-                json!({ "id": source, "key": key, "value": session }),
-            ))
-        })
-        .await
-        .map_err(|err| format!("命令执行被中止：{err}"))?
-    };
-    if set_result.get("ok").and_then(Value::as_bool) == Some(true) {
-        Ok(json!({
+        // 5) 落库（走核心的凭据命令：它自己会校验「这个键是插件声明过的」）
+        let set_result = {
+            let core = std::sync::Arc::clone(&state.core);
+            let source = source.clone();
+            let key = credential_key.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                envelope(gently_core::dispatch(
+                    &core,
+                    "plugin.credentials.set",
+                    json!({ "id": source, "key": key, "value": session }),
+                ))
+            })
+                .await
+                .map_err(|err| format!("命令执行被中止：{err}"))?
+        };
+        if set_result.get("ok").and_then(Value::as_bool) == Some(true) {
+            Ok(json!({
             "ok": true,
             "data": { "source": source, "state": "confirmed", "credentialKey": credential_key }
         }))
-    } else {
-        /* 核心拒绝了这次写入（比如键没声明）：把它的错误码原样交回去，界面据此说人话 */
-        Ok(set_result)
+        } else {
+            /* 核心拒绝了这次写入（比如键没声明）：把它的错误码原样交回去，界面据此说人话 */
+            Ok(set_result)
+        }
+    }
+
+    #[cfg(mobile)]{
+        let _ = (&app, &state, &source);
+        return Err("移动端暂不支持网页登录，请在桌面端完成登录".to_string());
     }
 }
 

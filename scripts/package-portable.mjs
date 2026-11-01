@@ -40,6 +40,12 @@ rmSync(stageDir, {recursive: true, force: true});
 mkdirSync(stageDir, {recursive: true});
 copyFileSync(binary, path.join(stageDir, exeName));
 copyFileSync(path.join(root, 'README.md'), path.join(stageDir, 'README.md'));
+/**
+ * 便携版标记：有它在，核心就把数据放在 **exe 同目录的 `data/`**（见 `core/src/paths.rs`），
+ * 而不是 `%APPDATA%`。这正是「便携」的含义——整个目录拷走就能带走全部数据。
+ * 想改回系统目录：删掉这个文件（或在设置页把数据目录迁移到别处）。
+ */
+writeFileSync(path.join(stageDir, 'portable.txt'), 'portable\n', 'utf8');
 
 /** 便携版自带的说明：用户解压后第一眼看到的东西 */
 const notice = `gently ${tauriConf.version}（Windows ${arch} 便携版）
@@ -47,8 +53,12 @@ const notice = `gently ${tauriConf.version}（Windows ${arch} 便携版）
 
 直接双击 ${exeName} 即可运行，无需安装。
 
-- 数据目录：%APPDATA%\\${tauriConf.identifier}\\（数据库、插件、皮肤、下载、缓存、日志）
-  想彻底卸载：删掉这个目录与该 exe 即可，应用不在别处留东西。
+- 数据目录：**exe 同目录的 data\\**（数据库、插件、皮肤、下载、缓存、日志）。
+  之所以在程序旁边，是因为本包带了一个 portable.txt（便携标记）；删掉它就会回到
+  %APPDATA%\\${tauriConf.identifier}\\。
+  想彻底卸载：删掉整个文件夹即可，应用不在别处留东西。
+- 想把数据放到别的盘：设置页「数据目录」可以直接迁移（拷贝 + 记住新位置，重启生效，
+  原目录保留）。整个文件夹拷到 U 盘也一样能用。
 - 没有服务器、没有账号、没有遥测：所有能力都在本机这个进程里。
 - 应用不预置任何音源：插件由你自己导入（插件页支持粘贴文本 / 网络地址 / 本机路径）。
 - 第一次运行时音量、主题等设置都是默认值。

@@ -23,14 +23,23 @@ import zh from '../src/i18n/locales/zh.json';
 import en from '../src/i18n/locales/en.json';
 import {CORE_ERROR_CODES} from '../src/api';
 import {CORE_EVENTS, EVENT_NAME_PATTERN} from '../src/services/core.events';
+import {
+    PET_DRAGGING_EVENT,
+    PET_HITBOX_EVENT,
+    PET_LOCK_EVENT,
+    PET_LOOK_EVENT,
+    PET_ROAM_EVENT,
+    PET_WALK_EVENT,
+} from '../src/services/window.service';
 import {filterGroupsBySource, groupTracks} from '../src/utils/track';
 import {toLyricLines} from '../src/utils/lyrics';
 import {errorText} from '../src/i18n/errors';
 import {coverStyle, trackCoverStyle} from '../src/utils/cover';
 import type {Track, TrackQuality} from '../src/types';
 import type {PluginSummary} from '../src/api';
-import {rememberCoreSources as rememberCoreSourceList} from '../src/services/core.sources';
+import {rememberCoreSources as rememberCoreSourceList, isCoreSource} from '../src/services/core.sources';
 import {canDownload} from '../src/hooks/useTrackActions';
+import {isInDownloadQueue, trackReference} from '../src/utils/downloadQueue';
 import {pickQuality, pickQualityWithFallback} from '../src/utils/quality';
 import {playbackFailureText} from '../src/utils/playbackFailure';
 import {
@@ -45,6 +54,14 @@ import {
     resolveWebAssetPath,
     rewriteCssAssets,
 } from '../src/utils/wallpaperInline';
+import {
+    backgroundKindOfFile,
+    mergeSkinBackgroundOptions,
+    pickSkinPackageFiles,
+    readSkinBackgroundHint,
+    skinBackgroundAssetId,
+} from '../src/utils/skinPackage';
+import {canPreview, mediaKindOf, previewWindow, PREVIEW_SECONDS} from '../src/utils/discoverMedia';
 import {appConfig} from '../src/config/app.config';
 import {resolveShellMode} from '../src/utils/shellMode';
 import {lyricsScrollStep, lyricsScrollTarget} from '../src/utils/lyricsScroll';
@@ -81,7 +98,14 @@ import {
     readLyricsWindowSettings,
     writeLyricsWindowSettings,
 } from '../src/utils/lyricsWindowSettings';
-import {clearPets, listPets, PetHost, petPlaybackSnapshot, registerPet} from '../src/pet';
+import {clearPets, listPets, PetHost, petPlaybackSnapshot, registerCorePet, registerPet} from '../src/pet';
+import {BUILTIN_PET_SPEC} from '../src/pet/builtin';
+import {planAtlas, frameBox, lookBox} from '../src/pet/frame-layout';
+import {PET_WINDOW_MARGIN, placePet} from '../src/utils/petWindowPosition';
+import {atlasDataUrl, atlasMime, backgroundToStrip, stripBackground} from '../src/pet/atlas-matte';
+import {frameSourceRect} from '../src/pet/atlas-image';
+import {payloadToSnapshot} from '../src/widgets/pet-window/types';
+import {PET_ERROR_CODES, petService} from '../src/services/core.pet';
 import {QueuePanel} from '../src/components/shell/player-bar/QueuePanel';
 import {ActionsPanel} from '../src/components/shell/player-bar/ActionsPanel';
 import {SourcePicker} from '../src/components/shell/player-bar/SourcePicker';
@@ -94,6 +118,7 @@ import {buildMenuRoutes, appRoutes} from '../src/router/meta';
 
 import RankingView from '../src/views/ranking';
 import HotView from '../src/views/hot';
+import {DiscoverPanel} from '../src/views/hot/components/DiscoverPanel';
 import DownloadView from '../src/views/download';
 import DownloadingView from '../src/views/download/downloading';
 import DownloadedView from '../src/views/download/downloaded';
@@ -337,6 +362,11 @@ const DYNAMIC_PREFIXES = [
     'errors.',
     // 壁纸准备助手的 warning code 由 inliner 返回，模板字符串拼接
     'page.background.assistantWarn.',
+    // 宠物好感分档：`pet.mood.${mood}`（心情由核心派生，前端不写死枚举）
+    'pet.mood.',
+    // 宠物气泡：文案键写在**宠物包**（pets/*/pet.json 的 behaviors）里，由核心原样回传，
+    // 前端按 `info.key` 直接查表。代码里没有字面量，但键是发布的 ABI（改名字要让包也跟着改）
+    'pet.bubble.',
 ];
 
 function flattenKeys(obj: Record<string, unknown>, prefix = ''): string[] {
@@ -384,6 +414,18 @@ function checkI18n(): void {
         'i18n: 每个错误码都有 zh/en 文案',
         untranslated.length === 0,
         `缺翻译 ${untranslated.join(', ')}`,
+    );
+
+    /* 宠物域是自己的错误码表（`pet.*`）：同样不能漏翻译。
+       漏了会退回核心的开发者说明——那是中文，切到英文界面就是中文乱入。 */
+    const untranslatedPet = PET_ERROR_CODES.filter((code) => {
+        const key = `errors.${code.replace(/\./g, '_')}`;
+        return !zhKeys.includes(key) || !enKeys.includes(key);
+    });
+    check(
+        'i18n: 宠物错误码也有 zh/en 文案',
+        untranslatedPet.length === 0,
+        `缺翻译 ${untranslatedPet.join(', ')}`,
     );
 
     /* 插件抛出的错：文案必须带上**插件作者写的说明**，否则用户只看到「插件执行出错」
@@ -1459,6 +1501,382 @@ async function main(): Promise<void> {
         );
         actions.player.stop();
         clearPets();
+
+        /* ---------------- 宠物 M1：内置宠物 + 独立服务门面 ---------------- */
+        // 宠物默认关（2.x 形态，1.x 阶段只做预开发）；设置页的开关是显式 opt-in
+        check('pet: 实验开关默认关闭', s().ui.petEnabled === false);
+        actions.ui.setPetEnabled(true);
+        check('pet: 实验开关可打开', s().ui.petEnabled === true);
+        actions.ui.setPetEnabled(false);
+
+        // 浏览器预览没有 pet 引擎：门面必须如实报「不支持」，而不是装作成功
+        const petState = await petService.state();
+        check(
+            'pet: 浏览器下宠物命令如实报 unsupported_platform',
+            petState.ok === false && petState.error?.code === 'common.unsupported_platform',
+            JSON.stringify(petState),
+        );
+
+        // 内置宠物的规格必须是**自洽**的（前端不预解析，但写错同样要到运行时才炸）
+        const builtinSpec = JSON.parse(BUILTIN_PET_SPEC) as {
+            id: string;
+            animations: {name: string}[];
+            behaviors: {then: {kind: string; animation?: string}}[];
+        };
+        const animationNames = builtinSpec.animations.map((animation) => animation.name);
+        check(
+            'pet: 内置宠物规格自洽（动画存在、行为只引用已有动画）',
+            builtinSpec.id === 'gently-mascot' &&
+                animationNames.length > 0 &&
+                builtinSpec.behaviors.every(
+                    (behavior) =>
+                        behavior.then.kind !== 'play' ||
+                        (behavior.then.animation !== undefined &&
+                            animationNames.includes(behavior.then.animation)),
+                ),
+            JSON.stringify(builtinSpec.behaviors),
+        );
+        check(
+            'pet: 渲染器注册后宿主出现容器（M2 统一渲染器）',
+            (() => {
+                const unregisterBuiltin = registerCorePet();
+                const html = renderToString(<PetHost/>);
+                unregisterBuiltin();
+                return html.includes('data-pet-host') && listPets().length === 0;
+            })(),
+        );
+
+        /* ---------------- 宠物图集布局：网格与单行帧条 ---------------- */
+        // 网格：192×208 的格子、8 列 9 行，整图 1536×1872，显示高 = 208/2 = 104（整数倍，像素画才不糊）
+        const gridPlan = planAtlas(
+            {
+                atlasLayout: {frameWidth: 192, frameHeight: 208, columns: 8, rows: 9},
+                animations: [
+                    {name: 'idle', frames: 6, row: 0},
+                    {name: 'runLeft', frames: 8, row: 1},
+                    {name: 'inspect', frames: 6, row: 8},
+                ],
+            },
+            1536,
+            1872,
+        );
+        check(
+            'pet: 网格图集按整数倍缩放（0.5x：96×104 的格子、偏移都落在整像素）',
+            gridPlan !== null &&
+                gridPlan.height === 104 &&
+                gridPlan.width === 96 &&
+                gridPlan.backgroundSize === '768px 936px' &&
+                gridPlan.frames.length === 3 &&
+                gridPlan.frames[0].length === 6 &&
+                gridPlan.frames[1].length === 8 &&
+                gridPlan.frames[2][0].y === 8 * 104 &&
+                gridPlan.frames[1][5].x === 5 * 96 &&
+                gridPlan.frames.every((animation) =>
+                    animation.every((frame) =>
+                        Number.isInteger(frame.x) && Number.isInteger(frame.y),
+                    ),
+                ),
+            JSON.stringify(gridPlan?.frames[2]), // eslint-disable-line
+        );
+        // 非整数倍高度也要把偏移取整（否则背景偏移落在半像素上，浏览器会重采样出毛边）
+        const oddPlan = planAtlas(
+            {atlasLayout: {frameWidth: 192, frameHeight: 208, columns: 8, rows: 9}, animations: [{name: 'idle', frames: 3, row: 0}]},
+            1536,
+            1872,
+            96,
+        );
+        check(
+            'pet: 非整数倍缩放的偏移会被取整（不留半像素）',
+            oddPlan !== null &&
+                oddPlan.frames[0].every((frame) => Number.isInteger(frame.x)) &&
+                Number.isInteger(oddPlan.width) &&
+                oddPlan.backgroundSize.split(' ').every((part) => Number.isInteger(parseFloat(part))),
+            String(oddPlan?.backgroundSize),
+        );
+
+        /* ---------------- 每行的显示适配（fit）：修「切动画时宠物突然变大」 ---------------- */
+        // 素材各行角色画得大小不一（实测内置素材差到 ~20%）：fit.scale 把整行等比缩放，
+        // 盒子取所有行里最大的那一格（放大不裁切），每行底部对齐（脚底不动）。
+        const fitPlan = planAtlas(
+            {
+                atlasLayout: {frameWidth: 192, frameHeight: 208, columns: 8, rows: 9},
+                animations: [
+                    {name: 'idle', frames: 6, row: 0},
+                    {name: 'runLeft', frames: 8, row: 1, fit: {scale: 0.84}},
+                    {name: 'run', frames: 6, row: 7, fit: {scale: 1.16}},
+                ],
+            },
+            1536,
+            1872,
+        );
+        check(
+            'pet: 每行可以有自己的缩放（盒子取最大那一格，放大不留裁切）',
+            fitPlan !== null &&
+                fitPlan.width === 111 &&
+                fitPlan.height === 121 &&
+                fitPlan.frameSizes[0].width === 96 &&
+                fitPlan.frameSizes[0].height === 104 &&
+                fitPlan.frameSizes[1].width === 81 &&
+                fitPlan.frameSizes[2].height === 121,
+            JSON.stringify(fitPlan?.frameSizes), // eslint-disable-line
+        );
+        check(
+            'pet: 缩放后的行按「水平居中 + 底部对齐」摆好（切动画时脚底不动）',
+            fitPlan !== null &&
+                fitPlan.anchors[0].x === 8 &&
+                fitPlan.anchors[0].y === 17 &&
+                fitPlan.anchors[1].x === 15 &&
+                fitPlan.anchors[1].y === 34 &&
+                fitPlan.anchors[2].x === 0 &&
+                fitPlan.anchors[2].y === 0,
+            JSON.stringify(fitPlan?.anchors), // eslint-disable-line
+        );
+        // 每帧真的按各自的行缩放取偏移（0.84 的行第 5 帧 = 5 × 96 × 0.84 ≈ 403）
+        check(
+            'pet: 帧偏移按各自行的缩放算（不是整张图一个倍率）',
+            fitPlan !== null &&
+                frameBox(fitPlan, 1, 5).offsetX === Math.round(5 * 96 * 0.84) &&
+                frameBox(fitPlan, 2, 5).offsetX === Math.round(5 * 96 * 1.16) &&
+                frameBox(fitPlan, 1, 5).width === 111 &&
+                frameBox(fitPlan, 1, 5).left === 15 &&
+                frameBox(fitPlan, 1, 5).frameWidth === 81 &&
+                fitPlan.frames[1].every((frame) => Number.isInteger(frame.x)),
+            JSON.stringify(frameBox(fitPlan!, 1, 5)), // eslint-disable-line
+        );
+        // 没有 fit 的包：尺寸与从前一模一样（老宠物包不受影响）
+        check(
+            'pet: 没写 fit 的包尺寸不变（96×104、盒子 = 一格）',
+            gridPlan !== null && gridPlan.width === 96 && gridPlan.height === 104,
+            `${gridPlan?.width}×${gridPlan?.height}`,
+        );
+        // look 两行永远是「同一张脸」：不参与 fit，按基础缩放摆
+        const fitLookPlan = planAtlas(
+            {
+                atlasLayout: {frameWidth: 192, frameHeight: 208, columns: 8, rows: 11},
+                animations: [{name: 'idle', frames: 6, row: 0, fit: {scale: 0.84}}],
+                lookRows: [9, 10],
+            },
+            1536,
+            2288,
+        );
+        check(
+            'pet: look 格子不参与 fit（按基础缩放摆，方向不会缩小一圈）',
+            fitLookPlan !== null &&
+                lookBox(fitLookPlan, 0)?.left === Math.round((fitLookPlan.width - 96) / 2) &&
+                lookBox(fitLookPlan, 0)?.offsetX === 0 &&
+                lookBox(fitLookPlan, 15)?.offsetY === 10 * 104 &&
+                lookBox(fitLookPlan, 0)?.frameHeight === 104 &&
+                fitLookPlan.frames[0][0].y === 0,
+            JSON.stringify(lookBox(fitLookPlan!, 15)), // eslint-disable-line
+        );
+        /* ---------------- 白底图集去底（社区包常见没有 alpha） ---------------- */
+        // 2×2 白底 + 一个彩色像素：没有透明像素 → 判定「要去底」，底色取左上角
+        const opaqueSheet = new Uint8ClampedArray([
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 180, 200, 255,
+        ]);
+        const matte = backgroundToStrip(opaqueSheet, 2, 2);
+        check(
+            'pet: 没有透明通道的图集会判定为「需要去底」（取角落底色）',
+            matte !== null && matte.r === 255 && matte.g === 255 && matte.b === 255,
+            JSON.stringify(matte),
+        );
+        const stripped = new Uint8ClampedArray(opaqueSheet);
+        const cleared = stripBackground(stripped, matte ?? {r: 255, g: 255, b: 255});
+        check(
+            'pet: 去底只清底色像素，角色像素保留',
+            cleared === 3 &&
+                stripped[3] === 0 &&
+                stripped[15] === 255,
+            `${cleared} / ${[...stripped].join(',')}`,
+        );
+        // 已经有透明像素的图集不动它（我们的内置图集就是这种）
+        const alphaSheet = new Uint8ClampedArray([
+            255, 255, 255, 255, 200, 120, 160, 255, 255, 255, 255, 255, 0, 0, 0, 0,
+        ]);
+        check(
+            'pet: 本来带 alpha 的图集不会被误抠',
+            backgroundToStrip(alphaSheet, 2, 2) === null,
+        );
+        // 全不透明的深色满幅图（比如一整张夜景）不该被抠成透明
+        const darkSheet = new Uint8ClampedArray([10, 10, 10, 255, 10, 10, 10, 255]);
+        check(
+            'pet: 深色满幅图不会被当成「白底」抠掉',
+            backgroundToStrip(darkSheet, 2, 1) === null,
+        );
+        // 图集 MIME 必须按文件类型给：写死 png 会让 webp 图集（Codex Pet 全是 webp）解码失败
+        check(
+            'pet: 图集 MIME 按文件类型给（webp 不会被标成 png）',
+            atlasMime('spritesheet.webp') === 'image/webp' &&
+                atlasMime('SPRITESHEET.WEBP') === 'image/webp' &&
+                atlasMime('atlas.png') === 'image/png' &&
+                atlasDataUrl('AAAA', 'spritesheet.webp').startsWith('data:image/webp;base64,'),
+            atlasMime('spritesheet.webp'),
+        );
+        // 缩略图取源矩形：plan 里的偏移是「缩放后」的像素，折算回原图坐标才是 192×208 的格子
+        const previewSource = frameSourceRect(
+            {image: {naturalWidth: 1536, naturalHeight: 1872} as HTMLImageElement, plan: gridPlan!},
+            1,
+            2,
+        );
+        check(
+            'pet: 缩略图按原图格子取帧（0.5 缩放要折回去）',
+            previewSource !== null &&
+                previewSource.x === 384 &&
+                previewSource.y === 208 &&
+                previewSource.w === 192 &&
+                previewSource.h === 208,
+            JSON.stringify(previewSource),
+        );
+
+        /* ---------------- look 两行（Codex v2）：16 个方向怎么落在格子里 ---------------- */
+        const lookPlan = planAtlas(
+            {
+                atlasLayout: {frameWidth: 192, frameHeight: 208, columns: 8, rows: 11},
+                lookRows: [9, 10],
+                animations: [{name: 'idle', frames: 6, row: 0}],
+            },
+            1536,
+            2288,
+        );
+        check(
+            'pet: 16 个 look 方向按 8 格一行铺满两行（0 = 正上）',
+            lookPlan?.lookFrames !== null &&
+                lookPlan?.lookFrames?.length === 16 &&
+                lookPlan?.lookFrames?.[0].x === 0 &&
+                lookPlan?.lookFrames?.[0].y === 9 * 104 &&
+                lookPlan?.lookFrames?.[7].x === 7 * 96 &&
+                lookPlan?.lookFrames?.[8].y === 10 * 104,
+            JSON.stringify(lookPlan?.lookFrames?.slice(7, 9)),
+        );
+        check(
+            'pet: 没有 lookRows 的包不生成 look 偏移（v1 图集不会画错）',
+            gridPlan?.lookFrames === null,
+        );
+
+        // 单行帧条（老格式）：400×100 的图，4+2 帧 → 每帧 400/6 宽，第二个动画从第 5 格开始
+        const stripPlan = planAtlas(
+            {animations: [{name: 'idle', frames: 4}, {name: 'happy', frames: 2}]},
+            400,
+            100,
+            96,
+        );
+        check(
+            'pet: 单行帧条仍按总帧数等分（老宠物包不被新格式挤掉）',
+            stripPlan !== null &&
+                stripPlan.width === Math.round((400 / 6) * 0.96) &&
+                stripPlan.frames[0][1].x === stripPlan.width &&
+                stripPlan.frames[1][0].x === stripPlan.width * 4 &&
+                stripPlan.frames.every((animation) => animation.every((frame) => frame.y === 0)),
+            JSON.stringify(stripPlan),
+        );
+        check(
+            'pet: 布局参数不成立时不画（退回程序化渲染，而不是画半个头）',
+            planAtlas({atlasLayout: {frameWidth: 0, frameHeight: 208, columns: 8, rows: 9}, animations: [{name: 'idle', frames: 1}]}, 1536, 1872, 96) === null &&
+                planAtlas({animations: []}, 100, 100, 96) === null &&
+                planAtlas({animations: [{name: 'idle', frames: 1}]}, 0, 100, 96) === null,
+        );
+
+        // 内置宠物的网格必须与图集自洽（帧数不超过列数、行号落在图里）
+        const builtinLayout = (
+            JSON.parse(BUILTIN_PET_SPEC) as {
+                atlasLayout?: {columns: number; rows: number};
+                animations: {name: string; frames: number; row?: number}[];
+            }
+        ).atlasLayout;
+        const builtinAnimations = (
+            JSON.parse(BUILTIN_PET_SPEC) as {animations: {name: string; frames: number; row?: number}[]}
+        ).animations;
+        check(
+            'pet: 内置宠物用网格图集且每个动画都落在图里',
+            builtinLayout !== undefined &&
+                builtinAnimations.length === 9 &&
+                builtinAnimations.every(
+                    (animation, index) =>
+                        animation.frames <= builtinLayout.columns &&
+                        (animation.row ?? index) < builtinLayout.rows,
+                ),
+            JSON.stringify(builtinLayout),
+        );
+        check(
+            'pet: 内置宠物的 9 个动作名就是素材的那 9 个',
+            builtinAnimations.map((animation) => animation.name).join(',') ===
+                'idle,runLeft,runRight,wave,jump,fail,wait,run,inspect',
+            builtinAnimations.map((animation) => animation.name).join(','),
+        );
+
+        /* 宠物窗口的事件名：Tauri 只认字母数字与 `- / : _`，带点号的事件会整条丢失
+           （命令照常返回、只是收不到——见 GOTCHAS §31）。这里把常量全量守一遍。 */
+        check(
+            'pet: 宠物窗口事件名都在 Tauri 接受的字符集内',
+            [
+                PET_HITBOX_EVENT,
+                PET_LOCK_EVENT,
+                PET_ROAM_EVENT,
+                PET_LOOK_EVENT,
+                PET_WALK_EVENT,
+                PET_DRAGGING_EVENT,
+            ].every((name) => EVENT_NAME_PATTERN.test(name)),
+            [
+                PET_HITBOX_EVENT,
+                PET_LOCK_EVENT,
+                PET_ROAM_EVENT,
+                PET_LOOK_EVENT,
+                PET_WALK_EVENT,
+                PET_DRAGGING_EVENT,
+            ].join(','),
+        );
+
+        /* ---------------- 宠物窗口（独立置顶小窗） ---------------- */
+        // 默认位置：主屏右下角（宠物不再被音乐软件的窗口边界限制）
+        const monitor = [{x: 0, y: 0, width: 1920, height: 1080}];
+        const petPlacement = placePet(null, monitor, {width: 200, height: 200});
+        check(
+            'pet: 宠物窗口默认摆在主屏右下角',
+            petPlacement.x === 1920 - 200 - PET_WINDOW_MARGIN &&
+                petPlacement.y === 1080 - 200 - PET_WINDOW_MARGIN,
+            JSON.stringify(petPlacement),
+        );
+        // 用户拖动过就尊重用户的位置
+        const savedPet = placePet({x: 300, y: 260}, monitor, {width: 200, height: 200});
+        check('pet: 记住的位置优先于默认位置', savedPet.x === 300 && savedPet.y === 260);
+        // 副屏被拔掉：上次的坐标落在虚拟屏幕外 → 必须夹回主屏，否则宠物「消失」
+        const rescuedPet = placePet({x: 2600, y: 900}, monitor, {width: 200, height: 200});
+        check(
+            'pet: 屏幕外记住的位置会被夹回可见区域',
+            rescuedPet.x === 1920 - 200 - PET_WINDOW_MARGIN &&
+                rescuedPet.y === 1080 - 200 - PET_WINDOW_MARGIN,
+            JSON.stringify(rescuedPet),
+        );
+        // 载荷 → 只读快照：宠物窗口没有 store，全靠这份映射
+        const petSnapshot = payloadToSnapshot({
+            active: true,
+            playing: true,
+            elapsed: 12.5,
+            lyricActive: true,
+            trackId: 'track-1',
+            revision: 3,
+            theme: 'dark',
+        });
+        check(
+            'pet: 窗口载荷能还原成宠物读的快照（播放态 / 换歌 / 歌词）',
+            petSnapshot.playing === true &&
+                petSnapshot.track?.id === 'track-1' &&
+                petSnapshot.lyric !== null &&
+                petSnapshot.theme === 'dark',
+            JSON.stringify(petSnapshot),
+        );
+        const idleSnapshot = payloadToSnapshot({
+            playing: false,
+            elapsed: 0,
+            lyricActive: false,
+            trackId: '',
+            revision: 0,
+            theme: 'light',
+        });
+        check(
+            'pet: 没在放歌时快照里没有曲目、也没有歌词',
+            idleSnapshot.track === null && idleSnapshot.lyric === null,
+        );
     }
 
     /* 歌词解析：核心只交付原文，行数组由前端解析（只有这一份解析器） */
@@ -1959,6 +2377,51 @@ async function main(): Promise<void> {
     }
     render('RankingView', <RankingView/>);
     render('HotView', <HotView/>);
+    /* Tab 由 URL 决定（`?tab=discover`）：直接给带参数的路径，断言渲染的是发现子视图 */
+    {
+        const discoverHtml = renderToString(
+            <MemoryRouter initialEntries={['/hot?tab=discover']}>
+                <ThemeProvider>
+                    <HotView/>
+                </ThemeProvider>
+            </MemoryRouter>,
+        );
+        check(
+            'hot: ?tab=discover 直接渲染发现子视图（URL 即状态）',
+            discoverHtml.includes('aria-label="唱片架"'),
+            discoverHtml.slice(0, 120),
+        );
+    }
+    /* 发现子视图单独渲染一次：它自己管书架/试听，不依赖 HotView 的 tab 状态 */
+    render(
+        'DiscoverPanel',
+        <DiscoverPanel
+            tracks={[
+                {
+                    id: 'discover:1',
+                    title: '侧脊很长的一首歌名用来验证省略',
+                    artist: '测试歌手',
+                    album: '测试专辑',
+                    duration: '04:00',
+                    durationSec: 240,
+                    source: 'mock',
+                    gradient: 'linear-gradient(#111, #333)',
+                    tags: [],
+                },
+                {
+                    id: 'discover:2',
+                    title: '第二首',
+                    artist: '测试歌手',
+                    album: '',
+                    duration: '03:00',
+                    durationSec: 180,
+                    source: 'mock',
+                    gradient: 'linear-gradient(#222, #444)',
+                    tags: [],
+                },
+            ]}
+        />,
+    );
     render('DownloadView', <DownloadView/>);
     render('DownloadingView', <DownloadingView/>);
     render('DownloadedView', <DownloadedView/>);
@@ -2304,6 +2767,110 @@ async function main(): Promise<void> {
                 normalized.activePresetId === null,
         );
 
+        /* 主题包（R87）：背景属于皮肤 —— JSON 里带 background 块，素材按皮肤 id 绑定 */
+        check(
+            'skin package: 读出背景声明（kind + 包内文件名 + 参数）',
+            (() => {
+                const hint = readSkinBackgroundHint({
+                    kind: 'video',
+                    file: 'bg.mp4',
+                    options: {opacity: 0.4, blurPx: 8, playbackRate: 0.75},
+                });
+                return (
+                    hint?.kind === 'video' &&
+                    hint.file === 'bg.mp4' &&
+                    hint.options?.opacity === 0.4 &&
+                    hint.options?.blurPx === 8 &&
+                    hint.options?.playbackRate === 0.75
+                );
+            })(),
+        );
+        check(
+            'skin package: 没有背景声明 / 不认识 kind 时当作「不带背景」',
+            readSkinBackgroundHint(undefined) === null && readSkinBackgroundHint({kind: 'hologram'}) === null,
+        );
+        check(
+            'skin package: 带路径的文件名被丢弃（不允许一份 JSON 让前端读任意路径）',
+            readSkinBackgroundHint({kind: 'video', file: '../../etc/passwd'})?.file === undefined,
+        );
+        check(
+            'skin package: 背景素材按皮肤 id 固定绑定（换素材覆盖同一个键）',
+            skinBackgroundAssetId('demo-skin') === 'skin:demo-skin',
+        );
+        check(
+            'skin package: 从选中的文件里挑出 JSON 与背景素材',
+            (() => {
+                const picked = pickSkinPackageFiles(['theme/skin.json', 'theme/bg.mp4']);
+                return picked.json === 'skin.json' && picked.background === 'bg.mp4';
+            })(),
+        );
+        check(
+            'skin package: 只有一个 JSON 也能导入（背景非必须）',
+            (() => {
+                const picked = pickSkinPackageFiles(['my-theme.json']);
+                return picked.json === 'my-theme.json' && picked.background === undefined;
+            })(),
+        );
+        check(
+            'skin package: 没有 JSON 时给出明确原因',
+            pickSkinPackageFiles(['bg.mp4']).reason === 'no-json',
+        );
+        check(
+            'skin package: 多个 JSON 且没有 skin.json 时要求用户只选一个',
+            pickSkinPackageFiles(['a.json', 'b.json']).reason === 'ambiguous-json',
+        );
+        check(
+            'skin package: 背景文件类型按扩展名判定',
+            backgroundKindOfFile('bg.MP4') === 'video' &&
+                backgroundKindOfFile('page.html') === 'web' &&
+                backgroundKindOfFile('cover.png') === null,
+        );
+        check(
+            'skin package: 皮肤参数只覆盖它显式给了值的项（用户微调不被抹掉）',
+            (() => {
+                const current = normalizeBackgroundOptions({opacity: 0.33, blurPx: 4, fit: 'contain'});
+                const merged = mergeSkinBackgroundOptions({kind: 'video', options: {opacity: 0.5}}, current);
+                return merged.opacity === 0.5 && merged.blurPx === 4 && merged.fit === 'contain';
+            })(),
+        );
+
+        /* 发现页（R87）：媒介形态稳定 + 高潮试听片段 */
+        check(
+            'discover: 同一首歌永远是同一种媒介形态',
+            mediaKindOf('core-source:9') === mediaKindOf('core-source:9') &&
+                ['vinyl', 'cassette', 'cd'].includes(mediaKindOf('core-source:9')),
+        );
+        check(
+            'discover: 不同歌曲会落到不同形态（三种都被用到）',
+            new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((key) => mediaKindOf(`k-${key}`))).size > 1,
+        );
+        check(
+            'discover: 太短的歌不试听（没有高潮可言）',
+            previewWindow(30) === null && previewWindow(0) === null && previewWindow(Number.NaN) === null,
+        );
+        check(
+            'discover: 试听从「高潮处」开始且不越过结尾',
+            (() => {
+                const window_ = previewWindow(240);
+                if (!window_) return false;
+                const startRatio = window_.start / 240;
+                return (
+                    startRatio > 0.3 &&
+                    startRatio < 0.5 &&
+                    Math.abs(window_.end - window_.start - PREVIEW_SECONDS) < 0.01 &&
+                    window_.end <= 240
+                );
+            })(),
+        );
+        check(
+            'discover: 没有时长数据的曲目不试听',
+            canPreview({durationSec: 0}) === false && canPreview({durationSec: 200}) === true,
+        );
+        check('store: 发现页自动试听是显式默认开启项', s().ui.discoverAutoPreview === true);
+        actions.ui.setDiscoverAutoPreview(false);
+        check('store: 发现页自动试听可关闭', s().ui.discoverAutoPreview === false);
+        actions.ui.setDiscoverAutoPreview(true);
+
         const before = s().ui.background;
         const expectedPresets = before.presets.length + 1;
         actions.ui.setBackgroundOptions({playbackRate: 10, opacity: 2});
@@ -2443,13 +3010,18 @@ async function main(): Promise<void> {
     const reportCalls: Record<string, unknown>[] = [];
     /** 这些源在假宿主里「解析不到地址」（R71 的停表 / 换源断言用它） */
     let resolveFailFor: string[] = [];
+    /**
+     * 假宿主的 `plugin.list`（**可变**）：模拟「导入插件后核心清单变了」。
+     * 导入后必须能立刻读到，不需要重启（R87 修的 bug）。
+     */
+    const fakePlugins: Record<string, unknown>[] = [
+        {id: 'core-source', name: '核心音源', version: '9.0.0', enabled: true, builtin: false},
+        {id: 'no-favorites-source', name: '没有收藏夹的源', version: '1.0.0', enabled: true, builtin: false},
+    ];
     await withFakeCore(
         (command, params, host) => {
             if (command === 'plugin.list') {
-                return envelope([
-                    {id: 'core-source', name: '核心音源', version: '9.0.0', enabled: true, builtin: false},
-                    {id: 'no-favorites-source', name: '没有收藏夹的源', version: '1.0.0', enabled: true, builtin: false},
-                ]);
+                return envelope([...fakePlugins]);
             }
             if (command === 'playback.resolve') {
                 resolveCalls.push(params);
@@ -2758,6 +3330,31 @@ async function main(): Promise<void> {
                 'fake: 插件列表无重复 id',
                 new Set(plugins.map((plugin) => plugin.id)).size === plugins.length,
             );
+
+            /* 1b. **导入插件后不再需要重启**（R87 的 bug）：store 的插件清单是全局唯一一份，
+               而 `load()` 有 `loaded` 守卫（启动时已经读过一次）。所以导入/卸载/启停之后
+               必须走 `reload()` 强制重读，并把按源路由缓存一起标脏——
+               否则界面（插件表格 / 音源筛选 / 播放条音源选择器）会一直停在旧清单上。 */
+            await useActions().plugin.reload();
+            const beforeImport = store.getState().plugin.list.length;
+            fakePlugins.push({
+                id: 'freshly-imported',
+                name: '刚导入的源',
+                version: '1.0.0',
+                enabled: true,
+                builtin: false,
+            });
+            await useActions().plugin.reload();
+            check(
+                'fake: plugin.reload() 立刻读到新导入的插件（不需要重启）',
+                store.getState().plugin.list.some((plugin) => plugin.id === 'freshly-imported') &&
+                    store.getState().plugin.list.length === beforeImport + 1,
+                store.getState().plugin.list.map((plugin) => plugin.id).join(', '),
+            );
+            check(
+                'fake: reload 后按源路由表同步（新源被认作核心源）',
+                isCoreSource('freshly-imported'),
+            );
             /* 界面的「当前音源」走服务层（AGENTS 第 5 条），且读的是**核心那份清单**：
                前端注册表在桌面上是空的，只读注册表会让设置页误报「还没有安装任何插件」。 */
             check(
@@ -2974,6 +3571,31 @@ async function main(): Promise<void> {
                     check(
                         'fake: 本地曲目不提供下载入口（核心必然拒绝，文件已在本机）',
                         canDownload({source: 'local'}) === false && canDownload({source: 'core-source'}),
+                    );
+
+                    /* 8d. **已在队列里的曲目不再给下载入口**（R87）：允许重复提交就会
+                       堆出多余任务、把并发槽占满，表现成「点了没反应」。判定用引用精确匹配 +
+                       「同源同标题同歌手」兜底（与列表里的下载标记同一套口径）。 */
+                    check(
+                        'fake: 已入队的曲目判定为「队列中」（引用匹配）',
+                        isInDownloadQueue(s().download.tasks, dlTrack),
+                    );
+                    check(
+                        'fake: 已入队的曲目判定为「队列中」（rawId 不同但同源同标题同歌手也认）',
+                        isInDownloadQueue(s().download.tasks, {...dlTrack, id: 'another-raw-id'}),
+                    );
+                    check(
+                        'fake: 不在队列里的曲目不误判',
+                        !isInDownloadQueue(s().download.tasks, {
+                            ...dlTrack,
+                            id: 'not-queued',
+                            title: '一首还没下载过的歌',
+                        }),
+                    );
+                    check(
+                        'queued: 曲目引用归一（已带前缀时不重复拼接）',
+                        trackReference({id: 'core-source:9', source: 'core-source'}) === 'core-source:9' &&
+                            trackReference({id: '9', source: 'core-source'}) === 'core-source:9',
                     );
                 }
             }
@@ -3532,6 +4154,53 @@ async function main(): Promise<void> {
                 actions.player.stop();
             }
 
+            /* **休眠回来接着播**（R87）：媒体元素报错时先给同一批源一次重新解析的机会
+               ——回环代理的流地址只有 30 分钟 TTL、上游直链更短，旧的地址必然失效。
+               用户没有做任何操作，所以必须**保留进度**继续播，而不是停下等他重播。 */
+            {
+                const sleepTrack = {
+                    id: 'local:73',
+                    source: 'local',
+                    title: '休眠恢复探针',
+                    artist: '探针',
+                    album: '',
+                    durationSec: 180,
+                } as unknown as Track;
+
+                resolveFailFor = [];
+                actions.player.play(sleepTrack, [sleepTrack]);
+                await new Promise((resolve) => setTimeout(resolve, 80));
+                actions.player.setProgress(42, 180);
+
+                /* 电脑睡了一觉回来：媒体元素报错，但核心还能给出（新的）可播地址 */
+                actions.player.markUnplayable('code 3');
+                await new Promise((resolve) => setTimeout(resolve, 80));
+                check(
+                    'store: 休眠回来媒体报错会先自动重新解析并接着播（进度不丢）',
+                    s().player.playing === true &&
+                        s().player.playbackError === null &&
+                        s().player.audioUrl !== null &&
+                        s().player.elapsed === 42,
+                    JSON.stringify({
+                        playing: s().player.playing,
+                        elapsed: s().player.elapsed,
+                        err: s().player.playbackError,
+                    }),
+                );
+
+                /* 同一次播放里第二次报错：自动重解析的额度只有一次，不再无限重试 */
+                resolveFailFor = ['local'];
+                actions.player.markUnplayable('code 4');
+                await new Promise((resolve) => setTimeout(resolve, 80));
+                check(
+                    'store: 自动重解析也只给一次（再坏就如实停播，不做无限重试）',
+                    s().player.playing === false && s().player.playbackError?.kind === 'media',
+                    JSON.stringify({playing: s().player.playing, err: s().player.playbackError}),
+                );
+                resolveFailFor = [];
+                actions.player.stop();
+            }
+
             /* 播放失败时播放条要**说出来**：一个「无法播放 · 重试」的按钮，点它重新解析 */
             {
                 const failTrack = {
@@ -3692,6 +4361,81 @@ async function main(): Promise<void> {
         },
     );
 
+    /* **快速切换 tab 时标签与内容必须一致**（R87）：`selectItem` 现在带请求代号，
+       先前那个分类的响应**晚到**也不能覆盖后点的分类内容。用可控延迟的假宿主
+       把「旧请求后到」稳定复现出来（真实网络下这就是用户报的错位）。 */
+    {
+        const raceTrack = (id: string): Track => ({
+            id,
+            title: id,
+            artist: '探针',
+            album: '',
+            duration: '03:00',
+            durationSec: 180,
+            source: 'core-source',
+            gradient: 'linear-gradient(#222, #444)',
+            tags: [],
+        });
+
+        await withFakeCore(
+            (command, params) => {
+                if (command === 'plugin.list') {
+                    return envelope([
+                        {id: 'core-source', name: '核心音源', version: '9.0.0', enabled: true, builtin: false},
+                    ]);
+                }
+                if (command === 'catalog.topLists') {
+                    return envelope([
+                        {
+                            id: 'race-group',
+                            title: '竞态',
+                            items: [
+                                {id: 'race-a', title: 'A 分类'},
+                                {id: 'race-slow', title: '慢分类'},
+                                {id: 'race-fast', title: '快分类'},
+                            ],
+                        },
+                    ]);
+                }
+                if (command === 'catalog.topList') {
+                    const item = String((params as {id?: unknown}).id ?? '');
+                    const payload = envelope({items: [raceTrack(`${item}-track`)], hasMore: false});
+                    // 「慢分类」迟 90ms 回来：先点的那个请求反而后到，正是错位的触发条件
+                    return item === 'race-slow'
+                        ? new Promise((resolve) => setTimeout(() => resolve(payload), 90))
+                        : payload;
+                }
+                return failure('common.not_implemented', `未预设：${command}`);
+            },
+            async () => {
+                await actions.ranking.load();
+                check(
+                    'fake: 榜单竞态用例初始选中第一个分类',
+                    s().ranking.selectedId === 'race-a',
+                    String(s().ranking.selectedId),
+                );
+
+                const slow = actions.ranking.selectItem('race-slow');
+                const fast = actions.ranking.selectItem('race-fast');
+                await fast;
+                await new Promise((resolve) => setTimeout(resolve, 20));
+                check(
+                    'fake: 标签与内容先跟随最后一次点击',
+                    s().ranking.selectedId === 'race-fast' && s().ranking.rows[0]?.id === 'race-fast-track',
+                    JSON.stringify({selected: s().ranking.selectedId, first: s().ranking.rows[0]?.id}),
+                );
+
+                await slow;
+                await new Promise((resolve) => setTimeout(resolve, 20));
+                check(
+                    'fake: 旧分类的迟到响应被丢弃（标签与内容不会错位）',
+                    s().ranking.selectedId === 'race-fast' && s().ranking.rows[0]?.id === 'race-fast-track',
+                    JSON.stringify({selected: s().ranking.selectedId, first: s().ranking.rows[0]?.id}),
+                );
+            },
+        );
+    }
+
     // 假宿主期间改过主题选择，恢复到默认以免影响后面的断言
     actions.ui.setThemePreset(DEFAULT_PRESET_ID);
 
@@ -3708,3 +4452,13 @@ main().catch((err) => {
     console.error('冒烟测试异常终止：', err);
     process.exit(1);
 });
+
+
+
+
+
+
+
+
+
+

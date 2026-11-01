@@ -218,3 +218,11 @@ html[data-window='desktop-lyrics'] body {
 html[data-window='desktop-lyrics'] body {
     overflow: hidden;
 }
+
+/* ----- 宠物窗口：同样整页透明 -----
+   宠物是**独立置顶小窗**（不在主窗口里），窗口背景必须全透，只留精灵图与气泡。 */
+html[data-window='pet'],
+html[data-window='pet'] body {
+    background: transparent;
+    overflow: hidden;
+}

@@ -177,6 +177,8 @@ pub fn dispatch(
         "system.cacheStatus" => cache_status(ctx, params),
         "system.cacheClear" => cache_clear(ctx, params),
         "system.cacheConfig" => cache_config(ctx, params),
+        "system.dataDir" => system_data_dir(ctx),
+        "system.dataDir.move" => system_data_dir_move(ctx, params),
         "plugin.preview" => plugin_preview(ctx, params),
         "plugin.import" => plugin_import(ctx, params),
         "plugin.list" => plugin_list(ctx),
@@ -274,6 +276,8 @@ const IMPLEMENTED: &[&str] = &[
     "system.cacheStatus",
     "system.cacheClear",
     "system.cacheConfig",
+    "system.dataDir",
+    "system.dataDir.move",
     "plugin.preview",
     "plugin.import",
     "plugin.list",
@@ -418,6 +422,52 @@ fn cache_config(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_
 fn cache_clear(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
     let params: CacheClearParams = parse_params(params)?;
     crate::cache::clear(&ctx.paths, params.kind.as_deref().unwrap_or("all"))
+}
+
+/// `system.dataDir`：数据目录**现在在哪、为什么在那儿、能不能搬**。
+///
+/// 为什么要把它做成命令而不是只读 `system.status`：用户需要看到「默认目录 / 便携版 /
+/// 迁移过」这几种来源的区别，以及迁移是否已经生效（指针文件存在与否）——
+/// 只给一个路径字符串，用户没法判断「我上次迁移到底成功没有」（R87）。
+fn system_data_dir(ctx: &CoreContext) -> Fallible<serde_json::Value> {
+    let meta = &ctx.paths.meta;
+    let slash = |path: &std::path::Path| path.to_string_lossy().replace('\\', "/");
+    to_json(serde_json::json!({
+        "current": slash(&ctx.paths.data),
+        "defaultBase": slash(&meta.default_base),
+        "pointerHome": slash(&meta.pointer_home),
+        // 便携版：数据默认跟着 exe 走（`<exe 目录>/data`）
+        "portable": meta.portable,
+        // default / portable / pointer / override —— 界面按它解释「为什么是这个目录」
+        "source": meta.source,
+        "dbPath": slash(&ctx.paths.db),
+        // 指针文件在，说明用户迁移过（下次启动会读它）
+        "hasPointer": meta.location_file().is_file(),
+    }))
+}
+
+/// `system.dataDir.move{target}`：把数据目录**拷贝**到新位置并写好指针，重启后生效。
+///
+/// 三条边界（都在 `paths::migrate_data_dir` 里落实）：
+/// 1. 只拷贝、不删除：旧目录留着，用户确认无误后自己删（迁移不是破坏性操作）；
+/// 2. 拷贝完成后自检数据库副本（`PRAGMA quick_check`），坏副本不写指针；
+/// 3. **下次启动生效**：数据库连接已经打开，换根目录不能热切；返回体里如实说 `requiresRestart`。
+fn system_data_dir_move(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    #[derive(serde::Deserialize)]
+    struct MoveParams {
+        target: String,
+    }
+    let params: MoveParams = parse_params(params)?;
+    /* 先把 WAL 并回主库：不 checkpoint 就热拷，副本可能缺最近的提交
+       （旁挂文件按规则不搬，于是「迁移过去了，但最近的数据没了」）。
+       失败只记日志——迁移侧还会对**每个**副本做 quick_check，不会把坏副本当成功。 */
+    if let Some(store) = ctx.store.as_ref() {
+        if let Err(err) = store.checkpoint_wal() {
+            tracing::warn!(%err, "迁移前 WAL checkpoint 失败，继续（副本会自检）");
+        }
+    }
+    let report = crate::paths::migrate_data_dir(&ctx.paths, std::path::Path::new(&params.target))?;
+    to_json(report)
 }
 
 /// 在系统文件管理器中定位/打开路径。

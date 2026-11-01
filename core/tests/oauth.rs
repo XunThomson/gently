@@ -117,12 +117,28 @@ fn install(ctx: &CoreContext, source: &str) -> String {
 }
 
 /// 模拟浏览器：把 `code` + `state` 打到本机回调地址上（`127.0.0.1` 只在测试里出现）。
+/// 连上本机回调端口。
+///
+/// 回调监听是 `auth.begin` 里新起的线程，绑端口是异步的：机器忙的时候
+/// （比如 verify 里同时在编译别的 crate）`begin` 刚返回、端口还没在监听，
+/// 直接 `connect` 会失败一次——所以这里重试，最多等 3 秒。
+fn connect_callback(address: &str) -> TcpStream {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        match TcpStream::connect(address) {
+            Ok(stream) => return stream,
+            Err(_) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            Err(err) => panic!("连接本机回调端口失败：{err}"),
+        }
+    }
+}
+
 fn deliver_callback(redirect_uri: &str, query: &str) {
     let address = redirect_uri
         .trim_start_matches("http://")
         .trim_end_matches("/callback")
         .to_string();
-    let mut stream = TcpStream::connect(&address).expect("连接本机回调端口");
+    let mut stream = connect_callback(&address);
     let request = format!(
         "GET /callback?{query} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
     );
@@ -216,7 +232,7 @@ fn callback_with_wrong_state_is_rejected() {
         .trim_start_matches("http://")
         .trim_end_matches("/callback")
         .to_string();
-    let mut stream = TcpStream::connect(&address).expect("连接本机回调端口");
+    let mut stream = connect_callback(&address);
     stream
         .write_all(
             format!("GET /callback?code=abc&state=forged HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n")
@@ -334,3 +350,6 @@ fn token_endpoint_failure_keeps_the_plugin_unauthorized() {
     // 未授权时插件拿不到令牌
     assert!(gently_core::oauth::access_token(&ctx, &plugin_id).is_none());
 }
+
+
+

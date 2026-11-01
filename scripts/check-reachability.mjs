@@ -56,6 +56,17 @@ const DELIBERATE_ACTIONS = {
         '停止不是用户可见的操作：播放/暂停由 `toggle` 负责，队列播完或切歌各有自己的结算路径（`reportPlayback` + `next`）。`stop` 是 store 的**完整重置入口**（同时清掉 current/detail/队列位置/歌词），冒烟测试用它把状态复位后再断言解析器，保留它比删掉更划算',
 };
 
+/* ---------------- 宠物域（独立命名空间，ADR 0010） ---------------- */
+
+/**
+ * 有意暂时没有界面入口的宠物命令：键是命令名，值是理由（当前为空）。
+ *
+ * M2 起 7 条命令都有界面入口：`pet.state` / `pet.install` / `pet.setActive` / `pet.remove`
+ * 在设置页的宠物面板，`pet.tick` / `pet.atlas` 在渲染适配器，`pet.interact` 在点击处理里。
+ * 以后真有取舍时往这里加，并写清理由。
+ */
+const DELIBERATE_PET = {};
+
 /** 递归收集源码文件 */
 function sourceFiles(dir, {exclude = []} = {}) {
     const out = [];
@@ -426,5 +437,65 @@ if (unexpected.length > 0) {
     console.error('\n要么接上界面，要么写进 scripts/check-reachability.mjs 的 DELIBERATE 并说明理由。');
     process.exit(1);
 }
+
+/* ---------------- 宠物域：命令是否真的能从界面走到 ---------------- */
+
+/** 读 `pub const XXX: &[&str]` 清单 */
+function rustConstList(source, constName) {
+    const start = source.indexOf(`pub const ${constName}`);
+    if (start < 0) return [];
+    const body = source.slice(start, source.indexOf('];', start));
+    return [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+}
+
+const petCommands = rustConstList(
+    readFileSync(join(root, 'pet-core', 'src', 'contract.rs'), 'utf8'),
+    'PET_COMMAND_NAMES',
+);
+const petServicePath = 'src/services/core.pet.ts';
+const petServiceSource = readFileSync(join(root, petServicePath), 'utf8');
+
+/* 界面对应的方法名（命令 → 门面方法）：M1 的渲染适配器会调其中几个 */
+const PET_METHODS = {
+    'pet.atlas': 'atlas',
+    'pet.state': 'state',
+    'pet.tick': 'tick',
+    'pet.install': 'install',
+    'pet.setActive': 'setActive',
+    'pet.interact': 'interact',
+    'pet.remove': 'remove',
+};
+
+/* 界面侧文件里的文本（`uiSources` 已经排除了 services / store） */
+const petUiText = uiSources.map((source) => source.text).join('\n');
+
+const petBridged = petCommands.filter((command) => petServiceSource.includes(`'${command}'`));
+const petUnbridged = petCommands.filter((command) => !petBridged.includes(command));
+const petUnreachable = petBridged.filter((command) => {
+    const method = PET_METHODS[command];
+    return !(method && new RegExp(`petService\\.${method}\\b`).test(petUiText));
+});
+
+for (const [command, reason] of Object.entries(DELIBERATE_PET)) {
+    if (!petUnreachable.includes(command)) {
+        console.log(`  note   宠物的 ${command} 已经有界面调用了（请从 DELIBERATE_PET 移除）`);
+    } else {
+        console.log(`  ok    宠物命令有意暂不做入口：${command} —— ${reason}`);
+    }
+}
+
+const petUnexpected = petUnreachable.filter((command) => !(command in DELIBERATE_PET));
+if (petUnbridged.length > 0) {
+    console.error(`\n宠物命令没有前端封装（${petServicePath}）→ ${petUnbridged.join(', ')}`);
+    process.exit(1);
+}
+if (petUnexpected.length > 0) {
+    console.error(`\n宠物命令有封装、但界面走不到 → ${petUnexpected.join(', ')}`);
+    console.error('要么接上界面，要么写进 scripts/check-reachability.mjs 的 DELIBERATE_PET 并说明理由。');
+    process.exit(1);
+}
+console.log(
+    `  ok    宠物命令都能从界面走到或已登记为有意留白（${petCommands.length} 条，留白 ${petUnreachable.length} 条）`,
+);
 
 console.log(`  ok    所有契约能力都能从界面走到（有意留白 ${Object.keys(DELIBERATE).length} 项）`);

@@ -146,3 +146,62 @@
     padding-bottom: var(--space-3);
     border-bottom: 1px solid var(--border-subtle);
 }
+
+/* ---------------------------- 插件页：表格 + 管理面板 ---------------------------- */
+
+/* 名称列：插件名 + 标签，描述作为灰色第二行（不再单独占一列，避免同样的信息铺满一排） */
+.nameCell {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.nameDesc {
+    flex: 1 1 100%;
+    overflow: hidden;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 管理面板：页面里唯一「聚焦」的一块，固定在表格上方 */
+.manage {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    margin-bottom: var(--space-4);
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
+    border: 1px solid var(--border-subtle);
+    border-left: 3px solid var(--brand);
+    border-radius: var(--radius-lg);
+}
+
+.manageHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.manageTitle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+
+.manageRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}

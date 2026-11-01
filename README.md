@@ -23,11 +23,15 @@
   不做带 JS / 多文件的网页壁纸。
 - **壁纸准备助手**：选择静态网页目录后，把本机 CSS/图片内联成单个 HTML（脚本、外部资源、
   `@import` 会被移除），可直接设为背景或下载；Scene 只接受用户导出/录屏的视频，不解析 `.pkg`。
+- **宠物（Beta 1.0）**：独立引擎 `pet-core` + 独立库 + **独立置顶小窗**（主窗口最小化它也在）。
+  会看向鼠标、透明处点击穿透、左键摸摸、右键喂食，好感/饥饿跨会话保存；可导入我们自己的宠物包
+  或社区 Codex Pet 的包（v1/v2）。默认关闭，见 [`docs/pet.md`](docs/pet.md)。
 
 ## 结构
 
 ```
 core/         Rust 本机核心（不依赖 tauri，可独立 cargo test）
+pet-core/     宠物核心引擎（独立 crate：自己的库文件、不依赖音乐核心与 UI，见 ADR 0010）
 src-tauri/    薄适配层：把核心能力暴露成一条 Tauri 命令 + 事件
 src/          React 前端（views / store / services / components / theme / i18n）
 docs/         契约、架构、路线图、ADR、STATE（当前迭代状态）
@@ -36,6 +40,7 @@ scripts/      契约守卫、冒烟测试、交付前验证、打包
 
 数据流方向固定为：`views → store → services → (Tauri 命令) → core`。
 UI 与 store **不得**直接 `invoke`，也不直接依赖某个具体插件。
+宠物是**第二个引擎**：`pet-core` 与 `core` 互不依赖，各自被宿主消费（ADR 0010）。
 
 ## 快速开始
 
@@ -53,12 +58,13 @@ pnpm tauri dev     # 桌面端：真实核心 + 本地 SQLite + 插件沙箱
 | 命令 | 作用 |
 |---|---|
 | `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm smoke` | 冒烟测试：状态层断言 + 全部组件可渲染 + i18n / CSS token / 契约守卫（448 项；含 **2.x 宠物接口** 6 项、**第三方授权** 9 项、**源收藏** 8 项与**缓存上限** 2 项——宿主空态 / 同 id 覆盖 / 旧注销不误删 / 只读快照 / 授权四条命令与参数 / 授权地址交给系统浏览器 / `auth:changed` 刷新状态；末尾用**假宿主**把「核心优先读 / 核心在时不退回 mock / 下载被拒 / 下载设置与并发 / 歌词搜索 / 缓存管理 / 桌面歌词载荷 / 皮肤裁决」等桌面端分支也跑一遍） |
+| `pnpm smoke` | 冒烟测试：状态层断言 + 全部组件可渲染 + i18n / CSS token / 契约守卫（509 项；含 **2.x 宠物接口** 6 项、**第三方授权** 9 项、**源收藏** 8 项与**缓存上限** 2 项——宿主空态 / 同 id 覆盖 / 旧注销不误删 / 只读快照 / 授权四条命令与参数 / 授权地址交给系统浏览器 / `auth:changed` 刷新状态；末尾用**假宿主**把「核心优先读 / 核心在时不退回 mock / 下载被拒 / 下载设置与并发 / 歌词搜索 / 缓存管理 / 桌面歌词载荷 / 皮肤裁决」等桌面端分支也跑一遍） |
 | `pnpm check:contract` | 契约守卫：文档 ↔ Rust 命令/事件清单 ↔ 前端服务层与事件常量（含事件名字符集，双向） |
-| `pnpm check:reachability` | 界面可达性守卫：每条契约能力是否**真的能从界面走到**（有实现有封装、却没人调用 → 失败；白名单要写理由） |
-| `pnpm verify` | 交付前一次跑完**五道关卡**：typecheck + smoke + check:contract + check:reachability + `cargo test -p gently-core` |
+| `pnpm check:pet` | 宠物域守卫：`pet-core` 独立性（无 `gently-core` / 无 tauri / 无仓内相对依赖）+ 契约表 ↔ 清单 |`n| `pnpm check:reachability` | 界面可达性守卫：每条契约能力是否**真的能从界面走到**（有实现有封装、却没人调用 → 失败；白名单要写理由） |
+| `pnpm verify` | 交付前一次跑完**八道关卡**：typecheck + smoke + check:contract + check:reachability + `cargo test -p gently-core` + `check:pet` + `cargo test -p pet-core` + `cargo test -p gently`（宿主单测） |
 | `pnpm build` | `tsc && vite build`（只构建前端） |
 | `pnpm ui:capture` | （仅 Windows）截屏/驱动打包版做视觉走查：`pnpm ui:capture -- -Launch -AssertRendered -Output release/screenshots/boot.png -Kill` |
+| `scripts/pet-window.ps1` | （仅 Windows）驱动**宠物窗口**：`-Drag` 注入鼠标拖动、`-Walk` 等它自己走起来连拍、随时截图 |
 | `pnpm package:portable` | **离线可用的分发产物**：便携版 zip（输出在 `release/`） |
 | `pnpm tauri build` | 出 MSI / NSIS 安装包（首次需要联网取打包工具，见下） |
 | `cargo test -p gently-core` | 核心单测（不依赖 tauri，秒级） |
@@ -85,9 +91,14 @@ pnpm tauri build          # → MSI / NSIS 安装包（首次需要联网下载 
 |---|---|
 | [`AGENTS.md`](AGENTS.md) | 协作入口：硬约束、完成标准、红线（改代码前先读） |
 | [`docs/contracts/local-core-api.md`](docs/contracts/local-core-api.md) | **本机核心契约**：命令 / 事件 / 错误码 / 插件与皮肤模型 |
+| [`docs/contracts/pet-core-api.md`](docs/contracts/pet-core-api.md) | **宠物核心契约**（独立命名空间 `pet.*`）：信封、错误码、命令表 |
+| [`docs/pet.md`](docs/pet.md) | **宠物（Beta 1.0）使用说明**：开关、交互、窗口/穿透、导入社区包、数据位置、已知边界 |
+| [`docs/pet-package.md`](docs/pet-package.md) | **宠物包规范**：`pet.json` + 图集约定、行为表能写什么、校验规则 |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 分层、数据流、播放链路、i18n、契约边界 |
 | [`docs/STATE.md`](docs/STATE.md) | 当前迭代状态：本轮做了什么、验证结果、下一步 |
 | [`docs/GOTCHAS.md`](docs/GOTCHAS.md) | 非显然的坑与规避方式（现象 → 根因 → 验证） |
+| [`docs/DESIGN-REUSE.md`](docs/DESIGN-REUSE.md) | 可沿用的概念与设计（做安卓 / pet-core 前先读） |
+| [`docs/ANDROID-INFRA-ASSESSMENT.md`](docs/ANDROID-INFRA-ASSESSMENT.md) | 安卓端适配的**基础设施评估**：缺什么、按什么顺序做、怎么验收 |
 | [`docs/archive/rounds/`](docs/archive/rounds/) | 历史轮次的完整过程与证据（默认不读） |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | M0–M5 里程碑与退出标准 |
 | [`docs/adr/`](docs/adr/) | 架构决策记录（无服务器、本机存储、中立立场、插件双轨制…） |
@@ -115,4 +126,8 @@ pnpm tauri build          # → MSI / NSIS 安装包（首次需要联网下载 
 ## 许可
 
 MIT（见 [`Cargo.toml`](Cargo.toml)）。
+
+
+
+
 

@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window and the desktop-lyrics window",
-  "windows": ["main", "desktop-lyrics"],
+  "description": "Capability for the main window, the desktop-lyrics window and the pet window",
+  "windows": ["main", "desktop-lyrics", "pet"],
   "permissions": [
     "core:default",
     "opener:default",
@@ -19,6 +19,8 @@
     "core:window:allow-set-size",
     "core:window:allow-center",
     "core:window:allow-outer-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-is-visible",
     "core:window:allow-available-monitors",
     "core:window:allow-set-ignore-cursor-events"
   ]

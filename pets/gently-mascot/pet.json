@@ -1,0 +1,48 @@
+{
+  "id": "gently-mascot",
+  "name": "Gently 小助",
+  "version": "1.0.4",
+  "author": "gently",
+  "atlas": "atlas.png",
+  "atlasLayout": {
+    "frameWidth": 192,
+    "frameHeight": 208,
+    "columns": 8,
+    "rows": 9
+  },
+  "animations": [
+    { "name": "idle", "frames": 6, "frameMs": 240, "loop": true, "row": 0 },
+    { "name": "runLeft", "frames": 8, "frameMs": 140, "loop": true, "row": 2, "fit": { "scale": 0.8 } },
+    { "name": "runRight", "frames": 8, "frameMs": 140, "loop": true, "row": 1, "fit": { "scale": 0.8 } },
+    { "name": "wave", "frames": 4, "frameMs": 170, "loop": true, "row": 3, "fit": { "scale": 1.0 } },
+    { "name": "jump", "frames": 5, "frameMs": 150, "loop": true, "row": 4, "fit": { "scale": 0.9 } },
+    { "name": "fail", "frames": 8, "frameMs": 220, "loop": true, "row": 5, "fit": { "scale": 0.8, "offsetY": 18 } },
+    { "name": "wait", "frames": 6, "frameMs": 240, "loop": true, "row": 6, "fit": { "scale": 0.84, "offsetY": 14 } },
+    { "name": "run", "frames": 6, "frameMs": 130, "loop": true, "row": 7, "fit": { "scale": 1.08 } },
+    { "name": "inspect", "frames": 6, "frameMs": 200, "loop": true, "row": 8, "fit": { "scale": 0.82 } }
+  ],
+  "behaviors": [
+    { "when": { "kind": "hungry" }, "then": { "kind": "play", "animation": "fail" }, "cooldownMs": 1200 },
+    { "when": { "kind": "hungry" }, "then": { "kind": "say", "textKey": "pet.bubble.hungry" }, "cooldownMs": 60000 },
+    { "when": { "kind": "clicked" }, "then": { "kind": "play", "animation": "jump", "interrupt": true }, "cooldownMs": 400 },
+    { "when": { "kind": "clicked" }, "then": { "kind": "say", "textKey": "pet.bubble.petted" }, "cooldownMs": 400 },
+    { "when": { "kind": "walking", "dir": -1 }, "then": { "kind": "play", "animation": "runLeft" }, "cooldownMs": 200 },
+    { "when": { "kind": "walking", "dir": 1 }, "then": { "kind": "play", "animation": "runRight" }, "cooldownMs": 200 },
+    { "when": { "kind": "trackChanged" }, "then": { "kind": "play", "animation": "inspect", "interrupt": true }, "cooldownMs": 3000 },
+    { "when": { "kind": "playing" }, "then": { "kind": "play", "animation": "run" }, "cooldownMs": 6000 },
+    { "when": { "kind": "pointerNear" }, "then": { "kind": "play", "animation": "wave" }, "cooldownMs": 2500 },
+    { "when": { "kind": "idle" }, "then": { "kind": "play", "animation": "idle" }, "cooldownMs": 1200 },
+    { "when": { "kind": "idle" }, "then": { "kind": "say", "textKey": "pet.bubble.idle" }, "cooldownMs": 60000 }
+  ],
+  "minPetCoreVersion": "1.0.0"
+}
+
+
+
+
+
+
+
+
+
+

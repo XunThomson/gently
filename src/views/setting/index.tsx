@@ -38,6 +38,8 @@ const CACHE_LIMIT_OPTIONS = [
 import {QUALITIES_DESC, qualityLabelKey} from '../../utils/quality';
 import {DiagnosticsCard} from './components/diagnostics-card';
 import {BackgroundCard} from './components/background-card';
+import {DataDirCard} from './components/data-dir-card';
+import {PetCard} from './components/pet-card';
 import {WallpaperAssistant} from './components/wallpaper-assistant';
 import styles from './setting.module.css';
 
@@ -62,12 +64,16 @@ export default function SettingView() {
     const downloadQuality = useSelect((s) => s.ui.downloadQuality);
     const downloadQualityFallback = useSelect((s) => s.ui.downloadQualityFallback);
     const downloadMaxConcurrent = useSelect((s) => s.ui.downloadMaxConcurrent);
+    const discoverAutoPreview = useSelect((s) => s.ui.discoverAutoPreview);
+    const petEnabled = useSelect((s) => s.ui.petEnabled);
     const {
         setSourceDisplay,
         setSourceFilterStyle,
         setPreferredSource,
         setPreferredQuality,
         setConfirmDestructive,
+        setDiscoverAutoPreview,
+        setPetEnabled,
         setDownloadDir,
         setDownloadQuality,
         setDownloadQualityFallback,
@@ -225,6 +231,29 @@ export default function SettingView() {
                     </span>
                 </div>
                 <p className={styles.hint}>{t('page.setting.confirmHint')}</p>
+
+                {/* 发现页试听：显式默认开启项，用户可以关（不想鼠标划过就出声） */}
+                <div className={styles.field}>
+                    <span className={styles.label}>{t('page.setting.discoverPreview')}</span>
+                    <span className={styles.value}>
+                        <UnderlineRadioGroup
+                            name="discover-preview"
+                            value={discoverAutoPreview ? 'on' : 'off'}
+                            onChange={(value) => setDiscoverAutoPreview(value === 'on')}
+                            options={[
+                                {value: 'on', label: t('common.enable')},
+                                {value: 'off', label: t('common.disable')},
+                            ]}
+                        />
+                    </span>
+                </div>
+                <p className={styles.hint}>{t('page.setting.discoverPreviewHint')}</p>
+            </section>
+
+            {/* ---------- 宠物（Beta 1.0）：独立置顶窗口 + 独立引擎 pet-core，默认关 ---------- */}
+            <section className={styles.card}>
+                <h2 className={styles.cardTitle}>{t('page.setting.petSection')}</h2>
+                <PetCard enabled={petEnabled} onToggle={setPetEnabled}/>
             </section>
 
             <BackgroundCard/>
@@ -553,6 +582,9 @@ export default function SettingView() {
                 )}
             </section>
 
+            {/* 数据目录：默认在用户目录，可迁到别的盘（便携版默认跟着 exe 走） */}
+            <DataDirCard/>
+
             <section className={styles.card}>
                 <h2 className={styles.cardTitle}>{t('page.setting.about')}</h2>
 
@@ -580,3 +612,4 @@ export default function SettingView() {
         </Page>
     );
 }
+

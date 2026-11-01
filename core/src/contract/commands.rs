@@ -8,13 +8,16 @@
 
 /// 契约中的全部命令名（`域.动作[.子动作]`）。
 pub const COMMAND_NAMES: &[&str] = &[
-    // system（6）——M0 真实实现 + R56 缓存管理 + R62 缓存上限
+    // system（8）——M0 真实实现 + R56 缓存管理 + R62 缓存上限 + R87 数据目录
     "system.status",
     "system.paths",
     "system.reveal",
     "system.cacheStatus",
     "system.cacheClear",
     "system.cacheConfig",
+    // 数据目录：读（现在在哪 / 为什么）与迁移（拷贝 + 指针，重启生效）
+    "system.dataDir",
+    "system.dataDir.move",
     // plugin：管理（13）
     "plugin.list",
     "plugin.preview",

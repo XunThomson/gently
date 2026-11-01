@@ -5,8 +5,18 @@
 # 形态与边界见 docs/ROADMAP.md、docs/adr/0002-backend-language.md。
 
 [workspace]
-members = ["core", "src-tauri"]
+members = ["core", "pet-core", "src-tauri"]
+# `vendor/` 是给 Android 交叉编译补一个绑定文件的上游快照（不是工作区成员，也不参与构建其它平台）
+exclude = ["vendor"]
 resolver = "2"
+
+# 为什么 patch：`rquickjs-sys 0.7.0` 只带了 10 个 target 的 FFI 绑定，**没有 aarch64-linux-android**，
+# Android 构建会在 `include!("bindings/<target>.rs")` 处直接失败（`build.rs` 只留一条 warning）。
+# vendor/ 里那份是逐文件上游副本，唯一改动是新增 `src/bindings/aarch64-linux-android.rs`；
+# 版本不变、桌面端行为不变。来路、改动、验证状态与撤销方式见 `vendor/rquickjs-sys/VENDORED.md`，
+# 取舍背景见 `docs/ANDROID-PLAN.md` §3.1。
+[patch.crates-io]
+rquickjs-sys = { path = "vendor/rquickjs-sys" }
 
 [workspace.package]
 version = "0.1.0"

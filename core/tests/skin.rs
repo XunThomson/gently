@@ -168,6 +168,50 @@ fn install_replaces_by_id_and_lists_with_active_flag() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// 主题包自带背景（R87）：`background` 是**元数据**不是令牌组——
+/// 旧皮肤（没有它）照常通过；带它的皮肤要能安装、能读回；形状不对要整份拒绝。
+#[test]
+fn skin_package_may_carry_a_background() {
+    let (ctx, dir) = setup("background");
+
+    // 1. 旧皮肤（无 background）不受影响
+    let value = preview(&ctx, SKIN);
+    assert_eq!(value["ok"], json!(true), "{value}");
+    assert!(value["data"]["skin"].get("background").is_none(), "{value}");
+
+    // 2. 带背景：kind + 包内文件名 + 展示参数，安装后原样读回
+    let packed = SKIN.replace(
+        r##""components": {"sidebar": {"width": 220}}"##,
+        r##""components": {"sidebar": {"width": 220}},
+    "background": {"kind": "video", "file": "bg.mp4", "options": {"opacity": 0.4, "blurPx": 8, "playbackRate": 0.75}}"##,
+    );
+    let value = install(&ctx, &packed);
+    assert_eq!(value["ok"], json!(true), "{value}");
+    // `skin.install` 直接返回皮肤文档本身（不是 `{skin}` 包装）
+    assert_eq!(value["data"]["background"]["kind"], json!("video"), "{value}");
+    assert_eq!(value["data"]["background"]["file"], json!("bg.mp4"), "{value}");
+
+    let listed = call(&ctx, "skin.list", json!({}));
+    assert_eq!(
+        listed["data"][0]["background"]["options"]["opacity"],
+        json!(0.4),
+        "背景参数必须原样存下来：{listed}"
+    );
+
+    // 3. 形状不对：kind 不认识 / 文件名带路径 / options 不是对象
+    for (bad, field) in [
+        (packed.replace(r##""kind": "video""##, r##""kind": "hologram""##), "background.kind"),
+        (packed.replace(r##""file": "bg.mp4""##, r##""file": "../../etc/passwd""##), "background.file"),
+        (packed.replace(r##""options": {"opacity": 0.4, "blurPx": 8, "playbackRate": 0.75}"##, r##""options": 3"##), "background.options"),
+    ] {
+        let value = preview(&ctx, &bad);
+        assert_eq!(value["error"]["code"], ErrorCode::SkinInvalidDocument.as_str(), "{field} → {value}");
+        assert_eq!(value["error"]["details"]["field"], json!(field), "{value}");
+    }
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 #[test]
 fn export_returns_json_or_writes_a_file() {
     let (ctx, dir) = setup("export");

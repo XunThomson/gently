@@ -1,6 +1,6 @@
 ---
 status: active
-last_verified: 2026-10-25
+last_verified: 2026-11-01
 owner: gently
 scope: 非显然的坑与规避方式（从历史轮次中提炼）
 token_budget: 1500
@@ -191,3 +191,327 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
   `color-mix(... 20%, ...)`、`--surface-drawer` 仍是 `color-mix(... 70%, ...)`；
   light/dark 下卡片 alpha 都是 .2、搜索建议面板 alpha .7 且 blur 4；文字颜色不变。
   截图 `r86-content-opacity.png` / `r86-content-blur.png` / `r86-surface-drawer.png`。
+
+## 20. 插件导入后「要重启才生效」（R87）
+
+- 现象：导入插件成功，但插件页表格、音源筛选、播放条音源选择器都还是旧清单；
+  搜索结果像是没装这个源。
+- 根因：`PluginActions.load()` 有 `loaded` 守卫（启动时读过一次就再也不读）；
+  导入面板又自己 `plugin.list` 了一份「已导入」，装完只刷新了它自己那份。
+  同时 `core.sources` 的按源路由缓存也还认为这个 id 「不属于核心」。
+- 规避：任何改变插件集合的动作（导入 / 订阅安装 / 启停 / 卸载 / 改优先级）之后
+  必须调 `plugin.reload()`（强制重读 + `invalidateCoreSources()`）；
+  列表只留 store 那一份（视图不要各自 `plugin.list`）。
+- 验证：`smoke` 的 `fake: plugin.reload() 立刻读到新导入的插件（不需要重启）`。
+
+## 21. 异步「按选中项取列表」必须带请求代号（R87）
+
+- 现象：快速点两个 tab / 两个音源，标签停在 B，内容却是 A 的；收藏页「源收藏」稳定复现。
+- 根因：响应没有序号，谁后到谁写 state；A 的请求比 B 慢就盖掉了 B。
+  另一类写法（「collections effect + load effect」两条互相触发）会在换源瞬间
+  用**上一个源**的参数发一次请求，再被下一次覆盖。
+- 规避：换源/换分类时先 `++seq` 并**清空列表**，回包时用 `ticket !== seq` 丢弃过期结果；
+  一条链（换源 → 取子列表 → 取第一页）收在**一个** effect 里。
+- 验证：`smoke` 的 `fake: 旧分类的迟到响应被丢弃（标签与内容不会错位）`（可控延迟的假宿主）。
+
+## 22. 休眠回来放不了：媒体元素状态 + 流地址 TTL（R87）
+
+- 现象：电脑睡一觉回来，界面还显示「播放中」但没有声音；点播放/暂停没用，只能重播。
+- 根因：① 系统掐断媒体元素（`paused` 变 true 或元素进 error 态），`audioUrl` 没变 →
+  没有 effect 重跑，没人去把声音叫回来；② 回环流代理 token 只有 **30 分钟** TTL、
+  上游直链更短，旧地址必然失效；③ `audioEngine.load()` 对同地址直接 return，
+  error 态永远修不回来。
+- 规避：`audioEngine.load()` 在 `error` 存在时不跳过；`resume()/reload()/hadError()` +
+  在 focus / visibilitychange / pageshow / 5s 心跳上做恢复；恢复失败且是错误态 →
+  `recoverPlayback()`（重新解析、**保留进度**）。媒体报错时另给同一批源**一次**
+  自动重解析机会（按 `playId` 限次）。
+- 验证：`smoke` 的 `store: 休眠回来媒体报错会先自动重新解析并接着播（进度不丢）`
+  与 `自动重解析也只给一次` 两条。
+
+## 23. 契约命令数有**三处**硬编码断言（R87）
+
+- 现象：新增命令后 `check:contract` 绿了，`cargo test` 却红。
+- 根因：`core/tests/contract.rs`、`core/tests/dispatch.rs`、`core/tests/plugin_preview.rs`
+  各有一处 `assert_eq!(command_count()/implemented_count(), N)`。
+- 规避：加命令时一次改全（文档 §2 + `COMMAND_NAMES` + 分发 + `IMPLEMENTED` + 上述三处）。
+- 验证：`pnpm verify`。
+
+## 24. 时钟偏斜会让 cargo 复用旧的 core rlib（R87）
+
+- 现象：`core/src/paths.rs` 明明新增了 `pub fn`，`cargo check -p gently` 却报
+  `cannot find function ... in module gently_core::paths`；`cargo check -p gently-core` 秒过。
+- 根因：本机时钟被改过，产物 mtime 比源码新，cargo 判定「已是最新」不重编。
+- 规避：`cargo clean -p gently-core` 后重编（不必整仓 clean）。
+- 验证：clean 后同一条命令通过。
+## 25. 内部标记枚举的字段名不会跟着 `rename_all` 变（R88）
+
+- 现象：`pet-core` 的 `pet.json` 里写 `"then": {"kind": "say", "textKey": "pet.idle"}`，
+  反序列化报 `missing field text_key`——明明整个枚举都标了 `rename_all = "camelCase"`。
+- 根因：`#[serde(rename_all = "camelCase", tag = "kind")]` 只改**变体名**
+  （`playing` / `silentFor`），结构体变体的**字段名**不受它影响。
+- 规避：再加上 `rename_all_fields = "camelCase"`（serde ≥ 1.0.181；本机 1.0.229），
+  或对每个字段单独 `#[serde(rename = "textKey")]`。凡是给用户/社区写的 JSON 格式都要按 camelCase 锁一次。
+- 验证：`cargo test -p pet-core`（`invalid_specs_are_rejected_with_readable_reasons` 也用同一份 JSON）。
+
+## 26. 独立性守卫会把注释里的库名也算违规（有意严格，R88）
+
+- 现象：`pet-core/src/store.rs` 的文档注释里写了「不要共用 `<音乐库文件名>`」，`pnpm check:pet` 直接失败。
+- 根因：守卫按**整个文件文本**匹配禁用标记（`gently_core` / `tauri::` / 音乐库文件名），
+  注释也在射程内——这是刻意的：一行注释往往是「以后就这么写」的开端，而守卫要能一眼看懂。
+- 规避：解释「为什么不要耦合」时用「音乐库」这类**概念词**，不要写出具体文件名/模块名；
+  确实要在注释里提代码标识符时，改写措辞即可（不要放宽守卫）。
+- 验证：`pnpm check:pet` / `pnpm verify` 的第 6 道。
+
+## 27. 白底 sprite sheet 直接当图集 = 一个白方块（R93）
+
+- 现象：宠物包导入成功、面板也显示它出战，但右下角出现的是「一张带底色的矩形图」。
+- 根因：图集按原图逐格画（`background-position`），**没有任何抠图**；用户素材常是白底/黑底 png/webp，
+  透明通道才是「只有角色」的前提。`VP8L` 的 webp 若没有 ALPH 块，就根本存不下透明。
+- 规避：渲染前先判断「这张图有没有透明像素」；没有就用角落底色 + 容差把底色抠成透明
+  （`src/pet/atlas-matte.ts` 的纯函数 + `core-pet.ts` 里一次 canvas 处理，R96 起自动做）。
+  抠底容差 18/通道：太小留白边，太大会吃掉浅色羽毛；全不透明的深色满幅图不抠（避免把整只宠物抠没）。
+  规范里仍要求作者**主动给透明图集**（`docs/pet-package.md` §3），自动去底只是兜底。
+- 验证：`pnpm smoke` 里四条断言（需要去底 / 只清底色像素 / 带 alpha 不动 / 深色不抠）；
+  打包版实图 `release/screenshots/r93-pet-sprite.png`（角色周围是页面背景，不是白框）。
+
+## 28. Windows 上解 webp 只有 Chromium 可信（R93）
+
+- 现象：同一张 `examples/spritesheet.webp`，用 `System.Drawing` 直接报「参数无效」，
+  用 WIC（`BitmapDecoder`）能开但解出来是**黑底 + 彩色条纹**（和真实像素完全不符）。
+- 根因：GDI+ 没有 webp 解码器；WIC 的 WebP 扩展对本机的 `VP8L`（无损）支持不完整。
+- 规避：把图丢进 `msedge --headless=new --screenshot=out.png --window-size=W,H`（页面里 `<img>` 1:1 铺开），
+  得到一份**普通 PNG**，后续再用 WIC/GDI+ 处理（PNG 是可靠的）。
+- 验证：同一区域用 Chromium 截图与 `read_image` 预览一致；WIC 直读结果与它不一致。
+
+## 29. `capture-window.ps1` 的 `wait:` 单位是**秒**（R93）
+
+- 现象：`-Steps "click:...;wait:1200"` 想等 1.2 秒，结果脚本卡到超时（>180s），什么都没有输出。
+- 根因：步骤里 `wait:` 的参数是秒（`wait:1` = 1 秒），不是毫秒。
+- 规避：要 0.3 秒写 `wait:0.3`；长等待最多写 `wait:5`，别把毫秒当秒。
+- 验证：`wait:1` 的同一串步骤 15 秒内结束。
+
+## 30. 新增 Tauri 窗口必须写进 `capabilities/default.json`（R94）
+
+- 现象：`tauri.conf.json` 里加了 `pet` 窗口，能显示、位置也对，但里面**一片空白**，
+  宠物不渲染、`pet.tick` 也不发生（pet.db 时间戳不动）。没有任何报错、没有日志。
+- 根因：`capabilities/default.json` 的 `windows` 只列了 `["main", "desktop-lyrics"]`。
+  Tauri 2 的 ACL 按窗口授权，**没登记的窗口所有 plugin 命令都被拒绝**——
+  `listen/emit`（core:event）、`setPosition/show/hide/outerSize`（core:window）全静默失败，
+  前端里那些调用在 `try/catch` 里被吞掉，于是页面看着「正常但什么都没有」。
+- 排查方式：把窗口临时改成 `"transparent": false` + `"backgroundColor": "#FF3366"` 再截图——
+  看到纯色方块说明窗口在画、内容没加载/没跑，据此把范围从「渲染」缩到「权限」。
+- 规避：新窗口一律同时改三处：`tauri.conf.json` 的 `windows`、`capabilities/*.json` 的 `windows`、
+  以及它要用的窗口 API 权限（如 `allow-outer-size` / `allow-is-visible`）。
+- 验证：`release/screenshots/r94-pet-window.png`（宠物真的画出来了）。
+
+## 31. 窗口间事件**不排队**，晚起的窗口会漏掉第一次推送（R94）
+
+- 现象：宠物窗口在启动时就创建（`visible: false`），主窗口在挂载时推了一次播放快照，
+  但宠物窗口是**另一个 WebView**，等它执行到 `listen` 时那次推送早过期了——
+  于是它永远停在「没启用」的默认载荷上，什么都不画。
+- 根因：Tauri 的 `emit` 是「此刻有谁在听就给谁」，没有离线队列（与浏览器 CustomEvent 一样）。
+- 规避：**握手 + 心跳**。窗口起来后 `emit('gently:pet:ready')`，主窗口收到就补发一次；
+  另外每 2s 推一次兜底（桌面歌词同款做法，那边用 1s）。
+- 验证：`smoke` 里没有这一条（跨窗口），靠打包版实图 + 「pet.db 时间戳会动」确认。
+
+## 32. 透明窗口用 `PrintWindow` 截图是**全黑**的（R94）
+
+- 现象：想单独截宠物窗口，`PrintWindow(PW_RENDERFULLCONTENT)` 得到一张纯黑 200×200。
+- 根因：WebView2 走 DirectComposition，`PrintWindow` 拿不到合成结果；透明窗口更没有可画的背景。
+- 规避：截**整屏**（`Graphics.CopyFromScreen`）再裁窗口矩形；或者干脆临时给窗口加不透明背景色再截。
+- 验证：整屏截图里能明确看到宠物窗口压在别的应用上面。
+
+## 33. 像素画按非整数比例缩放会出「黑色颗粒」（R95）
+
+- 现象：宠物精灵在 96px 高（格子 208px，比例 0.46）下渲染，头发与翅膀上出现一圈**黑色颗粒/毛边**，
+  肉眼看像素材脏；把同一格从 PNG 里 1:1 裁出来放大看却完全干净。
+- 根因：浏览器默认对图片做双线性/多相插值。像素画是硬边高频图，非整数比例下深色描边会被采到半个像素上，
+  和透明背景混在一起就变成一圈灰黑点。透明区保留的白色 RGB + 半透明混合会加重这个现象。
+- 规避：**整数倍缩放 + 关掉插值**：显示高度取格子高的整数分之一（内置是 104px = 208/2）；
+  `.body.sprite` 上 `image-rendering: pixelated`；背景偏移与 `background-size` 全部 `Math.round` 取整
+  （落在半像素上还会再触发一次重采样）。
+- 验证：`pnpm smoke` 的「按整数倍缩放 / 偏移取整」两条；`release/screenshots/r94-pet-window.png` 放大后无颗粒。
+
+## 34. 截图脚本点不到控件时：先把窗口设成 TOPMOST（R97）
+
+- 现象：`SetForegroundWindow` + 窗口内坐标点击，控件毫无反应（`capture-window.ps1` 会警告
+  「没能把窗口抢回前台」）；同一脚本早先能用。
+- 根因：前台被别的应用（浏览器）占着，Windows 只允许「前台进程」抢焦点；`SetForegroundWindow`
+  对非前台进程是「请求」而不是「命令」，被静默忽略后点击就落到了上层窗口上。
+- 规避：点击前 `SetWindowPos(hwnd, HWND_TOPMOST, …, SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW)` 把窗口提到最上层，
+  截完再 `HWND_NOTOPMOST` 还原；这比 `SetForegroundWindow` 可靠，也不需要动别的应用。
+- 验证：同一坐标 `click:1057,27` 能稳定打开设置页（`r97-pet-preview.png`）。
+## 35. 「看着鼠标」只能由宿主轮询全局光标（R99）
+
+- 现象：想在宠物里实现「看向鼠标」，但宠物窗口的 `pointermove` 只有在鼠标**进到它自己那 200×160** 时才有；
+  鼠标在屏幕别处时前端什么都收不到。
+- 根因：光标是**系统级**概念，WebView 只给它所在窗口里的事件；没有跨窗口的全局光标 API。
+- 规避：宿主侧每 60ms `GetCursorPos`，用「窗口 `outer_position()` + `inner_size()`」（都是**物理像素**，
+  与光标同单位）算相对窗口中心的角度，量化成 16 向（0 = 正上、顺时针），**只有变化时**才
+  `emit_to("pet", "gently:pet:look", dir)`；核心只做规范与透传（`pet.tick` 的 `look_dir` → `frame.look`），
+  挑哪一格交给渲染层（且只在待机时用 look 格，否则奔跑中会像卡住）。
+- 验证：`GENTLY_LOG=debug` 启动后把光标分别放到宠物上方/右侧/左侧/下方，日志依次出现
+  `dir=0 / 4 / 12 / 8`；`cargo test -p pet-core --test look` 3 项锁方向规范化与两行校验。
+## 36. 自动点击穿透要按缩放因子折算坐标（R100）
+
+- 现象：想让宠物窗口「只有精灵本体吃点击」，宿主拿光标位置和精灵矩形比，结果在高 DPI 屏幕上判定偏移了半个宠物。
+- 根因：光标（`GetCursorPos`）与窗口位置/尺寸是**物理像素**，而前端量出来的 `getBoundingClientRect()` 是 **CSS 像素**；
+  150% 缩放下两者差 1.5 倍。
+- 规避：宿主侧用 `window.scale_factor()` 把精灵矩形折成物理像素再比；窗口大小同样取 `inner_size()`（物理）。
+  另外要**先设一个保守默认**（还没收到矩形时当作整窗都是精灵），否则事件晚到时宠物会短暂点不到。
+- 验证：`cargo test -p gently` 里有 `hit_box_respects_the_scale_factor`（1.0 / 1.5 两档 + 边界）；
+  打包版日志在光标移到精灵外时打出 `ignore=true inside=false`，回到精灵上打 `ignore=false inside=true`。
+## 37. 自动点击穿透必须覆盖**每一块**可交互区域（R102，拖动失效的根因）
+
+- 现象：宠物窗口的拖动条「完全拖不动」，点宠物本体也拖不动；窗口像块玻璃。
+- 根因：R100 的自动穿透只把**精灵本体**登记成可交互区域，顶部那条拖动条不在里面 →
+  宿主把整窗设成 `ignore_cursor_events(true)` → 拖动条永远收不到 `pointerdown`，
+  `data-tauri-drag-region` 与 `startDragging()` 都不会被触发。
+- 规避：可交互区域改成**多块矩形列表**（`src/pet/hit-areas.ts` 统一登记与去重上报），
+  宿主 `inside_any` 任意一块命中就不穿透；宠物本体加了「按住移动 > 5px 才开始拖」，拖完那一次 `click` 吞掉。
+  **R103 起去掉了那条拖动条**：它离宠物很远，拖起来像在拖一个看不见的窗口（用户反馈「反直觉」）——
+  现在窗口里唯一可交互的只有宠物本体，透明区域一律穿透。
+- 验证：日志里 `宠物可交互区域已更新 count=1`（只剩宠物本体）；光标放到宠物身上 → `inside=true`；
+  光标放到窗口左下空白 → `inside=false`。**注意**：注入式鼠标事件（`mouse_event` / `SendInput`）
+  驱动不了窗口拖动（连主窗口标题栏都拖不动），所以「拖一下窗口真的跟着走」只能人工确认。
+
+## 38. 「程序摆放窗口」会被当成用户拖动，污染位置记忆（R102）
+
+- 现象：宠物偶尔出现在主窗口旁边的奇怪位置，而不是右下角或上次拖到的地方。
+- 根因：宠物窗口在创建时会先出现在系统给的默认位置，`onMoved` 立刻把它写进
+  `gently:pet-window-pos`；等 `placePetWindow` 再摆到右下角时，记忆里已经是那个默认位置了。
+- 规避：摆放之后立刻把「这次是程序摆的」记进 `gently:pet-window-placed`；
+  宠物窗口收到 `onMoved` 时，位置与它相差 ≤2px 就**不写**记忆。
+- 验证：重启后宠物稳定出现在上次记住的位置（或右下角），不再随机贴到主窗口边上。
+
+## 39. 拖动期间宿主必须停手：穿透切换会当场掐断拖动（R104）
+
+- 现象：按住宠物本体拖动，窗口跟着走一两帧就「卡住」，松手后宠物也不响应了（要点两次才活）。
+- 根因：宿主 60ms 轮询按**光标是否在精灵矩形内**决定穿透。系统窗口拖动时窗口位置更新滞后于光标，
+  快速拖动的那几十毫秒里光标已经出了矩形 → `set_ignore_cursor_events(true)` →
+  下一次 `pointermove` 根本到不了 webview，拖动断在中间。
+- 规避：前端判定「开始拖」时先发 `gently:pet:dragging {dragging:true}`，
+  `startDragging()` 返回后（或窗口失焦）发 `false`；宿主在 `DRAGGING` 为真期间
+  **既不切穿透、也不自己走动**（`poll_once` 里直接 return）。
+- 验证：日志里拖动期间没有 `宠物窗口点击穿透状态切换`；拖完能立刻再点（不用点第二次）。
+
+## 40. `pnpm ui:capture` 跑的是 `release/` 里的**打包版 exe**（R104）
+
+- 现象：改完代码、`pnpm tauri build --no-bundle` 成功、截图却还是旧界面（新手写进面板的行没有），
+  一度以为「自动探测没生效」，其实截的是上一轮的包。
+- 根因：`scripts/capture-window.ps1` 的默认 `-Exe` 是
+  `release\gently-0.1.0-windows-x64\gently.exe`，而 `tauri build` 只更新 `src-tauri/target/release/`。
+- 规避：**改完代码要截图，先 `pnpm package:portable`**（或显式传 `-Exe src-tauri\target\release\gently.exe`），
+  再跑 `pnpm ui:capture`。看截图上某行文案是不是新版，比看时间戳更可靠。
+- 顺带记一笔：截图上的坐标是**物理像素**（1280×800 对应 1011×632 的 CSS 预览，约 1.266×），
+  按预览图量出来的坐标要乘回去（§33）。
+
+## 41. 本机回调端口的测试要在 connect 上重试（R104）
+
+- 现象：`cargo test -p gently-core --test oauth` 偶发失败（`连接本机回调端口` panic），单独跑又必过。
+- 根因：回调监听是 `auth.begin` 里新起的线程，绑端口是异步的；`begin` 返回后立刻 `connect`，
+  机器忙（verify 里同时在编译别的 crate）时端口还没在监听。
+- 规避：测试统一走 `connect_callback()`（最多重试 3 秒）；**不要**用「`sleep` 固定毫秒再连」，
+  那只是把抖动换成更长的等待。
+
+## 42. 素材各行角色比例不一致：用 `fit` 归一，别改图（R105）
+
+- 现象：待机 → 跑/跳 时宠物**突然变大**（内置素材的「跑」
+  那一行比「待机」高 19%，「失败/等待」两行是头部特写、头比别人大 20%）。
+- 根因：素材是分几批画的（或 AI 生成），同一张图集里各行角色的实际比例不一致；
+  渲染层按「整格等高」画，比例差就直接表现成大小跳变。
+- 规避：`pet.json` 的 `animations[].fit{scale,offsetX,offsetY}`（见 `docs/pet-package.md` §3.1）：
+  **整行**等比缩放 + 底部对齐，盒子取所有行里最大的那一格（放大也不裁切）。
+  内置包实测取值 0.8–1.08。`lookRows` 不受 `fit` 影响（同一张脸不能被缩放）。
+- 另两个必须记住的点：
+  1. 背景必须挂在**格子大小**的图层上（`.spriteLayer`），盒子比格子大时
+     直接在有背景的盒子上画会**露出图集里相邻格子**的像素（实测右侧多出半个身子）；
+  2. 盒子要 `overflow: hidden`，否则放大后的那一行会把邻居一起画出来。
+
+## 43. 拖动必须自己搬窗口，不能用 `startDragging()`（R105）
+
+- 现象：拖宠物像在拖一个看不见的窗口边框；拖动过程中**没法播动画**（想加「被拎起来」的动作也没处放）。
+- 根因：`getCurrentWindow().startDragging()` 是**系统级**拖动（`WM_NCLBUTTONDOWN` + `HTCAPTION`），
+  它把事件循环交出去直到松手——JS 在这期间不跑，画面就是冻的。
+- 规避：按下时记住「屏幕坐标 + 窗口位置」，`pointermove` 里自己算新位置并用
+  `setPosition(PhysicalPosition)` 挪窗口（`requestAnimationFrame` 合并，一帧最多一次 IPC）。
+  这样 JS 一直在跑：拖动时可以演「被拎起来」的动画（这里用 `jump` 那一行）。
+  位置要按**屏幕坐标差 × devicePixelRatio** 算，不能用「当前窗口位置 + 增量」（IPC 异步，会累积漂移）。
+- 顺带解决的老问题：拖动期间要告诉宿主「我在拖」（`gently:pet:dragging`），
+  宿主据此不切点击穿透、也不自己走动。
+
+## 44. 改完协议「注入式鼠标事件拖不动窗口」的结论不再成立（R105）
+
+- R102 的结论是「注入式输入驱动不了窗口拖动，只能人工确认」——那是**系统拖动**时代的事实。
+- 现在拖动是 JS 自己挪窗口，`mouse_event` + `SetCursorPos` 能完整驱动它：
+  实测指针走 (-120,-72)、窗口跟 (-120,-72)，1:1 跟手。自动化验收因此**可以**覆盖拖动（见 `docs/pet.md` §3）。
+- 但有两个坑必须避开：
+  1. PowerShell 默认 **DPI 未感知**：枚举出来的窗口矩形是虚拟化的（1.25 倍下差 20%），
+     按它算出来的坐标点不到宠物本体（表现为「拖了没反应」）——
+     脚本开头先 `SetProcessDpiAwarenessContext(-4)`；
+  2. 宠物窗口可能正好**落在主窗口后面**，注入的点击会打到主窗口上：
+     先用 `SetWindowPos` + `BringWindowToTop` 把它摆到可见位置再操作。
+
+## 45. 动画切换要有确认期，否则会「闪一下」（R105）
+
+- 现象：走动过程中动画「跑 → 待机 → 跑」闪一帧。
+- 根因：走动方向是宿主每 60ms 报一次的值，光标擦过宠物、窗口被挪动都会让某一拍报回 0；
+  核心拿到 0 就立刻切 `idle`，下一拍照旧切回 `run`。另外行为表有冷却，
+  「靠重复触发来计时」不可靠（第二次触发可能被冷却挡掉）。
+- 规避：状态类动画每拍**独立**算一次「应该是什么」（忽略行为冷却），
+  同一个目标连续满 `SWITCH_DELAY_MS = 160ms` 才切；`play` 带 `"interrupt": true`
+  的（点击、换歌）当拍就切。宿主侧另加迟滞：光标连续 10 拍（≈0.6s）都在宠物身上才暂停走动。
+- 验证：`pet-core/tests/transition.rs`（单拍抖动不切、持续状态按确认期切、抖动不重置确认期、
+  `interrupt` 当拍生效）。
+
+## 46. 「声明了但不生效」的字段比没有字段更坏（R106）
+
+- 现象：宠物包的 `minPetCoreVersion` 写了也不影响安装；`Condition::SilentFor{ms}` 实现成
+  「没在播就算」——`ms` 形同虚设。
+- 根因：两处都是「先把字段接进来、语义留到以后」的典型半成品：文档写着能力，代码里没有对应行为。
+- 规避/教训：**要么真做，要么在文档里写「暂不生效」**。这一轮把它们做成真的：
+  - 版本：`version` 必须能解析（`x.y.z`），`minPetCoreVersion` 与本机核心比较，高于核心 →
+    新错误码 `pet.incompatible`（界面有本地化文案，不再把中文开发者说明直接甩给用户）；
+  - 静默：只有「没在播」的时间才累计，恢复播放立刻归零；
+  - 体积：`pet.json` 原文 512 KiB、图集 8 MiB，都在落库之前检查。
+- 验证：`pet-core/tests/version.rs`（6 项）、`pet-core/tests/silence.rs`（3 项）。
+
+## 47. 打断型动画必须「演完一遍」，否则等于没反应（R106）
+
+- 现象：点了宠物（`jump`）或换歌（`inspect`），画面只抖一下又回到待机。
+- 根因：R105 的「160ms 确认期」对**所有**切换生效——包括刚被 `interrupt` 切过去的反应动作。
+  下一拍状态机算出「现在是待机」，160ms 后就把反应动作覆盖了。
+- 规避：`interrupt` 切换时记下「至少演到什么时候」（`frames × frameMs`，夹在 200–2000ms），
+  这段时间里状态机不接管画面。状态类动画仍然走 160ms 确认期，两者互不干扰。
+- 验证：`pet-core/tests/silence.rs` 里的 `zero_milliseconds_...`（当拍切换）+
+  `pet-core/tests/transition.rs` 的 `interrupt_actions_switch_on_the_same_tick`。
+
+## 48. `rquickjs-sys 0.7` 没有 Android 的 FFI 绑定：编译直接失败，且只给一条 warning（R107）
+
+- 现象：`cargo build --target aarch64-linux-android -p gently-core` 报
+  `error: couldn't read .../rquickjs-sys-0.7.0/src/bindings/aarch64-linux-android.rs`。
+- 根因：该 crate 的 `src/lib.rs` 在**没开 `bindgen` feature** 时执行
+  `include!(concat!("bindings/", bindings_env!("TARGET"), ".rs"))`，而 `src/bindings/` 只带 10 个 target
+  （有 `aarch64-unknown-linux-gnu`、没有 `aarch64-linux-android`）。`build.rs` 对此只打一条
+  `cargo:warning=rquickjs probably doesn't ship bindings for platform ...`，不中断构建，所以很容易被当成噪音略过。
+- 规避：三选一（[`ANDROID-PLAN.md`](ANDROID-PLAN.md) §3.1）——复制绑定走 `[patch.crates-io]` /
+  只在 android target 开 `bindgen` feature（需 `libclang` + 联网拉 `bindgen`）/ 升级 `rquickjs`。
+  **不要**直接改 registry 缓存里的 crate 源码：换机器/换人就不复现。
+- 验证：`pwsh -File scripts/android-env.ps1` 的「QuickJS 绑定」一行（查 `src/bindings/` 里有没有那个文件）。
+- 现状（2026-11-01）：已按「复制绑定」落地——`vendor/rquickjs-sys/` + 根 `Cargo.toml` 的
+  `[patch.crates-io]`，来路与撤销方式见 `vendor/rquickjs-sys/VENDORED.md`；
+  桌面端用 `cargo test -p gently-core` 验过，Android 侧要等 P0-8（真机跑一次插件沙箱）才算 ABI 正确。
+
+## 49. 受限会话里「命令没输出 / HTTPS 全失败」不等于环境坏了（R107）
+
+- 现象：被沙箱代理的 pwsh 会话里，`rustup target list`、`java -version` 的**输出捕获**直接失败
+  （`StandardErrorEncoding is only supported when standard error is redirected` / `拒绝访问`），
+  所有 HTTPS 请求失败（`curl: (35) schannel: AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS`），
+  于是很容易误判成「工具没装」「网络不通」。
+- 根因：沙箱禁止 piped stdio（拿不到子进程 stdout/stderr）与凭据/TLS 访问——是**会话限制**，不是机器状态。
+- 规避：① 必须捕获时用 `Start-Process -RedirectStandardOutput <文件>`（本机实测可用）；
+  ② 判断「装没装」优先看文件/目录事实（`toolchains/<tc>/lib/rustlib/<triple>`、`$NDK_HOME\...\llvm-ar.exe`），
+  别只信命令输出；③ 网络只信 TCP 连通性与 `web_fetch`，逐端点 HTTP 码留给普通终端复测。
+- 验证：`scripts/android-env.ps1` 把这两类降级成 WAIT（而不是 MISS），避免把会话限制报成环境缺失。
+
+

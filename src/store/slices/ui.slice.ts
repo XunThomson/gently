@@ -54,6 +54,11 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         desktopLyricsOpen: false,
         customSkins,
         background: normalizeBackgroundSettings(persisted.background),
+        /* 发现页聚焦即试听：默认开启（显式默认项，设置页可关） */
+        discoverAutoPreview: persisted.discoverAutoPreview !== false,
+        /* 宠物是 2.x 的形态：默认关（1.x 用户看不到任何宠物入口） */
+        petEnabled: persisted.petEnabled === true,
+        petRevision: 0,
     };
 
     const patch = (partial: Partial<UiState>) => {
@@ -128,6 +133,15 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         setBackgroundEnabled(enabled) {
             const background = ctx.getState().ui.background;
             patch({background: {...background, enabled}});
+        },
+        setDiscoverAutoPreview(enabled) {
+            patch({discoverAutoPreview: enabled});
+        },
+        setPetEnabled(enabled) {
+            patch({petEnabled: enabled});
+        },
+        bumpPetRevision() {
+            patch({petRevision: ctx.getState().ui.petRevision + 1});
         },
         setBackgroundKind(kind) {
             const background = ctx.getState().ui.background;

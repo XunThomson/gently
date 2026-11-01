@@ -4,6 +4,7 @@ import {useNavigate} from 'react-router';
 import {Button} from '../../ui/button';
 import {IconDownload, IconHeart, IconPlus} from '../../ui/icon';
 import {useActions, usePlayerState, useSelect} from '../../../store';
+import {downloadQueueKeyString, isQueued, parseQueueKeyString} from '../../../utils/downloadQueue';
 import styles from './Panel.module.css';
 
 /**
@@ -22,6 +23,9 @@ export function ActionsPanel({onClose}: { onClose: () => void }) {
             !!s.player.current &&
             s.collection.favorites.some((track) => track.id === s.player.current?.id),
     );
+    /* 已在下载队列里的曲目不再给下载入口（与 `useTrackActions` 同一套判定） */
+    const queueKeys = useSelect((s) => downloadQueueKeyString(s.download.tasks));
+    const canDownloadCurrent = !!current && !isQueued(parseQueueKeyString(queueKeys), current);
 
     const [toast, setToast] = useState('');
 
@@ -51,7 +55,7 @@ export function ActionsPanel({onClose}: { onClose: () => void }) {
                 <Button
                     size="sm"
                     variant="default"
-                    disabled={!current}
+                    disabled={!current || !canDownloadCurrent}
                     icon={<IconDownload size={14}/>}
                     onClick={() => current && addDownload(current)}
                 >

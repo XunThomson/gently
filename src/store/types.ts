@@ -64,6 +64,27 @@ export interface UiState {
     customSkins: ThemeSkin[];
     /** 桌面歌词窗口是否可见（窗口状态，不持久化） */
     desktopLyricsOpen: boolean;
+    /**
+     * 「发现」视图聚焦时自动试听高潮片段。
+     *
+     * **显式默认开启项**（`true`）：用户划过/选中一张包装就能听到这首歌；
+     * 不想被打扰可以在设置页关掉（关掉后只展示封面与动效，不发声）。
+     */
+    discoverAutoPreview: boolean;
+    /**
+     * 宠物（实验，默认关）。
+     *
+     * 宠物是 2.x 的形态，音乐软件现在还在 1.x：默认不注册任何宠物（`PetHost` 渲染 null）。
+     * 打开后由 App 注册内置宠物，走 `pet-core`（独立引擎、独立库，ADR 0010）。
+     */
+    petEnabled: boolean;
+    /**
+     * 宠物注册表的「重挂信号」：安装/切换/卸载宠物后 +1。
+     *
+     * 渲染器在 mount 时读一次「当前出战是谁」，所以这几种操作之后必须让它重新挂一次；
+     * 用计数器而不是把幂等逻辑塞进组件里，是为了让「什么时候需要重挂」只有一个来源。
+     */
+    petRevision: number;
 }
 
 /** 一份歌词的来路（自动加载 / 用户从搜索结果里挑的） */
@@ -283,6 +304,12 @@ export interface UiActions {
     setDesktopLyricsOpen: (open: boolean) => void;
     /** 背景开关 */
     setBackgroundEnabled: (enabled: boolean) => void;
+    /** 「发现」视图聚焦时自动试听（默认开，可关） */
+    setDiscoverAutoPreview: (enabled: boolean) => void;
+    /** 宠物实验开关（默认关；打开后注册内置宠物） */
+    setPetEnabled: (enabled: boolean) => void;
+    /** 宠物集合变了（安装/切换/卸载）：让渲染器重新挂一次 */
+    bumpPetRevision: () => void;
     /** 切换素材类型（视频 / 单文件网页），两种素材都保留 */
     setBackgroundKind: (kind: BackgroundKind) => void;
     /** 系统减少动态效果时是否仍显示背景（用户显式覆盖） */
@@ -357,6 +384,14 @@ export interface PlayerActions {
     /** 重试当前曲目：重新解析全部候选音源并继续播放 */
     retryPlayback: () => void;
     /**
+     * 「接着播」：系统休眠 / 长时间失焦回来、媒体元素已经停了时由播放引擎调用。
+     *
+     * 与 `retryPlayback` 的区别只有一处但很关键：**保留当前进度**。
+     * 回环代理的流地址有 30 分钟 TTL，上游给的直链也常常几分钟就失效，
+     * 所以恢复的第一步永远是「让核心重新解析一次」，拿回来的新地址才能继续播。
+     */
+    recoverPlayback: () => void;
+    /**
      * 当前候选都不可播时，按「歌名 + 歌手」跨源搜索并合并新的候选。
      *
      * 只在用户点「换源」时调用（不是失败自动触发）：一次失败不应该自动放大成
@@ -424,6 +459,13 @@ export interface DownloadActions {
 
 export interface PluginActions {
     load: () => Promise<void>;
+    /**
+     * 强制重读插件清单（含按源路由缓存）。
+     *
+     * 导入 / 卸载 / 启停 / 改优先级之后必须调用：`load()` 有 `loaded` 守卫，
+     * 只在启动时读一次；不刷新的话刚装好的插件要等重启才出现在列表里（R87 的 bug）。
+     */
+    reload: () => Promise<void>;
     setEnabled: (id: string, enabled: boolean) => void;
     remove: (id: string) => void;
     /** 检查更新：桌面端与来源比对版本，浏览器预览退回 mock 的版本号占位 */

@@ -550,6 +550,44 @@ export interface SystemPathsDto {
     logs: string;
 }
 
+/**
+ * 数据目录的来源（`system.dataDir.source`）。
+ *
+ * - `default`：系统默认位置（`%APPDATA%/<identifier>` 之类）；
+ * - `portable`：便携版 —— exe 同目录下有 `portable.txt`，数据放 `<exe 目录>/data`；
+ * - `pointer`：用户在设置页迁移过，指针文件记着新位置；
+ * - `override`：环境变量 `GENTLY_DATA_DIR` 显式指定（调试 / 绿色部署）。
+ */
+export type DataDirSource = 'default' | 'portable' | 'pointer' | 'override';
+
+/** `system.dataDir`：数据目录现在在哪、为什么在那儿。 */
+export interface DataDirInfoDto {
+    /** 当前数据根目录 */
+    current: string;
+    /** 系统默认位置（迁移后仍然需要它：指针文件住在这里） */
+    defaultBase: string;
+    /** 指针文件所在目录 */
+    pointerHome: string;
+    /** 便携版（exe 同目录有 `portable.txt`） */
+    portable: boolean;
+    source: DataDirSource;
+    /** SQLite 文件路径 */
+    dbPath: string;
+    /** 指针文件存在 = 用户迁移过（下次启动读它） */
+    hasPointer: boolean;
+}
+
+/** `system.dataDir.move`：迁移结果（**下次启动生效**，只拷贝不删除）。 */
+export interface DataDirMigrationDto {
+    target: string;
+    copiedFiles: number;
+    copiedBytes: number;
+    /** 总是 true：数据库连接已经打开，换根目录不能热切 */
+    requiresRestart: boolean;
+    /** 旧目录仍然保留（用户确认无误后可自行删除） */
+    sourceKept: string;
+}
+
 export interface SystemApi {
     status(): Promise<CoreResult<SystemStatusDto>>;
     paths(): Promise<CoreResult<SystemPathsDto>>;
@@ -564,6 +602,16 @@ export interface SystemApi {
      * 越界 → `common.invalid_argument`（`details` 里有 min/max）。
      */
     cacheConfig(input: {limitBytes: number}): Promise<CoreResult<CacheStatusDto>>;
+    /** 数据目录在哪、为什么在那里（设置页展示 + 迁移前确认） */
+    dataDir(): Promise<CoreResult<DataDirInfoDto>>;
+    /**
+     * 把数据目录拷到 `target` 并写好指针（**重启后生效**）。
+     *
+     * 只拷贝不删除：旧目录留在返回体的 `sourceKept` 里，用户确认后自行删除。
+     * 目标为空 / 相对路径 / 与当前目录互相包含 → `common.invalid_argument`；
+     * 拷贝或数据库副本自检失败 → `library.io_error`（指针不动）。
+     */
+    dataDirMove(input: {target: string}): Promise<CoreResult<DataDirMigrationDto>>;
 }
 
 export type CacheClearKind = 'media' | 'catalog' | 'covers' | 'all';

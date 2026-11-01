@@ -6,6 +6,7 @@ import {BadgeCell, TextCell} from '../../../components/ui/data-table';
 import {useConfirm} from '../../../hooks/useConfirm';
 import {errorText} from '../../../i18n/errors';
 import {coreAvailable, corePlugin} from '../../../services';
+import {useActions} from '../../../store';
 import {
     corePluginAddSubscription,
     corePluginCatalog,
@@ -30,6 +31,8 @@ export function SubscriptionPanel() {
     const {t} = useTranslation();
     const confirm = useConfirm();
     const available = coreAvailable();
+    /** store 的插件清单重读（与「订阅索引」是两份数据，安装后两份都要刷新） */
+    const {reload: pluginReload} = useActions().plugin;
 
     const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
     const [entries, setEntries] = useState<CatalogEntry[]>([]);
@@ -119,6 +122,8 @@ export function SubscriptionPanel() {
         setPending(null);
         setStatus(t('page.plugin.subscriptionInstalled', {name: result.data.plugin.name}));
         await refresh();
+        // 全局插件清单（插件页表格 / 音源筛选 / 播放条）必须立刻跟上，否则要重启才看到
+        await pluginReload();
     };
 
     if (!available) {

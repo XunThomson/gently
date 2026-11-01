@@ -45,6 +45,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "android-native-keyring-store"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e473c725eac862e418e7c3296059e72cdb7bbfb6ffefe625a452be988b2cd44f"
+dependencies = [
+ "base64 0.22.1",
+ "jni",
+ "keyring-core",
+ "ndk-context",
+ "thiserror 2.0.20",
+ "tracing",
+]
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1309,7 +1323,9 @@ dependencies = [
 name = "gently"
 version = "0.1.0"
 dependencies = [
+ "android-native-keyring-store",
  "gently-core",
+ "pet-core",
  "serde",
  "serde_json",
  "tauri",
@@ -2041,6 +2057,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyring-core"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d8286c3ab222af2fa9e57874fe419893d967f739c7bf1743f98a88678edbf08"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2287,6 +2312,12 @@ dependencies = [
  "raw-window-handle",
  "thiserror 1.0.69",
 ]
+
+[[package]]
+name = "ndk-context"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b"
 
 [[package]]
 name = "ndk-sys"
@@ -2636,6 +2667,16 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "pet-core"
+version = "1.0.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
 
 [[package]]
 name = "phf"
@@ -3038,8 +3079,6 @@ dependencies = [
 [[package]]
 name = "rquickjs-sys"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5495d2426bc4c041e8567607b43d1d34f9280dc0528a64852dc4d7b82d9def20"
 dependencies = [
  "cc",
 ]

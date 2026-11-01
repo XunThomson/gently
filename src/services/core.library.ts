@@ -19,14 +19,12 @@ import type {
 } from '../types';
 import {coreAvailable, invokeCore} from './core.bridge';
 import {CORE_EVENTS} from './core.events';
+import {trackReference} from '../utils/downloadQueue';
 
-/** 从曲目派生统一引用：`id` 是完整引用 `source:trackId`。 */
+/** 从曲目派生统一引用：`id` 是完整引用 `source:trackId`（实现在 `utils/downloadQueue`，全局只有一份）。 */
 export function trackRefOf(track: Track): TrackRef {
-    const source = track.source;
-    const sourceTrackId = track.id.startsWith(`${source}:`)
-        ? track.id.slice(source.length + 1)
-        : track.id;
-    return {id: `${source}:${sourceTrackId}`, source, sourceTrackId};
+    const id = trackReference(track);
+    return {id, source: track.source, sourceTrackId: id.slice(track.source.length + 1)};
 }
 
 interface Page<T> {

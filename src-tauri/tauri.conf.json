@@ -38,6 +38,22 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "transparent": true
+      },
+      {
+        "label": "pet",
+        "url": "index.html?window=pet",
+        "transparent": true,
+        "title": "gently 宠物",
+        "width": 200,
+        "height": 160,
+        "visible": false,
+        "focus": false,
+        "resizable": false,
+        "decorations": false,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "transparent": true
       }
     ],
     "security": {
@@ -56,3 +72,6 @@
     ]
   }
 }
+
+
+

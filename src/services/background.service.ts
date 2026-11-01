@@ -134,7 +134,7 @@ export const backgroundService = {
      * 保存用户选择的视频。**先校验类型与大小**，再写 IndexedDB；
      * 任何失败都返回可翻译的原因，不抛异常。
      */
-    async save(file: File): Promise<BackgroundSaveResult> {
+    async save(file: File, id?: string): Promise<BackgroundSaveResult> {
         if (typeof indexedDB === 'undefined') return {ok: false, reason: 'unsupported'};
         if (file.size <= 0) return {ok: false, reason: 'empty'};
         if (file.size > appConfig.background.maxVideoBytes) {
@@ -143,7 +143,9 @@ export const backgroundService = {
         if (!isVideo(file)) return {ok: false, reason: 'unsupported-type'};
 
         const asset: BackgroundAsset = {
-            id: newId(),
+            /* 显式 id 用于**主题包**：一套皮肤一份背景，换素材时覆盖同一个键，
+               切主题就按 `skin:<id>` 找得到（见 utils/skinPackage） */
+            id: id ?? newId(),
             name: file.name,
             size: file.size,
             type: file.type,
@@ -161,7 +163,7 @@ export const backgroundService = {
      * 保存单文件网页壁纸。只接受 HTML 文本；外部 CSS/JS/图片不会自动带入，
      * 需要用户自己内联（渲染端还会再加沙箱与 CSP）。
      */
-    async saveWeb(file: File): Promise<WebSaveResult> {
+    async saveWeb(file: File, id?: string): Promise<WebSaveResult> {
         if (typeof indexedDB === 'undefined') return {ok: false, reason: 'unsupported'};
         if (file.size <= 0) return {ok: false, reason: 'empty'};
         if (file.size > appConfig.background.maxWebBytes) {
@@ -170,7 +172,8 @@ export const backgroundService = {
         if (!isWebPage(file)) return {ok: false, reason: 'unsupported-type'};
         try {
             const html = await file.text();
-            const web: WebAsset = {id: newId(), name: file.name, size: file.size};
+            // 与 `save` 同理：主题包用固定 id 覆盖，一套皮肤一份网页背景
+            const web: WebAsset = {id: id ?? newId(), name: file.name, size: file.size};
             await put<StoredPage>(PAGE_STORE, {id: web.id, html});
             return {ok: true, web};
         } catch {

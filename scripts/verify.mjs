@@ -21,7 +21,14 @@ const root = path.dirname(fileURLToPath(import.meta.url)) + path.sep + '..';
 
 const online = Boolean(process.env.GENTLY_CARGO_ONLINE);
 const cargoArgs = ['test', '-p', 'gently-core'];
-if (!online) cargoArgs.push('--offline');
+const petArgs = ['test', '-p', 'pet-core'];
+/** 宿主（src-tauri）自己的单测：窗口/光标相关的纯函数都在这儿（R100 起纳入关卡） */
+const hostArgs = ['test', '-p', 'gently'];
+if (!online) {
+    cargoArgs.push('--offline');
+    petArgs.push('--offline');
+    hostArgs.push('--offline');
+}
 
 if (!online && !process.env.CARGO_HOME) {
     process.stdout.write(
@@ -35,6 +42,10 @@ const steps = [
     {name: '契约守卫', command: 'pnpm', args: ['run', 'check:contract']},
     {name: '界面可达性守卫', command: 'pnpm', args: ['run', 'check:reachability']},
     {name: '核心单测', command: 'cargo', args: cargoArgs},
+    // 宠物是**独立引擎**（ADR 0010）：独立性与单测各自一道关卡，退化时立刻红
+    {name: '宠物核心独立性守卫', command: 'pnpm', args: ['run', 'check:pet']},
+    {name: '宠物核心单测', command: 'cargo', args: petArgs},
+    {name: '宿主单测（窗口/光标）', command: 'cargo', args: hostArgs},
 ];
 
 const failed = [];
@@ -58,4 +69,5 @@ if (failed.length > 0) {
     process.stderr.write(`\n验证失败：${failed.join('、')}\n`);
     process.exit(1);
 }
-process.stdout.write('\n全部验证通过 ✓（类型 / 冒烟 / 契约 / 可达性 / 核心单测）\n');
+process.stdout.write('\n全部验证通过 ✓（类型 / 冒烟 / 契约 / 可达性 / 核心单测 / 宠物独立性 / 宠物核心单测 / 宿主单测）\n');
+

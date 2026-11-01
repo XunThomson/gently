@@ -13,8 +13,9 @@ import {usePlayerEngine} from "./hooks/usePlayerEngine";
 import {useAudioEngine} from "./hooks/useAudioEngine";
 import {useDownloadEngine} from "./hooks/useDownloadEngine";
 import {useDesktopLyricsBridge} from "./hooks/useDesktopLyricsBridge";
+import {usePetWindowBridge} from "./hooks/usePetWindowBridge";
 import {useShellMode} from "./hooks/useShellMode";
-import {useActions} from "./store";
+import {useActions, useSelect} from "./store";
 import {isTauri, probeCore, windowService} from "./services";
 import {useTheme} from "./theme";
 import './App.css';
@@ -62,6 +63,22 @@ export default function App() {
     useEffect(() => {
         void probeCore();
     }, []);
+
+    /**
+     * 宠物（实验，默认关）。
+     *
+     * 宠物住在**独立窗口**（`tauri.conf.json` 的 `pet`）里，而不是主窗口的一块浮层：
+     * 这样主窗口最小化/被盖住时宠物还在，位置也不再受主窗口边界限制。
+     * 主窗口这边只负责两件事：
+     *   1. 开关 ↔ 窗口可见性对齐（打开就显示、关掉就隐藏）；
+     *   2. 把只读播放快照 + 宠物 revision 推给宠物窗口（那个 WebView 没有 store）。
+     *
+     * 关着的时候**什么都不做**：窗口是隐藏的，不 tick、不占电。
+     */
+    const petEnabled = useSelect((s) => s.ui.petEnabled);
+    /** 设置页改过宠物（安装/切换/卸载）后 +1 → 宠物窗口据此重挂渲染器 */
+    const petRevision = useSelect((s) => s.ui.petRevision);
+    usePetWindowBridge(petEnabled, petRevision);
 
     const restoreFull = () => {
         void windowService.restoreFromMini();
@@ -124,7 +141,8 @@ export default function App() {
             {/* 全局二次确认（危险操作）：由 useConfirm() 触发 */}
             <ConfirmHost/>
 
-            {/* 2.x 桌面宠物预留宿主：没有注册宠物时渲染 null */}
+            {/* 宠物宿主：内置宠物住在独立窗口（`pet`），主窗口这里默认什么都不注册，
+                所以渲染 null；保留它是给「第三方宠物定义想画在应用里」留的口子 */}
             <PetHost/>
         </div>
     );

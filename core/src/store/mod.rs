@@ -83,6 +83,19 @@ impl Store {
         self.schema_version
     }
 
+    /// 把 WAL 内容并回主库并截断（`PRAGMA wal_checkpoint(TRUNCATE)`）。
+    ///
+    /// 用途：**迁移数据目录前**先让库变成一个自洽的单文件。不 checkpoint 就热拷，
+    /// 拷到的 `gently.db` 可能缺最近的提交（数据在 `-wal` 里），而旁挂文件按规则又不搬——
+    /// 结果是「迁移过去了，但最近的数据没了」，且很难排查。
+    ///
+    /// 失败不致命（只是没截断成功）：调用方应记录并继续，迁移侧仍会做副本自检。
+    pub fn checkpoint_wal(&self) -> Fallible<()> {
+        let conn = self.lock()?;
+        conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+        Ok(())
+    }
+
     /// 读 PRAGMA 字符串（诊断用）。
     pub fn pragma_str(&self, name: &str) -> Fallible<String> {
         let conn = self.lock()?;

@@ -1,21 +1,97 @@
-/* 本地音乐页：扫描面板（唯一的入库入口，因此常驻在列表上方） */
+/* 本地音乐页：扫描抽屉（唯一的入库入口，替代原先常驻的大表单） */
 
-.scanCard {
+/* 收起 = 一行标题；展开 = 表单 + 进度 + 上次结果。整块仍是同一张表面，不新增卡片层级 */
+.scan {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
-    padding: var(--space-4);
-    margin-bottom: var(--space-4);
+    margin-bottom: var(--space-3);
     background: var(--surface-chrome);
     backdrop-filter: var(--surface-blur);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.scanTrigger {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
+    font: inherit;
+    text-align: left;
+    color: var(--text-primary);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+
+.scanTrigger:hover {
+    background: var(--surface-content-alt);
+}
+
+.scanTrigger:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: -2px;
+}
+
+.scanTriggerIcon {
+    display: inline-flex;
+    color: var(--text-tertiary);
 }
 
 .scanTitle {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
+    white-space: nowrap;
+}
+
+/* 收起时给出的那一句结论：占满剩余宽度，过长省略 */
+.scanBrief {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scanChevron {
+    color: var(--text-tertiary);
+    transition: transform var(--motion-base);
+}
+
+.scanChevronOpen {
+    transform: rotate(180deg);
+}
+
+/* 展开动画：0fr → 1fr，收起时高度为 0，列表不被挤下去 */
+.scanBody {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--motion-base);
+}
+
+.scan[data-open='true'] .scanBody {
+    grid-template-rows: 1fr;
+}
+
+.scanInner {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-height: 0;
+    padding: 0 var(--space-4);
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity var(--motion-base);
+}
+
+.scan[data-open='true'] .scanInner {
+    padding-bottom: var(--space-4);
+    opacity: 1;
 }
 
 .scanRow {

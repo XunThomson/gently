@@ -2,7 +2,30 @@
   "app": {
     "title": "Gently"
   },
+  "pet": {
+    "name": "Gently Mascot",
+    "bubble": {
+      "idle": "What are we listening to?",
+      "petted": "Hehe~",
+      "hungry": "A little hungry…",
+      "fed": "Yum!",
+      "feedCooldown": "Not hungry yet — try again later"
+    },
+    "mood": {
+      "shy": "Shy",
+      "friendly": "Friendly",
+      "close": "Close",
+      "devoted": "Devoted"
+    }
+  },
   "errors": {
+      "pet_invalid_argument": "Something this action needs is off — check it and try again",
+      "pet_not_found": "That pet is gone (removed?). Refresh settings and retry",
+      "pet_invalid_package": "Invalid pet package: a required field is missing, or a behaviour points at a missing animation",
+      "pet_incompatible": "This pet package needs a newer pet core — update the app first",
+      "pet_limit_exceeded": "Pet package exceeds the limits (size / animations / frames)",
+      "pet_io_error": "Could not read or write pet data — check that the data folder is writable",
+      "pet_internal": "Internal pet core error (should not happen) — restart the app",
     "common_invalid_argument": "Invalid argument",
     "common_not_found": "Resource not found",
     "common_conflict": "Changed elsewhere — refresh and try again",
@@ -156,7 +179,11 @@
     "deleteSkinTitle": "Delete skin",
     "deleteSkinDesc": "“{{name}}” will be removed.",
     "removeSubscriptionTitle": "Remove subscription",
-    "removeSubscriptionDesc": "Subscription “{{name}}” and its cached index will be removed; installed plugins are unaffected."
+    "removeSubscriptionDesc": "Subscription “{{name}}” and its cached index will be removed; installed plugins are unaffected.",
+    "removePetTitle": "Remove pet",
+    "removePetDesc": "“{{name}}”, its bond record and its assets will be removed. This cannot be undone.",
+    "dataDirMoveTitle": "Move data folder",
+    "dataDirMoveDesc": "Data will be copied to {{path}} and used after a restart; the old folder is kept (not deleted automatically)."
   },
   "skin": {
     "import": "Import skin",
@@ -181,6 +208,9 @@
     "pathPlaceholder": "C:\\path\\to\\skin.json",
     "pathHint": "Paste a path directly, or pick a file with the picker. Validation and install happen in the local core.",
     "fromFile": "Choose a file…",
+    "packageNoJson": "No skin JSON in the package: pick skin.json (or any .json) and import again.",
+    "packageAmbiguous": "More than one JSON was selected: pick only the theme's own JSON (naming it skin.json is recommended).",
+    "packageImported": "Imported theme “{{name}}” and applied the background bundled with it ({{background}}).",
     "submit": "Import",
     "submitting": "Importing…",
     "close": "Close"
@@ -227,8 +257,6 @@
     "playedAt": "Played",
     "playCount": "Plays",
     "version": "Version",
-    "author": "Author",
-    "description": "Description",
     "actions": "Actions"
   },
   "page": {
@@ -248,7 +276,19 @@
       "emptyTitle": "Not enough listening history yet",
       "emptyHint": "Play a few songs, favorite some albums, or scan your local music — this page ranks by your taste",
       "searchEmptyTitle": "No matching songs",
-      "searchEmptyHint": "Try another keyword"
+      "searchEmptyHint": "Try another keyword",
+      "tabRecommend": "Featured",
+      "tabDiscover": "Discover",
+      "discoverTitle": "Discover",
+      "discoverSubtitle": "Record shelf: each sleeve stands upright on the shelf — focus one to hear the chorus",
+      "discoverShelf": "Record shelf",
+      "discoverEmpty": "Nothing to display yet — listen to a few songs, or connect a source",
+      "discoverPickHint": "Pick a sleeve from the shelf, or click the list on the right",
+      "discoverPreviewIdle": "Focus to preview (can be turned off in settings)",
+      "discoverPreviewPlaying": "Previewing · chorus (position estimated)",
+      "discoverPreviewUnavailable": "No preview for this one (no playable address or duration)",
+      "discoverPreviewOff": "Auto preview is off (Settings → Discover preview)",
+      "discoverStopPreview": "Stop preview"
     },
     "download": {
       "title": "Downloads",
@@ -272,7 +312,7 @@
       "subtitle": "{{count}} songs",
       "revealInDir": "Reveal in folder",
       "remove": "Remove",
-      "empty": "No local music yet — paste a folder path above and scan",
+      "empty": "No local music yet — open \"Scan local folders\" above and scan a folder",
       "scanTitle": "Scan local folders",
       "scanHint": "One folder per line. Only audio extensions (mp3/flac/m4a/m4s/mp4/aac/ogg/opus/wav…) are indexed; files whose size is unchanged are not re-read; files without readable tags are still indexed (title falls back to the file name). Paste the path directly — a native file picker needs an extra desktop plugin that is not in the current dependency set.",
       "scanPlaceholder": "D:\\Music\nE:\\Lossless",
@@ -283,7 +323,10 @@
       "scanRunning": "Scanning {{dir}} ({{found}} files found)",
       "scanRunningPercent": "Scanning {{dir}} ({{percent}}% · {{found}} files found)",
       "scanResult": "Last scan: {{scanned}} files, {{added}} added, {{updated}} updated, {{removed}} removed, {{skipped}} skipped, {{unreadable}} unreadable, {{ignored}} non-audio",
-      "scanNeedsDesktop": "Scanning local folders needs the desktop app (the browser preview shows sample data)."
+      "scanNeedsDesktop": "Scanning local folders needs the desktop app (the browser preview shows sample data).",
+      "scanBriefIdle": "Expand to enter folders and scan",
+      "scanBriefRunning": "Scanning · {{found}} files found{{percent}}",
+      "scanBriefResult": "Last scan: {{scanned}} files, {{added}} added"
     },
     "plugin": {
       "coreTitle": "Local core plugins",
@@ -324,14 +367,12 @@
       "required": "required",
       "warnings": "Notes",
       "replaces": "This replaces the installed plugin with the same id",
-      "installed": "Imported plugins (core)",
       "installedEmpty": "No plugins imported yet — the app ships no built-in sources; import one yourself.",
       "disclaimer": "Plugins are provided by third parties and are unrelated to this software; please make sure you may access their content.",
       "needSource": "Please provide the plugin content or URL first",
       "moveUp": "Move up",
       "moveDown": "Move down",
       "reload": "Reload",
-      "settings": "Credentials & config",
       "settingsClose": "Hide settings",
       "save": "Save",
       "qrTitle": "Sign in with a QR code",
@@ -419,6 +460,13 @@
       "subtitle": "Music sources are plugins — {{count}} installed",
       "builtinTag": "Built-in",
       "thirdPartyTag": "Third-party",
+      "inUse": "In use",
+      "openImport": "Import plugin",
+      "manage": "Manage",
+      "manageTitle": "Plugin settings: {{name}}",
+      "priorityLabel": "Fallback order",
+      "priorityHint": "Higher in the list wins: playback tries sources in this order and falls back automatically.",
+      "installDone": "\"{{name}}\" imported — you can search and play right away (no restart needed).",
       "empty": "No plugins installed"
     },
     "recent": {
@@ -655,6 +703,61 @@
       "preferredQuality": "Preferred quality",
       "confirmDestructive": "Confirm destructive actions",
       "confirmHint": "When off, delete / clear / uninstall actions run immediately",
+      "discoverPreview": "Auto preview on Discover",
+      "discoverPreviewHint": "When on, focusing a sleeve on Discover plays 20 seconds at low volume without touching the main player. The start point is an estimate (mid-song): sources provide no chorus timestamps. Nothing plays when no playable address or duration is available.",
+      "petSection": "Pet (Beta)",
+      "petBeta": "Beta 1.0",
+      "petToggle": "Pet",
+      "petHint": "When on, the pet lives in its own always-on-top window (separate from the app, survives minimizing it): it looks at your cursor and clicks pass through everywhere except its body. Left click to pet, right click to feed. It runs on its own engine and database, independent of the music core. Off by default.",
+      "petNeedsDesktop": "The pet needs the desktop core; the browser preview has no pet engine, so it is unavailable.",
+      "petInstalled": "Installed",
+      "petNone": "No pets yet (turning the switch on installs a built-in one)",
+      "petCount": "{{count}} total (only one is shown at a time)",
+      "petActive": "Active",
+      "petIdle": "Resting",
+      "petAffection": "Bond {{value}}",
+      "petSwitch": "Make active",
+      "petRemove": "Remove",
+      "petImport": "Import package",
+      "petImportClose": "Hide import",
+      "petLock": "Click-through (lock pet window)",
+      "petLockHint": "When on, clicks pass through the pet window; the pet cannot be clicked or dragged — unlock only here.",
+      "petDebug": "Debug panel (dev)",
+      "petDebugOpen": "Expand",
+      "petDebugPet": "Active pet",
+      "petDebugWindow": "Pet window",
+      "petDebugVisible": "visible",
+      "petDebugHidden": "hidden",
+      "petDebugOff": "off",
+      "petDebugOn": "on",
+      "petDebugRequires": "package needs ≥",
+      "petDebugCore": "Pet core",
+      "petDebugAnyCore": "no version requirement",
+      "petDebugSwitches": "Window switches",
+      "petDebugSaved": "Saved position",
+      "petDebugAtlas": "Atlas",
+      "petDebugNoAtlas": "none (procedural rendering)",
+      "petDebugFrame": "Last frame",
+      "petDebugNoProbe": "not read yet (press Probe one frame to retry)",
+      "petDebugProbe": "Probe one frame",
+      "petDebugTouch": "Pet it",
+      "petDebugReset": "Reset window position",
+      "petDebugNone": "—",
+      "petDebugOk": "done",
+      "petDebugFailed": "failed",
+      "petDebugHint": "Read-only info from three layers: core data, host window, last rendered frame. Probing calls pet.tick once with dtMs = 0 and does not advance the animation.",      "petRoam": "Wander on screen",
+      "petRoamHint": "When on, the pet walks to a different spot along the bottom of the window every 10–40 seconds (using runLeft / runRight); it pauses while your cursor is on it.",
+      "petDropHint": "Drop pet.json and spritesheet.webp here (or paste the JSON and pick the atlas below)",
+      "petImportTitle": "Pet package (pet.json + optional atlas; Codex Pet v1 also works)",
+      "petSpecPlaceholder": "Paste pet.json here (our format, or Codex Pet v1: {id, displayName, spritesheetPath})",
+      "petAtlasLabel": "Choose an atlas image (png / webp, optional)",
+      "petAtlasHint": "Atlas is optional: a horizontal frame strip whose frame count comes from pet.json animations. Without an atlas the renderer draws a procedural pet.",
+      "petAtlasPicked": "Selected {{name}}",
+      "petInstall": "Install",
+      "petImported": "Pet package installed",
+      "petNeedSpec": "Paste the pet.json contents first",
+      "petFeed": "Feed",
+      "petHungry": "Hungry",
       "lyricsSection": "Desktop lyrics",
       "lyricsLock": "Lock the lyrics window (clicks pass through)",
       "lyricsLockOff": "Not locked",
@@ -719,7 +822,29 @@
       "cacheClearConfirm": "Clear cache",
       "cacheClearDesc": "The cache is rebuilt on demand (played songs need to be played online again to be cached); downloaded files are not affected.",
       "cacheCleared": "Removed {{files}} files ({{size}})",
-      "cacheUnavailable": "Cache management needs the desktop core; the browser preview has no local cache."
+      "cacheUnavailable": "Cache management needs the desktop core; the browser preview has no local cache.",
+      "dataDirTitle": "Data folder",
+      "dataDirHint": "Database, plugins, skins, downloads and cache all live in this folder. It defaults to your user profile — move it to another drive here.",
+      "dataDirCurrent": "Current location",
+      "dataDirSource": "Source",
+      "dataDirSourceDefault": "System default location",
+      "dataDirSourcePortable": "Portable build (follows the program folder)",
+      "dataDirSourcePointer": "Moved location (remembered by a pointer file)",
+      "dataDirSourceOverride": "Set by the GENTLY_DATA_DIR environment variable",
+      "dataDirDefaultBase": "Default location",
+      "dataDirPortableHint": "This is a portable build: data defaults to the data folder next to the executable. Drop an empty portable.txt beside the exe to enable it.",
+      "dataDirTarget": "Move to",
+      "dataDirTargetPlaceholder": "D:/gently-data",
+      "dataDirMove": "Move to this folder",
+      "dataDirMoving": "Moving…",
+      "dataDirMoveHint": "Moving copies the data to the new folder and remembers it; it takes effect after a restart. The old folder is kept — delete it yourself once you are sure.",
+      "dataDirNeedTarget": "Enter a target folder first (absolute path, e.g. D:/gently-data)",
+      "dataDirOpen": "Open folder",
+      "dataDirMoved": "Copied {{files}} files ({{size}}) to {{path}} — effective after a restart.",
+      "dataDirKept": "The old folder {{path}} was not deleted.",
+      "dataDirRestart": "Apply the new location",
+      "dataDirRestartAction": "Restart the app now",
+      "dataDirUnavailable": "Moving the data folder needs the desktop core; the browser preview has no data folder to move."
     }
   },
   "desktopLyrics": {
@@ -735,3 +860,21 @@
     "en": "English"
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

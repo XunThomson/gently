@@ -34,6 +34,15 @@ let feedbackPlayId = 0;
  */
 let manualLyricsPlayId: number | null = null;
 
+/**
+ * 「媒体报错后已经自动重新解析过一次」的 `playId`。
+ *
+ * 给**每次播放**一次自动恢复的机会（电脑休眠回来 / 流地址过期是最常见的两种：
+ * 回环代理 token 只有 30 分钟，上游直链常常更短）。用 playId 记而不是布尔量：
+ * 换歌自然重置，也不会因为上一首的恢复额度把下一首判死。
+ */
+let mediaRetryPlayId: number | null = null;
+
 /** 音源候选：聚合结果自带 candidates，普通曲目退化为单候选 */
 function candidatesOf(track: Track): TrackCandidate[] {
     const grouped = track as Partial<GroupedTrack>;
@@ -470,7 +479,34 @@ export function createPlayerSlice(ctx: StoreCtx) {
                 return;
             }
 
-            // 没有任何来源能放了：停表，把原因交给界面
+            /**
+             * 没有别的候选了：**先给同一批源一次重新解析的机会**，再判死。
+             *
+             * 典型场景是电脑休眠回来：媒体元素已经断了，但界面还以为在播。此时
+             * 回环代理的 token（30 分钟 TTL）或上游直链很可能已经过期——重新问核心一次
+             * 就能拿回一个新地址继续放。以前这里直接 `playing:false`，用户看到的是
+             * 「继续播放没反应，得手动重新点这首歌」（R87 的 bug）。
+             *
+             * 每次播放只给一次机会：解析回来还是坏的话就如实停播说明原因，不做无限重试。
+             */
+            if (mediaRetryPlayId !== current.playId) {
+                mediaRetryPlayId = current.playId;
+                patch({
+                    playing: true,
+                    failedSources: [],
+                    playbackError: null,
+                    audioUrl: null,
+                    playable: false,
+                });
+                // 原因照样带过去：这次重解析也失败时，界面要说的仍是「媒体」而不是「没有源」
+                void resolveWithFallback(candidates, current.playId, {
+                    keepElapsed: true,
+                    failure: {kind: 'media', ...(message ? {detail: message} : {})},
+                });
+                return;
+            }
+
+            // 真的没救了：停表，把原因交给界面
             patch({
                 playing: false,
                 playbackError: {kind: 'media', failedSources: failed, ...(message ? {detail: message} : {})},
@@ -480,6 +516,8 @@ export function createPlayerSlice(ctx: StoreCtx) {
         retryPlayback() {
             const {current, candidates} = ctx.getState().player;
             if (!current) return;
+            // 用户显式重试：媒体重试额度也重置一次（不然第二次点击会直接判死）
+            mediaRetryPlayId = null;
             patch({
                 playing: true,
                 playbackError: null,
@@ -488,6 +526,21 @@ export function createPlayerSlice(ctx: StoreCtx) {
                 playable: false,
             });
             void resolveWithFallback(candidates, current.playId);
+        },
+
+        recoverPlayback() {
+            const {current, candidates, elapsed} = ctx.getState().player;
+            if (!current) return;
+            // 与「点重试」不同：这里是用户没做任何操作时的自动恢复，必须**接着原进度**播
+            mediaRetryPlayId = null;
+            patch({
+                playing: true,
+                playbackError: null,
+                failedSources: [],
+                audioUrl: null,
+                playable: false,
+            });
+            void resolveWithFallback(candidates, current.playId, {keepElapsed: elapsed > 0});
         },
 
         async findAlternatives() {

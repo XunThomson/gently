@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
 import type {CoreError, PluginSummary} from '../../../api';
@@ -51,6 +51,14 @@ export function SourceFavorites() {
     /** 该源的可选收藏夹/歌单：空 = 只有一份默认收藏（不显示选择器） */
     const [collections, setCollections] = useState<CoreFavoriteCollection[]>([]);
     const [collection, setCollection] = useState<string>('');
+    /**
+     * 请求代号：**每次换源 / 刷新 / 换收藏夹都 +1**，回来的旧结果一律丢弃。
+     *
+     * 这就是「快速点 tab 时标签和内容对不上」的根因：以前没有任何代号或取消机制，
+     * 点 A 源再点 B 源，A 的响应可能比 B 晚到，表格里就成了 A 的歌、标签却停在 B 上。
+     * 请求在途时也清空列表（`setRows([])`）：宁可显示「加载中」，也不显示别的源的歌。
+     */
+    const requestRef = useRef(0);
 
     /** 只列出「已启用且实现了 getFavorites」的源：其余源根本没有这个入口 */
     useEffect(() => {
@@ -74,35 +82,31 @@ export function SourceFavorites() {
         };
     }, []);
 
-    /** 切源：重新问一次「这个源有哪些收藏夹」，并把选中项重置到第一个 */
-    useEffect(() => {
-        if (!selected) {
-            setCollections([]);
-            setCollection('');
-            return;
-        }
-        let cancelled = false;
-        void catalogService.fetchFavoriteCollections(selected).then((items) => {
-            if (cancelled) return;
-            setCollections(items);
-            setCollection(items[0]?.id ?? '');
-        });
-        return () => {
-            cancelled = true;
-        };
-    }, [selected]);
-
+    /**
+     * 取一页收藏。`append` 为 false 时先清空当前行——**清空发生在等待之前**，
+     * 这样「标签已经换了、内容还是上一个源的」这个中间态根本不会出现。
+     */
     const load = useCallback(
         async (sourceId: string, nextPage: number, append: boolean, collectionId?: string) => {
+            const ticket = ++requestRef.current;
+
             if (!sourceId) {
                 setRows([]);
                 setHasMore(false);
                 setLoading(false);
                 return;
             }
+            if (!append) {
+                setRows([]);
+                setHasMore(false);
+            }
             setLoading(true);
             setError(null);
+
             const result = await catalogService.fetchFavoritesFrom(sourceId, nextPage, collectionId);
+            // 期间换了源 / 换了收藏夹 / 又刷新了一次：这份结果已经过期，丢弃
+            if (ticket !== requestRef.current) return;
+
             setLoading(false);
             setLoadedOnce(true);
             if (!result) {
@@ -112,7 +116,7 @@ export function SourceFavorites() {
                 return;
             }
             if (result.error) {
-                // 失败**不清空已有行**：翻页失败不该让用户丢掉前一页
+                // 失败**不清空已有行**（翻页失败不该让用户丢掉前一页）；但首次加载时行已清空
                 setError(result.error);
                 if (!append) setRows([]);
                 setHasMore(false);
@@ -125,10 +129,48 @@ export function SourceFavorites() {
         [],
     );
 
+    /**
+     * 换源：先取该源的可选收藏夹，再用第一份（或默认收藏）取第一页。
+     *
+     * 一个 effect 管完整条链（而不是「collections effect + load effect」两条互相触发）：
+     * 两条 effect 会在换源瞬间用**上一个源**的收藏夹 id 发一次请求，结果又被下一次覆盖，
+     * 正是标签/内容错位的高发处。
+     */
     useEffect(() => {
-        if (!selected) return;
-        void load(selected, 1, false, collection || undefined);
-    }, [selected, collection, load]);
+        if (!selected) {
+            requestRef.current += 1; // 让在途请求作废
+            setRows([]);
+            setHasMore(false);
+            setCollections([]);
+            setCollection('');
+            setLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+        // 立刻作废上一个源的在途请求，并清空它的内容
+        requestRef.current += 1;
+        setRows([]);
+        setHasMore(false);
+        setPage(1);
+        setCollections([]);
+        setCollection('');
+        setError(null);
+        setLoading(true);
+
+        void (async () => {
+            const items = await catalogService.fetchFavoriteCollections(selected);
+            if (cancelled) return;
+            setCollections(items);
+            const firstCollection = items[0]?.id;
+            setCollection(firstCollection ?? '');
+            await load(selected, 1, false, firstCollection);
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [selected, load]);
 
     const columns: ColumnDef<Track>[] = useMemo(
         () => [
@@ -180,7 +222,11 @@ export function SourceFavorites() {
                             ...(entry.count === undefined ? {} : {count: entry.count}),
                         }))}
                         value={collection || collections[0].id}
-                        onChange={(value) => setCollection(value)}
+                        onChange={(value) => {
+                            setCollection(value);
+                            // 换收藏夹 = 换一份内容：立刻清空并重新取第一页（同样受请求代号保护）
+                            void load(selected, 1, false, value);
+                        }}
                     />
                 </div>
             )}

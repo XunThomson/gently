@@ -1,0 +1,10 @@
+/* 宠物窗口（独立 Tauri 窗口）：整页透明，只有宠物本体是可交互的。
+   拖动直接拖宠物本体（没有单独的拖动条——那会让人以为在拖一个看不见的窗口）。 */
+
+.page {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background: transparent;
+}
+

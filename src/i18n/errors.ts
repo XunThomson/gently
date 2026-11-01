@@ -1,5 +1,5 @@
 import type {TFunction} from 'i18next';
-import type {CoreError} from '../api';
+
 
 /**
  * 错误码 → 面向用户的文案。
@@ -32,12 +32,14 @@ const MESSAGE_IS_FOR_USER: ReadonlySet<string> = new Set([
 ]);
 
 /** 取本地化文案；万一某个码漏了翻译，退回核心的开发者说明而不是显示键名。 */
-export function errorText(t: TFunction, error: Pick<CoreError, 'code' | 'message'>): string {
+export function errorText(t: TFunction, error: {code: string; message?: string}): string {
     const key = errorKey(error.code);
     const text = t(key);
-    const base = text === key ? error.message : text;
+    const base = text === key ? (error.message ?? '') : text;
     const message = error.message?.trim() ?? '';
     if (!MESSAGE_IS_FOR_USER.has(error.code) || !message) return base;
     if (base.includes(message)) return base;
     return `${base}：${message}`;
 }
+
+

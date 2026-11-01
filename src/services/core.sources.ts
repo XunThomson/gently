@@ -79,6 +79,21 @@ export function ensureCoreSources(): Promise<void> {
 }
 
 /**
+ * 让路由表**立刻**过期（下一次 `ensureCoreSources` 必定重新问核心）。
+ *
+ * 装完 / 卸载 / 改启用状态 / 改回退优先级之后必须调用：这些动作都改变了
+ * 「哪些 id 属于核心源、哪个源是可播且启用的」。不失效的话，最长会有一个 TTL
+ * 的时间窗，刚装好的插件在这段时间里被当成「前端不认识的本地源」——
+ * 表现就是搜索拿不到它、播放说没有可用音源，用户只能重启应用（R87 的 bug）。
+ *
+ * 只标脏、不在这里发起请求：调用方通常紧接着就读一份新清单
+ * （`libraryService.loadPlugins()`），让那一次 I/O 顺带把缓存刷新掉。
+ */
+export function invalidateCoreSources(): void {
+    lastAttempt = 0;
+}
+
+/**
  * 核心认识的音源 id。
  *
  * `enabledOnly` 为 true 时只保留核心侧标记为启用的插件——搜索要按这个集合下发

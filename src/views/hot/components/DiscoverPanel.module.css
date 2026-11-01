@@ -1,0 +1,384 @@
+/* 「发现」子视图：书架（竖插的包装盒）+ 聚焦详情 + 右侧列表 */
+
+.root {
+    display: grid;
+    grid-template-columns: minmax(320px, 1.2fr) minmax(240px, 0.9fr);
+    gap: var(--space-5);
+    align-items: start;
+}
+
+@media (max-width: 1080px) {
+    .root {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.stage {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    min-width: 0;
+}
+
+/* ---------------- 聚焦的那张包装 ---------------- */
+
+.detail {
+    display: flex;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    min-height: 200px;
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+}
+
+.package {
+    position: relative;
+    flex: 0 0 auto;
+    width: 148px;
+    height: 148px;
+}
+
+/* 包装正面：歌曲封面就是包装封面 */
+.cover {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    isolation: isolate;
+}
+
+.coverImage {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    /* 封面作为「包装」看待：留一点内收缩边，像印刷品而不是贴片 */
+    padding: 6%;
+    box-sizing: border-box;
+}
+
+.coverGlyph {
+    font-size: 40px;
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-inverse);
+    opacity: 0.8;
+}
+
+/* 媒介动效：从包装里露出来的那部分 */
+.medium {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+}
+
+/* 黑胶：转盘 + 中心标签 */
+.disc {
+    width: 78%;
+    height: 78%;
+    border-radius: 50%;
+    background: radial-gradient(
+        circle at 50% 50%,
+        var(--bg-surface-alt) 0 12%,
+        var(--bg-app) 12% 18%,
+        var(--bg-surface-alt) 18% 22%,
+        var(--bg-app) 22% 100%
+    );
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    transform: translateX(0) scale(0.9);
+    transition:
+        opacity var(--motion-base),
+        transform var(--motion-base);
+}
+
+.discLabel {
+    display: block;
+    width: 34%;
+    height: 34%;
+    margin: 33% auto 0;
+    border-radius: 50%;
+    background: var(--brand);
+    opacity: 0.75;
+}
+
+/* 磁带：两个卷盘 */
+.reels {
+    position: absolute;
+    display: flex;
+    gap: 12px;
+    opacity: 0;
+    transition: opacity var(--motion-base);
+}
+
+.reels i {
+    display: block;
+    width: 26px;
+    height: 26px;
+    border: 2px solid var(--brand);
+    border-radius: 50%;
+    border-top-color: transparent;
+}
+
+/* 光盘：整面反光 */
+.detail[data-medium='cd'] .disc {
+    background: conic-gradient(
+        from 0deg,
+        var(--bg-surface-alt) 0deg,
+        var(--brand) 60deg,
+        var(--bg-surface-alt) 140deg,
+        var(--brand) 220deg,
+        var(--bg-surface-alt) 300deg,
+        var(--brand) 360deg
+    );
+    opacity: 0;
+}
+
+/* 选中后把媒介露出来：黑胶向右滑出并旋转，磁带卷盘开始转，光盘整体旋转 */
+.detail[data-preview='playing'] .disc {
+    opacity: 1;
+    transform: translateX(38%) scale(1);
+    animation: discover-spin 4s linear infinite;
+}
+
+.detail[data-preview='playing'][data-medium='cassette'] .disc {
+    opacity: 0;
+    transform: none;
+    animation: none;
+}
+
+.detail[data-preview='playing'][data-medium='cassette'] .reels {
+    opacity: 1;
+}
+
+.detail[data-preview='playing'][data-medium='cassette'] .reels i {
+    animation: discover-reel 1.2s linear infinite;
+}
+
+.detail[data-preview='playing'][data-medium='cassette'] .reels i + i {
+    animation-direction: reverse;
+}
+
+@keyframes discover-spin {
+    to {
+        transform: translateX(38%) rotate(360deg);
+    }
+}
+
+@keyframes discover-reel {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* 系统要求减少动态效果时不转：信息（当前在试听）仍在文字里 */
+@media (prefers-reduced-motion: reduce) {
+    .detail[data-preview='playing'] .disc,
+    .detail[data-preview='playing'][data-medium='cassette'] .reels i {
+        animation: none;
+    }
+}
+
+/* ---------------- 详情文字 ---------------- */
+
+.meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+
+.artist {
+    font-size: var(--font-size-sm);
+    color: var(--text-tertiary);
+}
+
+.previewHint {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.previewHint[data-state='playing'] {
+    color: var(--brand);
+}
+
+.previewHint[data-state='unavailable'] {
+    color: var(--text-tertiary);
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: auto;
+    flex-wrap: wrap;
+}
+
+/* ---------------- 书架 ---------------- */
+
+.shelf {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    min-height: 188px;
+    padding: 0 var(--space-2) 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-radius: var(--radius-md);
+}
+
+/* 竖插的包装：又窄又高，只露侧脊（书名竖排），像书架上的一排书 */
+.spine {
+    position: relative;
+    flex: 0 0 34px;
+    height: 168px;
+    padding: 10px 4px;
+    overflow: hidden;
+    font: inherit;
+    color: var(--text-inverse);
+    text-align: center;
+    border: 0;
+    border-radius: 3px 3px 0 0;
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+    transform: translateY(0);
+    transition:
+        transform var(--motion-base),
+        filter var(--motion-base);
+}
+
+/* 侧脊上的书名用竖排书写 */
+.spineText {
+    display: block;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.15;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    max-height: 118px;
+}
+
+.spineArtist {
+    display: block;
+    margin-top: 4px;
+    font-size: 10px;
+    opacity: 0.7;
+    writing-mode: vertical-rl;
+    white-space: nowrap;
+    overflow: hidden;
+    max-height: 44px;
+}
+
+.spine:hover,
+.spine:focus-visible {
+    transform: translateY(-10px);
+    filter: brightness(1.08);
+    outline: none;
+}
+
+/* 聚焦的一本：抽出来一点 + 高亮 */
+.spineActive {
+    transform: translateY(-16px);
+    box-shadow: var(--shadow-lg);
+    outline: 2px solid var(--brand);
+    outline-offset: 1px;
+}
+
+.shelfBase {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 8px;
+    background: var(--bg-surface-alt);
+    border-radius: var(--radius-sm);
+}
+
+/* ---------------- 右侧列表 ---------------- */
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    max-height: 460px;
+    list-style: none;
+}
+
+.row {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) minmax(0, 0.8fr) 52px;
+    gap: var(--space-2);
+    align-items: center;
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    font: inherit;
+    color: var(--text-primary);
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+
+.row:hover {
+    background: var(--surface-content-alt);
+}
+
+.rowActive {
+    background: var(--surface-content-alt);
+    box-shadow: inset 2px 0 0 var(--brand);
+}
+
+.rowIndex {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    text-align: center;
+}
+
+.rowTitle,
+.rowArtist {
+    overflow: hidden;
+    font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rowArtist {
+    color: var(--text-tertiary);
+}
+
+.rowDuration {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    text-align: right;
+}
+
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-8) 0;
+    color: var(--text-tertiary);
+}

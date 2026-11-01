@@ -65,12 +65,54 @@ class AudioEngine {
     load(url: string): void {
         const el = this.ensure();
         if (!el) return;
-        if (el.dataset.src === url) return;
+        /* 同一地址不重复 load，避免打断连续播放。**但元素已经进入 error 时必须重来**：
+           媒体元素一旦报错就再也 play() 不起来，只有 load() 能把它拉回可用状态
+           （电脑休眠回来、流地址过期之后就是这种状态）。 */
+        if (el.dataset.src === url && !el.error) return;
 
         el.dataset.src = url;
         el.src = url;
         this.safeSetVolume(el);
         el.load();
+    }
+
+    /** 硬重载当前地址（不看 `dataset.src` 的去重）：媒体出错后的第一步恢复手段 */
+    reload(): void {
+        const el = this.el;
+        const url = el?.dataset.src;
+        if (!el || !url) return;
+        el.src = url;
+        this.safeSetVolume(el);
+        el.load();
+    }
+
+    /**
+     * 试着从「被系统中断」的状态里恢复播放（窗口重新聚焦 / 页面重新可见时调用）。
+     *
+     * - `ok`：元素只是被暂停了，直接播起来；
+     * - `reloaded`：元素处在 error 状态，硬重载后播起来了；
+     * - `failed`：这个地址真的不能用了——调用方应让核心**重新解析**一次（进度保留）。
+     */
+    async resume(): Promise<'ok' | 'reloaded' | 'failed'> {
+        const el = this.ensure();
+        if (!el || !el.dataset.src) return 'failed';
+
+        if (!el.error) {
+            try {
+                await el.play();
+                return 'ok';
+            } catch {
+                /* 落到下面的硬重载 */
+            }
+        }
+
+        try {
+            this.reload();
+            await el.play();
+            return 'reloaded';
+        } catch {
+            return 'failed';
+        }
     }
 
     play(): void {
@@ -126,6 +168,16 @@ class AudioEngine {
     /** 元素是否还停着（没有元素也算停着） */
     isPausedNow(): boolean {
         return !this.el || this.el.paused;
+    }
+
+    /**
+     * 元素是否处在**错误态**（`MediaError` 已产生）。
+     *
+     * 与「暂停」区分开很关键：暂停是用户要的状态，错误是地址/解码真的坏了。
+     * 前者重载多少次都没意义，后者只有重新解析地址（换新 URL）才能救回来。
+     */
+    hadError(): boolean {
+        return Boolean(this.el?.error);
     }
 }
 

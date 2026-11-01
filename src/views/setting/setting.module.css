@@ -191,3 +191,96 @@
     font-size: var(--font-size-xs);
     line-height: var(--line-height-relaxed);
 }
+
+/* 宠物缩略预览：画布内部 96×104，CSS 显示 48×52（2×，高 DPI 也清晰）。
+   像素画必须关掉平滑缩放，否则缩略图会糊成一片。 */
+.petPreview {
+    flex: none;
+    width: 48px;
+    height: 52px;
+    image-rendering: pixelated;
+    border-radius: var(--radius-sm);
+}
+
+/* 拖文件导入的区域：平时是虚线框，拖进来高亮 */
+.petDrop {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px dashed var(--border-default);
+    border-radius: var(--radius-md);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    background: var(--surface-content-alt);
+    transition: border-color var(--motion-base), color var(--motion-base);
+}
+
+.petDropActive {
+    border-color: var(--brand);
+    color: var(--text-primary);
+}
+
+/* 宠物列表：一行一只（预览 / 名字+状态 / 操作），窄窗口自动换行。
+   之前这几个类名是引用了不存在的类，等于没有布局，所以卡片里「名字、版本、好感、按钮」挤成一行。 */
+.petList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.petRow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+}
+
+.petRowLabel {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.petRowActions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    margin-left: auto;
+}
+/* 宠物调试面板：一行一个键值，等宽字体方便对齐数字 */
+.petDebug {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface-content-alt);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+}
+
+.petDebugRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: baseline;
+}
+
+.petDebugActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
+}

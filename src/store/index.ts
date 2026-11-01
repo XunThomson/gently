@@ -83,6 +83,8 @@ store.subscribe(() => {
         downloadMaxConcurrent,
         customSkins,
         background,
+        discoverAutoPreview,
+        petEnabled,
     } = store.getState().ui;
 
     const key = [
@@ -99,6 +101,8 @@ store.subscribe(() => {
         String(downloadMaxConcurrent),
         customSkins.map((skin) => `${skin.id}:${skin.name}`).join(','),
         JSON.stringify(background),
+        String(discoverAutoPreview),
+        String(petEnabled),
     ].join('|');
     if (key === lastPersistedKey) return;
     lastPersistedKey = key;
@@ -117,6 +121,8 @@ store.subscribe(() => {
         downloadMaxConcurrent,
         customSkins,
         background,
+        discoverAutoPreview,
+        petEnabled,
     });
 });
 

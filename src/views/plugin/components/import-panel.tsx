@@ -1,12 +1,12 @@
-import {useCallback, useEffect, useState} from 'react';
+import {useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {errorText} from '../../../i18n/errors';
-import type {CoreResult, ImportSource, PluginImportPreview, PluginSummary} from '../../../api';
+import type {ImportSource, PluginImportPreview} from '../../../api';
 import {Button} from '../../../components/ui/button';
 import {UnderlineRadioGroup} from '../../../components/ui/radio-group';
-import {BadgeCell, TextCell} from '../../../components/ui/data-table';
-import {useConfirm} from '../../../hooks/useConfirm';
-import {coreAvailable, corePlugin, libraryService} from '../../../services';
+import {TextCell} from '../../../components/ui/data-table';
+import {coreAvailable, corePlugin} from '../../../services';
+import {useActions} from '../../../store';
 import {PERMISSION_LABEL} from '../permissions';
 
 /** 授权地址里的域名（只用于展示「浏览器会被带去哪个域名」） */
@@ -14,7 +14,7 @@ function oauthHost(url: string): string {
     const rest = url.replace(/^https?:\/\//, '');
     return rest.split(/[/?#]/)[0] || url;
 }
-import {PluginSettings} from './plugin-settings';
+
 import styles from '../plugin.module.css';
 
 type SourceMode = 'paste' | 'url' | 'path';
@@ -34,7 +34,12 @@ export function kindFromPath(value: string): PathKind {
 }
 
 /**
- * 本机核心插件面板：导入（粘贴 / 地址 / 本机路径）→ 权限确认 → 安装。
+ * 导入表单：粘贴 / 地址 / 本机路径 → 预览权限 → 显式同意 → 安装。
+ *
+ * **只负责「导入」这一件事**：已安装插件的列表、启停、优先级、重载、凭据配置都在插件页的
+ * 表格与管理面板里（`views/plugin/index.tsx` + `plugin-manage.tsx`）。以前这里还自带一份
+ * 「已导入的插件」清单，同一批数据在页面上出现两次（一份在导入面板、一份在下方表格），
+ * 既冗余又会出现「导入面板刷新了、表格还是旧的」这种不一致。
  *
  * 三条硬约束体现在这里：
  * 1. **中立立场**（ADR-0005）：界面不预置任何来源、不出现「官方/推荐」措辞，
@@ -47,8 +52,11 @@ export function kindFromPath(value: string): PathKind {
  */
 export function ImportPanel() {
     const {t} = useTranslation();
-    const confirm = useConfirm();
     const available = coreAvailable();
+    /* 安装完成后**必须**重读全局插件清单（`plugin.reload()`，不是 `load()`）：
+       `load()` 有 loaded 守卫，只在启动时读一次；不强制刷新的话，刚装好的插件
+       要等下一次启动才出现在表格 / 音源筛选 / 播放条里（R87 修的 bug）。 */
+    const {reload} = useActions().plugin;
 
     const [mode, setMode] = useState<SourceMode>('paste');
     const [text, setText] = useState('');
@@ -61,18 +69,8 @@ export function ImportPanel() {
     const [consent, setConsent] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [installed, setInstalled] = useState<PluginSummary[]>([]);
-    /** 正在展开管理面板（凭据 / 配置）的插件 id */
-    const [settingsId, setSettingsId] = useState<string | null>(null);
-
-    const refresh = useCallback(async () => {
-        const result = await corePlugin.list();
-        setInstalled(result.ok ? result.data : []);
-    }, []);
-
-    useEffect(() => {
-        void refresh();
-    }, [refresh]);
+    /** 最近一次安装成功的结果（面板常驻在抽屉里，需要一个可见的完成态） */
+    const [installedName, setInstalledName] = useState<string | null>(null);
 
     /** 当前输入对应的导入来源；未填写返回 null */
     const currentSource = (): ImportSource | null => {
@@ -100,6 +98,7 @@ export function ImportPanel() {
         }
         setBusy(true);
         setError(null);
+        setInstalledName(null);
         const result = await corePlugin.preview(from, compat);
         if (result.ok) {
             setPreview(result.data);
@@ -109,16 +108,6 @@ export function ImportPanel() {
             setError(errorText(t, result.error));
         }
         setBusy(false);
-    };
-
-    /** 统一动作包装：失败只提示，不抛；结束后刷新列表 */
-    const run = async (action: () => Promise<CoreResult<unknown>>) => {
-        setBusy(true);
-        setError(null);
-        const result = await action();
-        if (!result.ok) setError(errorText(t, result.error));
-        setBusy(false);
-        await refresh();
     };
 
     const install = async () => {
@@ -135,65 +124,13 @@ export function ImportPanel() {
             setConsent(false);
             setText('');
             setUrl('');
-            await refresh();
+            setInstalledName(result.data.plugin.name);
+            // 全局清单 + 按源路由缓存一起刷新：装完就能搜、能播，不需要重启
+            await reload();
         } else {
             setError(errorText(t, result.error));
         }
         setBusy(false);
-    };
-
-    /**
-     * 兼容模式收敛（ADR-0006/TOFU）：先把观测到的域名摆给用户看，确认后固化成白名单。
-     *
-     * 这是**收窄**动作（之后该插件只能访问这些域名），因此走二次确认；
-     * 没有观测记录时明确提示「先使用一次」，而不是弹一个空列表。
-     */
-    const converge = async (plugin: PluginSummary) => {
-        setBusy(true);
-        setError(null);
-        const result = await corePlugin.observedHosts(plugin.id);
-        setBusy(false);
-        if (!result.ok) {
-            setError(errorText(t, result.error));
-            return;
-        }
-        const hosts = result.data.hosts.map((entry) => entry.host);
-        if (hosts.length === 0) {
-            setError(t('page.plugin.compatNoHosts'));
-            return;
-        }
-        confirm({
-            titleKey: 'confirm.compatTitle',
-            descKey: 'confirm.compatDesc',
-            descParams: {name: plugin.name, hosts: hosts.join(' / ')},
-            tone: 'danger',
-            onConfirm: () => run(() => corePlugin.confirmHosts(plugin.id, hosts)),
-        });
-    };
-
-    /** 上/下移：整表重排后按 10 递增回写优先级（默认优先级都相同，交换数值无效，必须重排） */
-    const move = async (index: number, delta: number) => {
-        const target = index + delta;
-        if (target < 0 || target >= installed.length) return;
-        const next = [...installed];
-        const [moved] = next.splice(index, 1);
-        next.splice(target, 0, moved);
-
-        setBusy(true);
-        setError(null);
-        for (const [position, plugin] of next.entries()) {
-            const want = (position + 1) * 10;
-            if (plugin.priority === want) continue;
-            /* 走 `libraryService`（而不是直接 `corePlugin`）：内置演示源不在核心里，
-               服务层会跳过它——直接发过去只会换回一条 `common.not_found` 并弹错 */
-            const result = await libraryService.setPluginPriority(plugin.id, want);
-            if (!result.ok) {
-                setError(errorText(t, result.error));
-                break;
-            }
-        }
-        setBusy(false);
-        await refresh();
     };
 
     return (
@@ -409,108 +346,10 @@ export function ImportPanel() {
                     )}
 
                     {error && <TextCell tone="danger">{error}</TextCell>}
-
-                    <span className={styles.label}>{t('page.plugin.installed')}</span>
-                    {installed.length === 0 ? (
-                        <p className={styles.hint}>{t('page.plugin.installedEmpty')}</p>
-                    ) : (
-                        <ul className={styles.list}>
-                            {installed.map((plugin, index) => (
-                                <li key={plugin.id} className={styles.row}>
-                                    <span>
-                                        <TextCell>{plugin.name}</TextCell>{' '}
-                                        <TextCell tone="muted">v{plugin.version}</TextCell>{' '}
-                                        <BadgeCell tone={plugin.enabled ? 'success' : 'muted'}>
-                                            {plugin.enabled ? t('common.enabled') : t('common.disabled')}
-                                        </BadgeCell>
-                                        {/* 兼容插件不能与自有 ABI 插件看起来同等安全 */}
-                                        {plugin.compat && (
-                                            <BadgeCell tone="warning">{t('page.plugin.compatBadge')}</BadgeCell>
-                                        )}
-                                    </span>
-                                    <span className={styles.actions}>
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            disabled={busy}
-                                            onClick={() => void move(index, -1)}
-                                        >
-                                            {t('page.plugin.moveUp')}
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            disabled={busy}
-                                            onClick={() => void move(index, 1)}
-                                        >
-                                            {t('page.plugin.moveDown')}
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            disabled={busy}
-                                            onClick={() =>
-                                                void run(() => corePlugin.setEnabled(plugin.id, !plugin.enabled))
-                                            }
-                                        >
-                                            {plugin.enabled ? t('common.disable') : t('common.enable')}
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            disabled={busy}
-                                            onClick={() => void run(() => corePlugin.reload(plugin.id))}
-                                        >
-                                            {t('page.plugin.reload')}
-                                        </Button>
-                                        {/* 凭据 / 配置：作者声明了凭据却没有填写入口，插件就永远是摆设 */}
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            disabled={busy}
-                                            onClick={() =>
-                                                setSettingsId(settingsId === plugin.id ? null : plugin.id)
-                                            }
-                                        >
-                                            {settingsId === plugin.id
-                                                ? t('page.plugin.settingsClose')
-                                                : t('page.plugin.settings')}
-                                        </Button>
-                                        {/* 兼容插件：把观测到的域名固化成白名单（TOFU 收敛，二次确认） */}
-                                        {plugin.compat && (
-                                            <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                disabled={busy}
-                                                onClick={() => void converge(plugin)}
-                                            >
-                                                {t('page.plugin.compatConverge')}
-                                            </Button>
-                                        )}
-                                        {/* 卸载是不可逆的落盘操作：必须走二次确认（AGENTS 约束 11） */}
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            disabled={busy}
-                                            onClick={() =>
-                                                confirm({
-                                                    titleKey: 'confirm.uninstallPluginTitle',
-                                                    descKey: 'confirm.uninstallPluginDesc',
-                                                    descParams: {name: plugin.name},
-                                                    tone: 'danger',
-                                                    onConfirm: () => run(() => corePlugin.remove(plugin.id)),
-                                                })
-                                            }
-                                        >
-                                            {t('common.uninstall')}
-                                        </Button>
-                                    </span>
-
-                                    {/* 管理面板挂在插件行下面（同一行渲染，不引入路由） */}
-                                    {settingsId === plugin.id && <PluginSettings plugin={plugin}/>}
-                                </li>
-                            ))}
-                        </ul>
+                    {installedName && !error && (
+                        <TextCell tone="success">
+                            {t('page.plugin.installDone', {name: installedName})}
+                        </TextCell>
                     )}
 
                     <p className={styles.hint}>{t('page.plugin.disclaimer')}</p>
@@ -519,3 +358,5 @@ export function ImportPanel() {
         </section>
     );
 }
+
+export default ImportPanel;

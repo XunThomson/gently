@@ -1,8 +1,10 @@
+import {useMemo} from 'react';
 import {useTranslation} from 'react-i18next';
 import type {RowAction} from '../components/ui/data-table';
 import {CORE_LOCAL_SOURCE} from '../services/core.sources';
 import {useActions, useSelect} from '../store';
 import type {Track} from '../types';
+import {downloadQueueKeyString, isQueued, parseQueueKeyString} from '../utils/downloadQueue';
 
 export interface TrackActionOptions {
     /** 播放 / 暂停时使用的队列（通常是当前列表） */
@@ -36,6 +38,9 @@ export function useTrackActions() {
     const {toggleFavorite} = useActions().collection;
     const {add: addDownload} = useActions().download;
     const favorites = useSelect((s) => s.collection.favorites);
+    /* 队列里有哪些曲目：只订阅「匹配键序列」，进度每秒变化不会让整张表重渲染 */
+    const queueKeys = useSelect((s) => downloadQueueKeyString(s.download.tasks));
+    const queued = useMemo(() => parseQueueKeyString(queueKeys), [queueKeys]);
 
     return (track: Track, options: TrackActionOptions = {}): RowAction[] => {
         const actions: RowAction[] = [
@@ -56,7 +61,9 @@ export function useTrackActions() {
             });
         }
 
-        if (options.withDownload && canDownload(track)) {
+        /* 已经在下载队列里 → **不显示下载入口**：同一首歌重复提交只会堆出多余任务，
+           真把并发槽占满时界面看起来像「点了没反应」。状态由标题旁的下载标记负责展示。 */
+        if (options.withDownload && canDownload(track) && !isQueued(queued, track)) {
             actions.push({
                 key: 'download',
                 label: t('common.download'),

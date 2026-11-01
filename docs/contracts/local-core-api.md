@@ -71,7 +71,7 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 
 约定：`ref` = `source:trackId`；`source` = 插件 id。写命令无需幂等键（本地事务）。
 
-### system（6）
+### system（8）
 | 命令 | 参数 | 返回 |
 |---|---|---|
 | `system.status` | — | `{version, platform, dbPath, dataDir, pluginRuntime, dbReady, dbError?, credentialsBackend, counts:{plugins,favorites,tracks,downloads}}`——`pluginRuntime` 在 M0 为 `none`、M1 接入 QuickJS 后为 `quickjs`；`dbReady:false` 表示降级运行（`dbError` 给出原因）；`credentialsBackend` 是凭据落点（`windows-credential-manager` / `memory`），界面据此说明「重启后是否还要重新填写」 |
@@ -80,6 +80,8 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 | `system.cacheStatus` | — | `{mediaBytes, mediaCount, catalogBytes, catalogCount, coversBytes, coversCount, limitBytes}`：播放缓存 / 歌词与详情缓存 / 封面缓存的占用（设置页展示） |
 | `system.cacheClear{kind?}` | `media` / `catalog`（歌词与详情）/ `covers` / `all`（缺省） | `{removedBytes, removedFiles}`；未知 kind → `common.invalid_argument`（缓存可随时整目录删除，见 §9） |
 | `system.cacheConfig{limitBytes}` | 播放缓存总量上限（128 MiB ~ 32 GiB） | 更新后**立即按新上限淘汰一次**并返回最新 `cacheStatus`；越界 → `common.invalid_argument`（`details` 带 `min`/`max`）。设置存 `<data>/cache-settings.json`——**清缓存不会重置它**（读用 `cacheStatus`、写用 `cacheConfig`，读写分开） |
+| `system.dataDir` | — | `{current, defaultBase, pointerHome, portable, source, dbPath, hasPointer}`：数据目录**现在在哪、为什么**。`source` 是 `default` / `portable` / `pointer` / `override`（分别对应系统默认位置、便携版 exe 同目录的 `data`、迁移后写入的指针文件、环境变量 `GENTLY_DATA_DIR`） |
+| `system.dataDir.move{target}` | 目标目录（**绝对路径**） | `{target, copiedFiles, copiedBytes, requiresRestart, sourceKept}`：把数据目录**拷贝**到新位置并写好指针文件，**下次启动生效**；只拷贝不删除（旧目录留在 `sourceKept`，用户确认后自行删除）；目标为空/相对路径/与当前目录互相包含 → `common.invalid_argument`；拷贝或数据库副本自检失败 → `library.io_error`（指针不动，下次启动仍在原目录） |
 
 ### plugin：管理（13）
 | 命令 | 说明 |
