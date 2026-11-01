@@ -185,7 +185,11 @@ fn proxy_is_loopback_only_and_rejects_unknown_tokens() {
     // 发布一个令牌（地址是公网 https，不会被拒）
     let stream_url = ctx
         .streams
-        .publish("https://cdn.example.com/a.m4a", vec![("Referer".into(), "https://example.com".into())])
+        .publish(
+            "https://cdn.example.com/a.m4a",
+            vec![("Referer".into(), "https://example.com".into())],
+            Some("audio/mp4".into()),
+        )
         .expect("应能发布流令牌");
     assert!(stream_url.starts_with("http://127.0.0.1:"), "{stream_url}");
 

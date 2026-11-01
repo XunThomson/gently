@@ -1449,7 +1449,11 @@ fn playback_resolve(ctx: &CoreContext, params: serde_json::Value) -> Fallible<se
         };
 
         // SSRF 防护 + 发布流令牌（地址由上游给出，不受 @hosts 约束，必须在这里拦）
-        let stream_url = match ctx.streams.publish(&media.url, media.headers.clone()) {
+        let stream_url = match ctx.streams.publish(
+            &media.url,
+            media.headers.clone(),
+            media.mime_type.clone(),
+        ) {
             Ok(url) => url,
             Err(error) => {
                 tracing::warn!(source, code = error.code.as_str(), "媒体地址被拒：{}", error.message);

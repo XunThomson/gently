@@ -226,7 +226,7 @@ pnpm tauri android build --debug -t aarch64 --apk
 | 8 | 离线约定被打破 | cargo 缓存缺 crate、Gradle 要联网 | P0 期间允许联网；本次联网项：NDK、rust std、Gradle 发行包 + AGP、crates（Android 专用 crate 已在缓存里） |
 | 9 | **armv7 绑定缺失** | `couldn't read …/armv7-linux-androideabi.rs` | 只出 `-t aarch64`（当前设备够用）；要支持 32 位老机时，需要按同样办法补 armv7 绑定（不能用 i686 那份顶替：ARM EABI 的 double 对齐与 i386 不同），并处理 `-latomic` |
 | 10 | 用 dev 包验收 UI | APK 里只有 `assets/tauri.conf.json`；dev server 不在就白屏 | 验收 UI 一律用 `android build --debug`；`dev` 只用于热更新开发 |
-| 11 | **安卓 WebView 播不出声（未解）** | 点搜索结果后播放条出现曲目，但音频元素报 `DEMUXER_ERROR_COULD_NOT_OPEN: FFmpegDemuxer: open context failed` / `error_code = 102_091005 ... Network error`，随后 `pauseForBindings` | 已排除「连不上代理」：核心日志有 `本地流代理已启动（仅回环） port=…` + `媒体连接已接受` + `媒体请求 method=GET target=/m/…`；debug 包 `usesCleartextTraffic=true`（build.gradle 里占位符，debug 段为 true）。**下一步**：① 先在桌面同源上抓一次 `playback.resolve` 的 origin 与 `effective_content_type` 结果（`core/src/media.rs` 在「上游给 octet-stream 且地址没有扩展名」时**不发 Content-Type**，安卓 Chromium 可能因此拒绝）；② 换 `bili-audio` 源再试（`wangyiyun` 的取流可能需要登录，返回的不是音频）；③ 必要时开 `GENTLY_LOG=debug` 看代理回的状态码 |
+| 11 | ~~安卓 WebView 播不出声~~ → **已定案：不是解码问题**（R110） | 点播放后播放条出现、进度在走但没声音；logcat `DEMUXER_ERROR_COULD_NOT_OPEN: open context failed` + `MEDIA_ELEMENT_ERROR … Network error` | **真凶**：上游用 **HTTP 200 + HTML 错误页** 回应媒体地址（实测取出的正是网易云「网页找不到」页，102 752 字节）——插件给的地址早就不服务音频了，`<audio>` 解码失败只是**症状**。代理现在把「回了什么」记下来：`媒体响应 status=… content_type=… sniffed=…`，认出不是音频还有一条 WARN（GOTCHAS §56）。**顺带修好的**：`Content-Type` 改为按**字节**嗅探（fMP4/ID3/fLaC/OggS/RIFF-WAVE/ADTS/webm），插件声明的 `mimeType` 不再被丢掉，回环代理补 `Access-Control-Allow-Origin: *`。**移动端播放链路已在真机验证**（本地文件 206 + `aria-valuenow` 5→13/271，见 §7.3） |
 
 ## 6. 执行记录（每完成一步就贴在这里，一条都不要省）
 
@@ -399,7 +399,22 @@ pnpm tauri android build --debug -t aarch64 --apk
 - ✅ 播放：行高亮 + 播放条；进度条在**播放条顶边**、触屏常显焦点，点一下跳 45%（`-playing` / `-seek`）
 - ✅ 播放条 → 歌词页（手机默认省封面）（`-nowplaying`）
 - 🐞 本轮真机才发现、已修：时长/⋯ 被单元格内边距裁字（`4…`、`⋯` 只剩两点）；遮罩色画在 button 上不涂也不收点击（GOTCHAS §55）；进度条锚到应用顶边（`.bar` 缺定位祖先）
-- ❌ 音频解码失败仍在（风险 11）——UI 走查是在「模拟时钟」下完成的
+- ⚠️ 当时以为「音频解码失败仍在」——R110 查明是**上游拿错误页冒充音频**（风险 11 已定案）
+
+### 7.3 R110：真机播放链路定案与验证
+
+> 结论先行：**移动端的播放链路是通的**；之前「播不出声」是上游（用户自己导入的社区源）用
+> HTTP 200 + HTML 错误页回应媒体地址。判断口径与修复都在核心层。
+
+| 步 | 做了什么 |
+|---|---|
+| 定位工具 | 新增 `scripts/android-cdp.mjs`：走 WebView 的 devtools socket（debug 包才开），能在**真机页面里**求值 / 按文本点中心点 / 截整屏 / 收网络事件——不再靠 `adb input tap` 手算坐标（R108/R109 各浪费过一轮）。`ping` 会顺手打印页面 URL（实测 `http://tauri.localhost/search?q=love`，顺带排除了「https 页面 + http 媒体」的混合内容猜想） |
+| 关键证据 1 | `fetch('<回环 URL>')` → `{ok:true, type:'opaque'}`：网络通、字节在流；但 `new Audio(同 URL)` → `error.code=4`（SRC_NOT_SUPPORTED） |
+| 关键证据 2 | 打开 `核心` 日志：`媒体响应 status=200 content_type="text/html;charset=utf8" sniffed="(unknown)"`，把响应体取出读，是**网易云的「网页找不到」页**（102 752 字节）；bili 源同样是 HTML |
+| 修复（核心） | `core/src/media.rs`：① `Content-Type` 改为**先嗅探字节**（fMP4 `ftyp` / `ID3` / `fLaC` / `OggS` / `RIFF…WAVE` / `0xFFEx` / ADTS / EBML），再插件声明的 `mimeType`，再上游类型，最后按扩展名；② 媒体元素惯用的 `Range: bytes=0-` **也嗅探**（`range_starts_at_zero`，否则这层修复在真实路径上等于没做）；③ 嗅探用的前缀要原样吐回去（字节不能少）；④ 插件声明的 `mimeType` 不再被丢掉（`publish()` 多一个参数）；⑤ 回环代理补 `Access-Control-Allow-Origin: *`（远端 + 本地两条路）；⑥ 响应日志补齐 status / content-type / sniffed / prefix_len，并加「上游返回的不是可识别的音频」WARN |
+| 验证（App 侧） | 把 `src/assets/yihuik苡慧 - 致你.m4s` push 进应用私有目录 → 「本地音乐 → 扫描本地目录」扫到 1 个文件 → 点播放：日志 `媒体响应（本地文件） status=206 start=0 end=4388383`，`[role=slider]` 的 `aria-valuenow/aria-valuemax` 从 **5/271 → 13/271**（8 秒 +8 秒），播放条暂停图标 + 进度条有填充 → **真机在放音** |
+| 截图 | `r110-android-local-list.png`（扫描面板 + 扫到的曲目）、`r110-android-local-playing.png`（播放中，进度条有拇指与填充） |
+| 未做 | 「上游不是音频」还**没进 UI 文案**（现在只会显示「无法播放 / 重试 / 换源」）。要让它可读，需要在 `playback.resolve` 里先探一次（自动换下一个候选）或加一个契约事件；这是下一步的候选任务 |
 
 **拆分（每片独立可交付）**
 
@@ -423,8 +438,12 @@ pnpm tauri android build --debug -t aarch64 --apk
 2. **P0 已完成**（2026-11-01）：工具链、构建、安装、启动、真机日志、界面渲染六件都有证据（§1、§6）。
 3. **P1 已完成**（R108 外壳 + R109 触摸语义/手机列/窗口能力）：手机外壳 = 左侧抽屉（8 项）+ 搜索作 home +
    常驻播放条（不含推荐/排行榜）；列表两行式、行操作进 ⋯ 底部面板、进度条在播放条顶边且常显焦点。
-   逐片状态与证据见 §7.1、§7.2。**下一个入口条件是 P2（后台播放）**，先做一次「锁屏 5 分钟 WebView
-   `<audio>` 还活着吗」的实测再决定技术路线；风险 11（音频解码失败）也归到 P2 一起解决。
+   逐片状态与证据见 §7.1、§7.2。
+4. **播放链路已定案（R110）**：真机上**能放音**（本地文件走同一条回环代理，206 + 进度推进）；
+   「播不出声」的真凶是上游用 HTTP 200 + HTML 错误页冒充音频（风险 11）。诊断工具
+   `scripts/android-cdp.mjs`（真机 CDP）与代理的「回了什么」日志是一对，别再靠 logcat 里的
+   解码错误去猜。**下一个入口条件仍是 P2（后台播放）**：先实测「锁屏 5 分钟 WebView `<audio>` 还活着吗」；
+   另一个候选小任务是给「上游不是音频」补一条用户能看懂的文案。
 
 ## 9. 相关文档
 

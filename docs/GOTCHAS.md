@@ -568,6 +568,29 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
   面板渲染成 shell 的兄弟节点），`position: absolute; inset: 0` 落到 `.app__content`
   （`position: relative`，整屏）。同理：桌面歌词/宠物的窗口浮层不要塞进滚动容器。
 
+## 56. 「播不出声」先看代理回了什么：上游常用 **HTTP 200 + HTML 错误页** 冒充媒体（R110）
+
+- 现象：真机点播放 → 播放条出现、进度在走，但没声音；logcat 里是
+  `DEMUXER_ERROR_COULD_NOT_OPEN: FFmpegDemuxer: open context failed` +
+  `MEDIA_ELEMENT_ERROR: Network error`。R108/R109 一直把它当「解码 / Content-Type 问题」查，
+  换了类型、加了嗅探都没用——因为**根本不是解码问题**。
+- 真凶（一行日志定位）：代理把上游响应记下来之后是
+  `媒体响应 status=200 content_type="text/html;charset=utf8" sniffed="(unknown)"`。
+  把那段 HTML 取出来读，是**网易云的「网页找不到」页**（10 万字节、HTTP 200）。
+  也就是说：插件给的媒体地址早就不服务音频了（登录态/防盗链/过期），而 CDN 用 200 + 错误页回应。
+- 关键教训：
+  1. **状态码不等于内容**。上游 200 不代表拿到音频，必须按字节/类型判一次；
+  2. **代理层的日志要能回答「回了什么」**（status / content-type / 嗅探结果 / 前缀长度），
+     只有「收到一个 GET」这种日志会把排查引向错误的层（R109 就在这里白花了一轮）；
+  3. 媒体元素只会给你 `MediaError.code = 4`，**拿不到服务端原因**——所以判断必须在核心做。
+- 现在的行为（R110 起）：代理嗅探首字节决定 `Content-Type`（fMP4 / ID3 / fLaC / OggS / RIFF-WAVE /
+  ADTS / webm），认出不是音频就记一条 WARN「上游返回的不是可识别的音频（多半是错误页 / 需要登录 /
+  需要请求头）」。**别再用「换个 Content-Type 试试」对待这类故障。**
+- 取证口径（判断 App 侧通不通，与源无关）：把一段音频 push 进应用私有目录
+  （`adb push` → `run-as com.gently cp music/`），在「本地音乐 → 扫描本地目录」里扫它，
+  点播放后看 `媒体响应（本地文件） status=206`，再用 `scripts/android-cdp.mjs eval` 读
+  `[role=slider]` 的 `aria-valuenow/aria-valuemax`（实测 38/271 → 44/271，说明真的在播）。
+
 ## 55. 别拿「铺满屏幕的 `<button>`」当遮罩：真机上它既不涂背景、也收不到点击（R109）
 
 - 现象：底部操作面板 / 导航抽屉的遮罩在浏览器预览里正常（浅色方案下也压暗），

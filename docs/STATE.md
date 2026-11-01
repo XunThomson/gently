@@ -4,10 +4,50 @@ last_verified: 2026-11-01
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R109（安卓 P1 收尾）：P1-4/5/6 三片落地 —— ① 手机列表**换一份两行式列定义**（`mobileTrackColumns`/`mobileColumns`，主信息 + 时长 + ⋯），由 `DataTable` 按 `resolveShellMode` 选，视图不写 `@media`；② 行内动作收进 **⋯ → 底部操作面板**（`components/ui/row-actions`，动作与桌面同源），SeekBar 在手机形态**常显焦点 + 32px 热区**；③ 桌面专属窗口动作在移动端 no-op（纯谓词 `desktopWindowActionsAvailable`）。真机上还揪出并修掉三个「只在设备上出现」的问题：时长/⋯ 被单元格内边距裁成 `4…`、**遮罩色画在 button 上不涂**（GOTCHAS §55）、**移动播放条的进度条跑到应用顶边**（`.bar` 缺 `position: relative`）。smoke 509 → **525**；真机截图 `r109-android-*.png`。
+tldr: 当前 R110（安卓播放链路定案）：R108/R109 一直把「安卓播不出声」当解码/Content-Type 问题查，本轮用**真机 CDP**（新工具 `scripts/android-cdp.mjs`）把链路拆开——`fetch` 回环地址成功（opaque），`new Audio(同地址)` 报 `code=4`；打开代理日志才看到真凶：上游用 **HTTP 200 + HTML 错误页**回应媒体地址（取出来正是网易云的「网页找不到」页，102 752 字节）。于是核心侧补齐：`Content-Type` 按**字节**嗅探（fMP4/ID3/fLaC/OggS/RIFF-WAVE/ADTS/webm）、`Range: bytes=0-` 也嗅探、嗅探前缀原样回吐、插件 `mimeType` 不再丢失、回环代理放宽 CORS、响应日志写清「回了什么」+ 非音频 WARN。**移动端播放链路已在真机验证**：本地文件经同一条代理 206 播放，`aria-valuenow/max` 5→13 / 271。核心单测 84；`pnpm verify` 8 道全绿。
 ---
 
 # STATE
+
+## 本轮目标（第一百一十轮）
+
+> 起点：R109 收尾还剩一句「安卓仍然放不出声（风险 11，未解）」。
+> 那句话在 R108 就挂上了，两轮都被写成「解码 / Content-Type 问题」——
+> 本轮先用工具把「到底哪一环坏了」分开，再动手。
+
+### 1. 本轮做了什么
+
+| 层 | 改动 |
+|---|---|
+| 诊断工具 | 新增 `scripts/android-cdp.mjs`：走 WebView devtools socket（debug 包自带），`ping`（顺带打印页面 URL）/`eval`/`tap --text`/`shot`/`net`。以后真机排查**不用 `adb input tap` 手算坐标**（R108/R109 各为此浪费过一轮） |
+| 定位 | ① `fetch('http://127.0.0.1:<port>/m/<token>')` → `{ok:true, type:'opaque'}`：网络与字节都通；② `new Audio(同 URL)` → `error.code=4`；③ 代理日志（本轮新加）显示 `content_type="text/html;charset=utf8" sniffed="(unknown)"`；④ 把响应体取出读：**网易云「网页找不到」页**（102 752 字节、HTTP 200）。→ 不是解码问题，是上游拿错误页冒充音频 |
+| 核心（`core/src/media.rs`） | ① `Content-Type` 优先级改成 **字节嗅探 → 插件 `mimeType` → 上游类型 → 扩展名**；② 媒体元素惯用的 `Range: bytes=0-` **也嗅探**（`range_starts_at_zero`；不这么做的话这层修复在真实路径上等于没做）；③ 嗅探用掉的字节用 `Cursor.chain` 原样回吐（少一个字节都会坏）；④ `publish()` 多一个 `mime` 参数，插件声明的 `mimeType` 不再被丢掉；⑤ 远端 + 本地两条代理都补 `Access-Control-Allow-Origin: *`；⑥ 响应日志补 `status / content_type / upstream_type / sniffed / prefix_len`，认出不是音频再记一条 WARN |
+| 契约侧 | 命令/事件**零变更**（`playback.resolve` 的 `mimeType` 本来就在契约里，只是以前没被用起来） |
+| 测试 | 核心新增 4 项：嗅探各类容器、插件声明类型优先于「上游 octet-stream」、`bytes=0-` 仍可嗅探、**端到端**（假上游给 `application/octet-stream` + fMP4、客户端带 `Range: bytes=0-` → 回 `audio/mp4` 且字节一个不少）；核心单测 82 → **84** |
+
+### 2. 验证
+
+- `cargo test -p gently-core --offline`：**84 passed**；`pnpm verify`：**8 道全绿**；
+- **真机播放链路（与上游无关的那半）**：`adb push` 一份 `src/assets/yihuik苡慧 - 致你.m4s` 到应用私有目录 →
+  「本地音乐 → 扫描本地目录」扫到 1 个 → 点播放：
+
+  | 证据 | 内容 |
+  |---|---|
+  | 核心日志 | `媒体响应（本地文件） status=206 start=0 end=4388383 total=4388383 has_range=true` |
+  | DOM（`aria-valuenow/max`） | **5/271 → 13/271**（间隔 8 秒）→ WebView 真的在解码播放 |
+  | 截图 | `r110-android-local-list.png`（扫描面板 + 扫到的曲目）、`r110-android-local-playing.png`（播放中，进度条有焦点与填充） |
+
+- 顺带排除了两条猜想：页面 origin 是 `http://tauri.localhost`（**不是 https**，所以不是混合内容拦截）；
+  `validate_origin` / 代理链路都正常（`媒体连接已接受` + 206）。
+- **诚实结论**：用户导入的两个社区源（`bili-audio` / `wangyiyun`）此刻取到的媒体地址都只回错误页，
+  所以「点歌放不出声」在他们的环境下**还会发生**——但那是上游/登录态问题，App 侧已经不再是黑盒。
+
+### 3. 未做 / 值得你知道的
+
+- 「上游返回的不是音频」目前只进**日志**，界面仍显示「无法播放 / 重试 / 换源」。要变成用户能看懂的文案，
+  得在 `playback.resolve` 里先探一次（顺带自动换下一个候选）或加一条契约事件——下一轮的候选任务；
+- 嗅探只覆盖常见音频容器；`.m3u8` 这类播放列表仍是「上游给什么类型就用什么」；
+- 面板/抽屉等移动端交互本轮没动；P2（后台播放）仍在等「锁屏 5 分钟 WebView `<audio>` 还活着吗」的实测。
 
 ## 本轮目标（第一百零九轮）
 
@@ -287,9 +327,9 @@ tldr: 当前 R109（安卓 P1 收尾）：P1-4/5/6 三片落地 —— ① 手�
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
-| R109 | 安卓 P1 收尾（P1-4/5/6） | 手机列表换成两行式三列（`mobileColumns`，由 `resolveColumns` 按形态裁决）、行内动作收进 ⋯ 底部面板、SeekBar 常显焦点 + 32px 热区、桌面窗口动作在移动端 no-op；真机上修掉三个只在设备出现的问题（单元格内边距裁字、button 遮罩不涂色、播放条`.bar` 缺定位祖先）；smoke 525 | [本轮](#本轮目标第一百零九轮) |
+| R110 | 安卓播放链路定案 | 「播不出声」不是解码问题：上游用 **HTTP 200 + HTML 错误页**冒充媒体；核心改为**按字节嗅探** `Content-Type`（含 `Range: bytes=0-` 路径）、插件 `mimeType` 不再丢、代理放宽 CORS、响应日志写清「回了什么」+ 非音频 WARN。真机用本地文件验证播放链路（206 + `aria-valuenow` 5→13/271）。新增真机 CDP 工具 `scripts/android-cdp.mjs`；核心单测 84 | [本轮](#本轮目标第一百一十轮) |
+| R109 | 安卓 P1 收尾（P1-4/5/6） | 手机列表换成两行式三列（`mobileColumns`，由 `resolveColumns` 按形态裁决）、行内动作收进 ⋯ 底部面板、SeekBar 常显焦点 + 32px 热区、桌面窗口动作在移动端 no-op；真机上修掉三个只在设备出现的问题（单元格内边距裁字、button 遮罩不涂色、播放条`.bar` 缺定位祖先）；smoke 525 | [下方](#本轮目标第一百零九轮) |
 | R108 | 安卓 P1 外壳（P1-1/2/3） | `mobile` 第 4 形态 + 左侧抽屉 8 项 + 搜索作 home + 常驻播放条；真机截图 `r108-android-*.png`（证据在 ANDROID-PLAN §7.1） | [ANDROID-PLAN](ANDROID-PLAN.md) |
-| R106 | 完善 pet-core | 三处「声明了但不生效」做成真的：`minPetCoreVersion` 真比较（新码 `pet.incompatible`）、`SilentFor` 真计时、打断型动画演完一遍；`pet.json` 限 512 KiB；`pet.state` 带 `coreVersion`；宠物错误码全量 zh/en + smoke 守卫；smoke 509 / pet-core 72 | [下方](#第一百零六轮) |
 
 ## 历史轮次
 
@@ -333,17 +373,21 @@ tldr: 当前 R109（安卓 P1 收尾）：P1-4/5/6 三片落地 —— ① 手�
    验收用**真机 USB**（`CDY_AN00` · API 29 · arm64）。**P0 当天已跑通**：NDK r28c + 4 个 target +
    `gen/android` + arm64 debug APK 装机启动，真机日志 8 条迁移 / `数据库就绪 version=8` / `宠物核心就绪`。
    拦路虎 `rquickjs-sys` 缺 android 绑定已用 **vendored patch** 解决（GOTCHAS §48）；
-   新踩的坑见 §50–§55（多窗口→白屏、dev 包不含资源、取证与数据目录、手机列表、`backdrop-filter` 抢包含块、
-   button 遮罩不涂色）。计划与执行记录在 [`ANDROID-PLAN.md`](ANDROID-PLAN.md)，自检
-   `pwsh -File scripts/android-env.ps1`。
+   新踩的坑见 §50–§56（多窗口→白屏、dev 包不含资源、取证与数据目录、手机列表、`backdrop-filter` 抢包含块、
+   button 遮罩不涂色、HTTP 200 + HTML 错误页冒充媒体）。计划与执行记录在 [`ANDROID-PLAN.md`](ANDROID-PLAN.md)，
+   自检 `pwsh -File scripts/android-env.ps1`。
    **P1 六片全绿**（R108 外壳 P1-1/2/3 + R109 触摸语义 / 手机列 / 窗口能力 P1-4/5/6）：
    手机外壳 = 左侧抽屉（8 项）+ 搜索作 home + 常驻播放条（**不做推荐/排行榜**），列表两行式、行操作进 ⋯ 底部面板；
-   证据 `r108-android-*.png` / `r109-android-*.png`。
+   证据 `r108-android-*.png` / `r109-android-*.png`。**R110 把「播不出声」定案**：真机播放链路是通的
+   （本地文件 206 + `aria-valuenow` 5→13/271），故障来自上游拿错误页冒充音频；
+   真相见 `媒体响应` 日志与 GOTCHAS §56。
    **下一个入口条件是 P2**：先实测「锁屏 5 分钟后 WebView `<audio>` 还活着吗」——那一步决定
-   「WebView 播放 + 保活」还是「原生 Media3 播放器」；音频解码失败（风险 11）也要在 P2 一并解决。
-4. **工程债**：`GOTCHAS.md` 55 条按域拆分；截图证据改成「seeded 数据 + 可深链 + 固定浅/深基线」，不再靠手算坐标；
-   拖动/悬停这类**注入式输入验证不了**的交互，补一份人工验收清单；手机端的截图目前靠 `adb input tap` 手算坐标，
-   值得在 `scripts/` 里补一个「按文本/选择器找坐标」的小工具（本轮已因此浪费两轮截图）。
+   「WebView 播放 + 保活」还是「原生 Media3 播放器」。**R110 之后可做的小任务**：
+   把「上游返回的不是音频」变成用户能看懂的文案（在 `playback.resolve` 里先探一次并自动换候选，
+   或加一条契约事件）。
+4. **工程债**：`GOTCHAS.md` 56 条按域拆分；截图证据改成「seeded 数据 + 可深链 + 固定浅/深基线」，
+   不再靠手算坐标（真机这半已由 `scripts/android-cdp.mjs` 解决：按文本点、整屏截图、读 DOM 断言）；
+   拖动/悬停这类**注入式输入验证不了**的交互，补一份人工验收清单。
 5. 背景 P2（带 JS / 多文件网页壁纸）与迷你歌词视觉细调仍挂着，未排期。
 
 

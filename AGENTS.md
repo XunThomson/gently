@@ -80,6 +80,8 @@ pnpm tauri dev   # 桌面端
 pnpm package:portable          # 离线打包便携版 zip（release/，含 SHA256）；只出 exe 用 pnpm tauri build --no-bundle
 pnpm ui:capture -- -Launch -AssertRendered -Output release/screenshots/boot.png -Kill
                                # （仅 Windows）截屏/驱动打包版：-Steps "click:x,y;paste:文本;wheel:-600"
+node scripts/android-cdp.mjs ping|eval|tap|shot|net
+                               # 真机 WebView 的 CDP 驱动（debug 包）：求值 / 按文本点中心点 / 截整屏 / 收网络事件
 pwsh -File scripts/pet-window.ps1 -Drag -Output release/screenshots/pet.png
                                # （仅 Windows）驱动宠物窗口：-Drag 注入拖动 / -Walk 等它自己走 / 截图
 ```
