@@ -545,5 +545,43 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
 - 另外「数据目录：…（来源 …）」那行是 `eprintln!`（日志初始化之前），**只进 logcat、不进日志文件**；
   拿它当验收项会永远搜不到。
 
+## 53. 手机列表不能「把桌面列压窄」：要么两行式，要么横向溢出（R109）
+
+- 现象：搜索/本地等表格在真机竖屏（约 360 CSS px）下右侧被裁——标题列被挤成省略号，
+  「大小 / 操作」两列直接看不见（`r108-android-search.png` 是证据）。
+- 根因：`table.config.tsx` 的列宽下限是按**桌面最小窗口 900 宽、内容区约 612** 算的
+  （文件头那段账）。手机上没有 612，于是 grid 各列按自己的 `minmax` 下限硬撑 → 溢出。
+- 规避（R109 已落地）：手机上**换一份列定义**（`mobileTrackColumns` / `mobileColumns`）：
+  `主信息(1fr) + 时长 + ⋯`，两行式（标题 / 歌手·专辑·音源），行内那排小按钮收进
+  `⋯ → 底部操作面板`（`components/ui/row-actions`）。由 `DataTable` 按 `useShellMode()` 选，
+  **视图里不写 `@media`**，也不要在视图里 `useViewport()`。
+- 附带两条口径：① 桌面列定义不许为了手机改宽度（`smoke` 有一条断言钉住桌面 7 列的 key 序列）；
+  ② 空表头在手机上隐藏（`data-layout="mobile"`），否则顶上一条只有「标题」的表头看着像坏掉。
+
+## 54. 想用 `position: fixed` 盖住整屏的浮层，别放进带 `backdrop-filter` 的容器里（R109）
+
+- 现象（本轮踩到）：手机上的底部操作面板如果从表格行里 `position: fixed`，会被
+  `DataTable.container` / `MobileShell.shell` 的 `backdrop-filter` 吃掉——那两个属性
+  **会为 fixed/absolute 后代建立包含块**，`inset: 0` 于是只覆盖表格/外壳自己，
+  面板出现在页面中间而不是屏幕底部。
+- 规避：面板的**宿主放在外壳外面一层**（`MobileShell` 里的 `<RowActionsProvider>` 包住 shell，
+  面板渲染成 shell 的兄弟节点），`position: absolute; inset: 0` 落到 `.app__content`
+  （`position: relative`，整屏）。同理：桌面歌词/宠物的窗口浮层不要塞进滚动容器。
+
+## 55. 别拿「铺满屏幕的 `<button>`」当遮罩：真机上它既不涂背景、也收不到点击（R109）
+
+- 现象：底部操作面板 / 导航抽屉的遮罩在浏览器预览里正常（浅色方案下也压暗），
+  **装到 `CDY-AN00`（Android 10）后完全看不见**——面板像浮在半空，列表一点没暗；
+  把遮罩色挪走后更暴露了第二半问题：**点面板外的空白也关不掉**（点遮罩的 `onClick` 不触发）。
+  像素实测：`#FFFFFF` → `#FFFFFF`（浏览器里同一份 CSS 是 `#1E1E1E` → `#101010`）。
+- 定位过程（省下次别重走）：token 有、CSS 有（`dist` 里能 grep 到 `--modal-scrim`）、
+  `inset: 0` 在该 WebView 上是支持的（抽屉定位正常）。把同一个 `background: var(--modal-scrim)`
+  从 `<button>` 挪到它的**父 `<div>`** 上，立刻生效——问题在「button + 全屏 + 不涂色」这一组合。
+- 规避（两条都要）：① **遮罩色永远画在容器 `<div>` 上**，`<button>` 只当额外的 a11y 取消入口；
+  ② **关闭动作挂在根 `<div>` 的 `onClick` 上**（面板自己 `stopPropagation`），再给一个显式的 ✕。
+  `ConfirmDialog` 一直是「div 遮罩 + 按钮在弹窗里」的结构，所以它的压暗与取消在真机都正常。
+  这条同时解释了「同一份 CSS 在浏览器对、真机不对」——别先怀疑主题 token。
+
+
 
 

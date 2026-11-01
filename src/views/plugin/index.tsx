@@ -5,7 +5,7 @@ import {Page} from '../../components/ui/page';
 import {Button} from '../../components/ui/button';
 import {BadgeCell, DataTable, TextCell, type ColumnDef} from '../../components/ui/data-table';
 import {IconPuzzle} from '../../components/ui/icon';
-import {actionsColumn, indexColumn} from '../../config/table.config';
+import {actionsColumn, indexColumn, mobileColumns} from '../../config/table.config';
 import {useConfirm} from '../../hooks/useConfirm';
 import {errorText} from '../../i18n/errors';
 import {corePlugin, libraryService} from '../../services';
@@ -122,6 +122,50 @@ export default function PluginView() {
         });
     };
 
+    /** 一行的操作只算一次：桌面放行内，手机放进 ⋯ 底部面板 */
+    const actionsOf = (plugin: PluginInfo) => [
+        {
+            key: 'toggle',
+            label: plugin.enabled ? t('common.disable') : t('common.enable'),
+            tone: plugin.enabled ? ('default' as const) : ('primary' as const),
+            onClick: () => {
+                setEnabled(plugin.id, !plugin.enabled);
+                void reload();
+            },
+        },
+        {
+            key: 'manage',
+            label: manageId === plugin.id ? t('page.plugin.settingsClose') : t('page.plugin.manage'),
+            onClick: () => {
+                setManageError(null);
+                setManageId(manageId === plugin.id ? null : plugin.id);
+            },
+        },
+        {
+            key: 'update',
+            label: t('common.update'),
+            onClick: () => {
+                void update(plugin.id);
+                // 更新只改版本号 / 来源比对结果，不重读清单（轻量、不产生额外 IPC 风暴）
+            },
+        },
+        {
+            key: 'remove',
+            label: t('common.uninstall'),
+            tone: 'danger' as const,
+            // 内置源不可卸载（浏览器预览里的演示源就是这种）
+            disabled: plugin.builtin,
+            onClick: () =>
+                confirm({
+                    titleKey: 'confirm.uninstallPluginTitle',
+                    descKey: 'confirm.uninstallPluginDesc',
+                    descParams: {name: plugin.name},
+                    tone: 'danger',
+                    onConfirm: () => remove(plugin.id),
+                }),
+        },
+    ];
+
     const columns: ColumnDef<PluginInfo>[] = [
         indexColumn<PluginInfo>(),
         {
@@ -171,49 +215,25 @@ export default function PluginView() {
                     <BadgeCell tone="muted">{t('common.disabled')}</BadgeCell>
                 ),
         },
-        actionsColumn<PluginInfo>(t, (plugin) => [
-            {
-                key: 'toggle',
-                label: plugin.enabled ? t('common.disable') : t('common.enable'),
-                tone: plugin.enabled ? 'default' : 'primary',
-                onClick: () => {
-                    setEnabled(plugin.id, !plugin.enabled);
-                    void reload();
-                },
-            },
-            {
-                key: 'manage',
-                label: manageId === plugin.id ? t('page.plugin.settingsClose') : t('page.plugin.manage'),
-                onClick: () => {
-                    setManageError(null);
-                    setManageId(manageId === plugin.id ? null : plugin.id);
-                },
-            },
-            {
-                key: 'update',
-                label: t('common.update'),
-                onClick: () => {
-                    void update(plugin.id);
-                    // 更新只改版本号 / 来源比对结果，不重读清单（轻量、不产生额外 IPC 风暴）
-                },
-            },
-            {
-                key: 'remove',
-                label: t('common.uninstall'),
-                tone: 'danger',
-                // 内置源不可卸载（浏览器预览里的演示源就是这种）
-                disabled: plugin.builtin,
-                onClick: () =>
-                    confirm({
-                        titleKey: 'confirm.uninstallPluginTitle',
-                        descKey: 'confirm.uninstallPluginDesc',
-                        descParams: {name: plugin.name},
-                        tone: 'danger',
-                        onConfirm: () => remove(plugin.id),
-                    }),
-            },
-        ]),
+        actionsColumn<PluginInfo>(t, actionsOf),
     ];
+
+    /* 手机：两行式——第一行名字 + 启用徽标，第二行「v1.0.0 · 作者 · 说明」 */
+    const compactColumns: ColumnDef<PluginInfo>[] = mobileColumns<PluginInfo>({
+        titleLabel: t('column.title'),
+        primary: (plugin) => plugin.name,
+        secondary: (plugin) =>
+            [`v${plugin.version}`, plugin.author, plugin.description]
+                .filter((part) => !!(part && String(part).trim()))
+                .join(' · '),
+        marks: (plugin) => (
+            <BadgeCell tone={plugin.enabled ? 'success' : 'muted'}>
+                {plugin.enabled ? t('common.enabled') : t('common.disabled')}
+            </BadgeCell>
+        ),
+        sheetTitle: (plugin) => plugin.name,
+        actions: actionsOf,
+    });
 
     return (
         <Page
@@ -262,6 +282,7 @@ export default function PluginView() {
 
             <DataTable
                 columns={columns}
+                mobileColumns={compactColumns}
                 dataSource={rows}
                 rowKey="id"
                 loading={!loaded}

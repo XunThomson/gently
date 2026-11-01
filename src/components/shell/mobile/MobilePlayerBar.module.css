@@ -1,6 +1,10 @@
 /* 移动端常驻播放条：进度条压在顶边，一行「封面 + 标题/歌手 + 播放/下一首」 */
 
 .bar {
+    /* **必须是定位祖先**：SeekBar 自己是 `position: absolute; top: 0`（贴在播放条顶边），
+       而它拿来当包含块的祖先只有带 `backdrop-filter` 的外壳——那是**开关动态背景时才有的**
+       （关闭时 `--surface-blur: none`）。少了这行，进度条会跑到整个应用的顶边（R109 真机复现）。 */
+    position: relative;
     display: flex;
     flex-direction: column;
     flex: none;

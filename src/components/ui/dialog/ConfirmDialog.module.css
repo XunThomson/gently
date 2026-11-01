@@ -1,10 +1,7 @@
 /* ==================== ConfirmDialog.module.css ==================== */
-/* 全部尺寸 / 颜色 / 圆角 / 动效均来自全局设计令牌（由主题系统注入到 <html>）。
-   唯一的字面量是遮罩色，见 .scrim 注释。 */
+/* 全部尺寸 / 颜色 / 圆角 / 动效均来自全局设计令牌（由主题系统注入到 <html>）。 */
 
 /* ---------------- 遮罩 ---------------- */
-/* 主题里还没有「模态遮罩」专用 token（--bg-video-scrim 是动态背景用的场景遮罩，
-   语义与不透明度都不匹配），因此这里按约定使用字面 rgba。 */
 
 .scrim {
     display: flex;
@@ -14,8 +11,9 @@
     inset: 0;
     z-index: var(--z-modal);
     padding: var(--space-6);
-    /* 无遮罩 token，唯一允许的字面色 */
-    background: rgba(0, 0, 0, 0.45);
+    /* 模态遮罩走主题 token（`--modal-scrim`）：浅色方案下也要压暗，不能借用
+       `--overlay-scrim`（那是背景视频的提亮遮罩）。手机底部操作面板用的是同一个 token。 */
+    background: var(--modal-scrim);
     animation: confirmScrimIn var(--motion-fast);
 }
 

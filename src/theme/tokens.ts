@@ -83,6 +83,9 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--scrollbar-thumb': s.scrollbarThumb,
         /* 浮层遮罩（抽屉 / 面板压住内容时用）：与背景视频遮罩同源，跟随明暗方案 */
         '--overlay-scrim': s.videoScrim,
+        /* 模态浮层遮罩：对话框 / 手机底部操作面板 —— 明暗两种方案都**压暗**，
+           不能用 `--overlay-scrim`（浅色方案下它是「提亮」的，面板会像浮在半空） */
+        '--modal-scrim': s.modalScrim,
 
         /* ---------- 品牌与状态色 ---------- */
         '--brand': config.palette.brand,
@@ -284,6 +287,18 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--mobile-padding-x': px(c.mobile.paddingX),
         '--mobile-sheet-item-height': px(c.mobile.sheetItemHeight),
         '--mobile-drawer-width': px(c.mobile.drawerWidth),
+        /* 两行式列表（P1-5）：封面 / 行内边距 / 右侧从属列宽 / ⋯ 触控尺寸 */
+        '--mobile-list-cover-size': px(c.mobile.listCoverSize),
+        '--mobile-list-padding-y': px(c.mobile.listPaddingY),
+        '--mobile-list-trailing-width': px(c.mobile.listTrailingWidth),
+        '--mobile-row-action-size': px(c.mobile.rowActionSize),
+        /* 触屏进度条：细线也要按得住（polished-ui touch-interactions 的「命中区可以比视觉大」） */
+        '--mobile-progress-hit-height': px(c.mobile.progressHitHeight),
+        /* 行操作底部面板 */
+        '--mobile-sheet-padding': px(c.mobile.sheetPadding),
+        '--mobile-sheet-max-height': c.mobile.sheetMaxHeight,
+        '--mobile-sheet-grabber-width': px(c.mobile.sheetGrabberWidth),
+        '--mobile-sheet-grabber-height': px(c.mobile.sheetGrabberHeight),
 
         /* ---------- 组件：菜单 / 抽屉列表 ---------- */
         '--menu-width': px(c.menu.width),

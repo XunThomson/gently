@@ -14,6 +14,7 @@ import {
     artistColumn,
     durationColumn,
     indexColumn,
+    mobileTrackColumns,
     titleColumn,
 } from '../../../config/table.config';
 import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../../hooks/useTrackActions';
@@ -172,6 +173,11 @@ export function SourceFavorites() {
         };
     }, [selected, load]);
 
+    const actionsOf = useCallback(
+        (track: Track) => buildActions(track, {queue: rows, withDownload: true}),
+        [buildActions, rows],
+    );
+
     const columns: ColumnDef<Track>[] = useMemo(
         () => [
             indexColumn<Track>(),
@@ -179,9 +185,15 @@ export function SourceFavorites() {
             artistColumn<Track>(t),
             albumColumn<Track>(t),
             durationColumn<Track>(t),
-            actionsColumn<Track>(t, (track) => buildActions(track, {queue: rows, withDownload: true})),
+            actionsColumn<Track>(t, actionsOf),
         ],
-        [t, buildActions, rows],
+        [t, actionsOf],
+    );
+
+    /* 手机：两行式 + ⋯ 面板 */
+    const compactColumns: ColumnDef<Track>[] = useMemo(
+        () => mobileTrackColumns<Track>(t, {actions: actionsOf}),
+        [t, actionsOf],
     );
 
     if (sources.length === 0) {
@@ -251,6 +263,7 @@ export function SourceFavorites() {
             ) : (
                 <DataTable
                     columns={columns}
+                    mobileColumns={compactColumns}
                     dataSource={rows}
                     rowKey="id"
                     loading={loading && rows.length === 0}

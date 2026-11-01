@@ -1,9 +1,11 @@
+import type {ReactNode} from 'react';
 import type {TFunction} from 'i18next';
 import type {ColumnDef, RowAction} from '../components/ui/data-table';
 import {ActionsCell, BadgeCell, ProgressCell, TextCell} from '../components/ui/data-table';
 import {DownloadMark} from '../components/ui/download-mark';
 import type {Track} from '../types';
 import {Cover} from '../components/ui/cover';
+import {MobileRowActions} from '../components/ui/row-actions';
 import styles from './table.config.module.css';
 
 /**
@@ -126,3 +128,125 @@ export const actionsColumn = <T,>(
     align: 'right',
     render: (_value, record) => <ActionsCell actions={build(record)}/>,
 });
+
+/* ============================== 手机列（P1-5） ============================== */
+
+/**
+ * 手机列表 = **两行式**，不是把桌面 7 列压窄。
+ *
+ * 真机竖屏只有约 360 CSS px（`r108-android-search.png` 实测：7 列表在右侧被裁掉），
+ * 塞进去的做法只有「每列 50px」这一种，结果是标题和歌手全变省略号。
+ * 所以手机上换一份列定义：
+ * - 第一列：封面 + 两行（标题 / 歌手·专辑）+ 右侧从属信息（时长）；
+ * - 第二列：行尾 ⋯ → 底部操作面板（见 `components/ui/row-actions`），
+ *   行内那排小按钮在触屏上一个都不渲染。
+ *
+ * 视图不写 `@media`：`DataTable` 按 `useShellMode()` 决定用这一份还是桌面那一份。
+ */
+export interface MobileColumnsOptions<T> {
+    /** 主列表头（手机上表头基本看不见，但语义上仍要有） */
+    titleLabel: string;
+    /** 第一行：主信息（标题） */
+    primary: (record: T) => ReactNode;
+    /** 第二行：从属信息（歌手 / 版本 / 失败原因…） */
+    secondary?: (record: T) => ReactNode;
+    /** 左侧封面 */
+    cover?: (record: T) => ReactNode;
+    /** 第一行行尾的标记（下载状态等） */
+    marks?: (record: T) => ReactNode;
+    /** 右侧从属列（时长 / 大小 / 状态），宽度取 `--mobile-list-trailing-width` */
+    trailing?: (record: T) => ReactNode;
+    /** 底部面板的标题（说明「这是谁」） */
+    sheetTitle: (record: T) => string;
+    /** 行操作：与桌面同一批动作，只换承载方式 */
+    actions: (record: T) => RowAction[];
+}
+
+export function mobileColumns<T>(options: MobileColumnsOptions<T>): ColumnDef<T>[] {
+    const columns: ColumnDef<T>[] = [
+        {
+            key: 'title',
+            title: options.titleLabel,
+            width: 'minmax(0, 1fr)',
+            render: (_value, record) => (
+                <span className={styles.mobileRow}>
+                    {options.cover?.(record)}
+                    <span className={styles.mobileLines}>
+                        <span className={styles.mobilePrimary}>{options.primary(record)}</span>
+                        {options.secondary && (
+                            <span className={styles.mobileSecondary}>{options.secondary(record)}</span>
+                        )}
+                    </span>
+                    {options.marks?.(record)}
+                </span>
+            ),
+        },
+    ];
+
+    if (options.trailing) {
+        columns.push({
+            key: 'trailing',
+            title: '',
+            width: 'var(--mobile-list-trailing-width)',
+            align: 'right',
+            render: (_value, record) => (
+                <TextCell tone="muted">{options.trailing?.(record)}</TextCell>
+            ),
+        });
+    }
+
+    columns.push({
+        key: 'actions',
+        title: '',
+        /**
+         * 宽度 = ⋯ 的触控尺寸 + 单元格左右留白（`--space-2`×2）。
+         * 只写触控尺寸的话，单元格的内边距会把 44px 的按钮裁掉一截（真机上是「只剩两个点」）。
+         */
+        width: 'calc(var(--mobile-row-action-size) + var(--space-4))',
+        align: 'right',
+        render: (_value, record) => (
+            <MobileRowActions
+                title={options.sheetTitle(record)}
+                actions={options.actions(record)}
+            />
+        ),
+    });
+
+    return columns;
+}
+
+export interface MobileTrackColumnsOptions<T extends Track> {
+    actions: (record: T) => RowAction[];
+    /** 第二行除歌手外还想带的（如「3 天前」）；返回空串就不占位 */
+    extra?: (record: T) => string | undefined;
+}
+
+/** 手机上的**曲目**列表（搜索 / 本地 / 最近 / 收藏 / 歌单 / 专辑详情共用） */
+export function mobileTrackColumns<T extends Track>(
+    t: TFunction,
+    options: MobileTrackColumnsOptions<T>,
+): ColumnDef<T>[] {
+    return mobileColumns<T>({
+        titleLabel: t('column.title'),
+        cover: (record) => (
+            <Cover
+                className={styles.mobileCover}
+                artwork={record.artwork}
+                gradient={record.gradient}
+                title={record.title}
+                artist={record.artist}
+            />
+        ),
+        primary: (record) => record.title,
+        /* 歌手是「点这一行会听到谁」，比专辑重要；专辑只能二选一时跟着歌手后面用间隔号带上 */
+        secondary: (record) =>
+            [record.artist, options.extra?.(record), record.album]
+                .filter((part) => !!part && String(part).trim().length > 0)
+                .join(' · '),
+        marks: (record) => <DownloadMark track={record}/>,
+        trailing: (record) => record.duration,
+        sheetTitle: (record) => record.title,
+        actions: options.actions,
+    });
+}
+

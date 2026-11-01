@@ -51,6 +51,9 @@ export function SeekBar({elapsed, duration, skin = 'default', onSeek}: SeekBarPr
         onSeek(dragRatio * duration);
         setDragRatio(null);
         e.currentTarget.releasePointerCapture?.(e.pointerId);
+        /* 触屏松手后不会再有 `pointerleave`，时间预览会一直挂在屏幕上；
+           鼠标保持悬浮预览（移动即恢复），所以只清非鼠标指针 */
+        if (e.pointerType !== 'mouse') setHoverRatio(null);
     };
 
     const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {

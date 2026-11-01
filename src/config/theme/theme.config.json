@@ -26,6 +26,7 @@
       "elevated": "#ffffff",
       "surfaceTranslucent": "rgba(255, 255, 255, 0.66)",
       "videoScrim": "rgba(244, 246, 250, 0.62)",
+      "modalScrim": "rgba(0, 0, 0, 0.45)",
       "hover": "rgba(0, 0, 0, 0.04)",
       "active": "rgba(0, 0, 0, 0.08)",
       "textPrimary": "#1a1a1a",
@@ -46,6 +47,7 @@
       "elevated": "#2a2a2a",
       "surfaceTranslucent": "rgba(20, 20, 24, 0.66)",
       "videoScrim": "rgba(8, 10, 14, 0.62)",
+      "modalScrim": "rgba(0, 0, 0, 0.45)",
       "hover": "rgba(255, 255, 255, 0.06)",
       "active": "rgba(255, 255, 255, 0.10)",
       "textPrimary": "#ffffff",
@@ -240,7 +242,16 @@
       "tabIconSize": 18,
       "paddingX": 12,
       "sheetItemHeight": 48,
-      "drawerWidth": 280
+      "drawerWidth": 280,
+      "listCoverSize": 40,
+      "listPaddingY": 8,
+      "listTrailingWidth": 52,
+      "rowActionSize": 44,
+      "progressHitHeight": 32,
+      "sheetPadding": 8,
+      "sheetMaxHeight": "70%",
+      "sheetGrabberWidth": 36,
+      "sheetGrabberHeight": 4
     },
 
     "panel": {

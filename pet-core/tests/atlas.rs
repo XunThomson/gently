@@ -134,14 +134,24 @@ fn shipped_pet_package_validates_and_installs() {
     let layout = spec.atlas_layout.expect("内置宠物用网格图集");
     assert_eq!((layout.frame_width, layout.frame_height), (192, 208));
     assert_eq!(spec.animations.len(), 9, "9 行各一个动画");
-    for (index, animation) in spec.animations.iter().enumerate() {
-        assert_eq!(animation.row, Some(index as u32), "动画 {} 应落在第 {index} 行", animation.name);
-    }
+    /* **行号是素材事实，不是声明顺序**：内置图集里「往右跑」贴在第 1 行、「往左跑」贴在第 2 行，
+       而包里按语义（先左后右）声明，两者本来就不必同序。这里守的是「9 个动作各占一行、
+       不重不漏」，而不是「第 N 个动画必须落在第 N 行」——后者只是巧合，写成断言会让
+       换素材的人误以为包里写错了（R109 发现：这条断言与仓库里的包长期不一致）。 */
+    let mut rows: Vec<u32> = spec.animations.iter().map(|a| a.row.expect("网格图集必须给行号")).collect();
+    rows.sort_unstable();
+    assert_eq!(rows, (0..9).collect::<Vec<u32>>(), "9 个动作应当不重不漏地占满 9 行");
+    let row_of = |name: &str| {
+        spec.animations.iter().find(|a| a.name == name).and_then(|a| a.row)
+    };
+    assert_eq!(row_of("idle"), Some(0), "待机固定在第 0 行（素材第一格）");
+    assert_eq!(row_of("runRight"), Some(1), "往右跑在第 1 行");
+    assert_eq!(row_of("runLeft"), Some(2), "往左跑在第 2 行");
     let names: Vec<&str> = spec.animations.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(
         names,
         vec!["idle", "runLeft", "runRight", "wave", "jump", "fail", "wait", "run", "inspect"],
-        "动作名按素材给的 9 个顺序（第 N 行 = 第 N 个动作；改名必须同步文档与行为表）"
+        "动作名按素材给的 9 个顺序（改名必须同步文档与行为表）"
     );
     assert_eq!(spec.version, "1.0.4", "内置宠物随宠物核心进到 1.0（行为表/显示适配变了要升版本，渲染器才会重装）");
     /* 内置包用了 `fit` 与 `interrupt`（都是 R105/R106 的能力）：所以它必须声明要求核心版本，

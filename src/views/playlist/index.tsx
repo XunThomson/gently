@@ -12,6 +12,7 @@ import {
     artistColumn,
     durationColumn,
     indexColumn,
+    mobileTrackColumns,
     titleColumn,
 } from '../../config/table.config';
 import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../hooks/useTrackActions';
@@ -42,27 +43,31 @@ export default function PlaylistView() {
 
     const rows = useMemo(() => playlist?.tracks ?? [], [playlist]);
 
+    const actionsOf = (track: Track) =>
+        buildActions(track, {
+            queue: rows,
+            withDownload: true,
+            extra: [
+                {
+                    key: 'remove',
+                    label: t('page.playlist.removeFromPlaylist'),
+                    tone: 'danger' as const,
+                    onClick: () => removeFromPlaylist(id, track.id),
+                },
+            ],
+        });
+
     const columns: ColumnDef<Track>[] = [
         indexColumn<Track>(),
         titleColumn<Track>(t),
         artistColumn<Track>(t),
         albumColumn<Track>(t),
         durationColumn<Track>(t),
-        actionsColumn<Track>(t, (track) =>
-            buildActions(track, {
-                queue: rows,
-                withDownload: true,
-                extra: [
-                    {
-                        key: 'remove',
-                        label: t('page.playlist.removeFromPlaylist'),
-                        tone: 'danger',
-                        onClick: () => removeFromPlaylist(id, track.id),
-                    },
-                ],
-            }),
-        ),
+        actionsColumn<Track>(t, actionsOf),
     ];
+
+    /* 手机：两行式 + ⋯ 面板（「移出歌单」在面板最后一项） */
+    const compactColumns: ColumnDef<Track>[] = mobileTrackColumns<Track>(t, {actions: actionsOf});
 
     if (!playlist && loaded) {
         return (
@@ -142,6 +147,7 @@ export default function PlaylistView() {
             ) : (
                 <DataTable
                     columns={columns}
+                    mobileColumns={compactColumns}
                     dataSource={rows}
                     rowKey="id"
                     loading={!loaded}

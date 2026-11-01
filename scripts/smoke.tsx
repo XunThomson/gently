@@ -65,6 +65,18 @@ import {canPreview, mediaKindOf, previewWindow, PREVIEW_SECONDS} from '../src/ut
 import {appConfig} from '../src/config/app.config';
 import {resolveShellMode} from '../src/utils/shellMode';
 import {activeNavKey, MOBILE_HOME_PATH, mobileNavItems} from '../src/components/shell/mobile/nav';
+import {
+    actionsColumn,
+    albumColumn,
+    artistColumn,
+    durationColumn,
+    indexColumn,
+    mobileTrackColumns,
+    titleColumn,
+} from '../src/config/table.config';
+import {resolveColumns, type ColumnDef} from '../src/components/ui/data-table';
+import {MobileRowActions, RowActionsProvider} from '../src/components/ui/row-actions';
+import {desktopWindowActionsAvailable} from '../src/services';
 import {lyricsScrollStep, lyricsScrollTarget} from '../src/utils/lyricsScroll';
 import {getThemeSkin, parseSkin, resolveTheme as resolveSkin, serializeSkin} from '../src/theme';
 import type {ThemeSkin} from '../src/theme';
@@ -2386,6 +2398,116 @@ async function main(): Promise<void> {
                 activeNavKey('/download/downloading') === 'download' &&
                 activeNavKey('/setting') === 'setting' &&
                 activeNavKey('/ranking') === null,
+        );
+
+        /* ---------- P1-5：手机列表换一份列定义（两行式 + ⋯），不是把 7 列压窄 ---------- */
+        {
+            const t = i18n.getFixedT('zh');
+            const actions = (track: Track) => [
+                {key: 'play', label: '播放', onClick: () => void track},
+            ];
+            const desktop: ColumnDef<Track>[] = [
+                indexColumn<Track>(),
+                titleColumn<Track>(t),
+                artistColumn<Track>(t),
+                albumColumn<Track>(t),
+                durationColumn<Track>(t),
+                actionsColumn<Track>(t, actions),
+            ];
+            const compact = mobileTrackColumns<Track>(t, {actions});
+
+            check(
+                '移动列表：手机列只有「主信息 / 时长 / ⋯」三列（不再有 7 列）',
+                compact.map((col) => col.key).join(',') === 'title,trailing,actions' &&
+                    compact.filter((col) => !!col.render).length === 3,
+            );
+            check(
+                '移动列表：桌面的 7 列定义没有被改动',
+                desktop.map((col) => col.key).join(',') ===
+                    'index,title,artist,album,duration,actions',
+            );
+            check(
+                '移动列表：只有 mobile 形态换列（桌面 / 紧凑不回归）',
+                resolveColumns('mobile', desktop, compact) === compact &&
+                    resolveColumns('desktop', desktop, compact) === desktop &&
+                    resolveColumns('compact', desktop, compact) === desktop &&
+                    resolveColumns('mini', desktop, compact) === desktop &&
+                    /* 没给手机列的表格（如没有适配的第三方列表）照旧用桌面列 */
+                    resolveColumns('mobile', desktop) === desktop,
+            );
+
+            /* 行尾 ⋯：没有面板宿主时**退回行内按钮**，不留一个点了没反应的入口 */
+            const bare = renderToString(
+                <ThemeProvider>
+                    <MobileRowActions title="测试曲目" actions={actions({} as Track)}/>
+                </ThemeProvider>,
+            );
+            check(
+                '移动列表：没有面板宿主时退回行内按钮（不渲染死入口）',
+                bare.includes('播放') && !bare.includes('aria-haspopup'),
+            );
+
+            const hosted = renderToString(
+                <ThemeProvider>
+                    <RowActionsProvider>
+                        <MobileRowActions title="测试曲目" actions={actions({} as Track)}/>
+                    </RowActionsProvider>
+                </ThemeProvider>,
+            );
+            check(
+                '移动列表：有宿主时行内只剩一个 ⋯，动作进底部面板',
+                hosted.includes('aria-haspopup="dialog"') &&
+                    hosted.includes('aria-label="测试曲目的操作"') &&
+                    /* 面板关着时动作不在 DOM 里 —— 行内不再铺一排按钮 */
+                    !hosted.includes('>播放<'),
+                hosted.slice(0, 240),
+            );
+        }
+
+        /* ---------- P1-4：触屏语义（热区 / 常显焦点 / hover→active） ---------- */
+        check(
+            '触屏：进度条热区与 ⋯ 触控尺寸都来自主题 token 且够大',
+            light['--mobile-progress-hit-height'] ===
+                `${themeConfig.components.mobile.progressHitHeight}px` &&
+                Number(themeConfig.components.mobile.progressHitHeight) >= 24 &&
+                light['--mobile-row-action-size'] ===
+                    `${themeConfig.components.mobile.rowActionSize}px` &&
+                Number(themeConfig.components.mobile.rowActionSize) >= 44,
+        );
+        {
+            const css = readCssText();
+            check(
+                '触屏：手机形态下进度条焦点常显、热区加高（不靠 hover）',
+                css.includes(":global([data-shell='mobile']) .thumb") &&
+                    css.includes('var(--mobile-progress-hit-height)'),
+            );
+            check(
+                '触屏：手机形态下行点击有按下反馈（hover 退化为 active）',
+                css.includes(".table[data-layout='mobile'] .row:active"),
+            );
+            /* SeekBar 自己是 absolute + top:0，锚点必须是**播放条**本身。
+               少了它，进度条会跑到整个应用的顶边（R109 真机复现过）。 */
+            const barBlock =
+                /\.bar\s*\{([^}]*)\}/.exec(
+                    readFileSync('src/components/shell/mobile/MobilePlayerBar.module.css', 'utf8'),
+                )?.[1] ?? '';
+            check(
+                '移动播放条：进度条锚在播放条顶边（.bar 是定位祖先）',
+                barBlock.includes('position: relative'),
+            );
+        }
+
+        /* ---------- P1-6：窗口能力在移动端 no-op ---------- */
+        check(
+            '主题：模态遮罩两种方案都压暗（对话框与手机底部面板共用 --modal-scrim）',
+            light['--modal-scrim'] === 'rgba(0, 0, 0, 0.45)' &&
+                dark['--modal-scrim'] === 'rgba(0, 0, 0, 0.45)',
+            `${light['--modal-scrim']} / ${dark['--modal-scrim']}`,
+        );        check(
+            '窗口：最小化/最大化/置顶/悬浮小窗在移动端一律 no-op',
+            desktopWindowActionsAvailable(true, true) === false &&
+                desktopWindowActionsAvailable(true, false) === true &&
+                desktopWindowActionsAvailable(false, false) === false,
         );
 
         const compactTitle = renderToString(

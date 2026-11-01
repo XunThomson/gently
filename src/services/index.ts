@@ -15,6 +15,7 @@ export type {
 export {
     windowService,
     isTauri,
+    desktopWindowActionsAvailable,
     DESKTOP_LYRICS_LABEL,
     DESKTOP_LYRICS_EVENTS,
     PET_WINDOW_LABEL,

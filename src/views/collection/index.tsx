@@ -13,6 +13,7 @@ import {
     artistColumn,
     durationColumn,
     indexColumn,
+    mobileTrackColumns,
     titleColumn,
 } from '../../config/table.config';
 import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../hooks/useTrackActions';
@@ -119,14 +120,19 @@ export default function CollectionView() {
         };
     }, [rows]);
 
+    const actionsOf = (track: Track) => buildActions(track, {queue: rows, withDownload: true});
+
     const columns: ColumnDef<Track>[] = [
         indexColumn<Track>(),
         titleColumn<Track>(t),
         artistColumn<Track>(t),
         albumColumn<Track>(t),
         durationColumn<Track>(t),
-        actionsColumn<Track>(t, (track) => buildActions(track, {queue: rows, withDownload: true})),
+        actionsColumn<Track>(t, actionsOf),
     ];
+
+    /* 手机：两行式 + ⋯ 面板（专辑详情一页里 4 列在 360px 下会被裁掉） */
+    const compactColumns: ColumnDef<Track>[] = mobileTrackColumns<Track>(t, {actions: actionsOf});
 
     if (!valid) {
         return (
@@ -213,6 +219,7 @@ export default function CollectionView() {
             ) : (
                 <DataTable
                     columns={columns}
+                    mobileColumns={compactColumns}
                     dataSource={rows}
                     rowKey="id"
                     loading={loading}

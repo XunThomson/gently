@@ -1,7 +1,7 @@
 import {useEffect, useMemo} from 'react';
 import {useTranslation} from 'react-i18next';
 import {BadgeCell, DataTable, TextCell, type ColumnDef} from '../../../components/ui/data-table';
-import {actionsColumn, indexColumn} from '../../../config/table.config';
+import {actionsColumn, indexColumn, mobileColumns} from '../../../config/table.config';
 import {usePlayRow, useTrackActions} from '../../../hooks/useTrackActions';
 import {useConfirm} from '../../../hooks/useConfirm';
 import {fileService} from '../../../services';
@@ -24,6 +24,37 @@ export default function DownloadedView() {
 
     const rows = useMemo(() => tasks.filter((task) => task.status === 'done'), [tasks]);
     const tracks = useMemo(() => rows.map((task) => task.track), [rows]);
+
+    const actionsOf = (task: DownloadTask) =>
+        buildActions(task.track, {
+            queue: tracks,
+            extra: [
+                /* 已下载的文件是用户资产：给一条「在文件夹中显示」的路，
+                   否则用户只能自己猜核心把文件放到了哪 */
+                ...(task.path
+                    ? [
+                        {
+                            key: 'reveal',
+                            label: t('page.download.reveal'),
+                            onClick: () => void fileService.revealInDir(task.path as string),
+                        },
+                    ]
+                    : []),
+                {
+                    key: 'remove',
+                    label: t('common.delete'),
+                    tone: 'danger' as const,
+                    onClick: () =>
+                        confirm({
+                            titleKey: 'confirm.removeDownloadTitle',
+                            descKey: 'confirm.removeDownloadDesc',
+                            descParams: {name: task.track.title},
+                            tone: 'danger',
+                            onConfirm: () => remove(task.id),
+                        }),
+                },
+            ],
+        });
 
     const columns: ColumnDef<DownloadTask>[] = [
         indexColumn<DownloadTask>(),
@@ -65,38 +96,21 @@ export default function DownloadedView() {
             width: '112px',
             render: (_value, record) => <BadgeCell tone="accent">{record.track.source}</BadgeCell>,
         },
-        actionsColumn<DownloadTask>(t, (task) =>
-            buildActions(task.track, {
-                queue: tracks,
-                extra: [
-                    /* 已下载的文件是用户资产：给一条「在文件夹中显示」的路，
-                       否则用户只能自己猜核心把文件放到了哪 */
-                    ...(task.path
-                        ? [
-                            {
-                                key: 'reveal',
-                                label: t('page.download.reveal'),
-                                onClick: () => void fileService.revealInDir(task.path as string),
-                            },
-                        ]
-                        : []),
-                    {
-                        key: 'remove',
-                        label: t('common.delete'),
-                        tone: 'danger',
-                        onClick: () =>
-                            confirm({
-                                titleKey: 'confirm.removeDownloadTitle',
-                                descKey: 'confirm.removeDownloadDesc',
-                                descParams: {name: task.track.title},
-                                tone: 'danger',
-                                onConfirm: () => remove(task.id),
-                            }),
-                    },
-                ],
-            }),
-        ),
+        actionsColumn<DownloadTask>(t, actionsOf),
     ];
+
+    /* 手机：两行式——第一行曲名、第二行「歌手 · 专辑 · 大小」，右侧时长 */
+    const compactColumns: ColumnDef<DownloadTask>[] = mobileColumns<DownloadTask>({
+        titleLabel: t('column.title'),
+        primary: (task) => task.track.title,
+        secondary: (task) =>
+            [task.track.artist, task.track.album, task.sizeText]
+                .filter((part) => !!(part && String(part).trim()))
+                .join(' · '),
+        trailing: (task) => task.track.duration,
+        sheetTitle: (task) => task.track.title,
+        actions: actionsOf,
+    });
 
     return (
         <div className={styles.list}>
@@ -106,6 +120,7 @@ export default function DownloadedView() {
 
             <DataTable
                 columns={columns}
+                mobileColumns={compactColumns}
                 dataSource={rows}
                 rowKey="id"
                 loading={!loaded}

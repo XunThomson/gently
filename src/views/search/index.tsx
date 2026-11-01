@@ -11,6 +11,7 @@ import {
     artistColumn,
     durationColumn,
     indexColumn,
+    mobileTrackColumns,
     sourceColumn,
     sourceCountColumn,
     titleColumn,
@@ -99,6 +100,9 @@ export default function SearchView() {
     const enabledPlugins = usePluginState().list.filter((plugin) => plugin.enabled);
     const noSource = coreAvailable() && enabledPlugins.length === 0;
 
+    /** 一行的操作只算一次：桌面放在行内，手机放进 ⋯ 底部面板（同一批动作） */
+    const actionsOf = (track: Track) => buildActions(track, {queue: rows, withDownload: true});
+
     const columns: ColumnDef<Track>[] = [
         indexColumn<Track>(),
         titleColumn<Track>(t),
@@ -106,8 +110,17 @@ export default function SearchView() {
         albumColumn<Track>(t),
         durationColumn<Track>(t),
         display === 'aggregate' ? sourceCountColumn<Track>(t) : sourceColumn<Track>(t),
-        actionsColumn<Track>(t, (track) => buildActions(track, {queue: rows, withDownload: true})),
+        actionsColumn<Track>(t, actionsOf),
     ];
+
+    const compactColumns: ColumnDef<Track>[] = mobileTrackColumns<Track>(t, {
+        actions: actionsOf,
+        /* 手机没有「音源」列：把候选数量挂到第二行，信息量不减、宽度不加 */
+        extra: (track) =>
+            display === 'aggregate'
+                ? t('source.count', {count: (track as GroupedTrack).sourceCount ?? 1})
+                : track.source,
+    });
 
     return (
         <Page
@@ -127,6 +140,7 @@ export default function SearchView() {
             ) : (
                 <DataTable
                     columns={columns}
+                    mobileColumns={compactColumns}
                     dataSource={rows}
                     rowKey="id"
                     loading={loading}

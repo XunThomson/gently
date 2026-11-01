@@ -11,6 +11,7 @@ import {
     artistColumn,
     durationColumn,
     indexColumn,
+    mobileTrackColumns,
     titleColumn,
 } from '../../config/table.config';
 import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../hooks/useTrackActions';
@@ -43,6 +44,8 @@ export default function FavoritesView() {
 
     const rows = useMemo(() => favorites, [favorites]);
 
+    const actionsOf = (track: Track) => buildActions(track, {queue: rows, withDownload: true});
+
     const columns: ColumnDef<Track>[] = [
         indexColumn<Track>(),
         titleColumn<Track>(t),
@@ -55,8 +58,14 @@ export default function FavoritesView() {
             width: '112px',
             render: (value) => <TextCell tone="muted">{String(value)}</TextCell>,
         },
-        actionsColumn<Track>(t, (track) => buildActions(track, {queue: rows, withDownload: true})),
+        actionsColumn<Track>(t, actionsOf),
     ];
+
+    /* 手机：两行式 + ⋯ 面板；音源挂到第二行（收藏夹里能看出这首来自哪个源） */
+    const compactColumns: ColumnDef<Track>[] = mobileTrackColumns<Track>(t, {
+        actions: actionsOf,
+        extra: (track) => track.source,
+    });
 
     return (
         <Page
@@ -86,6 +95,7 @@ export default function FavoritesView() {
             ) : (
                 <DataTable
                     columns={columns}
+                    mobileColumns={compactColumns}
                     dataSource={rows}
                     rowKey="id"
                     loading={!loaded}

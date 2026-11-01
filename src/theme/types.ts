@@ -41,6 +41,8 @@ export interface SchemeTokens {
     surfaceTranslucent: string;
     /** 动态背景之上的遮罩（跟随明暗方案，保证文字可读） */
     videoScrim: string;
+    /** 模态浮层（对话框 / 手机底部操作面板）的压暗遮罩：两种方案都压暗，不是「提亮」 */
+    modalScrim: string;
     hover: string;
     active: string;
     textPrimary: string;
@@ -272,6 +274,23 @@ export interface ComponentTokens {
         paddingX: number;
         sheetItemHeight: number;
         drawerWidth: number;
+        /** 两行式列表行里的封面缩略图尺寸 */
+        listCoverSize: number;
+        /** 两行式列表行的上下内边距 */
+        listPaddingY: number;
+        /** 两行式列表行右侧「时长 / 大小」那一列的宽度 */
+        listTrailingWidth: number;
+        /** 行尾 ⋯ 按钮的触控尺寸（不小于 44，见 polished-ui touch-interactions） */
+        rowActionSize: number;
+        /** 触屏下 SeekBar 的命中高度（细进度条也要能按得住） */
+        progressHitHeight: number;
+        /** 底部操作面板的内边距 */
+        sheetPadding: number;
+        /** 底部操作面板最大高度（表达式，如 70%） */
+        sheetMaxHeight: string;
+        /** 面板顶部抓手：宽 / 高 */
+        sheetGrabberWidth: number;
+        sheetGrabberHeight: number;
     };
     /** 下拉菜单 / 抽屉列表（音源、音质、筛选抽屉共用） */
     menu: {

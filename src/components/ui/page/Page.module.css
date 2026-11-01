@@ -46,3 +46,16 @@
     flex-direction: column;
     min-width: 0;
 }
+
+/* ---------- 手机外壳（P1-5） ---------- */
+
+/* 桌面那套 28px 左右留白在 360px 的竖屏上等于吃掉 1/6 宽度，
+   列表因此更早开始省略号；手机上改用外壳自己的 `--mobile-padding-x`。
+   标题也从 26px 收到 `--font-size-xl`（顶栏已经写着产品名，页面标题只是分区名）。 */
+:global([data-shell='mobile']) .page {
+    padding: var(--space-3) var(--mobile-padding-x) var(--space-6);
+}
+
+:global([data-shell='mobile']) .title {
+    font-size: var(--font-size-xl);
+}

@@ -73,6 +73,26 @@
     background: var(--table-row-hover-bg);
 }
 
+/* ---------- 手机：两行式（P1-5） ---------- */
+
+/* 手机上表头没有意义（第一列两行已经说清是什么），还占掉 30px；
+   留一个空的表头行只会让人以为「表格坏了」 */
+.table[data-layout='mobile'] .headerRow {
+    display: none;
+}
+
+/* 触屏没有 hover：按下就要有反馈（polished-ui touch-interactions「成功触摸必须有视觉反馈」） */
+.table[data-layout='mobile'] .row:active {
+    background: var(--table-row-hover-bg);
+}
+
+/* 手机单元格的左右留白收窄到 8px：桌面那 18px 会把「4:18」和 ⋯ 直接挤成省略号
+   （R109 真机实测：时长显示成 `4…`、⋯ 只剩两个点）。 */
+.table[data-layout='mobile'] .bodyCell {
+    padding: 0 var(--space-2);
+}
+
+
 /* 播放中的行：左侧品牌色指示条 */
 .row.active {
     background: var(--brand-soft);

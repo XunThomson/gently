@@ -1,0 +1,139 @@
+/* 手机行操作：行尾 ⋯ 按钮 + 底部操作面板。
+   尺寸全部来自 theme.config.json 的 `mobile` 段（--mobile-sheet-* / --mobile-row-action-size）。 */
+
+/* ---------- 行尾 ⋯ ---------- */
+
+.trigger {
+    display: grid;
+    place-items: center;
+    /* 视觉是三个点，命中区是 44px：手机上别让用户戳 */
+    width: var(--mobile-row-action-size);
+    height: var(--mobile-row-action-size);
+    margin-left: auto;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.trigger:active {
+    background: var(--bg-active);
+    color: var(--text-primary);
+}
+
+/* ---------- 底部操作面板 ---------- */
+
+/* 铺满整个外壳（含常驻播放条），这样面板不会被列表的滚动容器裁掉。
+   压暗遮罩放在**这一层**：它是唯一确定铺满屏幕的元素，
+   子按钮只当点击热区（`.scrim` 背景透明）——两层都涂色会叠成两倍黑。 */
+.root {
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-modal);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    /* 模态遮罩：浅色方案下也要**压暗**（`--overlay-scrim` 是提亮的，面板会像浮在半空） */
+    background: var(--modal-scrim);
+}
+
+.scrim {
+    position: absolute;
+    inset: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+}
+
+.sheet {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    max-height: var(--mobile-sheet-max-height);
+    overflow-y: auto;
+    /* 底部再让出系统手势条的高度（edge-to-edge 是全屏） */
+    padding: var(--mobile-sheet-padding) var(--mobile-sheet-padding)
+        calc(var(--mobile-sheet-padding) + env(safe-area-inset-bottom, 0px));
+    background: var(--bg-elevated);
+    border-top-left-radius: var(--radius-lg);
+    border-top-right-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel);
+    animation: sheetIn var(--motion-base) var(--ease);
+}
+
+.grabber {
+    align-self: center;
+    width: var(--mobile-sheet-grabber-width);
+    height: var(--mobile-sheet-grabber-height);
+    border-radius: var(--radius-full);
+    background: var(--border-strong);
+}
+
+.title {
+    margin: 0;
+    padding: var(--space-1) var(--space-3);
+    overflow: hidden;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.actions {
+    display: flex;
+    flex-direction: column;
+}
+
+.action {
+    display: flex;
+    align-items: center;
+    min-height: var(--mobile-sheet-item-height);
+    padding: 0 var(--space-3);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    text-align: left;
+    cursor: pointer;
+}
+
+.action:active:not(:disabled) {
+    background: var(--bg-active);
+}
+
+.action_primary {
+    color: var(--brand);
+}
+
+.action_danger {
+    color: var(--danger);
+}
+
+.action:disabled {
+    color: var(--text-tertiary);
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+@keyframes sheetIn {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 减少动效：面板直接就位（polished-ui mobile-accessibility 的 reduced-motion 要求） */
+@media (prefers-reduced-motion: reduce) {
+    .sheet {
+        animation: none;
+    }
+}

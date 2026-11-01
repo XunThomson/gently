@@ -3,6 +3,7 @@ import {useTranslation} from 'react-i18next';
 import {Outlet, useLocation} from 'react-router';
 import {appConfig} from '../../../config/app.config';
 import {IconList} from '../../ui/icon';
+import {RowActionsProvider} from '../../ui/row-actions';
 import {MobileNavDrawer} from './MobileNavDrawer';
 import {MobilePlayerBar} from './MobilePlayerBar';
 import {MobileSearchBar} from './MobileSearchBar';
@@ -26,34 +27,39 @@ export function MobileShell() {
     const onSearch = location.pathname === '/search' || location.pathname.startsWith('/search/');
 
     return (
-        <div
-            className={styles.shell}
-            /* 安卓是 edge-to-edge：webview 铺到状态栏下面，顶部要自己让出状态栏高度
-               （值来自 app.config 的 mobile.statusBarInset，不写死在 CSS 里） */
-            style={{paddingTop: appConfig.mobile.statusBarInset}}
-        >
-            <header className={styles.header}>
-                <button
-                    type="button"
-                    className={styles.headerAction}
-                    aria-label={t('mobile.menu')}
-                    onClick={() => setDrawerOpen(true)}
-                >
-                    <IconList size={18}/>
-                </button>
-                <span className={styles.brand}>{t('app.title')}</span>
-            </header>
+        /* 行操作的底部面板宿主：列表行尾的 ⋯ 从这里弹面板（见 components/ui/row-actions）。
+           宿主放在 `.shell` **外面一层**：面板要盖住整个屏幕（含常驻播放条），
+           放进 shell 里会被它的 `overflow: hidden` 裁掉。 */
+        <RowActionsProvider>
+            <div
+                className={styles.shell}
+                /* 安卓是 edge-to-edge：webview 铺到状态栏下面，顶部要自己让出状态栏高度
+                   （值来自 app.config 的 mobile.statusBarInset，不写死在 CSS 里） */
+                style={{paddingTop: appConfig.mobile.statusBarInset}}
+            >
+                <header className={styles.header}>
+                    <button
+                        type="button"
+                        className={styles.headerAction}
+                        aria-label={t('mobile.menu')}
+                        onClick={() => setDrawerOpen(true)}
+                    >
+                        <IconList size={18}/>
+                    </button>
+                    <span className={styles.brand}>{t('app.title')}</span>
+                </header>
 
-            {onSearch && <MobileSearchBar/>}
+                {onSearch && <MobileSearchBar/>}
 
-            <main className={styles.content}>
-                <Outlet/>
-            </main>
+                <main className={styles.content}>
+                    <Outlet/>
+                </main>
 
-            <MobilePlayerBar/>
+                <MobilePlayerBar/>
 
-            <MobileNavDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)}/>
-        </div>
+                <MobileNavDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)}/>
+            </div>
+        </RowActionsProvider>
     );
 }
 

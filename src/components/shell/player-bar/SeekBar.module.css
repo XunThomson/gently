@@ -102,3 +102,23 @@
     transform: translateX(-50%);
     pointer-events: none;
 }
+
+/* ============================== 触屏（P1-4） ============================== */
+
+/* 手机外壳由 `App.tsx` 打在根节点上的 `data-shell="mobile"` 标记，不靠 `@media (hover)`
+   ——形态是「哪个外壳」，不是「窗口多宽」。 */
+
+/* 触屏没有悬浮态：焦点常显，否则用户根本不知道这里能拖 */
+:global([data-shell='mobile']) .thumb {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+}
+
+/* 视觉可以细，命中区不能细：把手势热区撑到 token 给的高度（32px）。
+   **只往下扩展**（朝播放条内部），不往内容区伸——否则列表最下面那一行会被
+   一条看不见的进度条热区抢走点击。 */
+:global([data-shell='mobile']) .root::before {
+    top: 0;
+    height: var(--mobile-progress-hit-height);
+}
+

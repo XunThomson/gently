@@ -8,6 +8,7 @@
 import {appConfig} from '../config/app.config';
 import {placeLyrics, type Position} from '../utils/lyricsWindowPosition';
 import {placePet} from '../utils/petWindowPosition';
+import {isMobilePlatform} from '../utils/platform';
 
 export const isTauri = (): boolean =>
     typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -52,6 +53,28 @@ async function run(action: (win: Awaited<ReturnType<typeof currentWindow>>) => P
     }
 }
 
+/**
+ * 桌面专属的窗口动作（最小化 / 最大化 / 置顶 / 悬浮小窗 / 从迷你恢复）。
+ *
+ * 手机上这些按钮**根本不存在**（外壳是抽屉 + 单栏，没有标题栏），
+ * 所以这里显式 no-op 并如实返回——不让 `setSize` / `setAlwaysOnTop` 打到一个
+ * 安卓上不存在的窗口对象上（那只会留下一条「原生窗口操作失败」的日志，
+ * 看起来像 bug，其实是调用了一个不该存在的入口）。
+ */
+export function desktopWindowActionsAvailable(
+    tauri: boolean = isTauri(),
+    mobile: boolean = isMobilePlatform(),
+): boolean {
+    return tauri && !mobile;
+}
+
+async function runDesktop(
+    action: (win: Awaited<ReturnType<typeof currentWindow>>) => Promise<unknown>,
+) {
+    if (!desktopWindowActionsAvailable()) return;
+    await run(action);
+}
+
 type NativeWindow = Awaited<ReturnType<typeof currentWindow>>;
 
 /** 统一「改尺寸 + 置顶 + 可选居中」的顺序，避免两个入口各写一遍 */
@@ -67,8 +90,8 @@ async function applyWindowSize(
 }
 
 export const windowService = {
-    minimize: () => run((w) => w.minimize()),
-    toggleMaximize: () => run((w) => w.toggleMaximize()),
+    minimize: () => runDesktop((w) => w.minimize()),
+    toggleMaximize: () => runDesktop((w) => w.toggleMaximize()),
     close: () => run((w) => w.close()),
 
     /**
@@ -76,7 +99,7 @@ export const windowService = {
      * 浏览器 / `vite dev` 没有原生窗口，恒为 `false`（调用方据此渲染「最大化」图标）。
      */
     isMaximized: async (): Promise<boolean> => {
-        if (!isTauri()) return false;
+        if (!isTauri() || isMobilePlatform()) return false;
         try {
             return await (await currentWindow()).isMaximized();
         } catch (err) {
@@ -93,7 +116,7 @@ export const windowService = {
      * 标题栏重新挂载时据此恢复按钮的按下态，而不是默认成未置顶。
      */
     isAlwaysOnTop: async (): Promise<boolean> => {
-        if (!isTauri()) return false;
+        if (!isTauri() || isMobilePlatform()) return false;
         try {
             return await (await currentWindow()).isAlwaysOnTop();
         } catch (err) {
@@ -110,7 +133,8 @@ export const windowService = {
      * 用户双击无边框窗口的拖动区（Tauri 内置行为）也会最大化，不只是点按钮那一条路。
      */
     onResized: async (listener: () => void): Promise<() => void> => {
-        if (!isTauri()) return () => undefined;
+        /* 手机上没有可拖动的窗口边框：外壳宽度不随 resize 变化（形态只看平台），订阅没有意义 */
+        if (!isTauri() || isMobilePlatform()) return () => undefined;
         try {
             return await (await currentWindow()).onResized(() => listener());
         } catch (err) {
@@ -118,10 +142,10 @@ export const windowService = {
             return () => undefined;
         }
     },
-    setAlwaysOnTop: (value: boolean) => run((w) => w.setAlwaysOnTop(value)),
+    setAlwaysOnTop: (value: boolean) => runDesktop((w) => w.setAlwaysOnTop(value)),
     /** 悬浮小窗：置顶 + 缩小尺寸 */
     setCompact: (value: boolean) =>
-        run(async (w) => {
+        runDesktop(async (w) => {
             const {compact, normal} = appConfig.window;
             await applyWindowSize(w, value ? compact : normal, {alwaysOnTop: value});
         }),
@@ -134,7 +158,7 @@ export const windowService = {
      * 居中一次能保证「展开」之后立刻看得见完整界面。
      */
     restoreFromMini: () =>
-        run(async (w) => {
+        runDesktop(async (w) => {
             await applyWindowSize(w, appConfig.window.normal, {
                 alwaysOnTop: false,
                 center: true,

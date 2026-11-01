@@ -74,6 +74,9 @@
     inset: 0;
     z-index: var(--z-overlay);
     display: flex;
+    /* 压暗内容放在**这一层 div** 上：真机上「铺满屏幕的 button 当遮罩」不涂背景
+       （见 GOTCHAS §55），按钮只留作点击热区。抽屉本身不透明，压不到它。 */
+    background: var(--modal-scrim);
 }
 
 .drawerScrim {
@@ -81,7 +84,7 @@
     inset: 0;
     border: 0;
     padding: 0;
-    background: var(--overlay-scrim);
+    background: none;
     cursor: pointer;
 }
 
@@ -105,6 +108,27 @@
     align-items: center;
     height: var(--mobile-header-height);
     padding: 0 var(--space-2) var(--space-2);
+}
+
+/* 抽屉右上角的 ✕：真机上「点遮罩关闭」不可靠（透明 button 不收点击，GOTCHAS §55），
+   所以给一个确定可点的关闭入口。 */
+.drawerClose {
+    display: grid;
+    place-items: center;
+    width: var(--mobile-icon-button-size);
+    height: var(--mobile-icon-button-size);
+    margin-left: auto;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.drawerClose:active {
+    background: var(--bg-active);
+    color: var(--text-primary);
 }
 
 .drawerItem,

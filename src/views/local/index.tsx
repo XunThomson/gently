@@ -9,6 +9,7 @@ import {
     artistColumn,
     durationColumn,
     indexColumn,
+    mobileTrackColumns,
     titleColumn,
 } from '../../config/table.config';
 import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../hooks/useTrackActions';
@@ -37,6 +38,32 @@ export default function LocalView() {
         [local, query],
     );
 
+    /** 一行的操作只算一次：桌面放行内，手机放进 ⋯ 底部面板 */
+    const actionsOf = (track: LocalTrack) =>
+        buildActions(track, {
+            queue: rows,
+            extra: [
+                {
+                    key: 'reveal',
+                    label: t('page.local.revealInDir'),
+                    onClick: () => void fileService.revealInDir(track.path),
+                },
+                {
+                    key: 'remove',
+                    label: t('page.local.remove'),
+                    tone: 'danger' as const,
+                    onClick: () =>
+                        confirm({
+                            titleKey: 'confirm.removeLocalTitle',
+                            descKey: 'confirm.removeLocalDesc',
+                            descParams: {name: track.title},
+                            tone: 'danger',
+                            onConfirm: () => removeLocal(track.id),
+                        }),
+                },
+            ],
+        });
+
     const columns: ColumnDef<LocalTrack>[] = [
         indexColumn<LocalTrack>(),
         titleColumn<LocalTrack>(t),
@@ -52,32 +79,14 @@ export default function LocalView() {
             align: 'center',
             render: (value) => <TextCell tone="muted">{String(value)}</TextCell>,
         },
-        actionsColumn<LocalTrack>(t, (track) =>
-            buildActions(track, {
-                queue: rows,
-                extra: [
-                    {
-                        key: 'reveal',
-                        label: t('page.local.revealInDir'),
-                        onClick: () => void fileService.revealInDir(track.path),
-                    },
-                    {
-                        key: 'remove',
-                        label: t('page.local.remove'),
-                        tone: 'danger',
-                        onClick: () =>
-                            confirm({
-                                titleKey: 'confirm.removeLocalTitle',
-                                descKey: 'confirm.removeLocalDesc',
-                                descParams: {name: track.title},
-                                tone: 'danger',
-                                onConfirm: () => removeLocal(track.id),
-                            }),
-                    },
-                ],
-            }),
-        ),
+        actionsColumn<LocalTrack>(t, actionsOf),
     ];
+
+    /** 手机：两行式 + ⋯ 面板（文件大小挂到第二行，桌面那 7 列在 360px 下放不下） */
+    const compactColumns: ColumnDef<LocalTrack>[] = mobileTrackColumns<LocalTrack>(t, {
+        actions: actionsOf,
+        extra: (track) => track.sizeText,
+    });
 
     return (
         <Page
@@ -99,6 +108,7 @@ export default function LocalView() {
 
             <DataTable
                 columns={columns}
+                mobileColumns={compactColumns}
                 dataSource={rows}
                 rowKey="id"
                 loading={!loaded}

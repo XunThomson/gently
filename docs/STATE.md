@@ -4,12 +4,73 @@ last_verified: 2026-11-01
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R106（完善 pet-core）：把三处「声明了但不生效」的地方做成真的 —— ① `minPetCoreVersion` 现在**真的比较**（新错误码 `pet.incompatible`，界面有 zh/en 文案），`version` 必须能解析；② `Condition::SilentFor{ms}` 以前等于「没在播就算」，现在真的按静默时长判断（播放一恢复就归零）；③ 打断型动画（点击/换歌）**必须演完一遍**再让状态机接管，否则「点一下抖一下」；另外 `pet.json` 原文限 512 KiB、`pet.state` 带 `coreVersion`（调试面板可见），宠物错误码全量本地化并由 smoke 守卫。**安卓已重启并跑通 P0**（用户 2026-11-01 决定）：arm64 debug 包已装真机、核心日志与界面都有证据，计划见 `docs/ANDROID-PLAN.md`。核心 75 命令；smoke 509；宠物 **72** 项测试（+宿主 5 项）；verify **8** 道全绿。
+tldr: 当前 R109（安卓 P1 收尾）：P1-4/5/6 三片落地 —— ① 手机列表**换一份两行式列定义**（`mobileTrackColumns`/`mobileColumns`，主信息 + 时长 + ⋯），由 `DataTable` 按 `resolveShellMode` 选，视图不写 `@media`；② 行内动作收进 **⋯ → 底部操作面板**（`components/ui/row-actions`，动作与桌面同源），SeekBar 在手机形态**常显焦点 + 32px 热区**；③ 桌面专属窗口动作在移动端 no-op（纯谓词 `desktopWindowActionsAvailable`）。真机上还揪出并修掉三个「只在设备上出现」的问题：时长/⋯ 被单元格内边距裁成 `4…`、**遮罩色画在 button 上不涂**（GOTCHAS §55）、**移动播放条的进度条跑到应用顶边**（`.bar` 缺 `position: relative`）。smoke 509 → **525**；真机截图 `r109-android-*.png`。
 ---
 
 # STATE
 
-## 本轮目标（第一百零六轮）
+## 本轮目标（第一百零九轮）
+
+> 起点：R108 把手机外壳（抽屉 + 搜索 home + 常驻播放条）落到真机，留下 P1-4/5/6 三片。
+> 用户的说法是「先读 `public/` 下那两个 skill，然后把移动端做完」——
+> 读的是 `public/skills/polished-ui-skills`（`polished-ui-design` 的 mobile-layout /
+> mobile-navigation / touch-interactions / android-patterns / mobile-audit / mobile-accessibility）
+> 与 `public/skills/skills`（`design/visual-design-principles`、`design-system-as-input-ui`）。
+> 两条直接用了：**触控尺寸别缩**（视觉可以小、命中区 44px）、**密集信息用 bottom sheet 渐进披露**。
+
+### 1. 本轮做了什么
+
+| 层 | 改动 |
+|---|---|
+| 列表（P1-5） | `table.config.tsx` 新增 `mobileColumns(options)` / `mobileTrackColumns(t, options)`：手机 3 列 = `主信息(1fr) + 时长 + ⋯`，两行式（标题 / 歌手·附加·专辑）。`DataTable` 新增 `mobileColumns` 属性，用**纯函数** `resolveColumns(shell, columns, mobileColumns)` 裁决——只有 `mobile` 形态才换；视图一次都不写 `@media`。9 个列表全部接上：搜索 / 本地 / 最近 / 收藏 /（源收藏）/ 歌单 / 专辑详情 / 下载中 / 已下载 / 插件 |
+| 行操作（P1-4） | 新模块 `components/ui/row-actions`：`MobileRowActions`（行尾 ⋯，44px）+ `RowActionsProvider`（底部面板：抓手 + 标题 + 48px 一行动作）。动作**与桌面同一批**（`useTrackActions` 不变）。没有宿主时（桌面 / 冒烟）自动退回行内按钮，不留「点了没反应」的入口 |
+| 面板宿主 | 挂在 `MobileShell` **外层**（包住 shell）：面板要盖满屏幕，放进带 `backdrop-filter` 的容器里会被当成包含块（GOTCHAS §54）。关闭走**根 div 的 onClick**（面板自己 `stopPropagation`），不依赖透明 `<button>` 的命中区（§55） |
+| 抽屉 | 真机上「点遮罩关闭」不可靠（透明 button 不收点击，§55）：关闭动作挂到根 div，并补一个显式 **✕**（`mobile.close`）——三条关闭路：点遮罩 / 点 ✕ / 选中一项 |
+| SeekBar | `:global([data-shell='mobile'])` 下焦点常显、热区 32px（`--mobile-progress-hit-height`，只往条内扩，不抢列表最后一行的点击）；触屏松手清掉时间预览（没有 `pointerleave`） |
+| 窗口能力（P1-6） | `window.service.ts` 新增 `desktopWindowActionsAvailable(tauri, mobile)`：`minimize / toggleMaximize / setAlwaysOnTop / setCompact / restoreFromMini` 在移动端 no-op，`isMaximized / isAlwaysOnTop / onResized` 如实返回「没有这个能力」，不再打出假故障日志。桌面歌词桥本就有 `isMobilePlatform()` 早退，宠物桥由 App 按形态开关 |
+| 主题 | `components.mobile` 补 9 个度量（两行式封面 / 行内边距 / 从属列宽 / ⋯ 触控尺寸 / 进度条热区 / 面板内边距·最大高度·抓手）；新增语义色 **`modalScrim`**（明暗都压暗）与 `--modal-scrim`，`ConfirmDialog` 那唯一一处字面 `rgba` 也换成它 |
+| 文档 | `ANDROID-PLAN.md` §7.1 进度表 + 新增 §7.2「R109 落地说明」；GOTCHAS §53（手机列表别压窄）、§54（`backdrop-filter` 抢包含块）、§55（**button 当遮罩不涂背景**） |
+
+### 2. 验证
+
+- `pnpm typecheck` 通过；`pnpm smoke`：**525**（509 → +16，全绿）；`pnpm verify`：**8 道全绿**
+  （类型 / 冒烟 / 契约 / 可达性 / 核心单测 / 宠物独立性 / 宠物核心单测 / 宿主单测）；
+- **顺带修掉一条长期红的测试**：`pet-core/tests/atlas.rs` 的 `shipped_pet_package_validates_and_installs`
+  断言「第 N 个动画必须落在第 N 行」，而仓库里的内置包把「往左跑」贴在第 2 行、按语义先声明它
+  → 这条断言与包**一直**不一致（`pets/` 没动过，本轮跑 verify 才发现）。改成守真正要守的东西：
+  9 个动作**不重不漏**占满 9 行 + `idle=0 / runRight=1 / runLeft=2` 这三条素材事实；
+- 新增断言（都钉在「会悄悄回归」的地方）：手机列只有 3 列且桌面 7 列 key 序列不变、
+  `resolveColumns` 四形态裁决、没有宿主时退回行内按钮、有宿主时行内只剩一个 ⋯（动作不在 DOM 里）、
+  模态遮罩两种方案都是 `rgba(0, 0, 0, 0.45)`、手机进度条焦点常显 + 热区 ≥ 24px、
+  **移动播放条 `.bar` 必须有 `position: relative`**（R109 真机踩到的坑）；
+- 真机（`CDY-AN00` · Android 10 · arm64）`android build --debug -t aarch64 --apk` 装机后走了一遍：
+
+  | 文件 | 内容 |
+  |---|---|
+  | `r109-android-home.png` | 搜索作 home：`搜索结果 /「」共 0 首` + 音源 chips + 常驻播放条空态 |
+  | `r109-android-drawer.png` | 抽屉 8 项（搜索高亮），**内容被压暗**（之前是白底看不见遮罩） |
+  | `r109-android-search-list.png` | `love` 共 39 首：两行式行（封面 + 标题 + 「歌手 · N 个音源 · 专辑」），右侧 `4:15` 与 ⋯ **完整不裁** |
+  | `r109-android-actions-sheet.png` | 点 ⋯ → 底部面板「Love / 播放 / 收藏 / 下载」，背景压暗 |
+  | `r109-android-playing.png` | 行高亮（品牌色 + 左侧指示条），播放条 `Love / Keyshia Cole` |
+  | `r109-android-seek.png` | 进度条在**播放条顶边**，触屏常显焦点（修复后重截） |
+  | `r109-android-nowplaying.png` | 播放条 → 歌词页（手机默认省封面，歌词占满） |
+  | `r109-desktop-search.png` | 桌面回归：7 列（# / 标题 / 歌手 / 专辑 / 时长 / 来源 / 操作）+ 行内按钮，一点没变 |
+
+- 三个**只在真机上出现**的问题都是本轮实测发现的（不是推出来的），处理方式记在 GOTCHAS：
+  ① 时长 `4:18` 被单元格 18px 内边距挤成 `4…`、⋯ 被裁成两个点 → 手机单元格留白收到 8px；
+  ② 遮罩色画在 `<button>` 上真机不涂 → 颜色改画在容器 `<div>` 上（抽屉 + 面板都改了）；
+  ③ `MobilePlayerBar` 的 `.bar` 缺 `position: relative` → `SeekBar` 的 `top: 0` 一直锚在**整个应用顶边**
+     （关掉动态背景时 `--surface-blur: none`，没有任何祖先能当包含块）。
+
+### 3. 未做 / 值得你知道的
+
+- **音频解码失败仍未解**（`ANDROID-PLAN.md` 风险 11，P2 的前置问题）：这轮 UI 走查里点播放能在
+  「模拟时钟」下推进进度、切歌、进歌词页，但真实音频仍是 `DEMUXER_ERROR_COULD_NOT_OPEN`；
+- 平板横屏专用布局没做（仍按 `mobile` 单栏走）；`compact` 那三档只在桌面生效；
+- 手机列表的「下载标记」挤在标题行尾部（信息密度换来的取舍），若要更清爽可以挪进 ⋯ 面板；
+- 面板是「点遮罩关闭」，没有做下滑手势（避免与系统手势冲突，也避免自造一套手势语义）。
+
+## 第一百零六轮
 
 > 起点：用户说「继续完善 petcore」。翻了一遍 `pet-core` 的面，最该修的不是加功能，
 > 而是**三处「字段/条件写了但不生效」**——那种东西比没有更坏：文档说支持，实际不按它办事。
@@ -226,9 +287,9 @@ tldr: 当前 R106（完善 pet-core）：把三处「声明了但不生效」的
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
-| R106 | 完善 pet-core | 三处「声明了但不生效」做成真的：`minPetCoreVersion` 真比较（新码 `pet.incompatible`）、`SilentFor` 真计时、打断型动画演完一遍；`pet.json` 限 512 KiB；`pet.state` 带 `coreVersion`；宠物错误码全量 zh/en + smoke 守卫；smoke 509 / pet-core 72 | [本轮](#本轮目标第一百零六轮) |
-| R105 | 拖动自绘 / 尺寸归一 / 衔接 | 拖动改成渲染器自己搬窗口（可播拖动动画，注入式输入能验证了）；`animations[].fit` 把各行素材缩放对齐；动画切换加 160ms 确认期 + `play.interrupt`，走动暂停加迟滞；smoke 508 / pet-core 58 | [下方](#第一百零五轮) |
-| R102 | 走动 + 拖动修复 | 宿主每 60ms 挪窗口、核心按 `walking{dir}` 挑 `runLeft`/`runRight`（设置页开关，默认关）；拖动失效的根因是自动穿透只登记了精灵 → 改成多块可交互区域 + 本体拖动；修掉位置记忆被程序摆放污染 | [下方](#第一百零二轮) |
+| R109 | 安卓 P1 收尾（P1-4/5/6） | 手机列表换成两行式三列（`mobileColumns`，由 `resolveColumns` 按形态裁决）、行内动作收进 ⋯ 底部面板、SeekBar 常显焦点 + 32px 热区、桌面窗口动作在移动端 no-op；真机上修掉三个只在设备出现的问题（单元格内边距裁字、button 遮罩不涂色、播放条`.bar` 缺定位祖先）；smoke 525 | [本轮](#本轮目标第一百零九轮) |
+| R108 | 安卓 P1 外壳（P1-1/2/3） | `mobile` 第 4 形态 + 左侧抽屉 8 项 + 搜索作 home + 常驻播放条；真机截图 `r108-android-*.png`（证据在 ANDROID-PLAN §7.1） | [ANDROID-PLAN](ANDROID-PLAN.md) |
+| R106 | 完善 pet-core | 三处「声明了但不生效」做成真的：`minPetCoreVersion` 真比较（新码 `pet.incompatible`）、`SilentFor` 真计时、打断型动画演完一遍；`pet.json` 限 512 KiB；`pet.state` 带 `coreVersion`；宠物错误码全量 zh/en + smoke 守卫；smoke 509 / pet-core 72 | [下方](#第一百零六轮) |
 
 ## 历史轮次
 
@@ -268,18 +329,21 @@ tldr: 当前 R106（完善 pet-core）：把三处「声明了但不生效」的
    要做只是把「宿主入口 / 渲染器 / 文案」搬一遍；触发条件是安卓决定重启。
 2. **宠物玩法打磨（小步、随时可做）**：`minPetCoreVersion` 真版本比较、atlas 瘦身（1.5 MB）、
    走路时避让窗口/任务栏、多宠物 UI（存储与 API 已预留）、宠物包自定义文案词表、逐像素 alpha 命中。
-3. **安卓（进行中）**：用户 2026-11-01 决定重启，形态定为**同一仓库 `src-tauri/gen/android`**、
+3. **安卓（P1 已完成，下一步 P2）**：用户 2026-11-01 决定重启，形态定为**同一仓库 `src-tauri/gen/android`**、
    验收用**真机 USB**（`CDY_AN00` · API 29 · arm64）。**P0 当天已跑通**：NDK r28c + 4 个 target +
-   `gen/android` + arm64 debug APK 装机启动，真机日志 8 条迁移 / `数据库就绪 version=8` / `宠物核心就绪`，
-   界面渲染出迷你播放器空态。拦路虎 `rquickjs-sys` 缺 android 绑定已用 **vendored patch** 解决
-   （GOTCHAS §48）；新踩的坑见 §50–§52（多窗口→白屏、dev 包不含资源、取证与数据目录）。
-   计划与执行记录在 [`ANDROID-PLAN.md`](ANDROID-PLAN.md)（§6 有逐条证据），自检
-   `pwsh -File scripts/android-env.ps1`。**P1 进行中**：P1-1/2/3 已落地并在真机验证 ——
-   手机外壳 = **左侧抽屉导航（8 项）+ 搜索作 home + 常驻播放条**（按用户要求不做推荐/排行榜），
-   证据 `release/screenshots/r108-android-home.png` / `-drawer.png`；
-   smoke 509 → **514**（新增四形态 / 抽屉 / home / 高亮断言）。剩 P1-4 触摸语义、P1-5 `mobileColumns`、P1-6 收尾。
-4. **工程债**：`GOTCHAS.md` 47 条按域拆分；截图证据改成「seeded 数据 + 可深链 + 固定浅/深基线」，不再靠手算坐标；
-   拖动/悬停这类**注入式输入验证不了**的交互，补一份人工验收清单。
+   `gen/android` + arm64 debug APK 装机启动，真机日志 8 条迁移 / `数据库就绪 version=8` / `宠物核心就绪`。
+   拦路虎 `rquickjs-sys` 缺 android 绑定已用 **vendored patch** 解决（GOTCHAS §48）；
+   新踩的坑见 §50–§55（多窗口→白屏、dev 包不含资源、取证与数据目录、手机列表、`backdrop-filter` 抢包含块、
+   button 遮罩不涂色）。计划与执行记录在 [`ANDROID-PLAN.md`](ANDROID-PLAN.md)，自检
+   `pwsh -File scripts/android-env.ps1`。
+   **P1 六片全绿**（R108 外壳 P1-1/2/3 + R109 触摸语义 / 手机列 / 窗口能力 P1-4/5/6）：
+   手机外壳 = 左侧抽屉（8 项）+ 搜索作 home + 常驻播放条（**不做推荐/排行榜**），列表两行式、行操作进 ⋯ 底部面板；
+   证据 `r108-android-*.png` / `r109-android-*.png`。
+   **下一个入口条件是 P2**：先实测「锁屏 5 分钟后 WebView `<audio>` 还活着吗」——那一步决定
+   「WebView 播放 + 保活」还是「原生 Media3 播放器」；音频解码失败（风险 11）也要在 P2 一并解决。
+4. **工程债**：`GOTCHAS.md` 55 条按域拆分；截图证据改成「seeded 数据 + 可深链 + 固定浅/深基线」，不再靠手算坐标；
+   拖动/悬停这类**注入式输入验证不了**的交互，补一份人工验收清单；手机端的截图目前靠 `adb input tap` 手算坐标，
+   值得在 `scripts/` 里补一个「按文本/选择器找坐标」的小工具（本轮已因此浪费两轮截图）。
 5. 背景 P2（带 JS / 多文件网页壁纸）与迷你歌词视觉细调仍挂着，未排期。
 
 

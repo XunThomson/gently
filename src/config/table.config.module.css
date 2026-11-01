@@ -37,3 +37,50 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* ============================== 手机两行式（P1-5） ============================== */
+
+/* 一行 = 封面 + 两行文字 +（可选标记）。高度由内容撑开，不写死：
+   系统字号放大时第二行可以换行而不是被裁掉。 */
+.mobileRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--mobile-list-padding-y) 0;
+}
+
+.mobileCover {
+    flex: none;
+    width: var(--mobile-list-cover-size);
+    height: var(--mobile-list-cover-size);
+    border-radius: var(--radius-sm);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.mobileLines {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.mobilePrimary {
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mobileSecondary {
+    overflow: hidden;
+    color: var(--text-tertiary);
+    font-size: var(--mobile-meta-font-size);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+

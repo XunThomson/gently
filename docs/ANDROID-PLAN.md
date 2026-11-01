@@ -341,9 +341,45 @@ pnpm tauri android build --debug -t aarch64 --apk
 | P1-1 形态 + 平台 + home 重定向 | ✅ | `resolveShellMode(412,915,bp,'mobile')==='mobile'`；真机落到 `/search` |
 | P1-2 左侧抽屉（8 项） | ✅ | 真机截图：抽屉列出 8 项，「搜索」高亮 |
 | P1-3 常驻播放条 + 搜索行 | ✅ | 真机截图：`还没有播放歌曲 / 从列表里挑一首开始`；搜索框 + 蓝色「搜索」按钮 |
-| P1-4 触摸语义（SeekBar 常显手柄、行内动作收进底部面板） | ⬜ 待做 | |
-| P1-5 `mobileColumns` 列表两行式 | ⬜ 待做（真机已复现：搜索表 7 列在 360px 下被右侧裁掉） | `r108-android-search.png` |
-| P1-6 窗口能力 no-op 收尾 + 桌面截图比对 | ⬜ 部分（桥已不挂） | |
+| P1-4 触摸语义（SeekBar 常显手柄、行内动作收进底部面板） | ✅（R109） | 见下方「R109 落地说明」；`r109-android-sheet.png` / `-nowplaying.png` |
+| P1-5 `mobileColumns` 列表两行式 | ✅（R109） | `r109-android-search-list.png`（两行式，360px 不溢出） |
+| P1-6 窗口能力 no-op 收尾 + 桌面截图比对 | ✅（R109） | `desktopWindowActionsAvailable` 纯谓词 + smoke 断言；桥本就不挂；桌面截图见 STATE |
+
+### 7.2 R109 落地说明（P1-4/5/6 的实现口径）
+
+> 三片都只动**交互层与列定义**，store / 服务层 / 契约一个字没改。
+
+**P1-5 列表（换一份列，不是压窄桌面列）**
+
+| 项 | 决定 |
+|---|---|
+| 列定义 | `table.config.tsx` 新增 `mobileColumns(options)`（通用）与 `mobileTrackColumns(t, options)`（曲目专用）；手机 3 列 = `主信息(1fr) + 时长 + ⋯` |
+| 谁选 | `DataTable` 新增 `mobileColumns` 属性 + `resolveColumns(shell, columns, mobileColumns)` **纯函数**：只有 `mobile` 形态且传了手机列才换 |
+| 两行内容 | 第一行标题、第二行「歌手 · 附加 · 专辑」；附加信息按视图给（搜索=音源数量、本地=大小、最近=播放多久前、收藏=音源、下载=状态/进度） |
+| 留白 | 手机单元格左右留白收到 `--space-2`（桌面 18px 会把「4:18」挤成 `4…`、⋯ 裁成两个点——R109 真机实测过一轮） |
+| 表头 | 手机隐藏（`data-layout="mobile"`）：两行式已经说明是什么，留个只有「标题」的表头像坏掉 |
+| 命中区 | ⋯ 是 44px 方块（`--mobile-row-action-size`）；`polished-ui/touch-interactions`：视觉可以小，命中区不能小 |
+
+**P1-4 触摸语义**
+
+| 项 | 决定 |
+|---|---|
+| 行内动作 | 手机上不渲染任何行内小按钮：`MobileRowActions` 是唯一入口，点开交给 `RowActionsProvider` 的**底部面板**（scrim + 抓手 + 48px 一行的动作，动作与桌面同源） |
+| 面板宿主 | 挂在 `MobileShell` 外层（`<RowActionsProvider>` 包住 shell，面板是 shell 的兄弟节点）——放进带 `backdrop-filter` 的容器里会被当成包含块（GOTCHAS §54） |
+| 关闭面板 | **挂在根 `<div>` 的 onClick 上**（面板自己 `stopPropagation`）。不能只靠那块透明 `<button>`：真机上它既不着色也收不到点击（GOTCHAS §55，实测点面板外关不掉） |
+| 抽屉关闭 | 三条路：点遮罩 / 点面板右上角 **✕**（`mobile.close`）/ 选中一项。✕ 是因为遮罩命中区在真机不可靠 |
+| 没有宿主时 | `MobileRowActions` **退回行内按钮**：宁可多几个按钮，也不要一个点了没反应的 ⋯（冒烟直接钉这条） |
+| SeekBar | `:global([data-shell='mobile'])` 下焦点常显 + 热区 32px（`--mobile-progress-hit-height`），**只往播放条内部扩**，不抢内容区最下面一行的点击；触屏松手后清掉时间预览（没有 `pointerleave`） |
+| SeekBar 锚点 | `MobilePlayerBar` 的 `.bar` 必须有 `position: relative`：SeekBar 自己是 `absolute; top: 0`，而 `backdrop-filter` 只在**关掉动态背景之前**才当包含块（`--surface-blur: none` 时没有）→ 少了它就跑到应用顶边（真机复现，smoke 有断言） |
+| hover→active | 行、⋯、面板项都在手机形态下补了 `:active` 反馈 |
+| 减少动效 | 面板动画 `@media (prefers-reduced-motion: reduce)` 直接关掉 |
+
+**P1-6 窗口能力**
+
+- `window.service.ts` 新增导出谓词 `desktopWindowActionsAvailable(tauri, mobile)`；`runDesktop()` 用它挡住
+  `minimize / toggleMaximize / setAlwaysOnTop / setCompact / restoreFromMini`，`isMaximized / isAlwaysOnTop / onResized`
+  在移动端直接给「没有这个能力」的诚实返回值（不再留下一条 `原生窗口操作失败` 的假故障日志）。
+- `useDesktopLyricsBridge` / `usePetWindowBridge` 在移动端本就不挂（前者内部还有 `isMobilePlatform()` 早退），本轮核对确认，不需要改。
 
 **真机走查（2026-11-01，`r108-android-*.png`）**
 
@@ -354,6 +390,16 @@ pnpm tauri android build --debug -t aarch64 --apk
 - ✅ **手机歌词页默认无封面**（歌词占满，`-lyrics-no-cover`），右上角开关切「作为背景」后封面虚化压暗铺底（`-lyrics-cover-bg`）
 - ❌ **音频解码失败**（风险 11，未解）
 - 🐞 已修：返回键把 `?q=` 弹掉但输入框还留着旧词（现在 URL 是唯一权威）；歌词页两栏挤成竖排（`data-stack` 现在含 `mobile`）
+
+**R109 真机走查（2026-11-01，`r109-android-*.png`）**
+
+- ✅ 列表两行式：`love` 39 首，每行「封面 + 标题 + 歌手·N 个音源·专辑」，右侧 `4:15` 与 ⋯ **完整不裁**（`-search-list`）
+- ✅ 行操作面板：点 ⋯ → 底部面板「Love / 播放 / 收藏 / 下载」+ 背景压暗；点面板外空白关闭（`-actions-sheet`）
+- ✅ 抽屉：8 项 + 内容压暗 + 右上角 ✕；点遮罩也能关（`-drawer`）
+- ✅ 播放：行高亮 + 播放条；进度条在**播放条顶边**、触屏常显焦点，点一下跳 45%（`-playing` / `-seek`）
+- ✅ 播放条 → 歌词页（手机默认省封面）（`-nowplaying`）
+- 🐞 本轮真机才发现、已修：时长/⋯ 被单元格内边距裁字（`4…`、`⋯` 只剩两点）；遮罩色画在 button 上不涂也不收点击（GOTCHAS §55）；进度条锚到应用顶边（`.bar` 缺定位祖先）
+- ❌ 音频解码失败仍在（风险 11）——UI 走查是在「模拟时钟」下完成的
 
 **拆分（每片独立可交付）**
 
@@ -375,9 +421,10 @@ pnpm tauri android build --debug -t aarch64 --apk
    **arm64 Android 构建也通过**（日志里 `Compiling rquickjs-sys v0.7.0 (…\vendor\rquickjs-sys)`）。
    还剩「运行时正确性」（P0-8：真机导一次 demo 插件）与 armv7 绑定（风险 9）。
 2. **P0 已完成**（2026-11-01）：工具链、构建、安装、启动、真机日志、界面渲染六件都有证据（§1、§6）。
-3. **P1 进行中**（2026-11-01）：P1-1/2/3 已落地并在真机验证（手机外壳 = 左侧抽屉 + 搜索作 home +
-   常驻播放条；不含推荐/排行榜）。剩下 P1-4（触摸语义）、P1-5（`mobileColumns`）、P1-6（窗口能力收尾 + 桌面比对），
-   详见 §7.1 的进度表。
+3. **P1 已完成**（R108 外壳 + R109 触摸语义/手机列/窗口能力）：手机外壳 = 左侧抽屉（8 项）+ 搜索作 home +
+   常驻播放条（不含推荐/排行榜）；列表两行式、行操作进 ⋯ 底部面板、进度条在播放条顶边且常显焦点。
+   逐片状态与证据见 §7.1、§7.2。**下一个入口条件是 P2（后台播放）**，先做一次「锁屏 5 分钟 WebView
+   `<audio>` 还活着吗」的实测再决定技术路线；风险 11（音频解码失败）也归到 P2 一起解决。
 
 ## 9. 相关文档
 

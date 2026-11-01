@@ -9,6 +9,7 @@ import {
     artistColumn,
     durationColumn,
     indexColumn,
+    mobileTrackColumns,
     titleColumn,
 } from '../../config/table.config';
 import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../hooks/useTrackActions';
@@ -40,6 +41,8 @@ export default function RecentView() {
         return t('page.recent.daysAgo', {count});
     };
 
+    const actionsOf = (track: RecentTrack) => buildActions(track, {queue: rows, withDownload: true});
+
     const columns: ColumnDef<RecentTrack>[] = [
         indexColumn<RecentTrack>(),
         titleColumn<RecentTrack>(t),
@@ -59,8 +62,14 @@ export default function RecentView() {
             align: 'center',
             render: (value) => <TextCell tone="muted">{String(value)}</TextCell>,
         },
-        actionsColumn<RecentTrack>(t, (track) => buildActions(track, {queue: rows, withDownload: true})),
+        actionsColumn<RecentTrack>(t, actionsOf),
     ];
+
+    /* 手机：两行式 + ⋯ 面板；「什么时候听的」比播放次数重要，只带前者 */
+    const compactColumns: ColumnDef<RecentTrack>[] = mobileTrackColumns<RecentTrack>(t, {
+        actions: actionsOf,
+        extra: (track) => playedAtText(track.playedAt),
+    });
 
     return (
         <Page
@@ -86,6 +95,7 @@ export default function RecentView() {
         >
             <DataTable
                 columns={columns}
+                mobileColumns={compactColumns}
                 dataSource={rows}
                 rowKey="id"
                 loading={!loaded}

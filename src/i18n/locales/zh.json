@@ -120,7 +120,9 @@
   "mobile": {
     "menu": "导航",
     "openPlayer": "打开播放页",
-    "pickSong": "从列表里挑一首开始"
+    "pickSong": "从列表里挑一首开始",
+    "actionsFor": "{{name}}的操作",
+    "close": "关闭导航"
   },
   "sidebar": {
     "playlists": "我的歌单",
