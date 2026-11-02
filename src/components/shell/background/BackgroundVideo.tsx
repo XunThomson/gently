@@ -15,13 +15,12 @@ import styles from './BackgroundVideo.module.css';
  * 用 `import.meta.glob` 而非静态 import：文件缺失时构建不会失败，
  * 动态背景自动关闭，其余功能不受影响。
  */
-const backgroundVideos = import.meta.glob<string>('../../../assets/bgc.mp4', {
-    eager: true,
-    query: '?url',
-    import: 'default',
-});
+/* 内置演示视频（`src/assets/bgc.mp4`）是个**虚拟模块**：`vite.config.ts` 的
+   `bundledBackgroundPlugin` 在 android 构建里直接回 `null`，资源因此根本不会进产物
+   ——APK 里不该出现一段 100 MB+ 的测试素材（R123）。桌面端照旧。 */
+import bundledBgUrl from 'virtual:gently-bundled-bg';
 
-const bgVideoUrl: string | null = Object.values(backgroundVideos)[0] ?? null;
+const bgVideoUrl: string | null = bundledBgUrl;
 
 /**
  * 动态背景：铺满整个应用视图。

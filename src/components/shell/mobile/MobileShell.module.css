@@ -67,6 +67,29 @@
     -webkit-overflow-scrolling: touch;
 }
 
+/* 换页时的过渡（R123）：手机上「点一下直接硬切」会显得没有反馈。
+   只做 6px 的轻微上浮 + 淡入，别做整屏滑动——滚动列表进来的动画最容易掉帧。 */
+.pageFade {
+    animation: pageIn var(--motion-base);
+}
+
+@keyframes pageIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pageFade {
+        animation: none;
+    }
+}
+
 /* ---------- 左侧导航抽屉 ---------- */
 
 .drawerRoot {
@@ -84,8 +107,19 @@
     inset: 0;
     border: 0;
     padding: 0;
-    background: none;
+    background: var(--modal-scrim);
     cursor: pointer;
+    /* 遮罩先淡入，抽屉再滑出来：两层同时硬切会「闪」一下（R123） */
+    animation: scrimIn var(--motion-fast);
+}
+
+@keyframes scrimIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
 .drawer {
@@ -103,6 +137,25 @@
     overflow-y: auto;
     background: var(--bg-elevated);
     box-shadow: var(--shadow-panel);
+    /* 从左侧滑出来（R123）：抽屉是挂载即显示，所以只做入场；
+       出场不做——`open=false` 时组件直接卸载，硬做退场要额外维护状态。 */
+    animation: drawerIn var(--motion-base);
+}
+
+@keyframes drawerIn {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .drawer,
+    .drawerScrim {
+        animation: none;
+    }
 }
 
 .drawerHeader {

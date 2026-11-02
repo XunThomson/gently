@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Outlet, useLocation} from 'react-router';
 import {appConfig} from '../../../config/app.config';
@@ -24,7 +24,14 @@ export function MobileShell() {
     const {t} = useTranslation();
     const location = useLocation();
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const contentRef = useRef<HTMLElement>(null);
     const onSearch = location.pathname === '/search' || location.pathname.startsWith('/search/');
+
+    /* 换页回到顶部（R123）：`.content` 是滚动容器，不重置的话从长列表点进另一页
+       会停在上一页的滚动位置，看起来像「页面没换」。 */
+    useEffect(() => {
+        contentRef.current?.scrollTo({top: 0});
+    }, [location.pathname]);
 
     return (
         /* 行操作的底部面板宿主：列表行尾的 ⋯ 从这里弹面板（见 components/ui/row-actions）。
@@ -51,8 +58,11 @@ export function MobileShell() {
 
                 {onSearch && <MobileSearchBar/>}
 
-                <main className={styles.content}>
-                    <Outlet/>
+                <main className={styles.content} ref={contentRef}>
+                    {/* 换页过渡：key 换掉就重新播一次淡入（见 .pageFade） */}
+                    <div className={styles.pageFade} key={location.key}>
+                        <Outlet/>
+                    </div>
                 </main>
 
                 <MobilePlayerBar/>

@@ -57,8 +57,11 @@
     height: 100%;
 }
 
-/* 手机端默认不看封面：把省下来的高度还给歌词卡片 */
-.page[data-cover='hidden'] {
+/* 手机端默认不看封面：把省下来的高度还给歌词卡片。
+   封面当背景时同样用手机那档高度——封面在手机上是**背景层**、不占布局，
+   歌词区域不该因为「开不开封面背景」而变矮（用户反馈 #2：歌词展示受封面尺寸影响）。 */
+.page[data-cover='hidden'],
+.page[data-cover='background'] {
     --now-playing-lyrics-height: var(--now-playing-mobile-lyrics-height);
 }
 
