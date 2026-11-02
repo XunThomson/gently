@@ -11,6 +11,7 @@ import {formatBytes} from '../../../utils/helpers';
 import {createBackgroundPreset} from '../../../utils/backgroundSettings';
 import {parseExternalBackgroundPreset, exportExternalBackgroundPreset} from '../../../utils/backgroundPreset';
 import styles from '../setting.module.css';
+import {isMobilePlatform} from '../../../utils/platform';
 
 /**
  * 设置页「动态背景」卡片（P1：本地视频 / 静态单文件网页 + 展示参数预设）。
@@ -281,10 +282,16 @@ export function BackgroundCard() {
                         onChange={(value) =>
                             setBackgroundKind(value === 'web' ? 'web' : 'video')
                         }
-                        options={[
-                            {value: 'video', label: t('page.background.kindVideo')},
-                            {value: 'web', label: t('page.background.kindWeb')},
-                        ]}
+                        options={
+                            /* 网页背景 = 单个 HTML 塞进 iframe：桌面端的玩法；
+                               手机上素材难准备、还白白吃内存，手机形态只留视频（R128） */
+                            isMobilePlatform()
+                                ? [{value: 'video', label: t('page.background.kindVideo')}]
+                                : [
+                                      {value: 'video', label: t('page.background.kindVideo')},
+                                      {value: 'web', label: t('page.background.kindWeb')},
+                                  ]
+                        }
                     />
                 </span>
             </div>
