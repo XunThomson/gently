@@ -1,10 +1,11 @@
 import {useEffect, useState} from "react";
-import {Outlet} from "react-router";
+import {Outlet, useLocation} from "react-router";
 import {LMRLayout, TMBLayout} from "./components/layout";
 import {BackgroundVideo} from "./components/shell/background";
 import {MiniPlayer} from "./components/shell/mini-player";
 import {MobileShell} from "./components/shell/mobile";
 import {ConfirmHost} from "./components/ui/dialog";
+import {RouteError} from "./components/ui/route-error";
 import {TitleBar} from "./components/shell/title-bar";
 import {Sidebar} from "./components/shell/sidebar";
 import {PlayerBar} from "./components/shell/player-bar";
@@ -39,6 +40,8 @@ export default function App() {
     /* 下载任务也要在启动时加载：业务列表的「已下载」标记依赖它，不能等用户先点开下载页 */
     const {load: loadDownloads} = useActions().download;
     const mode = useShellMode();
+    /* 换页时复位路由错误边界（R137）：某一页渲染抛错不该连累之后打开的页面 */
+    const location = useLocation();
 
     /* 浏览器预览没有原生窗口可 resize：展开后先用本地开关回到完整界面；
        形态变化（如再次跨过断点）才清除，避免每个像素的 resize 都重渲染外壳。 */
@@ -146,7 +149,7 @@ export default function App() {
                                     compact={compact}
                                 />
                             }
-                            main={<Outlet/>}
+                            main={<RouteError key={location.pathname}><Outlet/></RouteError>}
                         />
                     }
                     bottom={<PlayerBar compact={compact}/>}

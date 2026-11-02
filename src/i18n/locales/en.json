@@ -18,6 +18,13 @@
       "devoted": "Devoted"
     }
   },
+  "routeError": {
+    "title": "This page failed to render",
+    "hint": "Rendering this page threw an error — not something you did. Retry, or switch to another page and come back.",
+    "details": "Error details (please include when reporting)",
+    "retry": "Retry",
+    "reload": "Reload"
+  },
   "errors": {
       "pet_invalid_argument": "Something this action needs is off — check it and try again",
       "pet_not_found": "That pet is gone (removed?). Refresh settings and retry",

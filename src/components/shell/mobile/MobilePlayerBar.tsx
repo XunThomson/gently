@@ -29,7 +29,9 @@ export function MobilePlayerBar() {
     const mainLabel = playbackError ? t('player.retry') : playing ? t('common.pause') : t('common.play');
 
     return (
-        <section className={styles.bar} aria-label={t('mobile.openPlayer')}>
+        /* `data-drawer-swipe="off"`：这一条里有横向拖动的进度条，
+           外壳的「横滑打开抽屉」手势必须跳过它（R137） */
+        <section className={styles.bar} aria-label={t('mobile.openPlayer')} data-drawer-swipe="off">
             <div className={styles.seek}>
                 <SeekBar elapsed={elapsed} duration={duration} skin={skin} onSeek={seek}/>
             </div>

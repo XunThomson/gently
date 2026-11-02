@@ -121,6 +121,10 @@ export function useAudioEngine(): void {
         if (!audioUrl || !playing || !playable) return;
         const startedAt = audioEngine.currentTime();
         const timer = window.setTimeout(() => {
+            /* 页面在后台时**不判定**（R137）：后台的定时器会被系统延后，醒来这一拍很可能
+               正好撞上元素被系统暂停的瞬间，于是把一次正常的后台播放判成「媒体元素没有开始播放」→
+               停播。后台的恢复交给下面那个 5 秒轮询 + 可见性变化处理。 */
+            if (document.visibilityState === 'hidden') return;
             if (!audioEngine.isPausedNow()) return;
             if (audioEngine.currentTime() > startedAt) return;
             markUnplayable('媒体元素没有开始播放');
@@ -172,16 +176,28 @@ export function useAudioEngine(): void {
         };
 
         const resumeIfStalled = () => {
-            // 页面在后台时不抢播放：切回来（visibilitychange 会再触发一次）才恢复
-            if (document.visibilityState === 'hidden') return;
+            /* 后台（页面隐藏）也要救（R137 用户反馈「后台不播」）：
+               有些 ROM 退到后台会把媒体元素暂停，而以前这里直接 return——于是没人把它叫回来，
+               用户听到的就是「一锁屏/一退后台就没声」。后台只做**尝试**，不据此判死：
+               定时器判定在后台不可靠（见上面看门狗的说明）。 */
+            const hidden = document.visibilityState === 'hidden';
             // 1) 元素停着（被暂停 / 被策略拦下）：叫它继续
             if (audioEngine.isPausedNow()) {
+                if (hidden) {
+                    /* 后台只「叫一声」，**不能走 resume()**：它失败时会 reload()，进度被反复清零
+                       （R137 真机：熄屏 150s 只走了 13s）。 */
+                    audioEngine.nudge();
+                    return;
+                }
                 void audioEngine.resume().then(escalate);
                 return;
             }
             /* 2) 元素**以为自己在播、位置却不动**（安卓锁屏/后台后的僵死）。
-               只判 `paused` 会漏掉这一种——界面就永远「播放中、进度不动」（R111 真机）。 */
+               只判 `paused` 会漏掉这一种——界面就永远「播放中、进度不动」（R111 真机）。
+               后台先不动它：等回到前台（visibilitychange 会再触发一次）再判定，
+               免得在后台把一次正常的缓冲当成「被系统中断」。 */
             if (audioEngine.isStalledNow()) {
+                if (hidden) return;
                 void audioEngine.hardRecover().then((outcome) => escalate(outcome === 'ok' ? 'ok' : 'failed'));
             }
         };

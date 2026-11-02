@@ -65,6 +65,9 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    /* 横滑留给外壳的「打开抽屉」手势（R137）：只接管纵向滚动，
+       否则浏览器会先把横向位移吃掉，pointermove 在真机上收不到。 */
+    touch-action: pan-y;
 }
 
 /* 换页时的过渡（R123）：手机上「点一下直接硬切」会显得没有反馈。

@@ -115,10 +115,14 @@ export default function NowPlayingView() {
             )}
 
             <div className={styles.topbar}>
-                <button type="button" className={styles.back} onClick={goBack}>
-                    <IconChevronLeft size={16}/>
-                    {t('common.back')}
-                </button>
+                {/* 手机上不放返回按钮：安卓本来就有系统返回手势 / 返回键（R137 用户反馈）。
+                    桌面端留着——那里没有系统返回，去掉就真没路退了。 */}
+                {!isMobile && (
+                    <button type="button" className={styles.back} onClick={goBack}>
+                        <IconChevronLeft size={16}/>
+                        {t('common.back')}
+                    </button>
+                )}
                 {isMobile && (
                     <button
                         type="button"

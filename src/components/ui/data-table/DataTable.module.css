@@ -105,6 +105,37 @@ html[data-overlay='open'] .table[data-layout='mobile'] .row:active {
     padding: 0 var(--space-2);
 }
 
+/* ---------- 手机：连续列表，而不是「一张大卡片」（R137 用户反馈） ----------
+
+   桌面是一张带边框与圆角的表；手机上那种「大圆角卡片包住所有行」读起来像卡片流，
+   与主流安卓音乐 App 的「整页列表 + 细分隔线」不一致。这里只拆**外层卡片**：
+   去掉边框、圆角与底色，行仍留 1px 分隔线，触屏按压反馈照旧（`.row:active`）。 */
+.container[data-layout='mobile'] {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    backdrop-filter: none;
+}
+
+.container[data-layout='mobile'] .row,
+.container[data-layout='mobile'] .row:first-child,
+.container[data-layout='mobile'] .row:last-child {
+    border-radius: 0;
+    /* 行本身透明：底色交给页面表面，整页看起来是一整片列表 */
+    background: transparent;
+}
+
+/* 最后一行不画收尾线：列表尾部贴着页面（主流做法） */
+.container[data-layout='mobile'] .row:last-child {
+    border-bottom: none;
+}
+
+/* 播放中的行仍要有底色：上面那条「行透明」特异性更高（0,3,0 > 0,2,0），
+   不补回来 `.row.active` 就被它盖掉了（R137 顺手修）。 */
+.container[data-layout='mobile'] .row.active {
+    background: var(--brand-soft);
+}
+
 
 /* 播放中的行：左侧品牌色指示条 */
 .row.active {

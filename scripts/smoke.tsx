@@ -81,6 +81,7 @@ import {
     titleColumn,
 } from '../src/config/table.config';
 import {resolveColumns, type ColumnDef} from '../src/components/ui/data-table';
+import {RouteError} from '../src/components/ui/route-error';
 import {MobileRowActions, RowActionsProvider} from '../src/components/ui/row-actions';
 import {
     desktopWindowActionsAvailable,
@@ -2430,6 +2431,85 @@ async function main(): Promise<void> {
             ),
             drawerHtml.slice(0, 200),
         );
+
+        /* 横滑打开抽屉（R137 用户反馈）：起手点要离开系统返回手势的边缘区，
+           位移要够长、且明显是横向；否则会把「滚列表」当成「开抽屉」。 */
+        {
+            const {ignoreEdgePx, distancePx, slopeRatio} = appConfig.mobile.drawerSwipe;
+            check(
+                '移动外壳：横滑打开抽屉的阈值自洽（避开系统边缘 / 够长 / 只认横向）',
+                ignoreEdgePx > 0 &&
+                    distancePx > ignoreEdgePx &&
+                    slopeRatio > 1,
+                JSON.stringify(appConfig.mobile.drawerSwipe),
+            );
+            const shellSrc = readFileSync('src/components/shell/mobile/MobileShell.tsx', 'utf8');
+            check(
+                '移动外壳：外壳挂了横滑手势，播放条被排除在外（进度条自己就是横向拖动）',
+                shellSrc.includes('onPointerMove={onPointerMove}') &&
+                    shellSrc.includes("closest('[data-drawer-swipe=\"off\"]')") &&
+                    shellSrc.includes('appConfig.mobile.drawerSwipe.ignoreEdgePx'),
+            );
+            const barSrc = readFileSync('src/components/shell/mobile/MobilePlayerBar.tsx', 'utf8');
+            check(
+                '移动播放条：标记了 data-drawer-swipe="off"（否则拖进度会拉出抽屉）',
+                barSrc.includes('data-drawer-swipe="off"'),
+            );
+        }
+
+        /* 抽屉里点导航项 = 收起 + 换页：必须把历史里那条同 URL 的标记 `replace` 掉，
+           否则每点一次就多一条「按了没反应」的历史（R137，R121 的老问题换了张皮）。 */
+        {
+            const drawerSrc = readFileSync('src/components/shell/mobile/MobileNavDrawer.tsx', 'utf8');
+            const hookSrc = readFileSync('src/hooks/useBackToClose.ts', 'utf8');
+            check(
+                '移动外壳：抽屉换页用 replace 顶掉历史标记（不多留一条）',
+                drawerSrc.includes('replace: hasMarker') &&
+                    drawerSrc.includes('gentlyOverlay') &&
+                    /* 必须告诉 hook「历史我自己处理了」，否则它收起时再 back 一次会把异步导航弹回去 */
+                    drawerSrc.includes('handledHistory()'),
+            );
+            check(
+                '移动外壳：关闭浮层时延后一拍再收标记（不与 navigate 抢同一条历史）',
+                /window\.setTimeout\(\(\) => \{[\s\S]*gentlyOverlay[\s\S]*history\.back\(\);[\s\S]*\}, 0\)/.test(
+                    hookSrc,
+                ),
+            );
+        }
+
+        /* 换页过渡与横滑手势并存：内容区只接管纵向滚动（`touch-action: pan-y`），
+           否则浏览器先把横向位移吃掉，手势在真机上收不到（R137）。 */
+        {
+            const shellCss = readFileSync('src/components/shell/mobile/MobileShell.module.css', 'utf8');
+            check(
+                '移动外壳：内容区 `touch-action: pan-y`（横向留给抽屉手势）',
+                /\.content\s*\{[^}]*touch-action:\s*pan-y;/.test(shellCss),
+            );
+        }
+
+        /* 白屏的替代品（R137）：路由内容外包一层错误边界——渲染抛错时只坏内容区，
+           导航与播放条还在，并且能重试。桌面 / 手机两个外壳都要有。 */
+        {
+            const boundaryHtml = renderToString(
+                <ThemeProvider>
+                    <RouteError>
+                        <span>内容正常</span>
+                    </RouteError>
+                </ThemeProvider>,
+            );
+            check(
+                '错误边界：没有异常时原样渲染内容',
+                boundaryHtml.includes('内容正常'),
+                boundaryHtml.slice(0, 120),
+            );
+            const mobileShellSrc = readFileSync('src/components/shell/mobile/MobileShell.tsx', 'utf8');
+            const appSrc = readFileSync('src/App.tsx', 'utf8');
+            check(
+                '错误边界：手机外壳与桌面外壳都把路由内容包在里面',
+                mobileShellSrc.includes('<RouteError key={location.pathname}>') &&
+                    appSrc.includes('<RouteError key={location.pathname}>'),
+            );
+        }
         /* 「在文件夹中显示」是桌面能力：安卓上没有文件管理器定位，私有目录外部也看不到。
            手机形态下不给这一项，而不是给一个点了没反应的入口（GOTCHAS §46）。 */
         check(
@@ -2512,6 +2592,18 @@ async function main(): Promise<void> {
                     /* 面板关着时动作不在 DOM 里 —— 行内不再铺一排按钮 */
                     !hosted.includes('>播放<'),
                 hosted.slice(0, 240),
+            );
+
+            /* 手机列表要**连续列表**而不是「一张大卡片」（R137 用户反馈）：
+               外层容器在 mobile 下必须去掉边框 / 圆角 / 底色，行只留分隔线。 */
+            const tableCss = readFileSync('src/components/ui/data-table/DataTable.module.css', 'utf8');
+            check(
+                '移动列表：拆掉外层卡片（无边框 / 无圆角 / 透明底），行只留分隔线',
+                tableCss.includes(".container[data-layout='mobile']") &&
+                    /\.container\[data-layout='mobile'\]\s*\{[^}]*border:\s*0;[^}]*border-radius:\s*0;/.test(tableCss) &&
+                    /\.container\[data-layout='mobile'\]\s*\{[^}]*background:\s*transparent;/.test(tableCss) &&
+                    /* 播放中的行仍要有底色：补回去的那条规则不能丢 */
+                    tableCss.includes(".container[data-layout='mobile'] .row.active"),
             );
         }
 

@@ -856,3 +856,24 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
   3. 让前端发命令时带一个 Tauri `Channel`，由 Rust 在轮询/回调里推——多一层管道，本轮不需要。
 - 配套注意：轮询要**在导入结束立刻停**（`importing` 变 false 就 `clearInterval`），并让「没有宿主」时
   返回 `null` 而不是 0% 的假进度（界面宁可显示「等待选择…」）。桌面端这类命令统一回 `{active:false}`。
+
+## 70. 后台播放、抽屉手势与「历史标记」：三条移动端踩坑（R137）
+
+- **后台 `play()` 会被 WebView 拒绝**：华为/EMUI 的 WebView 在页面不可见时（activity 进后台 / 息屏）
+  会拦掉 `play()`，logcat 里是 `HwMedia::Play hbs_autoplay_ = 0` + `UpdatePlayState should_be_playing = 0`；
+  `settings.mediaPlaybackRequiresUserGesture = false` 也挡不住。此时元素一旦被系统停掉，**JS 叫不回来**；
+  能继续播的场景是「元素没被暂停过」。所以后台恢复千万不要复用桌面那套 `resume()`——
+  它失败就 `reload()`，每 5 秒一次会把进度清零（实测熄屏 150s 只走了 13s，看着像「后台不播」）。
+  后台只做 `nudge()`（裸 `play()`，不重载、不报错），回前台再走正规恢复。硬解法在原生侧：让
+  `PlaybackService` 的 MediaSession 主动持有音频焦点（下一轮）。
+- **横滑开抽屉要从「内容区」起手**：屏幕左边缘那一条归系统返回（GOTCHAS §67），所以判定要带
+  「起手点离左边 ≥ 48px」；另外 `.content` 必须 `touch-action: pan-y`，否则浏览器先吃掉横向位移、
+  `pointermove` 根本收不到；播放条要标 `data-drawer-swipe="off"`（进度条自己就是横向拖动）。
+  滑动后补的那次 `click` 只能吃**紧接的 300ms**——按时间戳判定，别用布尔量，否则会把「滑动开抽屉后
+  第一次点导航项」一起吞掉（真机复现过）。
+- **`useBackToClose` 的 `history.back()` 会和 `navigate()` 抢历史**：抽屉打开时压了一条同 URL 的标记，
+  点导航项 = 收起 + 换页；若收起时无条件 `back()`，会把 `RouterProvider` **异步落地**的那次导航弹回去
+  （冷启动后第一次点必失败，历史还会多一条）。修法：hook 返回「这次别动历史」的句柄，
+  调用方用 `navigate(path, {replace: 标记存在})` 直接顶掉标记——页换了、历史不多一条。
+- 顺带：WebView 是 Chromium 92，**不支持 `:has()`**。要在手机形态改「表格容器」的样式，
+  得让容器自己也带 `data-layout`（不能写 `.container:has(.table[data-layout='mobile'])`）。

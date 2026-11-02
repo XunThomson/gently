@@ -34,7 +34,7 @@ export function MobileNavDrawer({open, onClose}: MobileNavDrawerProps) {
     const active = activeNavKey(location.pathname);
     /* 安卓的系统返回 = 关抽屉（主流习惯）；抽屉里因此**不再放 ✕**：
        点旁边空白、按返回、选中一项，三条路都能关（R121 用户反馈） */
-    useBackToClose(open, onClose);
+    const handledHistory = useBackToClose(open, onClose);
 
     if (!open) return null;
 
@@ -66,8 +66,17 @@ export function MobileNavDrawer({open, onClose}: MobileNavDrawerProps) {
                             className={isActive ? styles.drawerItemActive : styles.drawerItem}
                             aria-current={isActive ? 'page' : undefined}
                             onClick={() => {
+                                /* 抽屉打开时，`useBackToClose` 在历史里压了一条**同 URL** 的标记。
+                                   直接 `navigate()` 会在它上面再压一层：多出一条「按了返回没反应」的
+                                   垃圾历史。用 `replace` 把这层标记换成目标路由——页换了、历史不多一条。
+                                   而且要**先告诉 hook「历史我自己处理」**：它收起时若再 back 一次，
+                                   会把还没落地的异步导航弹回去（R137 真机：冷启动后第一次点必失败）。 */
+                                const hasMarker =
+                                    (history.state as {gentlyOverlay?: boolean} | null)?.gentlyOverlay ===
+                                    true;
+                                handledHistory();
                                 onClose();
-                                navigate(item.path);
+                                navigate(item.path, {replace: hasMarker});
                             }}
                         >
                             <span className={styles.drawerItemIcon}>{item.icon}</span>

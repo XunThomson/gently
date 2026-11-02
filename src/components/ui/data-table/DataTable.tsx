@@ -75,7 +75,9 @@ export function DataTable<T>({
     const gridTemplate = activeColumns.map((col) => col.width ?? 'minmax(0, 1fr)').join(' ');
 
     return (
-        <div className={styles.container}>
+        /* `data-layout` 也放在容器上：手机形态要**拆掉外层卡片**（边框/圆角/白底），
+           改成连续列表（R137）。不能用 `:has()`——WebView 是 Chromium 92，不支持。 */
+        <div className={styles.container} data-layout={mobile ? 'mobile' : 'desktop'}>
             <div
                 className={styles.table}
                 data-layout={mobile ? 'mobile' : 'desktop'}

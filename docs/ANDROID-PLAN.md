@@ -394,10 +394,12 @@ pnpm tauri android build --debug -t aarch64 --apk
 
 | R136 | P3 余项：导入进度条 | Kotlin `ImportPlugin` 维护 `Progress` 快照（active / fileName / fileIndex / fileCount / bytesDone / bytesTotal / imported / failed / skipped）：拷贝改成 64 KiB 分块累加，先按 SAF `SIZE` 算总字节，跳过与截断都补差额；宿主加 `import_progress` 命令（桌面端 `{active:false}`），`ScanPanel` 导入期间 250ms 轮询并显示「正在导入 1/1 · 文件 · 45%」 | 真机导入 1.3 GB：40 秒窗口 16 个不同快照（`bytesDone` 194MB→1.32GB）、结束 `bytesDone==bytesTotal` + `imported:1`；界面截图 `r136-android-import-progress.png`；导入后曲库 4→5、清理副本回到 1；smoke 566；GOTCHAS §69 |
 
+| R137 | 移动端反馈批次（后台播放 / 滑动开抽屉 / 导航项 / 歌词页返回 / 列表去卡片 / 白屏兜底） | 后台播放抓到现场：华为 WebView 页面不可见时拒绝 `play()`（`hbs_autoplay_=0`），且第一版后台恢复走 `resume()→reload()` 每 5s 清零进度（熄屏 150s 只走 13s）→ 改成只 `nudge()`、看门狗隐藏时不判失败；抽屉支持从内容区横滑打开（避开屏幕左边缘的系统返回、播放条排除、时间戳只吃紧接的 click）；`useBackToClose` 的 `history.back()` 与异步 `navigate` 抢历史导致「点导航项没反应」→ 换页用 `replace` 顶掉标记；设置页白屏本机未复现，加 `RouteError` 错误边界；手机歌词页去掉「返回」；手机列表拆外层卡片改连续列表 | 真机：横滑 `250→800` 开抽屉、播放条横滑不开；冷启动第一次导航即成功、连续 8 次 0 失败且历史每次只 +1；系统返回 `/now-playing` → `/setting` → `/search`；`r137-mobile-list-flat.png`；smoke 575；GOTCHAS §70 |
+
 **下一步（P3 余项 / P2-2 余项）**：P2-2 只差两件——`ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度，
 要先确认能真机验到才接）、`POST_NOTIFICATIONS` 运行时授权入口（API 33+ 才需要；本机 API 29 验不了）。
 注意本机 ROM（EMUI 10 / Android 10）的通知、控制中心、锁屏卡片**都不画进度条**，位置数据的可见面要等
-Android 11+ 或车机/蓝牙（§7.3 R117）；P3 只剩**音乐目录导出**（导入进度条已在 R136 落地）。
+Android 11+ 或车机/蓝牙（§7.3 R117）；P3 只剩**音乐目录导出**（导入进度条已在 R136 落地）。**后台播放的硬骨头**（WebView 后台拒绝 `play()`）留给下一轮：让 `PlaybackService` 的 MediaSession 主动持有音频焦点（`requestAudioFocus`），或页面侧维护 `navigator.mediaSession`——两者都要 ≥5 分钟真机长测（GOTCHAS §70）。
 **体验类问题（R121 起的收口批次）已全部落地**：手势（返回关浮层、面板下拉收起；左边缘横滑是负结果，GOTCHAS §67）、
 歌词页尺寸、桌面专有项、最近播放去重、动画穿模与过渡、背景适配、滚动重影、storage 适配（逐轮见 R121–R134）。
 

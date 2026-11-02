@@ -185,6 +185,20 @@ class AudioEngine {
         this.el?.pause();
     }
 
+    /**
+     * 后台专用：只叫一声 `play()`，**不重载、不报错**（R137）。
+     *
+     * 为什么不能复用 `resume()`：它会「播不动就先 `reload()`」——而华为/EMUI 的 WebView
+     * 在页面不可见时会拒绝 `play()`（logcat：`HwMedia::Play hbs_autoplay_ = 0`），于是每 5 秒
+     * 重载一次，进度被反复清零（真机实测：熄屏 150 秒后进度只走到 13 秒）。
+     * 后台只尝试「叫一声」，失败就算了——回到前台后 `visibilitychange` 再走正规恢复流程。
+     */
+    nudge(): void {
+        const el = this.el;
+        if (!el || !el.dataset.src) return;
+        void el.play().catch(() => undefined);
+    }
+
     seek(seconds: number): void {
         /* **不要**因为元素还没建就放弃：恢复上次播放位置（R113）时，
            调用顺序是「先 seek 再 load」——此时引擎还是新的、`el` 为 null，
