@@ -237,9 +237,11 @@ export default function SettingView() {
                 </div>
                 <p className={styles.hint}>{t('page.setting.confirmHint')}</p>
 
-                {/* 发现页试听：显式默认开启项，用户可以关（不想鼠标划过就出声） */}
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.discoverPreview')}</span>
+                {/* 发现页试听：手机 8 个入口里没有「发现」页，这个开关没有意义（R126） */}
+                {!mobile && (
+                    <>
+                        <div className={styles.field}>
+                            <span className={styles.label}>{t('page.setting.discoverPreview')}</span>
                     <span className={styles.value}>
                         <UnderlineRadioGroup
                             name="discover-preview"
@@ -253,6 +255,8 @@ export default function SettingView() {
                     </span>
                 </div>
                 <p className={styles.hint}>{t('page.setting.discoverPreviewHint')}</p>
+                    </>
+                )}
             </section>
 
             {/* ---------- 宠物（Beta 1.0）：独立置顶窗口 + 独立引擎 pet-core，默认关 ----------
