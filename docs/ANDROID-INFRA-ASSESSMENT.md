@@ -4,7 +4,7 @@ last_verified: 2026-11-01
 owner: gently
 scope: 安卓端 UI 适配的**基础设施评估**（能不能做、缺什么、按什么顺序做）
 token_budget: 1400
-tldr: 分层已经适合（core 不依赖 tauri、`crate-type` 已含 cdylib），但**当前机器上 Android 构建还跑不起来**：缺 NDK、缺 rust android target、缺 gradle/AGP 依赖、工程未 `android init`。另有一个真正的产品级问题：现有外壳在手机竖屏（412×915）会被判成 `mini`，整页只剩迷你播放器——移动端必须先有第 4 种形态。本文件只做**评估**；执行计划、P0 逐步命令与验收口径在 [`ANDROID-PLAN.md`](ANDROID-PLAN.md)。2026-11-01 复测新增三条：真机已连（CDY_AN00 · API 29 · arm64）、cargo 缓存已含 android 专用 crate（离线可行）、但 `rquickjs-sys 0.7` **没有 android 的 FFI 绑定**（P0-4 会在此失败）。
+tldr: **评估结论：可行**——分层已经适合（core 不依赖 tauri、`crate-type` 已含 cdylib），成本在外壳形态、触摸语义、后台播放、文件与凭据四块，不在 Rust。评估当时机器上什么都缺（NDK / rust target / gradle / `android init`），且外壳会把手机竖屏（412×915）判成 `mini`——这是移动端必须先做第 4 种形态的直接理由。**该评估之后 P0 已跑通**（NDK r28c + `gen/android` + arm64 debug APK），当前进度与执行口径见 [`ANDROID-PLAN.md`](ANDROID-PLAN.md)。
 ---
 
 # 安卓端 UI 适配：基础设施评估
@@ -32,10 +32,10 @@ tldr: 分层已经适合（core 不依赖 tauri、`crate-type` 已含 cdylib）�
 | Tauri CLI 带 android 子命令 | ✅ `tauri-cli 2.11.4`（init / dev / build / run） | `node node_modules/@tauri-apps/cli/tauri.js android --help` |
 | `crate-type` 含 mobile 需要的产物 | ✅ `["staticlib","cdylib","rlib"]` | `src-tauri/Cargo.toml` |
 | JDK | ✅ 17.0.12（AGP 8 要求 17） | `java -version` |
-| Android SDK 平台与 build-tools | ✅ platforms `android-30/34/35`、build-tools `30.0.3/34.0.0/35.0.0` | `F:\Develop\Android\Sdk` |
-| 第二份 SDK（含 cmdline-tools） | ✅ `F:\Android\android-sdk`（`cmdline-tools/7.0`、platforms 31/33） | 目录枚举 |
+| Android SDK 平台与 build-tools | ✅ platforms `android-30/34/35`、build-tools `30.0.3/34.0.0/35.0.0` | `$env:ANDROID_HOME` |
+| 第二份 SDK（含 cmdline-tools） | ✅ `（另一份 SDK，含 cmdline-tools）`（`cmdline-tools/7.0`、platforms 31/33） | 目录枚举 |
 | 模拟器与系统镜像 | ✅ `emulator\emulator.exe`、`system-images\android-35` | 目录枚举 |
-| adb | ✅ `F:\Develop\Android\Sdk\platform-tools\adb.exe` | `Test-Path` |
+| adb | ✅ `$env:ANDROID_HOME\platform-tools\adb.exe` | `Test-Path` |
 
 ### 2.2 缺口（不补齐就无法构建）
 
@@ -63,7 +63,7 @@ tldr: 分层已经适合（core 不依赖 tauri、`crate-type` 已含 cdylib）�
 
 | 事实 | 影响 |
 |---|---|
-| **真机已连**：`MKB6R20514007949` · `CDY_AN00` · `arm64-v8a,armeabi-v7a` · **API 29（Android 10）** | 只装 `aarch64-linux-android`；用 API 24 的 NDK clang 编译够；Android 10 意味着 P3 的 SAF 与 P2 的前台服务按「API 26+ / 分区存储」那套规则走 |
+| **真机已连**：`<设备序列号>` · 真机 · `arm64-v8a,armeabi-v7a` · **API 29（Android 10）** | 只装 `aarch64-linux-android`；用 API 24 的 NDK clang 编译够；Android 10 意味着 P3 的 SAF 与 P2 的前台服务按「API 26+ / 分区存储」那套规则走 |
 | **cargo 缓存已含 android 专用 crate**：1509 个 crate 里有 `jni 0.21/0.22`、`ndk 0.8`、`ndk-sys`、`ndk-context`、`android-activity 0.5`、`tao 0.35`、`wry 0.55` | cargo 侧很可能**不需要新下载**；仍需联网的只有 NDK、rust 的 android std、Gradle/AGP。这削弱了「首次构建必须联网」的结论范围（只对后三样成立） |
 | **`rquickjs-sys 0.7` 没有 `aarch64-linux-android` 的 FFI 绑定**（只带 10 个 target；`src/lib.rs` 在不开 `bindgen` 时 `include!("bindings/<target>.rs")`，`build.rs` 只给一条 warning） | `cargo build --target aarch64-linux-android` 会**直接编译失败**。三条路（复制绑定 patch / 开 bindgen / 升级 rquickjs）见 [`ANDROID-PLAN.md`](ANDROID-PLAN.md) §3.1，需要先拍板 |
 
@@ -73,7 +73,7 @@ tldr: 分层已经适合（core 不依赖 tauri、`crate-type` 已含 cdylib）�
 > 另一条：`maven.google.com` TCP 不通，但它只是网页索引，Gradle 的 `google()` 用的是 `dl.google.com/dl/android/maven2`。
 
 > 一句话（2026-11-01 更新）：**P0 已跑通**——NDK r28c、4 个 android target、`gen/android`、arm64 debug APK
-> 装到 `CDY-AN00`（API 29）并启动，真机日志有 8 条迁移 + `数据库就绪 version=8` + `宠物核心就绪`，
+> 装到真机（API 29）并启动，真机日志有 8 条迁移 + `数据库就绪 version=8` + `宠物核心就绪`，
 > 界面渲染出迷你播放器空态。过程中确认：多窗口配置下移动端会加载 `?window=pet` → 白屏（需
 > `tauri.android.conf.json` 单窗），`--apk` 默认四 ABI 而 **armv7 仍缺 QuickJS 绑定**（只出 `-t aarch64`）。
 > 剩余缺口是产品级的：**第 4 种外壳形态**（P1）、后台播放（P2）、SAF/Keystore（P3）。

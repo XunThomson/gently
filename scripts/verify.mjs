@@ -10,8 +10,8 @@
  * 用法：`pnpm verify`。
  *
  * 离线环境默认带 `--offline`（本机 registry 缓存已就绪）；需要联网拉依赖时用
- * `GENTLY_CARGO_ONLINE=1 pnpm verify`。离线模式要求该缓存可达——本机约定
- * `CARGO_HOME=F:\Develop\Rust\.cargo`（默认的 `~/.cargo` 里没有这份缓存）。
+ * `GENTLY_CARGO_ONLINE=1 pnpm verify`。离线模式要求该缓存可达——即 `CARGO_HOME`
+ * 指向一份已解包的 registry（默认的 `~/.cargo` 里不一定有）。
  */
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';

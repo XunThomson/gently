@@ -10,8 +10,22 @@ import type {MusicSourcePlugin} from '../types';
 /**
  * 内置测试音频：仅用于验证「播放 / 暂停 / 进度 / 音量」整条链路，
  * 以及「同一首歌多音源自动切换」。接入真实源后由插件返回真实地址。
+ *
+ * **仓库不分发版权音频**：`src/assets/*.m4s` 在 `.gitignore` 里（各人本地自备一份，
+ * 见 `src/assets/README.md`）。所以用 `import.meta.glob` **可选加载**——缺文件时构建
+ * 不会失败，与 `BackgroundVideo` 对 `bgc.mp4` 的处理同一个套路。
+ *
+ * 缺失时退回一段**内联静音 WAV**（data URL，不含任何第三方内容）：这样演示源仍然
+ * 「给得出地址」，播放/进度这条链路的冒烟断言在任何机器上都成立，只是听不到声音。
  */
-import testAudioUrl from '../../assets/yihuik苡慧 - 致你.m4s';
+const audioAssets = import.meta.glob('../../assets/*.m4s', {
+    eager: true,
+    query: '?url',
+    import: 'default',
+}) as Record<string, string>;
+const SILENT_WAV_URL =
+    'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=';
+const testAudioUrl = Object.values(audioAssets)[0] ?? SILENT_WAV_URL;
 
 export interface MockSourceOptions {
     id: string;

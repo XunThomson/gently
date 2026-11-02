@@ -21,7 +21,7 @@ export interface AudioHandlers {
  * `play()` 的等待上限。
  *
  * 为什么要给它一个上限：安卓上「锁屏 / 后台一段时间」之后，媒体管道会被系统掐掉，
- * 此时 `play()` 返回的 Promise **既不 resolve 也不 reject**（实测 CDY-AN00：唤醒后
+ * 此时 `play()` 返回的 Promise **既不 resolve 也不 reject**（实测真机：唤醒后
  * 二十多秒仍挂在那里）。谁 await 它就永远不会往下走——看门狗拿不到结果，
  * 于是界面一直显示「播放中」、进度纹丝不动，用户只能杀掉重来（R111 真机定位）。
  */

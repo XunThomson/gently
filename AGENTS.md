@@ -86,8 +86,8 @@ pwsh -File scripts/pet-window.ps1 -Drag -Output release/screenshots/pet.png
                                # （仅 Windows）驱动宠物窗口：-Drag 注入拖动 / -Walk 等它自己走 / 截图
 ```
 
-离线构建约定：`CARGO_HOME=F:\Develop\Rust\.cargo`（crate 缓存只在这一份里），
-因此 `pnpm verify` 默认给 cargo 加 `--offline`；联网时用 `GENTLY_CARGO_ONLINE=1 pnpm verify`。
+离线构建约定：crate 缓存只放一处，由 `CARGO_HOME` 指向（本机路径写在 shell 环境变量里，**仓库不记录**）；
+把它设好之后 `pnpm verify` 默认给 cargo 加 `--offline`，联网时用 `GENTLY_CARGO_ONLINE=1 pnpm verify`。
 
 改动状态层 / 主题 / 插件后，**必须**跑 `pnpm typecheck && pnpm smoke`；
 交付前跑 `pnpm verify`。

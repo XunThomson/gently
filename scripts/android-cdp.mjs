@@ -20,7 +20,13 @@ import {execFileSync} from 'node:child_process';
 import {writeFileSync} from 'node:fs';
 import path from 'node:path';
 
-const ADB = process.env.ADB_PATH ?? 'F:\\Develop\\Android\\Sdk\\platform-tools\\adb.exe';
+/** adb 从哪来：`ADB_PATH` 显式指定 > `ANDROID_HOME`/`ANDROID_SDK_ROOT` 下的 platform-tools > PATH 里的 adb */
+const SDK_ROOT = process.env.ANDROID_HOME ?? process.env.ANDROID_SDK_ROOT ?? '';
+const ADB =
+    process.env.ADB_PATH ??
+    (SDK_ROOT
+        ? path.join(SDK_ROOT, 'platform-tools', process.platform === 'win32' ? 'adb.exe' : 'adb')
+        : 'adb');
 const PORT = Number(process.env.CDP_PORT ?? 9222);
 
 function usage(code = 1) {

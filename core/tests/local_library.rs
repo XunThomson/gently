@@ -730,16 +730,27 @@ fn stored_snapshots_get_a_fresh_local_cover_url() {
 
 #[test]
 fn m4s_container_is_indexed_like_any_other_audio_file() {
-    // R53 用户实测：`D:\Xun\Music` 里只有一个 `.m4s`（B 站下载下来的音频，ISO-MP4 + AAC），
+    // R53 用户实测：`D:\Music` 里只有一个 `.m4s`（B 站下载下来的音频，ISO-MP4 + AAC），
     // 扫描结果 `scanned=0` → 界面显示「还没有本地音乐」，**看起来像扫描功能坏了**。
     // `.m4s`/`.m4b`/`.m4r` 与 `.m4a`/`.mp4` 是同一个容器，必须照样入库。
+    //
+    // 仓库**不分发**那份真音频（`src/assets/*.m4s` 在 .gitignore 里，各人本地自备）。
+    // 缺夹具时跳过整条：白名单本身由 `core::local_library` 的纯函数单测守着，这里验的是
+    // 「扫一遍目录后 m4s 真能入库」，没有真文件就验不了（不假装通过）。
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../src/assets/yihuik苡慧 - 致你.m4s");
+    if !fixture.exists() {
+        eprintln!(
+            "跳过 m4s 入库用例：{} 不存在（仓库不分发版权音频，见 src/assets/README.md）",
+            fixture.display()
+        );
+        return;
+    }
+
     let dir = temp_dir("m4s");
     let music = dir.join("music");
     std::fs::create_dir_all(&music).unwrap();
 
-    // 仓库自带的那份真音频（`src/assets/README.md` 里登记的播放链路夹具），改成 .m4s 后缀
-    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../src/assets/yihuik苡慧 - 致你.m4s");
     std::fs::copy(&fixture, music.join("致你.m4s")).expect("复制 m4s 夹具");
     write_wav(&music.join("silence.wav"), 2);
     // 同一个目录里的非音频文件：要被如实地数出来

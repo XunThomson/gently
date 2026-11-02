@@ -1,4 +1,23 @@
-# Logs
+# ─────────────────────────────────────────────────────────────────────────────
+# gently 忽略清单
+# 原则：**构建产物、本机路径、版权/隐私素材、凭据**一律不入库。
+# 约定：分区按「依赖与产物 → 本机素材 → 机密 → 编辑器」排列，新增前先找现成分区。
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── 依赖与构建产物 ────────────────────────────────────────────────────────────
+node_modules
+dist
+dist-ssr
+*.local
+*.tsbuildinfo
+
+# 便携版打包产物（`pnpm package:portable` 生成：exe / zip / SHA256）
+release/
+
+# Rust：`src-tauri/.gitignore` 管 `/target/`（`.cargo/config.toml` 已把 target-dir 固定在那里）
+# 安卓：`src-tauri/gen/android/.gitignore` 管 `.gradle/`、`build/`、`local.properties` 等生成物
+
+# 日志（含核心在本机写的运行日志）
 logs
 *.log
 npm-debug.log*
@@ -7,31 +26,43 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# 打包产物（便携版 zip 与解压目录）：由 `pnpm package:portable` 生成，不入库
-release/
-
-# 体积较大的本地测试素材（见 src/assets/README.md）
+# ── 本机素材（**仓库不分发**，各人自备） ─────────────────────────────────────
+# 体积大 / 版权不明：见 src/assets/README.md（缺文件时构建不会失败，功能按设计降级）
 src/assets/bgc.mp4
-public/skills/*
+src/assets/*.m4s
 
-# 第三方音源样本：仅作本地参考，**不入库**
-# 原因：来源与许可不明，且这类文件通常含有具体第三方地址与分发链接（见 ADR-0005 的中立立场）。
+# 本地参考的第三方音源样本：来源与许可不明，且常含具体第三方地址（ADR-0005 的中立立场）
 # 注意：examples/plugins/ 下的自有示例插件不受此规则影响。
 examples/Lk_*.js
 examples/wangyiyun.js
 examples/reference/
 
+# 放在 public/ 下自用的 skills（体积大、非本项目产物）
+public/skills/*
 
-# Editor directories and files
+# ── 机密：绝不入库 ───────────────────────────────────────────────────────────
+# 安卓签名（`*.jks` / `*.keystore` 与它们的口令文件）
+*.jks
+*.keystore
+key.properties
+keystore.properties
+# 证书与私钥
+*.p12
+*.pfx
+*.pem
+*.key
+# 环境变量（模板可以留，真值不留）
+.env
+.env.*
+!.env.example
+
+# ── 编辑器与系统 ─────────────────────────────────────────────────────────────
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
+Desktop.ini
 *.suo
 *.ntvs*
 *.njsproj

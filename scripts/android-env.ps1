@@ -21,7 +21,7 @@
 
   用法：
     pwsh -File scripts/android-env.ps1
-    pwsh -File scripts/android-env.ps1 -AndroidHome 'F:\Develop\Android\Sdk'
+    pwsh -File scripts/android-env.ps1 -AndroidHome 'D:\Android\Sdk'
     pwsh -File scripts/android-env.ps1 -NoNetwork      # 不探测网络（离线/只看本地事实）
 
   退出码：0 = 没有 MISS/WAIT；1 = 还有 MISS（阻塞）或 WAIT（需要拍板/需要人工确认）。
@@ -98,7 +98,11 @@ function Invoke-Captured {
 
 $androidHome = if ($AndroidHome) { $AndroidHome } else { Get-Setting 'ANDROID_HOME' }
 if (-not $androidHome) { $androidHome = Get-Setting 'ANDROID_SDK_ROOT' }
-if (-not $androidHome -and (Test-Path 'F:\Develop\Android\Sdk')) { $androidHome = 'F:\Develop\Android\Sdk' }
+# 环境变量都没设时的兜底：Android Studio 的默认安装位置（不写死某台机器的盘符）
+if (-not $androidHome) {
+    $defaultSdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+    if (Test-Path $defaultSdk) { $androidHome = $defaultSdk }
+}
 
 Write-Host ''
 Write-Host ('gently 安卓 P0 环境自检（只读）    ' + (Get-Date -Format 'yyyy-MM-dd HH:mm')) -ForegroundColor Cyan

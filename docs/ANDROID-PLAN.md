@@ -1,10 +1,10 @@
 ---
 status: active
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 owner: gently
-scope: 安卓端**执行计划**：P0（工具链跑通）的逐步命令、期望输出、失败分支与验收证据；P1–P4 的范围与顺序
+scope: 安卓端**执行计划**：P0 的逐步命令、期望输出、失败分支与验收证据；P1–P4 的拆分、验收口径与落地记录
 token_budget: 1900
-tldr: 用户 2026-11-01 决定重启安卓：**同一仓库 + `src-tauri/gen/android`**、**真机 USB**、先只做 **P0**。**P0 当天跑通**：NDK r28c + 4 个 android target + `gen/android` + arm64 debug APK 装到 `CDY-AN00`（API 29）并启动，真机日志出现 8 条迁移、`数据库就绪 … version=8`、`宠物核心就绪`；界面渲染出迷你播放器空态。过程中查出三件必须记住的事：① `rquickjs-sys 0.7` 缺 android 绑定（已按 vendored patch 解决，arm64 通过）；② **多窗口配置下移动端加载的是 `?window=pet` 那一份** → 白屏，需 `tauri.android.conf.json` 只留 main 窗；③ `--apk` 默认四 ABI，**armv7 仍缺绑定**，只出 arm64 要加 `-t aarch64`。
+tldr: 安卓**同一仓库 + `src-tauri/gen/android` + 真机 USB**，P0（工具链）当天跑通，此后 P1 外壳、P2-1 前台服务、P2-3 续播、P3-1 SAF 导入陆续落地。每一步都留了一条「怎么验」的口径（熄屏 4 分钟 +253 秒、冷启动续播、SAF 选文件入库），**下一步是 P2-2（MediaSession + 通知栏传输控制）与 P4**。P0 期间查出三件必须记住的事：① `rquickjs-sys 0.7` 缺 android 绑定（vendored patch 解决）；② 多窗口配置下移动端加载的是 `?window=pet` 那一份 → 白屏，需 `tauri.android.conf.json` 只留 main 窗；③ `--apk` 默认四 ABI，armv7 仍缺绑定，只出 arm64 要加 `-t aarch64`。
 ---
 
 # ANDROID-PLAN：安卓端筹备与 P0–P4
@@ -18,9 +18,9 @@ tldr: 用户 2026-11-01 决定重启安卓：**同一仓库 + `src-tauri/gen/and
 | 维度 | 决定 | 含义 |
 |---|---|---|
 | 工程形态 | **同一仓库**，Tauri 标准移动路径 `src-tauri/gen/android` | 复用同一份 `core`、同一份 React 前端、同一套契约守卫；不新建工程、不复制契约 |
-| 本轮范围 | **只做 P0（工具链跑通）** | P1 外壳 / P2 后台播放 / P4 通知栏歌词都不在本轮 |
+| 本轮范围 | 先做 **P0（工具链跑通）** | P1 外壳 / P2 后台播放 / P4 通知栏歌词都不在当时那一轮；后续按 §7 的顺序推进（P1、P2-1、P2-3、P3-1 已落地） |
 | 验收设备 | **真机 + USB 调试**（不建 AVD） | 只装 `aarch64-linux-android`（不装 x86_64 / armv7） |
-| 执行方式 | **我出命令与验收口径，你手动执行** | 命令涉及工作区外目录（`F:\Develop\Android\Sdk`、`F:\Develop\Rust\.rustup`、`~/.gradle`）与联网下载，不由我代跑 |
+| 执行方式 | **我出命令与验收口径，你手动执行** | 命令涉及工作区外目录（`$env:ANDROID_HOME`、`%USERPROFILE%\.rustup`、`~/.gradle`）与联网下载，不由我代跑 |
 
 ## 1. P0 的验收定义 —— **✅ 已达成（2026-11-01）**
 
@@ -40,8 +40,8 @@ tldr: 用户 2026-11-01 决定重启安卓：**同一仓库 + `src-tauri/gen/and
    取法（debug 包 debuggable，`run-as` 可读）：
 
    ```powershell
-   & 'F:\Develop\Android\Sdk\platform-tools\adb.exe' shell run-as com.xun.gently ls -l logs
-   & 'F:\Develop\Android\Sdk\platform-tools\adb.exe' shell run-as com.xun.gently cat logs/gently.log.<日期>
+   & '$env:ANDROID_HOME\platform-tools\adb.exe' shell run-as com.xun.gently ls -l logs
+   & '$env:ANDROID_HOME\platform-tools\adb.exe' shell run-as com.xun.gently cat logs/gently.log.<日期>
    ```
 
    > 计划里原先要求第三行是 `数据目录：…（来源 …）`——**那行是 `eprintln!`，在日志初始化之前打，
@@ -61,13 +61,13 @@ tldr: 用户 2026-11-01 决定重启安卓：**同一仓库 + `src-tauri/gen/and
 | rustc / cargo | ✅ 1.97.1 | `rustc -V` |
 | rust android targets | ✅ `aarch64-linux-android` + `armv7-linux-androideabi` / `i686-linux-android` / `x86_64-linux-android` | `rustup target list --installed` |
 | JDK | ✅ 17.0.12，`JAVA_HOME` 已设 | `java -version` |
-| Android SDK（主） | ✅ `F:\Develop\Android\Sdk`：platforms `android-30/34/35/36`、build-tools `30.0.3/34.0.0/35.0.0`、`platform-tools`(adb) | 目录枚举 |
-| `cmdline-tools`（sdkmanager 7.0） | ⚠️ 只在**另一个** SDK：`F:\Android\android-sdk` | 装包时用 `--sdk_root` 指回主 SDK |
+| Android SDK（主） | ✅ `$env:ANDROID_HOME`：platforms `android-30/34/35/36`、build-tools `30.0.3/34.0.0/35.0.0`、`platform-tools`(adb) | 目录枚举 |
+| `cmdline-tools`（sdkmanager 7.0） | ⚠️ 只在**另一个** SDK：`（另一份 SDK，含 cmdline-tools）` | 装包时用 `--sdk_root` 指回主 SDK |
 | NDK | ✅ `ndk\28.2.13676358`（r28c），含 `aarch64-linux-android24-clang.cmd` | `source.properties` |
-| `ANDROID_HOME` / `NDK_HOME` | ⚠️ 用户级/会话级设置；**`tauri android …` 必须在设了这两个变量的同一会话里跑**（否则 CLI 退回 `C:\Users\Xun\AppData\Local\Android\Sdk` 并报 cmdline-tools 缺失） | 实测报错 |
+| `ANDROID_HOME` / `NDK_HOME` | ⚠️ 用户级/会话级设置；**`tauri android …` 必须在设了这两个变量的同一会话里跑**（否则 CLI 退回 `%LOCALAPPDATA%\Android\Sdk` 并报 cmdline-tools 缺失） | 实测报错 |
 | `~/.gradle` | ✅ 已有缓存（Gradle 发行包 + AGP 已落盘） | 目录枚举 |
 | `src-tauri/gen/android` | ✅ 已生成并入库（含 `MainActivity.kt`、`gradle-wrapper`、`jniLibs` 符号链接） | `git ls-files src-tauri/gen` |
-| 连接的真机 | ✅ `MKB6R20514007949` · `CDY_AN00`（nova 7 SE 5G）· `arm64-v8a,armeabi-v7a` · **API 29（Android 10）** | `adb devices -l` + `getprop` |
+| 连接的真机 | ✅ `<设备序列号>` · 真机 · `arm64-v8a,armeabi-v7a` · **API 29（Android 10）** | `adb devices -l` + `getprop` |
 | 联网（构建期端点） | ⚠️ **本会话仍无法判定**：子进程 HTTPS 全部失败（`schannel: SEC_E_NO_CREDENTIALS`）；但**真实构建成功证明了网络可用**（NDK 下载、Gradle/AGP 拉取、`--debug` 构建全程完成） | 构建成功即证据 |
 | `maven.google.com` | ❌ TCP 不通，但**不影响构建**：它只是网页索引，Gradle 的 `google()` 用的是 `dl.google.com/dl/android/maven2` | 见 §5 风险 1 |
 | cargo 缓存 | ✅ 1509 个 crate，**已含 android 专用 crate**：`jni 0.21/0.22`、`ndk 0.8`、`ndk-sys 0.5`、`ndk-context`、`android-activity 0.5.2`、`tao 0.35`、`wry 0.55` | registry 缓存枚举 |
@@ -127,7 +127,7 @@ tldr: 用户 2026-11-01 决定重启安卓：**同一仓库 + `src-tauri/gen/and
 
 ## 4. P0 任务清单（逐步；每条都写期望输出与失败分支）
 
-> 约定：以下命令都在仓库根目录 `F:\Program Files\XunTools\gently` 的 pwsh 里跑；
+> 约定：以下命令都在仓库根目录 `<repo>` 的 pwsh 里跑；
 > 环境变量先用**会话级**（关掉窗口就没了），等 P0 绿了再决定要不要 `setx` 持久化。
 >
 > **每做完一步先跑一次自检**，它会把缺的东西按顺序列出来（只读，不装任何东西）：
@@ -140,17 +140,17 @@ tldr: 用户 2026-11-01 决定重启安卓：**同一仓库 + `src-tauri/gen/and
 ### P0-0 插真机、认设备 —— ✅ 已达成（2026-11-01 17:26）
 
 ```powershell
-& 'F:\Develop\Android\Sdk\platform-tools\adb.exe' devices
+& '$env:ANDROID_HOME\platform-tools\adb.exe' devices
 ```
 
 期望：一行 `<序列号>	device`。
-**当前状态**：`MKB6R20514007949` · `CDY_AN00` · `arm64-v8a,armeabi-v7a` · **API 29（Android 10）**。
+**当前状态**：`<设备序列号>` · 真机 · `arm64-v8a,armeabi-v7a` · **API 29（Android 10）**。
 失败分支（换设备/换线时会用到）：`unauthorized` → 手机上点「允许 USB 调试」；无任何行 → 换数据线 / 打开「USB 调试（安全设置）」/ 装厂商 USB 驱动。
 
 ### P0-1 环境变量（会话级）
 
 ```powershell
-$env:ANDROID_HOME = 'F:\Develop\Android\Sdk'
+$env:ANDROID_HOME = '$env:ANDROID_HOME'
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 $env:PATH = "$env:ANDROID_HOME\platform-tools;$env:PATH"
 # NDK 在 P0-2 装完后再设：
@@ -186,7 +186,7 @@ pnpm tauri android dev
 
 # 路线 B（自带前端资源的 debug 包，推荐用来验收 UI）：
 pnpm tauri android build --debug -t aarch64 --apk
-& 'F:\Develop\Android\Sdk\platform-tools\adb.exe' install -r `
+& '$env:ANDROID_HOME\platform-tools\adb.exe' install -r `
     'src-tauri\gen\android\app\build\outputs\apk\universal\debug\app-universal-debug.apk'
 ```
 
@@ -201,7 +201,7 @@ pnpm tauri android build --debug -t aarch64 --apk
 ### P0-7 收证据 —— ✅ 已完成
 
 ```powershell
-& 'F:\Develop\Android\Sdk\platform-tools\adb.exe' shell run-as com.xun.gently cat logs/gently.log.<日期>
+& '$env:ANDROID_HOME\platform-tools\adb.exe' shell run-as com.xun.gently cat logs/gently.log.<日期>
 ```
 
 注意两点（都踩过）：数据目录是 **`/data/user/0/com.xun.gently`**（日志在 `logs/`，不在 `files/logs/`）；
@@ -232,7 +232,7 @@ pnpm tauri android build --debug -t aarch64 --apk
 
 | 步 | 日期 | 命令（原样） | 实际输出/错误签名 | 结论 |
 |---|---|---|---|---|
-| P0-0 | 2026-11-01 | `adb devices -l` + `adb shell getprop ro.product.cpu.abilist / ro.build.version.sdk` | `MKB6R20514007949 device product:CDY-AN00 model:CDY_AN00`（nova 7 SE 5G）/ `arm64-v8a,armeabi-v7a` / `29` | ✅ 通过（只装 aarch64） |
+| P0-0 | 2026-11-01 | `adb devices -l` + `adb shell getprop ro.product.cpu.abilist / ro.build.version.sdk` | `<设备序列号> device product:<机型> model:<机型>` / `arm64-v8a,armeabi-v7a` / `29` | ✅ 通过（只装 aarch64） |
 | 准备 | 2026-11-01 | `cargo test -p gently-core --offline`（vendored patch 之后） | `Compiling rquickjs-sys v0.7.0 (…\vendor\rquickjs-sys)`；82 单元 + 全部集成测试通过 | ✅ patch 生效、桌面端行为未变 |
 | P0-1/2/3 | 2026-11-01 | `sdkmanager --sdk_root=… 'ndk;28.2.13676358'`；`rustup target add …` | `Pkg.Revision = 28.2.13676358`（r28c）；`aarch64` + `armv7`/`i686`/`x86_64` 均装 | ✅ 完成（`tauri android …` 必须与 `ANDROID_HOME`/`NDK_HOME` 在同一会话） |
 | P0-4/5 | 2026-11-01 | `pnpm tauri android init` → `pnpm tauri android build --debug` | Rust 阶段完成 arm64 交叉编译；`gen/android` 生成并入库 | ✅ 完成 |
@@ -243,11 +243,11 @@ pnpm tauri android build --debug -t aarch64 --apk
 > 规则：**「未运行」不许写成「通过」**（组内规范与 GOTCHAS 都吃过这个亏）。
 > 失败时贴**错误签名 + 原始命令**，不贴结论；成功时贴**能复现的证据位置**（日志文件、截图）。
 
-## 7. P1–P4（本轮不做，先定顺序与入口条件）
+## 7. P1–P4：顺序、入口条件与落地记录
 
 | 阶段 | 内容 | 入口条件 | 关键点 |
 |---|---|---|---|
-| **P1 移动外壳** | 第 4 形态 `mobile`：底部 tab（排行/发现/搜索/本地/我的）+ 单栏内容 + 常驻迷你播放条；mini 在移动端停用 | ✅ P0 已绿 | `platform` 维度用 `system.status.platform`（真机上是 `android-aarch64`）判，**不引入新依赖**；列定义在 `table.config.tsx` 旁加一份 `mobileColumns`；`@media` 不进视图；smoke 加 mobile 形态断言 |
+| **P1 移动外壳** | 第 4 形态 `mobile`：**左侧抽屉（8 项）+ 搜索作 home + 常驻播放条**（不做推荐/排行榜）；mini 在移动端停用 | ✅ P0 已绿 | `platform` 维度用同步的 `utils/platform.ts`（UA 判 `Android`），外壳形态要**首帧**定下来；列定义在 `table.config.tsx` 旁加一份 `mobileColumns`；`@media` 不进视图；smoke 加 mobile 形态断言 |
 | **P2 后台播放** | 前台服务 + MediaSession + 通知栏控制 | P1 绿 **且** 先做一次实测：锁屏 5 分钟 WebView `<audio>` 是否还活着 | 这一步决定「WebView 播放 + 保活」还是「原生 Media3 播放器」——**先测再选**；后者要让播放状态有唯一权威（store 是权威，原生只做输出层） |
 | **P3 导入与存储** | SAF 选文件/目录（插件、皮肤、音乐目录）、下载导出、Keystore 凭据 | P1 绿 | `<input type=file>`、`path` 粘贴在 Android 上不成立；只留下 SAF 一条路 |
 | **P4 桌面歌词替代** | 通知栏歌词 / 悬浮窗歌词 | P2 的前台服务 | 复用 `useDesktopLyricsBridge` 的快照，不重写歌词逻辑；悬浮窗要 `SYSTEM_ALERT_WINDOW` 特殊权限 |
@@ -345,180 +345,37 @@ pnpm tauri android build --debug -t aarch64 --apk
 | P1-5 `mobileColumns` 列表两行式 | ✅（R109） | `r109-android-search-list.png`（两行式，360px 不溢出） |
 | P1-6 窗口能力 no-op 收尾 + 桌面截图比对 | ✅（R109） | `desktopWindowActionsAvailable` 纯谓词 + smoke 断言；桥本就不挂；桌面截图见 STATE |
 
-### 7.2 R109 落地说明（P1-4/5/6 的实现口径）
+### 7.2 R109：P1-4/5/6 的实现口径（结论）
 
-> 三片都只动**交互层与列定义**，store / 服务层 / 契约一个字没改。
+> 三片都只动**交互层与列定义**，store / 服务层 / 契约一个字没改。逐条取舍与真机走查见
+> [`archive/rounds/R101-R113.md`](archive/rounds/R101-R113.md) 的附录。
 
-**P1-5 列表（换一份列，不是压窄桌面列）**
+- **列表**：`table.config.tsx` 加 `mobileColumns` / `mobileTrackColumns`（手机 3 列 = 主信息 `1fr` + 时长 + ⋯），
+  `DataTable` 用**纯函数** `resolveColumns(shell, columns, mobileColumns)` 裁决；手机隐藏表头，单元格留白收到
+  `--space-2`（桌面 18px 会把「4:18」挤成 `4…`）。视图里不写 `@media`。
+- **触摸语义**：手机不渲染行内小按钮，唯一入口是 `MobileRowActions` 的 ⋯（44px）→ `RowActionsProvider` 底部面板
+  （动作与桌面同源，仍走 `useTrackActions`）；**没有宿主时退回行内按钮**，不留「点了没反应」的入口。
+  面板宿主挂在 `MobileShell` **外层**（带 `backdrop-filter` 的容器会抢包含块）、关闭挂根 `<div>` 的 onClick
+  （透明 `<button>` 当遮罩在真机上既不涂色也收不到点击）。
+- **SeekBar**：手机下焦点常显、热区 32px 且**只往播放条内部扩**；`MobilePlayerBar` 的 `.bar` 必须
+  `position: relative`，否则绝对定位的 SeekBar 会锚到应用顶边（关掉动态背景后没有别的包含块）。
+- **窗口能力**：`window.service.ts` 的 `desktopWindowActionsAvailable(tauri, mobile)` 让最小化/置顶/浮动等在移动端
+  no-op 并**如实**返回「没有这个能力」；桌面歌词桥 / 宠物桥在移动端本就不挂。
 
-| 项 | 决定 |
-|---|---|
-| 列定义 | `table.config.tsx` 新增 `mobileColumns(options)`（通用）与 `mobileTrackColumns(t, options)`（曲目专用）；手机 3 列 = `主信息(1fr) + 时长 + ⋯` |
-| 谁选 | `DataTable` 新增 `mobileColumns` 属性 + `resolveColumns(shell, columns, mobileColumns)` **纯函数**：只有 `mobile` 形态且传了手机列才换 |
-| 两行内容 | 第一行标题、第二行「歌手 · 附加 · 专辑」；附加信息按视图给（搜索=音源数量、本地=大小、最近=播放多久前、收藏=音源、下载=状态/进度） |
-| 留白 | 手机单元格左右留白收到 `--space-2`（桌面 18px 会把「4:18」挤成 `4…`、⋯ 裁成两个点——R109 真机实测过一轮） |
-| 表头 | 手机隐藏（`data-layout="mobile"`）：两行式已经说明是什么，留个只有「标题」的表头像坏掉 |
-| 命中区 | ⋯ 是 44px 方块（`--mobile-row-action-size`）；`polished-ui/touch-interactions`：视觉可以小，命中区不能小 |
+### 7.3 P2–P3 的落地记录（每片一条结论，证据在归档）
 
-**P1-4 触摸语义**
+| 轮 | 片 | 落地内容 | 证据 / 坑 |
+|---|---|---|---|
+| R110 | 播放链路定案 | 真机**能放音**；「播不出声」的真凶是上游用 **HTTP 200 + HTML 错误页**冒充媒体。核心侧把 `Content-Type` 改成**先嗅探字节**（fMP4/ID3/fLaC/OggS/RIFF-WAVE/ADTS/webm），插件声明的 `mimeType` 不再被丢，回环代理补 CORS，日志记 `status / content_type / sniffed` | 本地文件 206 + `aria-valuenow` 5→13/271；GOTCHAS §56 |
+| R111 | P2 入口条件实测 | 熄屏后测出**三种形态**（音频停住 → 位置僵死但 `paused=false` → 页面被整页重载），`pidof` 全程没变 → **P2 定为「WebView 播放 + 前台服务」**（不做原生 Media3）。前端补中断恢复：`play()` 3 秒上限、`isStalled()` 判僵死、`markInterrupted()` 停表并提示「点播放继续」 | 三种形态的原始读数在归档；GOTCHAS §57 |
+| R112 | P2-1 前台服务 | Kotlin `PlaybackService`（`startForeground` 必须 5 秒内调）+ `gently-playback` 渠道 + 常驻通知；`PlaybackPlugin` 由宿主命令 `playback_banner` 驱动，前端只在「在播/停/换歌」推一次。清单需要 `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MEDIA_PLAYBACK`（targetSdk 36） | 熄屏 4 分钟 `5/271 → 258/271`（+253 秒）；`isForeground=true foregroundId=1001`；GOTCHAS §58 |
+| R113 | P2-3 续播 | `utils/lastPlayback.ts`（纯函数校验、10 秒节流、**只存一首歌不存队列**）+ `toggle()` 的「没有地址的暂停」→ `recoverPlayback()`；`seek()` 不再在元素未建时放弃 | 真机 `150/271` → 冷启动 → 点播放 `156/271`；GOTCHAS §59 |
+| R114 | P3-1 SAF 导入 | Kotlin `ImportPlugin`（`ACTION_OPEN_DOCUMENT`，`audio/*` 多选）在**后台线程**拷进 `<filesDir>/music`（同名不覆盖、**零存储权限**）→ `src-tauri/src/importer.rs` + 宿主命令 `import_audio` → `ScanPanel` 手机形态的「从手机导入音频」→ `library.local.scan` 入库 | 真机选 1 首 → 列表出现、磁盘有文件、扫描新增 1；`r114-android-import.png` |
 
-| 项 | 决定 |
-|---|---|
-| 行内动作 | 手机上不渲染任何行内小按钮：`MobileRowActions` 是唯一入口，点开交给 `RowActionsProvider` 的**底部面板**（scrim + 抓手 + 48px 一行的动作，动作与桌面同源） |
-| 面板宿主 | 挂在 `MobileShell` 外层（`<RowActionsProvider>` 包住 shell，面板是 shell 的兄弟节点）——放进带 `backdrop-filter` 的容器里会被当成包含块（GOTCHAS §54） |
-| 关闭面板 | **挂在根 `<div>` 的 onClick 上**（面板自己 `stopPropagation`）。不能只靠那块透明 `<button>`：真机上它既不着色也收不到点击（GOTCHAS §55，实测点面板外关不掉） |
-| 抽屉关闭 | 三条路：点遮罩 / 点面板右上角 **✕**（`mobile.close`）/ 选中一项。✕ 是因为遮罩命中区在真机不可靠 |
-| 没有宿主时 | `MobileRowActions` **退回行内按钮**：宁可多几个按钮，也不要一个点了没反应的 ⋯（冒烟直接钉这条） |
-| SeekBar | `:global([data-shell='mobile'])` 下焦点常显 + 热区 32px（`--mobile-progress-hit-height`），**只往播放条内部扩**，不抢内容区最下面一行的点击；触屏松手后清掉时间预览（没有 `pointerleave`） |
-| SeekBar 锚点 | `MobilePlayerBar` 的 `.bar` 必须有 `position: relative`：SeekBar 自己是 `absolute; top: 0`，而 `backdrop-filter` 只在**关掉动态背景之前**才当包含块（`--surface-blur: none` 时没有）→ 少了它就跑到应用顶边（真机复现，smoke 有断言） |
-| hover→active | 行、⋯、面板项都在手机形态下补了 `:active` 反馈 |
-| 减少动效 | 面板动画 `@media (prefers-reduced-motion: reduce)` 直接关掉 |
+**下一步（P2-2 / P4）**：MediaSession + 通知栏的播放/暂停/上下曲（`PendingIntent` 回服务 → 用 Tauri 的
+`trigger` 或事件回前端，**播放状态仍要回 store 才算数**）、通知图标换成应用自己的、`POST_NOTIFICATIONS`
+运行时授权入口；P4 的通知栏歌词复用同一套前台服务。
 
-**P1-6 窗口能力**
-
-- `window.service.ts` 新增导出谓词 `desktopWindowActionsAvailable(tauri, mobile)`；`runDesktop()` 用它挡住
-  `minimize / toggleMaximize / setAlwaysOnTop / setCompact / restoreFromMini`，`isMaximized / isAlwaysOnTop / onResized`
-  在移动端直接给「没有这个能力」的诚实返回值（不再留下一条 `原生窗口操作失败` 的假故障日志）。
-- `useDesktopLyricsBridge` / `usePetWindowBridge` 在移动端本就不挂（前者内部还有 `isMobilePlatform()` 早退），本轮核对确认，不需要改。
-
-**真机走查（2026-11-01，`r108-android-*.png`）**
-
-- ✅ 抽屉 8 项 + 搜索作 home（`-home` / `-drawer`）
-- ✅ 搜索：输入 `love` → 共 39 首，音源筛选 chips 正常（`-search`）
-- ✅ 点行播放：播放条显示 `Love / Keyshia Cole` + 封面（`-playing`）
-- ✅ 播放条 → 歌词页：封面 + 歌名 + 歌词面板（已改单列，`-nowplaying`）
-- ✅ **手机歌词页默认无封面**（歌词占满，`-lyrics-no-cover`），右上角开关切「作为背景」后封面虚化压暗铺底（`-lyrics-cover-bg`）
-- ❌ **音频解码失败**（风险 11，未解）
-- 🐞 已修：返回键把 `?q=` 弹掉但输入框还留着旧词（现在 URL 是唯一权威）；歌词页两栏挤成竖排（`data-stack` 现在含 `mobile`）
-
-**R109 真机走查（2026-11-01，`r109-android-*.png`）**
-
-- ✅ 列表两行式：`love` 39 首，每行「封面 + 标题 + 歌手·N 个音源·专辑」，右侧 `4:15` 与 ⋯ **完整不裁**（`-search-list`）
-- ✅ 行操作面板：点 ⋯ → 底部面板「Love / 播放 / 收藏 / 下载」+ 背景压暗；点面板外空白关闭（`-actions-sheet`）
-- ✅ 抽屉：8 项 + 内容压暗 + 右上角 ✕；点遮罩也能关（`-drawer`）
-- ✅ 播放：行高亮 + 播放条；进度条在**播放条顶边**、触屏常显焦点，点一下跳 45%（`-playing` / `-seek`）
-- ✅ 播放条 → 歌词页（手机默认省封面）（`-nowplaying`）
-- 🐞 本轮真机才发现、已修：时长/⋯ 被单元格内边距裁字（`4…`、`⋯` 只剩两点）；遮罩色画在 button 上不涂也不收点击（GOTCHAS §55）；进度条锚到应用顶边（`.bar` 缺定位祖先）
-- ⚠️ 当时以为「音频解码失败仍在」——R110 查明是**上游拿错误页冒充音频**（风险 11 已定案）
-
-### 7.3 R110：真机播放链路定案与验证
-
-> 结论先行：**移动端的播放链路是通的**；之前「播不出声」是上游（用户自己导入的社区源）用
-> HTTP 200 + HTML 错误页回应媒体地址。判断口径与修复都在核心层。
-
-| 步 | 做了什么 |
-|---|---|
-| 定位工具 | 新增 `scripts/android-cdp.mjs`：走 WebView 的 devtools socket（debug 包才开），能在**真机页面里**求值 / 按文本点中心点 / 截整屏 / 收网络事件——不再靠 `adb input tap` 手算坐标（R108/R109 各浪费过一轮）。`ping` 会顺手打印页面 URL（实测 `http://tauri.localhost/search?q=love`，顺带排除了「https 页面 + http 媒体」的混合内容猜想） |
-| 关键证据 1 | `fetch('<回环 URL>')` → `{ok:true, type:'opaque'}`：网络通、字节在流；但 `new Audio(同 URL)` → `error.code=4`（SRC_NOT_SUPPORTED） |
-| 关键证据 2 | 打开 `核心` 日志：`媒体响应 status=200 content_type="text/html;charset=utf8" sniffed="(unknown)"`，把响应体取出读，是**网易云的「网页找不到」页**（102 752 字节）；bili 源同样是 HTML |
-| 修复（核心） | `core/src/media.rs`：① `Content-Type` 改为**先嗅探字节**（fMP4 `ftyp` / `ID3` / `fLaC` / `OggS` / `RIFF…WAVE` / `0xFFEx` / ADTS / EBML），再插件声明的 `mimeType`，再上游类型，最后按扩展名；② 媒体元素惯用的 `Range: bytes=0-` **也嗅探**（`range_starts_at_zero`，否则这层修复在真实路径上等于没做）；③ 嗅探用的前缀要原样吐回去（字节不能少）；④ 插件声明的 `mimeType` 不再被丢掉（`publish()` 多一个参数）；⑤ 回环代理补 `Access-Control-Allow-Origin: *`（远端 + 本地两条路）；⑥ 响应日志补齐 status / content-type / sniffed / prefix_len，并加「上游返回的不是可识别的音频」WARN |
-| 验证（App 侧） | 把 `src/assets/yihuik苡慧 - 致你.m4s` push 进应用私有目录 → 「本地音乐 → 扫描本地目录」扫到 1 个文件 → 点播放：日志 `媒体响应（本地文件） status=206 start=0 end=4388383`，`[role=slider]` 的 `aria-valuenow/aria-valuemax` 从 **5/271 → 13/271**（8 秒 +8 秒），播放条暂停图标 + 进度条有填充 → **真机在放音** |
-| 截图 | `r110-android-local-list.png`（扫描面板 + 扫到的曲目）、`r110-android-local-playing.png`（播放中，进度条有拇指与填充） |
-| 未做 | 「上游不是音频」还**没进 UI 文案**（现在只会显示「无法播放 / 重试 / 换源」）。要让它可读，需要在 `playback.resolve` 里先探一次（自动换下一个候选）或加一个契约事件；这是下一步的候选任务 |
-
-### 7.4 R111：后台播放的实测（P2 入口条件）+ 中断恢复
-
-> 计划里 P2 的入口条件是「先实测：锁屏 5 分钟 WebView `<audio>` 是否还活着」。
-> 本轮把它做了，结论直接决定 P2 的技术路线。
-
-| 项 | 实测 |
-|---|---|
-| 设备 / 包 | `CDY-AN00` · Android 10 · `pnpm tauri android build --debug -t aarch64 --apk` |
-| 步骤 | 播放本地 271 秒的测试曲目 → `svc power stayon false` + `KEYCODE_POWER` 熄屏 → 定时用 `android-cdp.mjs eval` 读 `[role=slider]` 的 `aria-valuenow` |
-| 形态 1（R110 包） | 21:25:48 熄屏时 `4` → 21:26:17 `33` → 21:29:05 `171`；**21:33 / 21:34（已解锁并切回前台）仍是 `171`**。进程存活（`pidof` 未变、`ActivityRecord` 在栈顶） |
-| 形态 2（R111 首个包） | 熄屏后 21:43:00 起播 `4` → 21:43:51 `56` → 21:46:36（解锁）`226` → 21:47:00 仍 `226`。元素 **`paused === false`**、也没有 `MediaError`：只是位置不动 |
-| 形态 3（R111 带僵死看门狗） | 21:53:31 熄屏起播 `4` → 21:58:21 解锁回前台：**进度是 `0`**，核心日志没有新的启动记录、`pid` 也没变 → **WebView 页面被系统整页重载了**（渲染进程被杀后的恢复），播放状态全丢 |
-| 三种形态的共同点 | 都不是「进程死亡」：`pidof` 一直在。是**系统的后台策略**在掐「WebView 里的媒体」——先让音频停住（形态 1/2），时间再长一点直接把渲染进程回收（形态 3） |
-| 结论 | **P2 必须做前台服务（foreground service）+ MediaSession**：让系统把它当「正在放音的应用」，既不被挂起也不被回收。技术路线定为「WebView 播放 + 保活」，不做原生播放器 |
-| 附带结论（形态 3 暴露的） | 页面一旦被重载，**播放状态就全丢了**（当前曲目、进度、队列）。P2 落地时要把「上次在放什么 / 放到哪」持久化并在启动时如实恢复（暂停态、进度、可重试的候选），否则用户切回来只会看到一个空播放条 |
-
-**顺带修掉的中断恢复（本轮，前端）**
-
-- `audio.service.ts`：`play()` 一律走 `tryPlay()`（3 秒上限，三种结局 `ok / rejected / timeout`）——
-  **绝不让调用方无限等**（形态 1/2 里 `play()` 的 Promise 既不 resolve 也不 reject）；
-  `resume()` 用同一套，超时算 `failed`；新增 `hardRecover()`（**先 reload 再 play**，治「以为在播、位置不动」）。
-- 新增 `utils/playbackStall.ts`（纯函数 `isStalled`）：**只判 `paused` 会漏掉形态 2**——
-  元素不暂停、不报错，位置却一动不动。判定用「位置在 8 秒内没变」，采样由引擎的 `timeupdate` 维护。
-- `useAudioEngine.ts` 看门狗：先看 `isPausedNow()`（→ `resume()`），再看 `isStalledNow()`（→ `hardRecover()`）；
-  两条都以「有 `MediaError` 给 2 次重新解析、只有超时/僵死给 1 次」收尾，仍不行就 `markInterrupted()`。
-- 新增 `markInterrupted()` 与 `player.failureInterrupted` 文案（中/英）：界面从「假装在播、进度不动」
-  变成「播放被系统中断（点播放继续）」，点播放走既有的 `retryPlayback`。
-- 冒烟 +3：`isStalled` 的边界（动了/倒退/首次采样都不算僵死）；三种失败各有文案且 `interrupted ≠ media`；
-  `markInterrupted` 停表 + 保留曲目。
-- **诚实边界**：形态 3 下页面被重载，恢复逻辑没有机会执行——所以这套修复解决的是「页面还活着」的形态 1/2；
-  真正让播放活下来要靠 P2 的前台服务。两者的验证分别落在 smoke（逻辑）与真机（§7.4 三种形态）。
-
-### 7.5 R112：P2-1 前台服务（保活 + 通知）—— 已落地并真机验证
-
-> 按 §7.4 的结论做的最小可用版：**让系统把应用当「正在放音的应用」**。
-> MediaSession 与通知栏传输控制留给 P2-2。
-
-| 层 | 内容 |
-|---|---|
-| Kotlin（`src-tauri/gen/android/app/src/main/java/com/xun/gently/`） | `PlaybackService.kt`：前台服务（`startForeground` 必须在 `startForegroundService` 后 5 秒内调）+ `gently-playback` 通知渠道（IMPORTANCE_LOW）+ 常驻通知（标题/歌手、`category=transport`、点一下回应用、`setOngoing`）；`PlaybackPlugin.kt`：`@TauriPlugin` + `@Command fun update(invoke)`，按 `active` 起/停服务 |
-| 清单 | `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MEDIA_PLAYBACK`（`targetSdk = 36`，API 34+ 缺了会 `SecurityException`）+ `POST_NOTIFICATIONS`（API 33+ 只是看不见通知，不影响保活）；`<service ... android:foregroundServiceType="mediaPlayback" android:exported="false"/>` |
-| Rust 宿主 | `src-tauri/src/playback.rs`：`tauri::plugin::Builder::new("gently-playback").setup(|_, api| api.register_android_plugin("com.xun.gently","PlaybackPlugin"))` + `run_mobile_plugin("update", …)`；非 Android 返回空插件。`lib.rs` 新增宿主命令 `playback_banner(active,title,artist)` |
-| 前端 | `services/playbackBanner.service.ts`：只在「在播 / 停 / 换歌」时推一次（**不跟随进度**，同一状态去重）；没有宿主时静默空操作。`useAudioEngine` 订阅 `playing + 曲目标题/歌手` 调用它 |
-| 边界 | 播放状态仍以 store 为唯一权威；Kotlin 不读位置、不计时、不发事件回来。通知没有播放/暂停按钮（P2-2 随 MediaSession 一起加） |
-
-**真机验证（`CDY-AN00`，包 `app-universal-debug.apk`）**
-
-| 项 | 结果 |
-|---|---|
-| 前台服务起来了吗 | `dumpsys activity services`：`ServiceRecord{… com.xun.gently/.PlaybackService}` + `isForeground=true foregroundId=1001 foregroundNoti=Notification(channel=gently-playback … category=transport vis=PUBLIC)` |
-| 通知长什么样 | 通知栏截图 `r112-android-notification.png`：`▷ gently / probe`；`dumpsys notification` 里 `icon=android:drawable/ic_media_play`、`contentIntent=PendingIntent{… startActivity}` |
-| **熄屏 4 分钟还在播吗** | 熄屏时进度 `5/271` → 4 分钟后 `258/271`（≈ +253 秒）。**同一套测量在 R111（无服务）时是「停住/僵死/页面被回收」** |
-| 切到后台（HOME）1 分钟 | `4/271` → `68/271`（+64 秒），回来时进度对得上 |
-| 播放结束会收尾吗 | 曲目放完后 `dumpsys activity services` 里已无 `PlaybackService`，进度归 `0` —— 停播即退出，不常驻 |
-
-**下一步（P2-2 / P4）**：MediaSession + 通知栏的播放/暂停/上一首/下一首（`PendingIntent` 回服务 →
-用 Tauri 的 `trigger` 或事件回前端，**播放状态仍需回 store 才算数**）；通知图标换成应用自己的；
-`POST_NOTIFICATIONS` 的运行时授权入口（设置页）；P4 的通知栏歌词复用同一套前台服务。
-
-### 7.6 R113：页面被系统重载后的「续播」
-
-> 前台服务挡住了「后台被挂起」，但挡不住「渲染进程被回收 → 页面整页重载」。
-> 那一下内存里的 store 全没了，用户切回来会看到空播放条（§7.4 形态 3）。本轮补上这一半。
-
-| 层 | 内容 |
-|---|---|
-| 持久化 | `utils/lastPlayback.ts`：`gently:last-playback` 存「一首歌 + 位置」，**纯函数** `parseLastPlayback()` 做校验（坏数据一律当没有、位置夹在时长内、位置上限 1 小时）；只存恢复需要的字段，不存队列 |
-| 写盘时机 | 换歌（立刻）/ 暂停恢复（立刻）/ 位置（10 秒节流）/ `stop()`（清空）。`setProgress` 每秒都在跑，不节流会把 localStorage 变成每秒一次写盘 |
-| 恢复 | `createPlayerSlice(ctx, restored)` 把曲目 + 位置装进**暂停态**（`playing: false`、`audioUrl: null`），并用 `candidatesOf(track)` 补一条候选——否则点播放会判「没有音源」 |
-| 点播放 | `toggle()` 新增一个分支：**没有 `audioUrl` 的暂停** → `recoverPlayback()`（重新解析、保留进度），而不是把界面翻成「在播」却没声音 |
-| 引擎 | `audio.service.seek()` 不再在元素还没建时 return（恢复的调用顺序是「先 seek 再 load」），定位挂到 `loadedmetadata` |
-
-**真机验证（冷启动 = `am force-stop` + `am start`，localStorage 保留）**
-
-| 步骤 | 读数 |
-|---|---|
-| 播放到 150 秒 | `aria-valuenow=150` |
-| 冷启动后 | 播放条显示 `probe`、位置 `150`、**暂停态**（`audioUrl` 为空） |
-| 点播放 | 核心重新解析（日志 `媒体响应（本地文件） status=206`）→ `156/271`：**从恢复位置接着放** |
-| 截图 | `r113-android-resume.png`（搜索页 + 播放条里 `probe` 的进度已过半） |
-
-### 7.7 R114：P3 SAF 导入（手机选文件 → 进曲库）
-
-> 安卓上「粘贴目录再扫描」只对开发者成立：普通用户拿不到 `/storage/emulated/0/...`。
-> 本轮补上真正的入口：系统文件选择器（SAF）。
-
-| 层 | 内容 |
-|---|---|
-| Kotlin | `ImportPlugin.kt`：`@Command pickAudio` → `ACTION_OPEN_DOCUMENT`（`audio/*` + `EXTRA_ALLOW_MULTIPLE`）→ `@ActivityCallback` 里在**后台线程**把选中的 URI 逐个拷进 `<filesDir>/music`（同名不覆盖，`a.mp3` → `a-1.mp3`），回 `{imported, failed, cancelled, dir}`。**不需要任何存储权限**（SAF 只临时授权选中的 URI） |
-| Rust 宿主 | `src-tauri/src/importer.rs`：插件 `gently-import`（`register_android_plugin("com.xun.gently","ImportPlugin")`）+ `run_mobile_plugin_async("pickAudio")`（用户挑文件可能几十秒，必须用异步变体）；`lib.rs` 新增宿主命令 `import_audio`。非 Android 直接回错（桌面用「填目录」） |
-| 前端 | `services/import.service.ts`（无宿主时返回「取消」的空结果）；`views/local/components/ScanPanel` 在**手机形态**多一行「从手机导入音频」按钮 + 说明，导入成功后拿返回的 `dir` 直接调核心的 `library.local.scan` 入库，并显示「已导入 N 首」 |
-| 文案 | 「扫描提示」里那句「原生文件选择器需要额外的桌面插件」已经过时（我们自己实现了），改成「桌面上填目录；手机用上面的导入按钮」 |
-
-**真机验证（`CDY-AN00`；测试文件 `adb push` 到 `/sdcard/Download/import-test.mp3`）**
-
-| 步骤 | 结果 |
-|---|---|
-| 点「从手机导入音频」 | 系统选择器打开（标题「打开文件」，抽屉里有 最近 / 音频 / 下载内容） |
-| 走查 | 抽屉 → 下载内容 → 只剩 `import-test.mp3` 可选（其它非音频文件是灰的）→ 点选 |
-| 返回应用 | 提示「已导入 1 首」；「共 2 首」；列表里出现 `import-test`（原 `probe` 还在） |
-| 磁盘 | `run-as com.xun.gently ls -l files/music` → `-rw------- import-test.mp3 4388383` |
-| 入库 | 扫描结果「上次扫描 1 个文件，新增 1」 |
-| 截图 | `r114-android-import.png`（导入后的本地音乐页） |
 
 **拆分（每片独立可交付）**
 
@@ -550,8 +407,10 @@ pnpm tauri android build --debug -t aarch64 --apk
 4. **播放链路已定案（R110）**：真机上**能放音**（本地文件走同一条回环代理，206 + 进度推进）；
    「播不出声」的真凶是上游用 HTTP 200 + HTML 错误页冒充音频（风险 11）。诊断工具
    `scripts/android-cdp.mjs`（真机 CDP）与代理的「回了什么」日志是一对，别再靠 logcat 里的
-   解码错误去猜。**下一个入口条件仍是 P2（后台播放）**：先实测「锁屏 5 分钟 WebView `<audio>` 还活着吗」；
-   另一个候选小任务是给「上游不是音频」补一条用户能看懂的文案。
+   解码错误去猜。
+5. **P2 与 P3 已有落地片**：P2-1 前台服务（熄屏 4 分钟 +253 秒）、P2-3 冷启动续播、P3-1 SAF 导入
+   （手机选文件进曲库、零存储权限）都已真机验证。**下一步是 P2-2**（MediaSession + 通知栏传输控制）
+   与 P4（通知栏歌词）；另一个小任务是给「上游不是音频」补一条用户能看懂的文案（见 §7.3 结尾）。
 
 ## 9. 相关文档
 

@@ -501,7 +501,7 @@ fn platform_reveal(path: &std::path::Path) -> std::io::Result<()> {
     // 1. **分隔符必须是反斜杠**：`system.paths` 回给前端的路径是 `F:/a/b`（正斜杠，见
     //    `paths::to_dto`），前端原样传回来；`explorer "F:/a/b"` 会解析失败并**默默打开
     //    默认文件夹**（用户看到的症状是「打开的不是数据目录」）；
-    // 2. `/select,` 后面的路径**要带引号**：带空格的路径（`C:\Users\Xun\AppData\...`）很常见，
+    // 2. `/select,` 后面的路径**要带引号**：带空格的路径（`C:\Users\user\AppData\...`）很常见，
     //    不加引号会被 explorer 截断；
     // 3. 拼好的这**一个**参数必须用 `raw_arg` 原样塞进命令行。用 `arg` 的话 Rust 会按 CRT
     //    规则再补一层引号，`/select,"<路径>"` 变成「被引号包住的带引号字符串」，explorer
@@ -1574,10 +1574,10 @@ mod reveal_args {
     /// `system.paths` 回给前端的是正斜杠路径，前端原样传回来；explorer 必须是反斜杠。
     #[test]
     fn forward_slashes_become_native_backslashes() {
-        assert_eq!(reveal_arg(true, "C:/Users/Xun/AppData"), r"C:\Users\Xun\AppData");
+        assert_eq!(reveal_arg(true, "C:/Users/user/AppData"), r"C:\Users\user\AppData");
         assert_eq!(
-            reveal_arg(true, r"C:\Users\Xun\AppData"),
-            r"C:\Users\Xun\AppData"
+            reveal_arg(true, r"C:\Users\user\AppData"),
+            r"C:\Users\user\AppData"
         );
     }
 
@@ -1585,11 +1585,11 @@ mod reveal_args {
     #[test]
     fn files_are_selected_and_quoted() {
         assert_eq!(
-            reveal_arg(false, "C:/Users/Xun/My Music/a.flac"),
-            r#"/select,"C:\Users\Xun\My Music\a.flac""#
+            reveal_arg(false, "C:/Users/user/My Music/a.flac"),
+            r#"/select,"C:\Users\user\My Music\a.flac""#
         );
         // 目录不拼 /select：直接打开那个目录
-        assert!(reveal_arg(true, "C:/Users/Xun/My Music").ends_with(r"My Music"));
-        assert!(!reveal_arg(true, "C:/Users/Xun/My Music").starts_with("/select"));
+        assert!(reveal_arg(true, "C:/Users/user/My Music").ends_with(r"My Music"));
+        assert!(!reveal_arg(true, "C:/Users/user/My Music").starts_with("/select"));
     }
 }

@@ -37,7 +37,7 @@ use crate::store::{normalize_limit, LocalTrackInput};
 ///
 /// **`m4s` / `m4b` / `m4r` 必须在这里**：它们和 `m4a` / `mp4` 是同一个 ISO-MP4 容器
 /// （音轨是 AAC/ALAC），symphonia 的 `isomp4` 一视同仁——`.m4s` 正是「B 站下载下来的音频」
-/// 的格式，用户库里很常见。R53 实测：`D:\Xun\Music` 里只有一个 `.m4s`，
+/// 的格式，用户库里很常见。R53 实测：`D:\Music` 里只有一个 `.m4s`，
 /// 扫描结果是 `scanned=0`，界面显示「还没有本地音乐」，看起来**像功能坏了**。
 ///
 /// 只列这个构建真能解码的：`wma` / `ape` / `aiff` 等 symphonia 未开对应 feature，
@@ -531,5 +531,28 @@ fn size_text(bytes: i64) -> String {
         format!("{:.0} KB", bytes / KB)
     } else {
         format!("{bytes:.0} B")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_audio_path;
+    use std::path::Path;
+
+    /// R53 的教训：白名单漏一个容器，整个目录就「看起来是空的」。
+    /// 这条**不依赖任何音频夹具**（仓库不分发版权音频），只守白名单本身：
+    /// `m4s`/`m4b`/`m4r` 与 `m4a`/`mp4` 是同一个 ISO-MP4 容器。
+    #[test]
+    fn iso_mp4_sub_extensions_count_as_audio() {
+        for name in ["a.m4s", "a.m4b", "a.m4r", "a.m4a", "a.mp4", "A.M4S"] {
+            assert!(is_audio_path(Path::new(name)), "{name} 必须被当音频");
+        }
+    }
+
+    #[test]
+    fn non_audio_files_are_not_audio() {
+        for name in ["a.txt", "a.jpg", "a.wav.txt", "noext", "a"] {
+            assert!(!is_audio_path(Path::new(name)), "{name} 不该被当音频");
+        }
     }
 }

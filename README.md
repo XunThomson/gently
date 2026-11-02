@@ -71,9 +71,9 @@ pnpm tauri dev     # 桌面端：真实核心 + 本地 SQLite + 插件沙箱
 
 ### 离线构建约定
 
-本仓库的 crate 缓存固定在 `CARGO_HOME=F:\Develop\Rust\.cargo`（默认的 `~/.cargo` 里没有这份缓存），
-因此 `pnpm verify` 默认给 cargo 加 `--offline`；需要联网拉依赖时用
-`GENTLY_CARGO_ONLINE=1 pnpm verify`。
+crate 缓存只放一处（由 `CARGO_HOME` 指向的那份 registry）；把 `CARGO_HOME` 设到它，
+`pnpm verify` 就会默认给 cargo 加 `--offline`。需要联网拉依赖时用
+`GENTLY_CARGO_ONLINE=1 pnpm verify`。仓库不记录本机路径，缓存放哪儿由各自的 shell 环境变量决定。
 
 ### 出包
 
