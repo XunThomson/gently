@@ -6,6 +6,8 @@ export type {SkinImportOutcome} from './skin.service';
 export {audioEngine} from './audio.service';
 export type {AudioHandlers} from './audio.service';
 export {syncPlaybackBanner} from './playbackBanner.service';
+export {importAudioFiles} from './import.service';
+export type {ImportAudioResult} from './import.service';
 export {fileService} from './file.service';
 export {backgroundService} from './background.service';
 export type {

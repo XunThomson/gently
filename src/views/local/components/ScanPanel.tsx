@@ -2,9 +2,10 @@ import {useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Button} from '../../../components/ui/button';
 import {IconChevronDown, IconFolder} from '../../../components/ui/icon';
-import {coreAvailable} from '../../../services';
+import {coreAvailable, importAudioFiles} from '../../../services';
 import {useActions, useLibraryState} from '../../../store';
 import {errorText} from '../../../i18n/errors';
+import {isMobilePlatform} from '../../../utils/platform';
 import styles from '../local.module.css';
 
 /**
@@ -31,6 +32,10 @@ export function ScanPanel() {
     const [paths, setPaths] = useState('');
     const [recursive, setRecursive] = useState(true);
     const [open, setOpen] = useState(false);
+    /** 手机导入是异步且可能被取消的，结果要留在界面上（说清导入了几首） */
+    const [importing, setImporting] = useState(false);
+    const [importNote, setImportNote] = useState('');
+    const mobile = isMobilePlatform();
 
     const available = coreAvailable();
     const dirs = paths
@@ -46,6 +51,38 @@ export function ScanPanel() {
     const start = () => {
         if (dirs.length === 0) return;
         void scan({dirs, recursive});
+    };
+
+    /**
+     * 手机：从系统文件选择器导入音频（P3）。
+     *
+     * 安卓上没有「粘贴路径」这条路（普通用户拿不到绝对路径），所以给一个真按钮：
+     * 选文件 → Kotlin 拷进应用私有目录 → 这里拿目录去 `library.local.scan` 入库。
+     */
+    const pickFromDevice = async () => {
+        setImporting(true);
+        setImportNote('');
+        const result = await importAudioFiles();
+        setImporting(false);
+
+        if (result.error) {
+            setImportNote(t('page.local.importFailed'));
+            return;
+        }
+        if (result.cancelled) return;
+        if (result.imported === 0) {
+            setImportNote(t('page.local.importEmpty'));
+            return;
+        }
+        setImportNote(
+            result.failed > 0
+                ? t('page.local.importedPartial', {imported: result.imported, failed: result.failed})
+                : t('page.local.imported', {count: result.imported}),
+        );
+        if (result.dir) {
+            // 导入的曲目立刻进库：用户不用再自己把路径抄进文本框
+            void scan({dirs: [result.dir], recursive: true});
+        }
     };
 
     if (!available) {
@@ -89,6 +126,26 @@ export function ScanPanel() {
             {/* 抽屉本体：`grid-template-rows` 0fr → 1fr，收起时不占高度也不留白 */}
             <div className={styles.scanBody}>
                 <div className={styles.scanInner}>
+                    {/* 手机：系统的文件选择器才是正常路径（安卓上「粘贴绝对路径」普通用户做不到） */}
+                    {mobile && (
+                        <div className={styles.scanRow}>
+                            <div className={styles.scanControls}>
+                                <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => void pickFromDevice()}
+                                    disabled={importing || scanning}
+                                >
+                                    {importing
+                                        ? t('page.local.importing')
+                                        : t('page.local.importFromDevice')}
+                                </Button>
+                                {importNote && <span className={styles.scanStatus}>{importNote}</span>}
+                            </div>
+                            <p className={styles.scanHint}>{t('page.local.importHint')}</p>
+                        </div>
+                    )}
+
                     <div className={styles.scanRow}>
                         <textarea
                             className={styles.scanInput}

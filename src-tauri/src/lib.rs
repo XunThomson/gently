@@ -9,6 +9,7 @@
 //! 因此每个引擎只注册**一个**入口命令，由核心按契约名路由：
 //! `core_invoke` → `gently_core::dispatch`，`pet_invoke` → `pet_core::dispatch`。
 
+pub mod importer;
 pub mod pet_watch;
 pub mod playback;
 pub mod state;
@@ -117,6 +118,17 @@ fn playback_banner(active: bool, title: String, artist: String) -> Result<(), St
     playback::update(active, &title, &artist)
 }
 
+/// 宿主命令：**从手机导入音频**（Android，P3）。
+///
+/// 调 Kotlin 的 SAF 选择器，选中的文件被拷进应用私有目录，返回
+/// `{imported, failed, cancelled, dir}`；前端拿到 `dir` 之后用核心的
+/// `library.local.scan` 入库（核心只做「给目录、扫出入库」）。
+/// 这是**用户动作**触发的：不点按钮不会弹任何系统界面。
+#[tauri::command]
+async fn import_audio() -> Result<importer::ImportOutcome, String> {
+    importer::pick_audio().await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -124,6 +136,8 @@ pub fn run() {
         /* 播放通知插件：Android 注册 Kotlin 侧 PlaybackPlugin（前台服务保活），
            其它平台是空插件——桌面端因此不需要任何 cfg 分支 */
         .plugin(playback::plugin())
+        /* 导入插件：Android 注册 Kotlin 侧 ImportPlugin（SAF 选文件），其它平台是空插件 */
+        .plugin(importer::plugin())
         .setup(|app| {
             /* 数据目录：三种来源按优先级裁决（`paths::resolve_data_paths`）——
                环境变量 > 迁移指针 > 便携版（exe 同目录有 `portable.txt`）> 系统默认。
@@ -229,6 +243,7 @@ pub fn run() {
             pet_invoke,
             app_restart,
             playback_banner,
+            import_audio,
             web_login::web_login
         ])
         .build(tauri::generate_context!())

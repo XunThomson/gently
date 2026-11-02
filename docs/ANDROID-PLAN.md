@@ -497,6 +497,29 @@ pnpm tauri android build --debug -t aarch64 --apk
 | 点播放 | 核心重新解析（日志 `媒体响应（本地文件） status=206`）→ `156/271`：**从恢复位置接着放** |
 | 截图 | `r113-android-resume.png`（搜索页 + 播放条里 `probe` 的进度已过半） |
 
+### 7.7 R114：P3 SAF 导入（手机选文件 → 进曲库）
+
+> 安卓上「粘贴目录再扫描」只对开发者成立：普通用户拿不到 `/storage/emulated/0/...`。
+> 本轮补上真正的入口：系统文件选择器（SAF）。
+
+| 层 | 内容 |
+|---|---|
+| Kotlin | `ImportPlugin.kt`：`@Command pickAudio` → `ACTION_OPEN_DOCUMENT`（`audio/*` + `EXTRA_ALLOW_MULTIPLE`）→ `@ActivityCallback` 里在**后台线程**把选中的 URI 逐个拷进 `<filesDir>/music`（同名不覆盖，`a.mp3` → `a-1.mp3`），回 `{imported, failed, cancelled, dir}`。**不需要任何存储权限**（SAF 只临时授权选中的 URI） |
+| Rust 宿主 | `src-tauri/src/importer.rs`：插件 `gently-import`（`register_android_plugin("com.xun.gently","ImportPlugin")`）+ `run_mobile_plugin_async("pickAudio")`（用户挑文件可能几十秒，必须用异步变体）；`lib.rs` 新增宿主命令 `import_audio`。非 Android 直接回错（桌面用「填目录」） |
+| 前端 | `services/import.service.ts`（无宿主时返回「取消」的空结果）；`views/local/components/ScanPanel` 在**手机形态**多一行「从手机导入音频」按钮 + 说明，导入成功后拿返回的 `dir` 直接调核心的 `library.local.scan` 入库，并显示「已导入 N 首」 |
+| 文案 | 「扫描提示」里那句「原生文件选择器需要额外的桌面插件」已经过时（我们自己实现了），改成「桌面上填目录；手机用上面的导入按钮」 |
+
+**真机验证（`CDY-AN00`；测试文件 `adb push` 到 `/sdcard/Download/import-test.mp3`）**
+
+| 步骤 | 结果 |
+|---|---|
+| 点「从手机导入音频」 | 系统选择器打开（标题「打开文件」，抽屉里有 最近 / 音频 / 下载内容） |
+| 走查 | 抽屉 → 下载内容 → 只剩 `import-test.mp3` 可选（其它非音频文件是灰的）→ 点选 |
+| 返回应用 | 提示「已导入 1 首」；「共 2 首」；列表里出现 `import-test`（原 `probe` 还在） |
+| 磁盘 | `run-as com.xun.gently ls -l files/music` → `-rw------- import-test.mp3 4388383` |
+| 入库 | 扫描结果「上次扫描 1 个文件，新增 1」 |
+| 截图 | `r114-android-import.png`（导入后的本地音乐页） |
+
 **拆分（每片独立可交付）**
 
 | 片 | 内容 | 完成标准 |
@@ -510,6 +533,7 @@ pnpm tauri android build --debug -t aarch64 --apk
 | P2-1 | **前台服务**保活 + 常驻通知（Kotlin Service + Tauri 移动插件桥） | 熄屏/后台继续播（实测熄屏 4 分钟 +253 秒）；停播即退出服务 |
 | P2-2 | MediaSession + 通知栏传输控制 + 通知图标 | 通知上能播放/暂停/上下曲，且状态回写 store |
 | P2-3 | 页面被系统重载后的续播（R113 已落地） | 冷启动后播放条有歌、位置正确、点播放从该位置接着放 |
+| P3-1 | **SAF 导入**（系统文件选择器 → 拷进应用目录 → 扫描入库，R114 已落地） | 真机选文件后列表里出现该曲目；不需要存储权限 |
 
 **P1 不做**：后台播放（P2）、SAF 导入（P3）、通知栏/悬浮窗歌词（P4）、平板横屏专用布局（先用 `compact` 顶）、
 宠物渲染器、armv7 打包。

@@ -1,13 +1,44 @@
 ---
 status: active
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R113（续播 / P2-3）：前台服务挡住了「后台被挂起」，但挡不住「渲染进程被回收 → 页面整页重载」，那一下 store 全没了、播放条变空（R111 形态 3）。本轮把「上次在放什么 / 放到哪」落进 localStorage（`utils/lastPlayback.ts`，纯函数校验、10 秒节流、只存一首歌不存队列），启动时恢复成**暂停态**并补一条候选音源；`toggle()` 新增「没有音频地址的暂停 → `recoverPlayback()`」分支，`audio.service.seek()` 不再在元素未建时放弃（恢复的调用顺序是「先 seek 再 load」）。真机：播放到 `150/271` → 冷启动 `restored=150` → 点播放 `156/271`（接着放）。smoke 529 → **534**。
+tldr: 当前 R114（P3 SAF 导入）：安卓上「粘贴目录再扫描」只对开发者成立（普通用户拿不到绝对路径），本轮补上真正的入口——Kotlin `ImportPlugin` 走 **SAF**（`ACTION_OPEN_DOCUMENT`，`audio/*`，可多选），在后台线程把选中的 URI 拷进 `<filesDir>/music`（同名不覆盖、**不需要任何存储权限**），经 `src-tauri/src/importer.rs` 的移动插件桥 + 宿主命令 `import_audio` 回到前端；`ScanPanel` 在手机形态多一行「从手机导入音频」，导入后拿返回的 `dir` 直接调核心 `library.local.scan` 入库。真机走了一遍「选择器 → 下载内容 → 选文件 → 已导入 1 首 → 列表出现 import-test、磁盘有文件、扫描新增 1」。smoke 534 → **535**。
 ---
 
 # STATE
+
+## 本轮目标（第一百一十四轮）
+
+> 起点：P0/P1/P2 都过了，手机上仍然只有一条「把音乐弄进来」的路——adb push。
+> 这不是普通用户能做的事，等于「本地音乐」在手机上不可用。
+
+### 1. 本轮做了什么
+
+| 层 | 改动 |
+|---|---|
+| Kotlin（`gen/android/.../ImportPlugin.kt`） | `@Command pickAudio` → `ACTION_OPEN_DOCUMENT`（`audio/*` + 多选）；`@ActivityCallback` 里在**后台线程**逐个拷贝（`contentResolver.openInputStream`），同名不覆盖（`a.mp3` → `a-1.mp3`），回 `{imported, failed, cancelled, dir}`。SAF 不需要任何存储权限 |
+| Rust 宿主（`src-tauri/src/importer.rs`） | 插件 `gently-import` 注册 Kotlin `ImportPlugin`，用 `run_mobile_plugin_async("pickAudio")`（异步：用户挑文件可能几十秒）+ `ImportOutcome` 结构体；`lib.rs` 新增宿主命令 `import_audio`。非 Android 如实回错（桌面端用「填目录」） |
+| 前端 | `services/import.service.ts`（无宿主返回「取消」的空结果，浏览器里静默）；`ScanPanel` 在**手机形态**多一行「从手机导入音频」+ 说明 + 结果提示（已导入 N 首 / 部分失败 / 没读到音频 / 打不开选择器），导入成功后用返回的 `dir` 调 `library.local.scan` |
+| 文案 | `page.local.importFromDevice/importing/importHint/imported/importedPartial/importEmpty/importFailed`（zh+en）；顺手修掉 `scanHint` 里那句已过时的「原生文件选择器需要额外的桌面插件」 |
+
+### 2. 验证
+
+- `pnpm typecheck` 通过；`pnpm smoke`：**535**（534 → +1「导入服务在无宿主时是空操作」）；
+- **真机（`CDY-AN00`）完整走查**（测试文件 `adb push` 到 `/sdcard/Download/import-test.mp3`）：
+  1. 本地音乐 → 展开扫描面板 → 点「从手机导入音频」→ 系统选择器打开（「打开文件」：最近 / 音频 / 下载内容）；
+  2. 抽屉 → 下载内容 → 只有 `import-test.mp3` 可选（其它非音频文件是灰的）→ 点选；
+  3. 回到应用：提示「已导入 1 首」、「共 2 首」、列表出现 `import-test`；
+  4. 磁盘：`run-as com.xun.gently ls -l files/music` → `import-test.mp3 4388383`；
+  5. 入库：扫描结果「上次扫描 1 个文件，新增 1」；截图 `r114-android-import.png`。
+
+### 3. 未做 / 值得你知道的
+
+- **导入是「拷一份」**：原文件删掉不影响曲库；反面是占双份空间（后续可加「清理已导入」入口）；
+- 选择器只过滤 `audio/*`：`.m4s`、少见的无损封装可能不在系统 MIME 库里（桌面端不受影响）；
+- 多个大文件逐个拷没有进度条（只在结束后报数量）；P3 的其余部分（音乐目录授权、导出）未做；
+- P2-2（MediaSession + 通知栏传输控制 + 自定义通知图标 + `POST_NOTIFICATIONS` 授权入口）、P4 通知栏歌词、R110 的「上游不是音频」进 UI 文案仍挂着。
 
 ## 本轮目标（第一百一十三轮）
 
@@ -430,9 +461,9 @@ tldr: 当前 R113（续播 / P2-3）：前台服务挡住了「后台被挂起�
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
-| R113 | 页面重载后的续播（P2-3） | 「上次在放什么 / 放到哪」落进 localStorage（纯函数校验、10 秒节流、不存队列），启动恢复成**暂停态**并补候选；`toggle()` 对「没有地址的暂停」走 `recoverPlayback()`；`seek()` 不再在元素未建时放弃。真机：`150/271` → 冷启动 `restored=150` → 点播放 `156/271`；smoke 534 | [本轮](#本轮目标第一百一十三轮) |
+| R114 | P3 SAF 导入 | 手机上终于能「自己把音乐弄进来」：Kotlin `ImportPlugin`（`ACTION_OPEN_DOCUMENT`，多选，后台线程拷进 `<filesDir>/music`，**零存储权限**）→ 宿主命令 `import_audio` → `ScanPanel` 手机形态的「从手机导入音频」→ 拿目录调 `library.local.scan`。真机走查：选文件 → 已导入 1 首 → 列表出现、磁盘有文件、扫描新增 1；smoke 535 | [本轮](#本轮目标第一百一十四轮) |
+| R113 | 页面重载后的续播（P2-3） | 「上次在放什么 / 放到哪」落进 localStorage（纯函数校验、10 秒节流、不存队列），启动恢复成**暂停态**并补候选；`toggle()` 对「没有地址的暂停」走 `recoverPlayback()`；`seek()` 不再在元素未建时放弃。真机：`150/271` → 冷启动 `restored=150` → 点播放 `156/271`；smoke 534 | [下方](#本轮目标第一百一十三轮) |
 | R112 | P2-1 前台服务（保活 + 通知） | Kotlin `PlaybackService` + `PlaybackPlugin` 经 Tauri 移动插件桥由宿主命令 `playback_banner` 驱动；前端只在「在播/停/换歌」推一次。真机：`isForeground=true foregroundId=1001`，**熄屏 4 分钟 5→258/271（+253 秒）**，HOME 后台 1 分钟 4→68，放完自动退出；smoke 529 | [下方](#本轮目标第一百一十二轮) |
-| R111 | P2 入口条件实测 + 中断恢复 | 真机测出**熄屏后三种形态**（音频停住 → 位置僵死 → 页面被重载），进程全程没死 → **P2 定为「WebView 播放 + 前台服务 + MediaSession」**；前端修对中断恢复：`play()` 带 3 秒上限、`isStalled()` 治「以为在播却不动」、`markInterrupted()` 如实停表并给「点播放继续」；smoke 528 | [下方](#本轮目标第一百一十一轮) |
 
 ## 历史轮次
 

@@ -79,7 +79,7 @@ import {
 } from '../src/config/table.config';
 import {resolveColumns, type ColumnDef} from '../src/components/ui/data-table';
 import {MobileRowActions, RowActionsProvider} from '../src/components/ui/row-actions';
-import {desktopWindowActionsAvailable, syncPlaybackBanner} from '../src/services';
+import {desktopWindowActionsAvailable, importAudioFiles, syncPlaybackBanner} from '../src/services';
 import {lyricsScrollStep, lyricsScrollTarget} from '../src/utils/lyricsScroll';
 import {getThemeSkin, parseSkin, resolveTheme as resolveSkin, serializeSkin} from '../src/theme';
 import type {ThemeSkin} from '../src/theme';
@@ -2783,6 +2783,20 @@ async function main(): Promise<void> {
             threw = err;
         }
         check('播放通知：没有宿主时是静默空操作（不抛、不发 IPC）', threw === null, String(threw));
+    }
+
+    /* 导入音频（P3）：没有宿主时返回「取消」，不能假装导入成功、也不能抛 */
+    {
+        const result = await importAudioFiles();
+        check(
+            '导入音频：没有宿主时是空操作（cancelled、无目录、无错误）',
+            result.imported === 0 &&
+                result.failed === 0 &&
+                result.cancelled === true &&
+                result.dir === null &&
+                result.error === undefined,
+            JSON.stringify(result),
+        );
     }
 
     /* 「上次在放什么 / 放到哪」（R113）：手机页面被系统重载后要能从持久化里恢复成暂停态 */

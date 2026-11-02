@@ -323,7 +323,7 @@
       "remove": "移除",
       "empty": "还没有本地音乐——展开上方「扫描本地目录」，填入音乐目录后扫描",
       "scanTitle": "扫描本地目录",
-      "scanHint": "每行一个目录。只认音频扩展名（mp3/flac/m4a/m4s/mp4/aac/ogg/opus/wav…）；大小没变的文件不会重读标签；读不到标签的文件照样入库（标题退回文件名）。路径直接粘贴即可——原生文件选择器需要额外的桌面插件，当前依赖里没有。",
+      "scanHint": "每行一个目录。只认音频扩展名（mp3/flac/m4a/m4s/mp4/aac/ogg/opus/wav…）；大小没变的文件不会重读标签；读不到标签的文件照样入库（标题退回文件名）。桌面上填目录路径即可；手机上没有可粘贴的绝对路径，用上面的「从手机导入音频」。",
       "scanPlaceholder": "D:\\Music\nE:\\无损",
       "scanRecursive": "包含子目录",
       "scanStart": "开始扫描",
@@ -335,7 +335,14 @@
       "scanNeedsDesktop": "扫描本地目录需要桌面端（浏览器预览展示的是示例数据）。",
       "scanBriefIdle": "展开后可填写音乐目录并扫描",
       "scanBriefRunning": "扫描中 · 已发现 {{found}} 个文件{{percent}}",
-      "scanBriefResult": "上次扫描 {{scanned}} 个文件，新增 {{added}}"
+      "scanBriefResult": "上次扫描 {{scanned}} 个文件，新增 {{added}}",
+      "importFromDevice": "从手机导入音频",
+      "importing": "等待选择…",
+      "importHint": "用系统的文件选择器挑音频文件；选中的会拷进本应用（之后删掉原文件也不影响）。",
+      "imported": "已导入 {{count}} 首",
+      "importedPartial": "已导入 {{imported}} 首（{{failed}} 首没读到）",
+      "importEmpty": "选中的文件里没有可读取的音频",
+      "importFailed": "打不开文件选择器"
     },
     "plugin": {
       "coreTitle": "本机核心插件",

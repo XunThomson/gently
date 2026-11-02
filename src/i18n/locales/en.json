@@ -323,7 +323,7 @@
       "remove": "Remove",
       "empty": "No local music yet — open \"Scan local folders\" above and scan a folder",
       "scanTitle": "Scan local folders",
-      "scanHint": "One folder per line. Only audio extensions (mp3/flac/m4a/m4s/mp4/aac/ogg/opus/wav…) are indexed; files whose size is unchanged are not re-read; files without readable tags are still indexed (title falls back to the file name). Paste the path directly — a native file picker needs an extra desktop plugin that is not in the current dependency set.",
+      "scanHint": "One folder per line. Only audio extensions (mp3/flac/m4a/m4s/mp4/aac/ogg/opus/wav…) are indexed; files whose size is unchanged are not re-read; files without readable tags are still indexed (title falls back to the file name). On desktop paste a folder path; on a phone there is no absolute path to paste — use Import from this phone above.",
       "scanPlaceholder": "D:\\Music\nE:\\Lossless",
       "scanRecursive": "Include subfolders",
       "scanStart": "Scan",
@@ -335,7 +335,14 @@
       "scanNeedsDesktop": "Scanning local folders needs the desktop app (the browser preview shows sample data).",
       "scanBriefIdle": "Expand to enter folders and scan",
       "scanBriefRunning": "Scanning · {{found}} files found{{percent}}",
-      "scanBriefResult": "Last scan: {{scanned}} files, {{added}} added"
+      "scanBriefResult": "Last scan: {{scanned}} files, {{added}} added",
+      "importFromDevice": "Import from this phone",
+      "importing": "Waiting for picker…",
+      "importHint": "Pick audio files with the system picker; they are copied into this app (deleting the originals later is fine).",
+      "imported": "Imported {{count}} file(s)",
+      "importedPartial": "Imported {{imported}} file(s), {{failed}} could not be read",
+      "importEmpty": "None of the selected files were readable audio",
+      "importFailed": "Could not open the file picker"
     },
     "plugin": {
       "coreTitle": "Local core plugins",
