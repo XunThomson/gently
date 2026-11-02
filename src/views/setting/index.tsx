@@ -425,6 +425,9 @@ export default function SettingView() {
             <section className={styles.card}>
                 <h2 className={styles.cardTitle}>{t('page.setting.download')}</h2>
 
+                {/* 手机形态没有「下载目录」可填：如实说明文件落在应用私有目录（R130） */}
+                {mobile && <p className={styles.hint}>{t('page.setting.downloadDirMobileHint')}</p>}
+
                 {/* 下载目录是一条**本机路径**：手机上既没有可粘贴的绝对路径，也没有「在文件夹中显示」，
                     所以整块不显示（文件落在应用私有目录，由系统管理） */}
                 {!mobile && (

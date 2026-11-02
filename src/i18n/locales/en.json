@@ -827,6 +827,7 @@
       "downloadDirPlaceholder": "Leave empty for the default folder",
       "downloadDirHint": "Empty = the downloads folder under the data directory. A custom folder must already exist; the core rejects missing folders with a clear reason.",
       "maximumConcurrentDownloads": "Maximum concurrent downloads",
+      "downloadDirMobileHint": "Downloads and cache live in the app's private storage (system-managed) and are removed when you uninstall the app.",
       "downloadConcurrentHint": "Extra tracks wait in a queue instead of competing for bandwidth.",
       "defaultDownloadQuality": "Default download quality",
       "whenDownloadQualityIsMissing": "When the preferred quality is unavailable",

@@ -827,6 +827,7 @@
       "downloadDirPlaceholder": "留空使用默认目录",
       "downloadDirHint": "留空 = 数据目录下的 downloads；自定义目录必须已存在（核心会校验，不存在时任务会带明确原因失败）。",
       "maximumConcurrentDownloads": "最多同时下载歌曲数",
+      "downloadDirMobileHint": "下载与缓存都落在应用私有目录（由系统管理），卸载应用会一并删除。",
       "downloadConcurrentHint": "超出上限的曲目会排队等待，不会同时抢带宽。",
       "defaultDownloadQuality": "默认下载音质",
       "whenDownloadQualityIsMissing": "下载音质缺失时",
