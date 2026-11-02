@@ -29,10 +29,25 @@ export function MobileShell() {
     const onSearch = location.pathname === '/search' || location.pathname.startsWith('/search/');
 
     /* 换页回到顶部（R123）：`.content` 是滚动容器，不重置的话从长列表点进另一页
-       会停在上一页的滚动位置，看起来像「页面没换」。 */
+       会停在上一页的滚动位置，看起来像「页面没换」。
+       横向也要归零（R137 真机踩到）：长标签（如设置页的「聚合（同一首歌只显示一条）」）
+       会让内容横向溢出，**聚焦元素会让浏览器把容器横向滚过去**，而 `overflow-x: hidden`
+       只裁剪不阻止程序滚动——于是卡片被顶到屏幕左侧、右边一片空白，用户还滚不回来。 */
     useEffect(() => {
-        contentRef.current?.scrollTo({top: 0});
+        contentRef.current?.scrollTo({top: 0, left: 0});
     }, [location.pathname]);
+
+    /* 横向滚动的兜底钳制（R137）：只要不是 0 就掰回 0。
+       正常情况根本不该出现横向滚动，出现就说明某个控件撑破了容器——归零比让用户看着白屏好。 */
+    useEffect(() => {
+        const element = contentRef.current;
+        if (!element) return;
+        const clamp = () => {
+            if (element.scrollLeft !== 0) element.scrollLeft = 0;
+        };
+        element.addEventListener('scroll', clamp, {passive: true});
+        return () => element.removeEventListener('scroll', clamp);
+    }, []);
 
     /**
      * 横滑打开抽屉（R137 用户反馈「滑动打开抽屉」）。

@@ -17,6 +17,7 @@ import {useDownloadEngine} from "./hooks/useDownloadEngine";
 import {useDesktopLyricsBridge} from "./hooks/useDesktopLyricsBridge";
 import {usePetWindowBridge} from "./hooks/usePetWindowBridge";
 import {useShellMode} from "./hooks/useShellMode";
+import {useClampedShell} from "./hooks/useClampedShell";
 import {useActions, useSelect} from "./store";
 import {isTauri, probeCore, windowService} from "./services";
 import {useTheme} from "./theme";
@@ -42,6 +43,8 @@ export default function App() {
     const mode = useShellMode();
     /* 换页时复位路由错误边界（R137）：某一页渲染抛错不该连累之后打开的页面 */
     const location = useLocation();
+    /* 外壳本身永远不该被滚动：被浏览器滚走就是「白屏 + 回不来」（R137，见 hook 注释） */
+    const shellRef = useClampedShell();
 
     /* 浏览器预览没有原生窗口可 resize：展开后先用本地开关回到完整界面；
        形态变化（如再次跨过断点）才清除，避免每个像素的 resize 都重渲染外壳。 */
@@ -93,7 +96,7 @@ export default function App() {
     if (mode === "mobile") {
         /* 手机外壳：导航换成底部 tab，路由 / store / 服务层与桌面完全共用 */
         return (
-            <div className="app" data-shell="mobile">
+            <div className="app" data-shell="mobile" ref={shellRef}>
                 <BackgroundVideo/>
                 <div className="app__content">
                     <MobileShell/>
@@ -105,7 +108,7 @@ export default function App() {
 
     if (mode === "mini" && !forceRegular) {
         return (
-            <div className="app" data-shell="mini">
+            <div className="app" data-shell="mini" ref={shellRef}>
                 <BackgroundVideo/>
                 <div className="app__content">
                     <MiniPlayer onExpand={restoreFull}/>
@@ -118,7 +121,7 @@ export default function App() {
     const compact = mode === "compact";
 
     return (
-        <div className="app" data-shell={mode}>
+        <div className="app" data-shell={mode} ref={shellRef}>
             <BackgroundVideo/>
 
             <div className="app__content">

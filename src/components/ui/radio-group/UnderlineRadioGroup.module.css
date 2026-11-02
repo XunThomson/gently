@@ -2,7 +2,15 @@
     display: flex;
     align-items: center;
     gap: var(--radio-gap);
+    /* 长选项必须能换行（R137 真机实测）：像「聚合（同一首歌只显示一条）」这种标签
+       在手机宽度下两个并排放不下，`nowrap` 会把整个分组撑出卡片 → 页面出现横向溢出，
+       点一下选项浏览器会把容器横向滚过去（`overflow-x: hidden` 只裁剪、**不阻止程序滚动**），
+       卡片就被顶到屏幕左外侧、右边留一片空白，而且用户再也滚不回来。 */
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
     user-select: none;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .item {
@@ -11,6 +19,9 @@
     justify-content: center;
     cursor: pointer;
     min-width: 0;
+    /* 换行后每项按内容宽度排，不参与压缩：压缩会变成省略号看不到完整选项 */
+    flex: 0 0 auto;
+    max-width: 100%;
 }
 
 /* 隐藏原生 radio，仅作为状态标记 */

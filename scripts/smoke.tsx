@@ -2487,6 +2487,37 @@ async function main(): Promise<void> {
             );
         }
 
+        /* 「切换列表展示方式后白屏 / 页面左偏回不来」的真因（R137 真机定位）：
+           长选项标签（如「聚合（同一首歌只显示一条）」）把卡片撑破 → 内容横向溢出 →
+           聚焦选项时浏览器把容器横向滚过去，而 `overflow-x: hidden` 只裁剪、**不阻止程序滚动**，
+           用户再也滚不回来（实测 `main.scrollLeft=48.5`、卡片左边被顶到 -37px）。
+           三处一起守：长标签换行、控件不撑破卡片、外壳把 scrollLeft 掰回 0。 */
+        {
+            const radioCss = readFileSync(
+                'src/components/ui/radio-group/UnderlineRadioGroup.module.css',
+                'utf8',
+            );
+            const settingCss = readFileSync('src/views/setting/setting.module.css', 'utf8');
+            const shellSrc = readFileSync('src/components/shell/mobile/MobileShell.tsx', 'utf8');
+            const appSrc2 = readFileSync('src/App.tsx', 'utf8');
+            const clampHook = readFileSync('src/hooks/useClampedShell.ts', 'utf8');
+            check(
+                '白屏真因：外壳（.app）被浏览器滚走 → 三个外壳都挂上「滚了就归零」的钳制',
+                (appSrc2.match(/ref=\{shellRef\}/g) ?? []).length === 3 &&
+                    clampHook.includes('node.scrollTop !== 0') &&
+                    clampHook.includes('node.scrollLeft !== 0') &&
+                    clampHook.includes("addEventListener('focusin'"),
+            );
+            check(
+                '移动外壳：长选项换行 + 控件不撑破卡片 + 横向滚动归零（白屏/左偏的真因）',
+                /\.root\s*\{[^}]*flex-wrap:\s*wrap;/.test(radioCss) &&
+                    /\.value\s*\{[^}]*flex-wrap:\s*wrap;/.test(settingCss) &&
+                    /\.value\s*\{[^}]*max-width:\s*100%;/.test(settingCss) &&
+                    shellSrc.includes('element.scrollLeft = 0') &&
+                    shellSrc.includes('scrollTo({top: 0, left: 0})'),
+            );
+        }
+
         /* 白屏的替代品（R137）：路由内容外包一层错误边界——渲染抛错时只坏内容区，
            导航与播放条还在，并且能重试。桌面 / 手机两个外壳都要有。 */
         {

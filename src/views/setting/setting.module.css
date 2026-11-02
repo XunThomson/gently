@@ -35,6 +35,12 @@
     align-items: center;
     gap: var(--space-2);
     font-size: var(--font-size-sm);
+    /* 控件区不许把卡片撑破：长标签（如「聚合（同一首歌只显示一条）」）在窄屏要换行，
+       否则整个卡片会横向溢出、被浏览器滚到屏幕外（R137 真机：卡片左移 37px、右侧一片空白） */
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
+    max-width: 100%;
 }
 
 /* 设置项里的文本输入（下载目录等）：宽度跟随内容区，窄窗口下不撑破卡片 */

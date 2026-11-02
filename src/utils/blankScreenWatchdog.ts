@@ -17,8 +17,12 @@
  */
 
 const BANNER_ID = 'gently-blank-banner';
+/** 自动恢复只用一次（避免「白 → 重载 → 还白 → 再重载」的循环） */
+const RECOVER_FLAG = 'gently:blank-recovered';
 /** 连续空白多久才报（避开换页、加载中的正常空档） */
 const BLANK_FOR_MS = 1800;
+/** 横幅出现后再等这么久仍然空白 → 自动重载一次 */
+const AUTO_RECOVER_MS = 10000;
 /** 主内容区少于这么多字符就算「看起来是空的」 */
 const MIN_VISIBLE_TEXT = 8;
 /** 启动后这段时间内不判断（首屏本来就有空档） */
@@ -27,6 +31,8 @@ const TICK_MS = 400;
 
 let blankSince = 0;
 let bannerVisible = false;
+/** 用户已经跟横幅交互过（复制 / 关掉）：不再自动重载 */
+let autoRecoverCancelled = false;
 let lastReport = '';
 
 function visibleTextLength(): number {
@@ -188,6 +194,12 @@ function showBanner(reason: string): void {
 
     const diagnostic = `判定：${reason}\n${collectBlankScreenDiagnostic()}`;
     lastReport = diagnostic;
+    /* 存一份到 sessionStorage：万一自动重载了，下一次启动还能从控制台/诊断里读到它 */
+    try {
+        sessionStorage.setItem('gently:blank-report', diagnostic);
+    } catch {
+        /* 存不下就只留在面板上 */
+    }
     /* 同一段诊断不重复刷屏：内容没变就走 */
     if (bannerVisible) {
         const pre = document.querySelector(`#${BANNER_ID} pre`);
@@ -216,7 +228,7 @@ function showBanner(reason: string): void {
     ].join(';');
     banner.innerHTML = `
         <div style="font-weight:600;margin-bottom:4px">界面看起来是空白的</div>
-        <div style="color:#52525b;margin-bottom:8px">我们已经把当时的诊断信息记下来了（没有报错也能看）。点「复制诊断信息」把它发给开发者，就能定位是没渲染还是看不见。</div>
+        <div style="color:#52525b;margin-bottom:8px">我们已经把当时的诊断信息记下来了（没有报错也能看）。点「复制诊断信息」把它发给开发者，就能定位是没渲染还是看不见。若 10 秒内没人操作、界面还是空的，会自动重新加载一次（你的设置不会丢）。</div>
         <details style="margin-bottom:8px">
             <summary style="cursor:pointer;color:#52525b">展开诊断信息</summary>
             <pre style="white-space:pre-wrap;word-break:break-word;background:#f4f4f5;border:1px solid #e4e4e7;border-radius:8px;padding:10px;margin:8px 0 0;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace">${escapeHtml(diagnostic)}</pre>
@@ -229,6 +241,9 @@ function showBanner(reason: string): void {
     `;
     banner.addEventListener('click', (event) => {
         const action = (event.target as HTMLElement | null)?.dataset?.action;
+        if (!action) return;
+        /* 用户已经看到横幅并操作了：取消自动重载（别把人正要复制的诊断冲掉） */
+        autoRecoverCancelled = true;
         if (action === 'reload') window.location.reload();
         else if (action === 'dismiss') {
             banner.remove();
@@ -240,6 +255,28 @@ function showBanner(reason: string): void {
     });
     document.body.appendChild(banner);
     console.warn('[gently:blank] 界面看起来是空的', diagnostic);
+
+    /* 卡在空白里对用户毫无价值：横幅出来 2 秒内还没恢复，就**自动重载一次**
+       （设置已经写进 localStorage，重载后还是用户选的那个值）。
+       一个会话只用一次，防止「白 → 重载 → 还白」的循环；第二次起只留横幅与诊断。 */
+    window.setTimeout(() => {
+        if (autoRecoverCancelled) return;
+        if (!blankScreenReason()) return;
+        let recovered = '';
+        try {
+            recovered = sessionStorage.getItem(RECOVER_FLAG) ?? '';
+        } catch {
+            recovered = '';
+        }
+        if (recovered) return;
+        try {
+            sessionStorage.setItem(RECOVER_FLAG, '1');
+        } catch {
+            /* sessionStorage 不可用就干脆不自动重载，避免循环 */
+            return;
+        }
+        window.location.reload();
+    }, AUTO_RECOVER_MS);
 }
 
 async function copyDiagnostic(text: string): Promise<void> {
