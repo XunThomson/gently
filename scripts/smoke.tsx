@@ -32,7 +32,7 @@ import {
     PET_WALK_EVENT,
 } from '../src/services/window.service';
 import {filterGroupsBySource, groupTracks} from '../src/utils/track';
-import {toLyricLines} from '../src/utils/lyrics';
+import {currentLyricLine, toLyricLines} from '../src/utils/lyrics';
 import {errorText} from '../src/i18n/errors';
 import {coverStyle, trackCoverStyle} from '../src/utils/cover';
 import type {Track, TrackQuality} from '../src/types';
@@ -83,6 +83,7 @@ import {
     desktopWindowActionsAvailable,
     importAudioFiles,
     installMediaActionHandler,
+    playbackBannerKey,
     syncPlaybackBanner,
 } from '../src/services';
 import {lyricsScrollStep, lyricsScrollTarget} from '../src/utils/lyricsScroll';
@@ -2915,6 +2916,30 @@ async function main(): Promise<void> {
             JSON.stringify(restored.state.candidates.map((candidate) => candidate.source)),
         );
         store.setState({player: before});
+    }
+
+    /* 通知栏歌词（P4）：只取「当前唱到的那一句」，没有就空串（通知第二行退回歌手） */
+    {
+        const lines = [
+            {time: 0, text: '第一句'},
+            {time: 5, text: '  第二句  '},
+            {time: 9, text: '第三句'},
+        ] as never;
+        check(
+            '通知栏歌词：取当前行的文字（去首尾空白），没有歌词/还没到第一行时为空',
+            currentLyricLine(lines, 6) === '第二句' &&
+                currentLyricLine(lines, 0) === '第一句' &&
+                currentLyricLine(lines, 99) === '第三句' &&
+                currentLyricLine([], 10) === '' &&
+                currentLyricLine(lines, -5) === '',
+        );
+        check(
+            '通知栏歌词：换行才换键（同一行不重复推 IPC）',
+            playbackBannerKey(true, true, '歌', '人', '第一句') ===
+                playbackBannerKey(true, true, '歌', '人', '第一句') &&
+                playbackBannerKey(true, true, '歌', '人', '第一句') !==
+                    playbackBannerKey(true, true, '歌', '人', '第二句'),
+        );
     }
 
     /* 播放失败文案：播放条与迷你播放器共用，不能一边只说「无法播放」 */

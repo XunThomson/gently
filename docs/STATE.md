@@ -4,10 +4,45 @@ last_verified: 2026-11-02
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R115（P2-2 传输控制）：`PlaybackService` 接上 **framework 的 `MediaSession`**（不引 androidx.media）+ `MediaMetadata`/`PlaybackState` + 通知的 `Notification.MediaStyle` 三个按钮（上一首 / 播放·暂停 / 下一首）；用户按按钮后服务只把动作（toggle/next/prev）经 `MediaActionBridge`（`evaluateJavascript` 调页面里的 `window.__gentlyMediaAction`）送回前端，**改 store 的永远是页面**。真机踩到一个关键 bug：前端把 `active` 与 `playing` 混成一个值，一暂停就 `stopService()` → MediaSession 一起被释放 → 之后耳机键/锁屏全部失效；拆开后暂停仍保留会话（`state=2`）。真机：`KEYCODE_MEDIA_PAUSE` 冻在 6 → `PLAY` 6→10 → `NEXT` 换歌且通知标题跟着变；通知栏三按钮截图 `r115-android-notification.png`。smoke 535 → **539**。
+tldr: 当前 R116（P4 通知栏歌词）：歌词**只在页面算**（`utils/lyrics.ts::currentLyricLine`），当前行作为 `playback_banner` 的 `line` 参数一路到 Kotlin，写成通知第二行（空串回落歌手）与 `MediaMetadata` 的 `DISPLAY_SUBTITLE`；去重键 `playbackBannerKey()` 带上 `line`，**换行才推一次**。真机同一张通知原地把「第一句」换成「第二句」，`metadata: size=3 state=3`。两个取证坑：`dumpsys media_session` 的 `description` 第三项是 **ALBUM**（恒 null，判断不了字幕），系统界面只能用 `adb exec-out screencap -p`（CDP `shot` 只有 WebView）。smoke **541**。
 ---
 
 # STATE
+
+## 本轮目标（第一百一十六轮）
+
+> 起点：R115 之后通知栏能上一首/暂停/下一首了，但第二行永远是歌手。用户要的是**正在唱的那一句**。
+
+### 1. 本轮做了什么
+
+| 层 | 改动 |
+|---|---|
+| 前端（`utils/lyrics.ts`） | `currentLyricLine(lines, elapsed)`：没有命中行返回空串。歌词**只在页面算**，原生不碰时间轴 |
+| 前端（`services/playbackBanner.service.ts`） | `syncPlaybackBanner(active, title, artist, playing, line = '')`；去重键 `playbackBannerKey()` 把 `line` 也算进去——**换行才推一次**，不逐帧打原生。`useAudioEngine` 用一个返回字符串的 selector 取当前行 |
+| 宿主（`playback.rs` / `lib.rs`） | `update()` 与宿主命令 `playback_banner` 多第 5 个参数 `line` |
+| Kotlin（`PlaybackService.kt` / `PlaybackPlugin.kt`） | `PlaybackBannerArgs.line` → `EXTRA_LINE`；`setContentText(if (line.isNotBlank()) line else artist)`，并写进 `MediaMetadata` 的 `METADATA_KEY_DISPLAY_SUBTITLE` |
+
+### 2. 验证
+
+- `pnpm typecheck` 通过；`pnpm smoke`：**541**（539 → +2：`currentLyricLine` 命中/未命中、`playbackBannerKey` 换行后必须变）；
+- **真机（`CDY-AN00`）**：本地曲目播放中（前台服务在），用 CDP 直接走宿主命令，两次只换 `line`：
+
+  | 项 | 结果 |
+  |---|---|
+  | 第一次 `line='第一句：夜色温柔'` | 通知第二行 = 第一句：夜色温柔（`r116-android-lyrics-notification-1.png`） |
+  | 第二次 `line='第二句：灯火未眠'` | **同一张通知原地更新**，标题与按钮不变，第二行换成第二句（`r116-android-lyrics-notification-2.png`） |
+  | `dumpsys media_session` | `metadata: size=3`、`state=3`（会话存活） |
+
+### 3. 未做 / 值得你知道的
+
+- 本地曲目没有歌词，所以真机走的是「直接调宿主命令」的确定性验证；在线曲目（有歌词）在本机放不出声（GOTCHAS §56），
+  端到端「跟着歌换行」只能在桌面端看；
+- 两个**看文档容易踩空**的地方：`dumpsys media_session` 里 `description` 的第三项是 **ALBUM**（恒为 null），
+  不能用它判断字幕有没有写进去；系统界面（通知面板 / 锁屏）只能 `adb exec-out screencap -p` 截，
+  `node scripts/android-cdp.mjs shot` 只有 WebView 画面（已修脚本里的说明文字）；
+- 歌词同步有 1 个节流的余量：`line` 变了才推，但通知文字更新本身是同步 IPC，长歌词行不会造成压力；
+- 仍挂着：锁屏进度条（`position=-1`）、通知小图标换应用自己的、`POST_NOTIFICATIONS` 授权入口、
+  P3 余项、R110 的「上游不是音频」进 UI 文案。
 
 ## 本轮目标（第一百一十五轮）
 
@@ -80,9 +115,9 @@ tldr: 当前 R115（P2-2 传输控制）：`PlaybackService` 接上 **framework 
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
-| R115 | P2-2 MediaSession + 传输控制 | framework `MediaSession` + `MediaStyle` 三按钮；原生只把 `toggle/next/prev` 经 `evaluateJavascript` 送回页面（播放状态仍以 store 为权威）。真机：暂停冻在 6 → 播放 6→10 → 下一首换歌且通知标题跟着变；`actions=566`；smoke 539 | [本轮](#本轮目标第一百一十五轮) |
+| R116 | P4 通知栏歌词 | 歌词只在页面算（`currentLyricLine`），`line` 作为 `playback_banner` 的第 5 个参数传到 Kotlin，写成通知的 `setContentText`（空串回落歌手）+ `MediaMetadata` 的 `DISPLAY_SUBTITLE`；去重键带上 `line`，换行才推。真机同一张通知原地把第二行从「第一句」换成「第二句」；smoke 541 | [本轮](#本轮目标第一百一十六轮) |
+| R115 | P2-2 MediaSession + 传输控制 | framework `MediaSession` + `MediaStyle` 三按钮；原生只把 `toggle/next/prev` 经 `evaluateJavascript` 送回页面（播放状态仍以 store 为权威）。真机：暂停冻在 6 → 播放 6→10 → 下一首换歌且通知标题跟着变；`actions=566`；smoke 539 | [下方](#本轮目标第一百一十五轮) |
 | R114 | P3 SAF 导入 | 手机上终于能自己把音乐弄进来：Kotlin `ImportPlugin`（`ACTION_OPEN_DOCUMENT` 多选 → 后台线程拷进 `<filesDir>/music`，**零存储权限**）→ 宿主命令 `import_audio` → `ScanPanel` 手机形态的「从手机导入音频」→ 拿目录调 `library.local.scan`。真机：选文件 → 已导入 1 首 → 列表出现、磁盘有文件、扫描新增 1；smoke 535 | [下方](#本轮目标第一百一十四轮) |
-| R113 | 页面重载后的续播（P2-3） | 「上次在放什么 / 放到哪」落进 localStorage（纯函数校验、10 秒节流、不存队列），启动恢复成**暂停态**并补候选；`toggle()` 对「没有地址的暂停」走 `recoverPlayback()`；`seek()` 不再在元素未建时放弃。真机 `150/271` → 冷启动 → 点播放 `156/271`；smoke 534 | [归档](archive/rounds/R101-R113.md#本轮目标第一百一十三轮) |
 
 ## 历史轮次
 
@@ -116,18 +151,20 @@ tldr: 当前 R115（P2-2 传输控制）：`PlaybackService` 接上 **framework 
   表现是「窗口开着、一片空白、也不 tick」（R94）。
 - 窗口间事件**不排队**：晚起的窗口会漏掉第一次推送 → 要 ready 握手 + 心跳兜底（R94）。
 - 像素画按非整数比例缩放会出现**黑色颗粒/毛边**：整数倍缩放 + `image-rendering: pixelated` + 偏移取整（R95）。
+- 通知面板 / 锁屏这类**系统界面**只能 `adb exec-out screencap -p` 截；CDP 的 `shot` 只有 WebView 画面。
+  `dumpsys media_session` 里 `description` 的第三项是 **ALBUM**（恒为 null），不能拿它判断字幕写没写进去（R116）。
 
 ## 下一步（按评估结论排序）
 
-1. **安卓 P2-2 / P4**：MediaSession + 通知栏传输控制（`PendingIntent` 回服务，**播放状态必须回 store**）、
-   通知图标换成应用自己的、`POST_NOTIFICATIONS` 运行时授权入口；P4 的通知栏歌词复用同一套前台服务。
-   进度与拆分表见 [`ANDROID-PLAN.md`](ANDROID-PLAN.md) §7；每步的验收口径在 §4。
+1. **安卓收尾（都不挡路）**：锁屏进度条（`PlaybackState` 现在 `position=-1`）、通知小图标换成应用自己的、
+   `POST_NOTIFICATIONS` 运行时授权入口；P3 余项（导入进度、清理已导入、`.m4s` 的 MIME、音乐目录授权/导出）。
+   P4 通知栏歌词已落地（R116）。进度与拆分表见 [`ANDROID-PLAN.md`](ANDROID-PLAN.md) §7；每步的验收口径在 §4。
 2. **R110 留下的小任务**：把「上游返回的不是音频」变成用户能看懂的文案（`playback.resolve` 里先探一次并自动换候选，
    或加一条契约事件），别只留在日志里（GOTCHAS §56）。
 3. **宠物 M4 / 玩法打磨（随时可做、可暂缓）**：移动端渲染器（核心层已独立，见 ADR 0010）；`minPetCoreVersion`
    真版本比较、atlas 瘦身（1.5 MB）、走路避让窗口/任务栏、多宠物 UI（存储与 API 已预留）、逐像素 alpha 命中。
    触发条件是安卓决定做宠物。
-4. **工程债**：`GOTCHAS.md` 59 条按域拆分（现在是一份长表，查起来靠搜索）；截图证据改成「seeded 数据 + 可深链 +
+4. **工程债**：`GOTCHAS.md` 61 条按域拆分（现在是一份长表，查起来靠搜索）；截图证据改成「seeded 数据 + 可深链 +
    固定浅/深基线」，不再靠手算坐标（真机这半已由 `scripts/android-cdp.mjs` 解决）；拖动/悬停这类**注入式输入
    验证不了**的交互，补一份人工验收清单。
 5. 背景 P2（带 JS / 多文件网页壁纸）与迷你歌词视觉细调仍挂着，未排期。

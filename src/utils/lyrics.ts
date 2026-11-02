@@ -13,6 +13,19 @@ export function activeLyricIndex(lines: LyricLine[], elapsed: number): number {
     return -1;
 }
 
+/**
+ * 当前这一行的文字（没有歌词 / 还没到第一行时返回空串）。
+ *
+ * 手机的通知栏用它显示「正在唱哪一句」（R116）：通知的第二行从歌手换成歌词，
+ * **行变化才推一次 IPC**（不跟随每秒进度）。判定复用 {@link activeLyricIndex}，
+ * 「唱到哪一行」只允许一份实现。
+ */
+export function currentLyricLine(lines: LyricLine[], elapsed: number): string {
+    const index = activeLyricIndex(lines, elapsed);
+    if (index < 0) return '';
+    return lines[index]?.text?.trim() ?? '';
+}
+
 export interface MiniLyricSlot {
     index: number;
     line: LyricLine | null;

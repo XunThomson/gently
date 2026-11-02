@@ -67,11 +67,12 @@ class PlaybackService : Service() {
 
         val title = intent?.getStringExtra(EXTRA_TITLE).orEmpty()
         val artist = intent?.getStringExtra(EXTRA_ARTIST).orEmpty()
+        val line = intent?.getStringExtra(EXTRA_LINE).orEmpty()
         val playing = intent?.getBooleanExtra(EXTRA_PLAYING, true) ?: true
 
-        applyState(title, artist, playing)
+        applyState(title, artist, line, playing)
         // 必须尽快进入前台态：API 26+ 起 startForegroundService 后 5 秒内不调 startForeground 会崩
-        startForeground(NOTIFICATION_ID, buildNotification(title, artist, playing))
+        startForeground(NOTIFICATION_ID, buildNotification(title, artist, line, playing))
         return START_NOT_STICKY
     }
 
@@ -89,12 +90,18 @@ class PlaybackService : Service() {
     }
 
     /** 同步 MediaSession 的元数据与播放态（锁屏 / 蓝牙 / 车机读的是它） */
-    private fun applyState(title: String, artist: String, playing: Boolean) {
+    private fun applyState(title: String, artist: String, line: String, playing: Boolean) {
         val current = session ?: return
         current.setMetadata(
             MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, title.ifBlank { getString(R.string.app_name) })
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
+                /* 通知栏歌词（P4）：副标题放当前这一句，锁屏上也能看到。
+                   没有歌词时退回歌手，避免锁屏出现一条空白副标题。 */
+                .putString(
+                    MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
+                    if (line.isNotBlank()) line else artist,
+                )
                 .build(),
         )
         current.setPlaybackState(
@@ -125,7 +132,12 @@ class PlaybackService : Service() {
         )
     }
 
-    private fun buildNotification(title: String, artist: String, playing: Boolean): Notification {
+    private fun buildNotification(
+        title: String,
+        artist: String,
+        line: String,
+        playing: Boolean,
+    ): Notification {
         val openApp = PendingIntent.getActivity(
             this,
             0,
@@ -146,7 +158,8 @@ class PlaybackService : Service() {
 
         builder
             .setContentTitle(title.ifBlank { getString(R.string.app_name) })
-            .setContentText(artist)
+            /* 通知栏歌词（P4）：第二行优先显示「正在唱的那一句」，没有歌词才退回歌手 */
+            .setContentText(if (line.isNotBlank()) line else artist)
             // 用系统自带的媒体图标：不为一个通知新增资源文件
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(openApp)
@@ -190,6 +203,8 @@ class PlaybackService : Service() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_ARTIST = "artist"
         const val EXTRA_PLAYING = "playing"
+        /** 当前歌词行（P4 通知栏歌词，R116） */
+        const val EXTRA_LINE = "line"
 
         private const val CHANNEL_ID = "gently-playback"
         private const val NOTIFICATION_ID = 1001

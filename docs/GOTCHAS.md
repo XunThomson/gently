@@ -689,6 +689,21 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
 - 真机验证口径（不用点通知栏，直接发媒体键）：`adb shell input keyevent 127`（暂停）/`126`（播放）/
   `87`（下一首）/`88`（上一首），再读页面里 `[role=slider]` 的 `aria-valuenow` 对照。
 
+## 61. 通知栏歌词：只在页面算一行，别把时间轴搬进原生；连同两个会把人带偏的取证细节（R116）
+
+- 分工：**歌词行由页面算**（`currentLyricLine(lines, elapsed)`，没命中就空串），一行文字作为
+  `playback_banner` 的第 5 个参数下去；Kotlin 侧只做展示——`setContentText(if (line.isNotBlank()) line else artist)`
+  加 `MediaMetadata` 的 `METADATA_KEY_DISPLAY_SUBTITLE`。原生不存时间轴、不存歌词，
+  否则「播到哪」就有两处真相（与 §60 同一条原则）。
+- 推送频率靠**去重键**管：`playbackBannerKey()` 把 `line` 也算进去，所以只有**换行**才推一次；
+  播放进度那种每 250ms 的更新绝不能直接打到原生（跨进程 IPC + 重建通知，发热且闪）。
+- 坑 1：`dumpsys media_session` 里 `metadata: size=3, description=标题, 歌手, null` —— **第三项是 ALBUM**，
+  不是我们写的 `DISPLAY_SUBTITLE`，它恒为 null。拿它判断「字幕没生效」会白查一圈，
+  真正的判据是通知面板的实体截图 + `size=`（三个 key 都在）。
+- 坑 2：`node scripts/android-cdp.mjs shot` 走 `Page.captureScreenshot`，只有 **WebView 画面**——
+  通知面板、锁屏、状态栏都不在里面。系统界面必须 `adb exec-out screencap -p > x.png`。
+  （`cmd statusbar expand-notifications` 之后也要等 1~2 秒再截，太快会截到还没展开的界面。）
+
 
 
 

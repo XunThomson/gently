@@ -634,14 +634,29 @@ OpenAPI-over-HTTP 代码生成、Postgres/Redis/BullMQ/Docker。**新增**的必
   拷贝（跳过 cache/logs/SQLite 旁挂文件）→ 数据库副本 `PRAGMA quick_check` 自检 →
   写指针 → **下次启动生效**；旧目录不删。重启由宿主命令 `app_restart`（`AppHandle::request_restart`）
   发起，核心不认识「进程」。
-- **播放通知 / 前台服务（R112，仅 Android）**：链路是
-  `services/playbackBanner.service.ts` → 宿主命令 `playback_banner`（`src-tauri/src/lib.rs`）
+- **播放通知 / 前台服务（R112–R116，仅 Android）**：链路是
+  `services/playbackBanner.service.ts` → 宿主命令 `playback_banner`
+  （`active, title, artist, playing, line`，`src-tauri/src/lib.rs`）
   → `src-tauri/src/playback.rs` 用一个 Tauri 插件把调用转发给 Kotlin
   （`run_mobile_plugin("update", …)` → `gen/android/.../PlaybackPlugin.kt` → `PlaybackService.kt`）。
   为什么要过宿主这一层：Tauri 的移动端桥只有「Rust → Kotlin」一个方向，而「开始播放」是前端的用户动作；
   播放状态仍以 store 为唯一权威，Kotlin 只负责「保持前台服务 + 显示通知」，不读位置、不计时。
-  非 Android 平台该插件是空插件、命令是空操作，前端不必分平台。
-  原生代码住在 `src-tauri/gen/android/`（这是 Tauri 生成的工程，但**自定义原生代码就放在这里**）。
+  - `active` = **有没有当前曲目**（决定前台服务起不起），`playing` = **在不在播**（只决定图标与
+    `PlaybackState`）——两个值混用会让「一暂停就把 MediaSession 一起关了」（GOTCHAS §60）。
+  - 往返：服务用 framework `MediaSession` + `Notification.MediaStyle` 显示三个按钮，用户按下的动作
+    （`toggle/next/prev`）**只回传不回放**——`MediaActionBridge` 用 `evaluateJavascript` 调页面里的
+    `window.__gentlyMediaAction`，真正改 store 的永远是页面（`installMediaActionHandler`）。
+  - 通知栏歌词（R116）同理只是展示：当前行由页面算（`utils/lyrics.ts::currentLyricLine`），
+    作为 `line` 参数下来写成通知的第二行与 `MediaMetadata` 的 `DISPLAY_SUBTITLE`；
+    前端去重键 `playbackBannerKey()` 把 `line` 算进去，所以**只有换行才推一次** IPC。
+  - 非 Android 平台该插件是空插件、命令是空操作，前端不必分平台。
+    原生代码住在 `src-tauri/gen/android/`（这是 Tauri 生成的工程，但**自定义原生代码就放在这里**）。
+- **从手机导入音频（R114，仅 Android）**：`services/import.service.ts` → 宿主命令 `import_audio`
+  → `src-tauri/src/importer.rs`（`run_mobile_plugin_async("pickAudio")`）→ Kotlin `ImportPlugin`
+  走 SAF `ACTION_OPEN_DOCUMENT` 多选，在后台线程把用户选中的音频**拷进 `<filesDir>/music`**
+  （同名不覆盖），返回目录；前端再拿这个目录调核心的 `library.local.scan` 入库。
+  好处是零存储权限、不需要读别人的目录；代价是「拷一份」（占双份空间，后续可加清理入口）。
+  桌面端该命令如实回错——那边直接填目录扫描。
 
 ## 13. 遗留与归档
 

@@ -19,6 +19,8 @@ class PlaybackBannerArgs {
     var artist: String = ""
     /** 是否正在播放（只有它决定通知上的按钮是「播放」还是「暂停」） */
     var playing: Boolean = false
+    /** 当前歌词行（P4 通知栏歌词）；空串表示没有歌词，通知第二行退回歌手 */
+    var line: String = ""
 }
 
 /**
@@ -51,6 +53,7 @@ class PlaybackPlugin(private val activity: Activity) : Plugin(activity) {
             putExtra(PlaybackService.EXTRA_TITLE, args.title)
             putExtra(PlaybackService.EXTRA_ARTIST, args.artist)
             putExtra(PlaybackService.EXTRA_PLAYING, args.playing)
+            putExtra(PlaybackService.EXTRA_LINE, args.line)
         }
 
         try {

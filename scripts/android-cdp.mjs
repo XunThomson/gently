@@ -4,7 +4,10 @@
  *
  * 为什么需要它：`adb shell input tap x,y` 要**手算坐标**，一改布局就全废；
  * 而安卓 WebView 开着 devtools socket（debug 包默认开），可以直接在页面里
- * 执行 JS、按文本找元素、截整屏、看网络请求——比截图数像素靠谱得多。
+ * 执行 JS、按文本找元素、截页面、看网络请求——比截图数像素靠谱得多。
+ *
+ * 注意：`shot` 走 `Page.captureScreenshot`，截的是 **WebView 画面**——通知面板、
+ * 锁屏、状态栏这些系统界面不在里面，那类证据必须 `adb exec-out screencap -p > x.png`。
  *
  * 用法（真机连着 USB、装的是 debug 包）：
  *   node scripts/android-cdp.mjs eval --expr "location.href"
@@ -37,7 +40,7 @@ function usage(code = 1) {
             '  ping                                  自检（socket / 端口 / 页面 URL）',
             '  eval --expr "<js>" | --file <path>    在页面里求值（表达式或 async 表达式），打印返回值',
             '  tap  --text <文本> | --selector <css> 按文本 / 选择器点中心点',
-            '  shot --out <png>                      整屏截图（Page.captureScreenshot）',
+            '  shot --out <png>                      WebView 画面（不含通知面板/锁屏，那些用 adb screencap）',
             '  net  [--seconds N]                    收集 N 秒网络事件（媒体 URL 的请求 / 响应 / 失败）',
         ].join('\n'),
     );

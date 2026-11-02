@@ -1,6 +1,7 @@
 import {useEffect} from 'react';
 import {useActions, useSelect} from '../store';
 import {audioEngine, installMediaActionHandler, syncPlaybackBanner} from '../services';
+import {currentLyricLine} from '../utils/lyrics';
 
 /**
  * 把 store 的播放状态与真实音频引擎对接：
@@ -53,19 +54,27 @@ export function useAudioEngine(): void {
     }, [playId]);
 
     /**
-     * 手机的「播放通知 / 前台服务 / MediaSession」（P2-1 / P2-2）。
+     * 手机的「播放通知 / 前台服务 / MediaSession / 通知栏歌词」（P2-1 / P2-2 / P4）。
      *
-     * 两个入参不能混：`active` = **有没有当前曲目**（决定服务起不起），`playing` = 在不在播
-     * （决定通知按钮与锁屏控件显示「播放」还是「暂停」）。
-     * 第一版把两者写成同一个值，结果**一暂停就把服务和 MediaSession 一起关了**——
-     * 通知没了、耳机键也不再响应（R115 真机抓到的）。暂停时必须留着后台播放器。
+     * 三个入参各管一件事，**不能合并**：
+     * - `active` = 有没有当前曲目（决定服务起不起）；
+     * - `playing` = 在不在播（决定按钮图标与 `PlaybackState`）；
+     * - `line` = 当前歌词行（通知第二行显示它，没有歌词时退回歌手）。
+     * 第一版把 active 与 playing 写成同一个值，结果一暂停就把服务和会话一起关了——
+     * 通知没了、耳机键也不再响应（R115 真机抓到的）。
+     *
+     * `line` 用**派生成字符串的选择器**：只有「唱到另一行」时才重渲染并推一次 IPC，
+     * 订阅 `elapsed`（每秒变）会把整棵外壳每秒重渲染一次。
      */
     const hasTrack = useSelect((s) => !!s.player.current);
     const trackTitle = useSelect((s) => s.player.current?.title ?? '');
     const trackArtist = useSelect((s) => s.player.current?.artist ?? '');
+    const lyricLine = useSelect((s) =>
+        currentLyricLine(s.player.lyrics, s.player.elapsed + s.player.lyricsOffset),
+    );
     useEffect(() => {
-        void syncPlaybackBanner(hasTrack, trackTitle, trackArtist, playing);
-    }, [hasTrack, playing, trackTitle, trackArtist]);
+        void syncPlaybackBanner(hasTrack, trackTitle, trackArtist, playing, lyricLine);
+    }, [hasTrack, playing, trackTitle, trackArtist, lyricLine]);
 
     /**
      * 通知栏 / 锁屏 / 耳机键的传输动作（P2-2）。
