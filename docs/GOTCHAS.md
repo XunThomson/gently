@@ -877,3 +877,8 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
   调用方用 `navigate(path, {replace: 标记存在})` 直接顶掉标记——页换了、历史不多一条。
 - 顺带：WebView 是 Chromium 92，**不支持 `:has()`**。要在手机形态改「表格容器」的样式，
   得让容器自己也带 `data-layout`（不能写 `.container:has(.table[data-layout='mobile'])`）。
+
+- 补充（R137 负结果）：**别给 `PlaybackService` 加 `requestAudioFocus`**。Chromium 自己已经持有焦点
+  （`dumpsys audio` 里 `AudioFocusDelegate ... gain: GAIN`），服务再申请一次 GAIN 会让 WebView 收到
+  `AUDIOFOCUS_LOSS` 并**暂停媒体元素**——表现是「点播放没反应、进度不动」。后台播放要修的是前端那两处
+  自毁逻辑（别在后台 `resume()`→`reload()`、别在隐藏时判死），不是去抢焦点。

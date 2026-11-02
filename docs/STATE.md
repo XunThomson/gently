@@ -18,7 +18,7 @@ tldr: 当前 R136（ANDROID-PLAN §8 的「导入进度条」）：拷 1.3 GB �
 
 | 问题 | 结论与改动 |
 |---|---|
-| **后台播放** | 真机多次实测：**元素没被系统暂停时**后台能继续播（熄屏 90s：+99s；Home+熄屏 131s：+131s）。本轮 150s 那次抓到了它停的现场：logcat 里 `HwMedia::Play hbs_autoplay_ = 0` + `UpdatePlayState should_be_playing = 0`——华为 WebView 在页面不可见时**拒绝 `play()`**，元素被系统暂停后就再也叫不回来。同时发现我第一版的后台恢复会走 `resume()` → 失败就 `reload()`，于是每 5 秒重载一次、进度被反复清零（熄屏 150s 只走了 13s）。改：① 后台只 `nudge()`（叫一声 `play()`，**不重载**、不报错）；② 看门狗在页面隐藏时不再判「媒体元素没有开始播放」（后台定时器被延后，很容易把正常播放误判成失败）；③ 僵死判定留给回到前台 |
+| **后台播放** | 找到并修掉两处「自己把后台播放搞死」的代码：① 后台恢复走 `resume()`，它失败就 `reload()`——每 5 秒一次，进度被反复清零（熄屏 150s 只走了 13s）；改成只 `nudge()`（裸 `play()`，不重载、不报错）；② 看门狗 2.5s 判「媒体元素没有开始播放」时页面隐藏也照判（后台定时器被系统延后，很容易把正常播放判死）——隐藏时不判，僵死留给回前台。**负结果**：给 `PlaybackService` 加 `requestAudioFocus(AUDIOFOCUS_GAIN)` 反而让**播放起不来**——Chromium 自己持有焦点（`dumpsys audio` 能看到 `AudioFocusDelegate`），服务再抢一次会让 WebView 收到 LOSS 并暂停；已回退。另加页面侧 `navigator.mediaSession` 元数据/播放态（Chromium 据此认定「这是后台媒体」，没有该 API 就静默跳过）。**真机：Home+熄屏 75s → 进度 12→97，仍在播** |
 | **抽屉滑动打开** | `MobileShell` 加横滑手势：起手点离屏幕左边 ≥ 48px（避开系统返回手势区——R124 的负结果），横向位移 ≥ 72px 且明显大于纵向才触发；`.content` 设 `touch-action: pan-y`；播放条标 `data-drawer-swipe="off"`（进度条自己就是横向拖动）；滑动后 **300ms 内**那一次 click 被吃掉（只吃这一下，不能把抽屉里紧接着的点击一起吞了） |
 | **抽屉导航项有时没反应** | 真机复现：冷启动后第一次「抽屉 → 设置」必失败。根因是 `useBackToClose` 收起时的 `history.back()` 与抽屉里的 `navigate()` 抢同一条历史（`navigate` 在 RouterProvider 里**异步落地**）。修：hook 返回「这次别动历史」的句柄，抽屉换页改为 `navigate(path, {replace: 标记存在})` 直接顶掉标记——页换了、历史不多一条。真机复测：冷启动第一次即成功，连续 8 次 0 失败、历史每次只增 1 |
 | **设置页改设置白屏** | 本机**没复现**（主题模式 / 语言 / 音质三组 / 列表展示方式 / 背景开关逐项点过，无异常、DOM 完好；也排除了滚动错位）。改法：给路由内容加 `RouteError` 错误边界——渲染抛错时只坏内容区、导航与播放条还在，显示「这个页面出错了」+ 可展开的出错信息 + 重试 / 重新加载，`console.error` 留堆栈。这样即使还有未知触发条件也不会是白屏 |
@@ -33,12 +33,12 @@ tldr: 当前 R136（ANDROID-PLAN §8 的「导入进度条」）：拷 1.3 GB �
 | 抽屉导航 | 冷启动第一次「设置」即生效；连续 8 次来回 0 失败，历史每次 +1（不再留标记垃圾） |
 | 歌词页 | 无「返回」按钮；系统返回逐级退回（`/now-playing` → `/setting` → `/search`） |
 | 列表 | `release/screenshots/r137-mobile-list-flat.png`：列表直接铺在页面上，无卡片外框 |
-| 后台播放 | 见上一栏：能播的后台场景确实能播；被系统暂停后 JS 叫不回来（华为 WebView 的 autoplay 门禁），且已不再反复重载毁进度 |
+| 后台播放 | Home + 熄屏 75s：进度 12 → **97**（+85s，仍在播）；再跑 180s：进度 4 → **195**（+191s，仍在播，已越过 R111 记的 2.8 分钟门槛） |
 | 门禁 | `pnpm typecheck`；`pnpm smoke` **575**（566 → +9）；契约 76 命令未变 |
 
 ### 3. 未做 / 下一步
 
-- **后台播放的硬骨头**：`play()` 在页面不可见时被 WebView 拒绝，属原生层问题。正路是让**原生侧持有音频焦点**：
+- **后台播放**：本轮从「一退后台就停」修到「熄屏 75s 继续播」。若仍有长时（>5 分钟）失效，先看 logcat 有没有 `HwMedia::Play hbs_autoplay_ = 0`（华为 WebView 自己的后台自动播放门禁）。**不要**再给 `PlaybackService` 加 `requestAudioFocus`：Chromium 已持有焦点，抢一次会让播放起不来（GOTCHAS §70）。原记录：
   `PlaybackService` 的 `MediaSession` 主动 `AudioManager.requestAudioFocus(AUDIOFOCUS_GAIN)`（暂停/停止时 abandon），
   让系统认为音频归本应用所有；另一条是页面侧维护 `navigator.mediaSession`（Chromium 据此判定「这是后台媒体」）。
   两条都要真机长测（≥5 分钟、含息屏），下一轮做；

@@ -44,6 +44,30 @@ export function playbackBannerKey(
 }
 
 /**
+ * 把当前曲目也写进**页面自己的** `navigator.mediaSession`（R137）。
+ *
+ * 为什么要多这一步：Android WebView（Chromium）判断「这次播放算不算后台媒体」时会看页面的
+ * MediaSession；页面没有活动会话时，activity 一进后台它就把 `<audio>` 暂停，而之后页面再
+ * `play()` 会被 autoplay 门禁拒掉（真机 logcat：`HwMedia::Play hbs_autoplay_ = 0`）。
+ * 这里只挂元数据与播放态（通知仍是原生那条 MediaStyle，不抢它），拿不到就静默跳过——
+ * 桌面端 / 老 WebView 没有这个 API 也不该报错。
+ */
+function syncPageMediaSession(title: string, artist: string, playing: boolean): void {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    try {
+        const session = navigator.mediaSession;
+        const MediaMetadataCtor = (window as unknown as {MediaMetadata?: new (init: MediaMetadataInit) => MediaMetadata}).MediaMetadata;
+        if (MediaMetadataCtor) {
+            session.metadata = new MediaMetadataCtor({title, artist, album: ''});
+        }
+        /* `playbackState` 只在真在播/暂停时设：'none' 会让系统以为这条会话不在了 */
+        session.playbackState = playing ? 'playing' : 'paused';
+    } catch {
+        /* 某些 WebView 会对 metadata 抛（不是标准错误），不影响播放，忽略 */
+    }
+}
+
+/**
  * 同步播放通知（含 MediaSession 的元数据与播放态、通知栏歌词、进度）。
  *
  * @param active     是否有当前曲目（false 时关掉前台服务）
@@ -64,6 +88,9 @@ export async function syncPlaybackBanner(
     durationMs = 0,
 ): Promise<void> {
     if (typeof window === 'undefined') return;
+    /* 页面自己的 MediaSession 与宿主无关：桌面端/浏览器顺手也同步一份（无害） */
+    syncPageMediaSession(title, artist, playing);
+
     /* 只在「Tauri 宿主」上调用：桌面端那条命令是空操作，浏览器里更没有宿主。 */
     if (!('__TAURI_INTERNALS__' in window)) return;
 
