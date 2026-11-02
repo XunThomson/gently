@@ -5,6 +5,7 @@ import {IconChevronDown, IconFolder} from '../../../components/ui/icon';
 import {coreAvailable, importAudioFiles} from '../../../services';
 import {useActions, useLibraryState} from '../../../store';
 import {errorText} from '../../../i18n/errors';
+import {importNoteText} from '../../../utils/importNote';
 import {isMobilePlatform} from '../../../utils/platform';
 import styles from '../local.module.css';
 
@@ -65,21 +66,9 @@ export function ScanPanel() {
         const result = await importAudioFiles();
         setImporting(false);
 
-        if (result.error) {
-            setImportNote(t('page.local.importFailed'));
-            return;
-        }
-        if (result.cancelled) return;
-        if (result.imported === 0) {
-            setImportNote(t('page.local.importEmpty'));
-            return;
-        }
-        setImportNote(
-            result.failed > 0
-                ? t('page.local.importedPartial', {imported: result.imported, failed: result.failed})
-                : t('page.local.imported', {count: result.imported}),
-        );
-        if (result.dir) {
+        setImportNote(importNoteText(result, t));
+        if (result.error || result.cancelled) return;
+        if (result.dir && result.imported > 0) {
             // 导入的曲目立刻进库：用户不用再自己把路径抄进文本框
             void scan({dirs: [result.dir], recursive: true});
         }

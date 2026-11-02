@@ -16,6 +16,8 @@ export interface ImportAudioResult {
     imported: number;
     /** 拷失败的文件数（单个失败不影响其它） */
     failed: number;
+    /** 选进来但不是音频、被跳过的文件数（R118：选择器放开 MIME 后必须如实回报） */
+    skipped: number;
     /** 用户点了取消 */
     cancelled: boolean;
     /** 落点目录；前端拿它去扫描。取消或失败时为 null */
@@ -24,7 +26,13 @@ export interface ImportAudioResult {
     error?: string;
 }
 
-const EMPTY: ImportAudioResult = {imported: 0, failed: 0, cancelled: true, dir: null};
+const EMPTY: ImportAudioResult = {
+    imported: 0,
+    failed: 0,
+    skipped: 0,
+    cancelled: true,
+    dir: null,
+};
 
 /**
  * 打开系统文件选择器导入音频。
@@ -40,12 +48,14 @@ export async function importAudioFiles(): Promise<ImportAudioResult> {
         const result = await invoke<{
             imported: number;
             failed: number;
+            skipped?: number;
             cancelled: boolean;
             dir: string;
         }>('import_audio');
         return {
             imported: Number(result.imported ?? 0),
             failed: Number(result.failed ?? 0),
+            skipped: Number(result.skipped ?? 0),
             cancelled: Boolean(result.cancelled),
             dir: result.dir ? result.dir : null,
         };

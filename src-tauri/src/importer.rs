@@ -3,7 +3,7 @@
 //! 链路：`views/local/components/ScanPanel` → `services/import.service.ts`
 //! → 宿主命令 `import_audio` → 本模块 → Tauri 移动插件 → Kotlin `ImportPlugin`
 //! （`ACTION_OPEN_DOCUMENT` 选文件 → 拷进应用私有目录 `<filesDir>/music`）
-//! → 前端拿回 `{imported, failed, dir}` → 用核心的 `library.local.scan` 入库。
+//! → 前端拿回 `{imported, failed, skipped, dir}` → 用核心的 `library.local.scan` 入库。
 //!
 //! 为什么走宿主而不是核心：文件选择器是**操作系统**的能力，核心不认识 Activity；
 //! 核心只做「给目录，扫出入库」这一件事（`library.local.scan` 早就有了）。
@@ -20,6 +20,10 @@ use tauri::{plugin::TauriPlugin, Wry};
 pub struct ImportOutcome {
     pub imported: u32,
     pub failed: u32,
+    /// 选进来但不是音频、被跳过的文件数（R118：选择器不再只过滤 `audio/*`，
+    /// 因为系统 MIME 库不认 `.m4s`，只过滤音频等于把这类文件灰掉、根本选不了）
+    #[serde(default)]
+    pub skipped: u32,
     pub cancelled: bool,
     /// 文件的落点目录（前端拿它去调 `library.local.scan`）；取消时为空串
     #[serde(default)]

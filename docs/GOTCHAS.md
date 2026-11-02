@@ -722,6 +722,21 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
   数据对了也看不见，判据只能读 `dumpsys media_session` 的 `state=PlaybackState {… position=…}`。
   别为了「看得见」去声明 `ACTION_SEEK_TO`——它会让某些 ROM 画出**能拖但拖不动**的进度条（§46）。
 
+## 63. SAF 的类型过滤会把「系统不认识的音频封装」灰掉；而且 `audio/*` 写进块注释会当场闭合注释（R118）
+
+- 现象：`ACTION_OPEN_DOCUMENT` + `type="audio/*"` 时，`.m4s`（B 站下载的音频，本质是 ISO-MP4/AAC）
+  在选择器里是**灰的**，根本点不了；同一个文件改名 `.mp3` 就能选。
+- 判据（一分钟确诊）：把同一个文件复制成两个扩展名推到 `/sdcard/Download`，看选择器里哪个可选——
+  灰掉的那个就是系统 MIME 库不认的。真机实测：`.m4s` 灰、`.mp3` 可选。
+- 规避：放开过滤（`type="*/*"` + `EXTRA_MIME_TYPES=["audio/*","application/octet-stream"]`，
+  未知封装会落在 `application/octet-stream` 里因此可选），**自己按扩展名筛**，并且
+  - 名单要与**核心**一致（`core/src/local_library.rs::AUDIO_EXTENSIONS` 与 Kotlin 的 `AUDIO_EXTENSIONS`
+    各一份，加一种要同时改），否则「选得了却拷不进来」或「拷进来却入库不了」；
+  - 跳过的非音频文件**必须报数**（`skipped`）：静默丢弃会让用户以为导入坏了。
+- 顺带一个编译坑：Kotlin 块注释里出现 `audio/*` 会**提前闭合注释**（`*/` 就是闭合符），
+  报 `Expecting an element` / `Expecting '"'`，而报错行是下一行的 `type = "*/*"`——看着像引号问题，
+  其实注释里少了空格。写注释时避免 `*/` 序列（写成「音频类型」或 `audio *`）。
+
 
 
 

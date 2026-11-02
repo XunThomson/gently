@@ -35,7 +35,13 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
     fun pickAudio(invoke: Invoke) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            type = "audio/*"
+            /* 不能只按「音频类型」过滤：系统的 MIME 库不认 `.m4s` / `.m4b` 这类封装，
+                它们会被**灰掉、根本选不了**（R118 真机实测：同一个文件改成 `.mp3`
+                就能选，`.m4s` 是灰的）。所以放开到「音频 + 未知类型」，
+                选完再由 `isAudioName` 按扩展名筛——认得的扩展名以核心为准
+                （`core/src/local_library.rs::AUDIO_EXTENSIONS`）。 */
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/*", "application/octet-stream"))
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         }
         try {
@@ -54,6 +60,7 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve(JSObject().apply {
                 put("imported", 0)
                 put("failed", 0)
+                put("skipped", 0)
                 put("cancelled", true)
                 put("dir", "")
             })
@@ -72,21 +79,41 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
             val dir = File(activity.filesDir, "music").apply { mkdirs() }
             var imported = 0
             var failed = 0
+            var skipped = 0
             for (uri in uris) {
-                val target = uniqueFile(dir, displayName(uri) ?: "imported-${System.currentTimeMillis()}.audio")
+                val name = displayName(uri) ?: "imported-${System.currentTimeMillis()}.audio"
+                /* 放开 MIME 之后用户可能选到图片/文档：按核心认得的扩展名筛掉，
+                    并且**如实告诉用户跳过了几个**（静默丢弃会让人以为导入失败） */
+                if (!isAudioName(name)) {
+                    skipped += 1
+                    continue
+                }
+                val target = uniqueFile(dir, name)
                 if (copyTo(uri, target)) imported++ else failed++
             }
             invoke.resolve(JSObject().apply {
                 put("imported", imported)
                 put("failed", failed)
+                put("skipped", skipped)
                 put("cancelled", false)
                 put("dir", dir.absolutePath)
             })
         }
     }
 
-    /** SAF 里的显示名（含扩展名）；读不到就返回 null，由调用方兜一个名字 */
-    private fun displayName(uri: Uri): String? = try {
+    /**
+     * 认不认得这个扩展名。
+     *
+     * 与核心保持**同一份名单**（`core/src/local_library.rs::AUDIO_EXTENSIONS`，12 个）：
+     * 那边多认一种，这边就该跟着加——否则用户在手机上选得了，拷进来却被这里丢掉。
+     */
+    private fun isAudioName(name: String): Boolean {
+        val dot = name.lastIndexOf('.')
+        if (dot <= 0 || dot == name.length - 1) return false
+        return name.substring(dot + 1).lowercase() in AUDIO_EXTENSIONS
+    }
+
+    /** SAF 里的显示名（含扩展名）；读不到就返回 null，由调用方兜一个名字 */    private fun displayName(uri: Uri): String? = try {
         activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { cursor ->
                 if (cursor.moveToFirst()) {
@@ -125,5 +152,17 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
         // 单个文件失败不影响其它文件：调用方只关心「导入了几首 / 失败几首」
         target.delete()
         false
+    }
+
+    companion object {
+        /**
+         * 与核心的 `AUDIO_EXTENSIONS` 一一对应（`core/src/local_library.rs`）。
+         *
+         * 只列这个构建真能解码的：`wma` / `ape` / `aiff` 等 symphonia 没开对应 feature，
+         * 列进来只会让「导入成功但播不了」。
+         */
+        private val AUDIO_EXTENSIONS = setOf(
+            "mp3", "flac", "m4a", "m4b", "m4r", "m4s", "mp4", "aac", "ogg", "oga", "opus", "wav",
+        )
     }
 }

@@ -655,12 +655,14 @@ OpenAPI-over-HTTP 代码生成、Postgres/Redis/BullMQ/Docker。**新增**的必
     所以正常播放**不需要**每秒推 IPC；`ACTION_SEEK_TO` 刻意没声明（`onSeekTo` 回页面还没接）。
   - 非 Android 平台该插件是空插件、命令是空操作，前端不必分平台。
     原生代码住在 `src-tauri/gen/android/`（这是 Tauri 生成的工程，但**自定义原生代码就放在这里**）。
-- **从手机导入音频（R114，仅 Android）**：`services/import.service.ts` → 宿主命令 `import_audio`
+- **从手机导入音频（R114 / R118，仅 Android）**：`services/import.service.ts` → 宿主命令 `import_audio`
   → `src-tauri/src/importer.rs`（`run_mobile_plugin_async("pickAudio")`）→ Kotlin `ImportPlugin`
   走 SAF `ACTION_OPEN_DOCUMENT` 多选，在后台线程把用户选中的音频**拷进 `<filesDir>/music`**
   （同名不覆盖），返回目录；前端再拿这个目录调核心的 `library.local.scan` 入库。
   好处是零存储权限、不需要读别人的目录；代价是「拷一份」（占双份空间，后续可加清理入口）。
-  桌面端该命令如实回错——那边直接填目录扫描。
+  选择器**不按音频类型过滤**（`*/*` + `audio/*`/`octet-stream`）：系统 MIME 库不认 `.m4s` 这类封装，
+  只过滤音频等于把它们灰掉；改由 Kotlin 按扩展名筛，名单与核心的 `AUDIO_EXTENSIONS` 一一对应，
+  跳过的数量如实回报（`skipped`）。桌面端该命令如实回错——那边直接填目录扫描。
 
 ## 13. 遗留与归档
 

@@ -101,6 +101,7 @@ import {
     LYRICS_BOTTOM_MARGIN,
     placeLyrics,
 } from '../src/utils/lyricsWindowPosition';
+import {importNoteText} from '../src/utils/importNote';
 import {lyricLineProgress} from '../src/utils/lyrics';
 import {
     LYRICS_OFFSET_FINE_STEP_SEC,
@@ -2863,10 +2864,43 @@ async function main(): Promise<void> {
             '导入音频：没有宿主时是空操作（cancelled、无目录、无错误）',
             result.imported === 0 &&
                 result.failed === 0 &&
+                result.skipped === 0 &&
                 result.cancelled === true &&
                 result.dir === null &&
                 result.error === undefined,
             JSON.stringify(result),
+        );
+    }
+
+    /* 导入结果文案（P3 · R118）：选择器放开 MIME 之后，用户可能选到非音频文件，
+       跳过必须**说出来**——静默丢掉会让人以为「导入坏了」 */
+    {
+        const base = {imported: 0, failed: 0, skipped: 0, cancelled: false};
+        const note = (patch: Partial<typeof base & {error?: string}>) =>
+            importNoteText({...base, ...patch}, i18n.t);
+        check(
+            '导入文案：成功 / 取消 / 打不开选择器 三种基本情形',
+            note({imported: 2}) === i18n.t('page.local.imported', {count: 2}) &&
+                note({cancelled: true}) === '' &&
+                note({error: 'boom'}) === i18n.t('page.local.importFailed'),
+        );
+        check(
+            '导入文案：选中的都不是音频时，说清跳过了几个（而不是「没有可读取的音频」）',
+            note({skipped: 3}) === i18n.t('page.local.importSkippedOnly', {count: 3}) &&
+                note({}) === i18n.t('page.local.importEmpty'),
+        );
+        check(
+            '导入文案：部分成功 + 跳过时，两件事都说',
+            note({imported: 1, skipped: 2}).endsWith(
+                i18n.t('page.local.importSkipped', {count: 2}),
+            ) && note({imported: 1, skipped: 2}).startsWith(
+                i18n.t('page.local.imported', {count: 1}),
+            ),
+        );
+        check(
+            '导入文案：只跳过不说失败（跳过不是错误）',
+            note({imported: 2, failed: 1, skipped: 0}) ===
+                i18n.t('page.local.importedPartial', {imported: 2, failed: 1}),
         );
     }
 

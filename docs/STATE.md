@@ -4,10 +4,46 @@ last_verified: 2026-11-02
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R117（通知/锁屏的进度）：`PlaybackState` 不再 `position=-1`——前端把毫秒级的 `position`/`duration` 一起推下去，服务写进 `setState(state, position, speed)`（暂停速度必须 0）与 `METADATA_KEY_DURATION`；`seekSeq` 记「位置跳变」所以不必订阅 `elapsed`。两个坑：时长是媒体元素加载后才回写的（没进 effect 依赖就永远「时长未知」）、恢复曲目时元素先报 0 再跳到续播点（大跨度跳变也要算跳变）。真机：恢复 231 s → `position=231200`、拖 50% → `135465`、暂停 → `speed=0.0`；小图标换成自己的 ♪。本机 ROM（EMUI 10）三处界面都不画进度条，只看 `dumpsys`。smoke **545**。
+tldr: 当前 R118（P3 余项）：真机证实 `audio/*` 过滤会把 `.m4s` **灰掉**（同文件改名 `.mp3` 就能选），于是选择器放开成 `*/*` + `EXTRA_MIME_TYPES=[audio/*, application/octet-stream]`，选完由 `isAudioName()` 按扩展名筛（名单与核心 `AUDIO_EXTENSIONS` 一一对应），跳过的非音频如实回报 `skipped`；结果文案抽成纯函数 `utils/importNote.ts`（五种结局，smoke 钉住）。真机：`.m4s` 可选 → 已导入 1 首 → 列表出现 → 能放（`8/271`）；选 `.bin` → 「都不是音频」且磁盘没多文件。顺手把 R114 迁进归档（`R101-R113.md` → `R101-R114.md`）。smoke **549**。
 ---
 
 # STATE
+
+## 本轮目标（第一百一十八轮）
+
+> 起点：R114 的导入只能选「系统认得的音频」。真机一验：把同一个文件改名成 `.mp3` 就能选，
+> `.m4s` 是**灰的**——而 `.m4s` 正是 B 站下载下来的音频，用户库里很常见。等于「导入」对这类文件完全无效。
+
+### 1. 本轮做了什么
+
+| 层 | 改动 |
+|---|---|
+| Kotlin（`ImportPlugin.kt`） | 选择器不再只过滤「音频类型」：`type="*/*"` + `EXTRA_MIME_TYPES=["audio/*","application/octet-stream"]`（未知封装落在 octet-stream 里，因此可选），选完由 `isAudioName()` 按扩展名筛；名单与核心 `AUDIO_EXTENSIONS` **一一对应**（12 个），跳过数如实回报 `skipped` |
+| 宿主（`importer.rs`） | `ImportOutcome` 加 `skipped`（`#[serde(default)]`，老前端不会炸） |
+| 前端（`services/import.service.ts`） | 结果类型与空结果都带 `skipped` |
+| 文案（`utils/importNote.ts` 新，纯函数） | 五种结局各说一句话：打不开选择器 / 取消（不说话）/ 选中的都不是音频（说清跳过了几个）/ 没读到音频 / 部分成功（成功 + 跳过一起说）。原来这段判断散在 `ScanPanel` 里，测不到 |
+| 文案（zh+en） | 新增 `importSkipped`、`importSkippedOnly`；`scanHint` 的扩展名列表补全成 12 个（原来少了 `m4b`/`m4r`/`oga`） |
+
+### 2. 验证
+
+- `pnpm typecheck` 通过；`pnpm smoke`：**549**（545 → +4：无宿主时 `skipped` 也是 0 + 导入文案四种结局）；
+- **真机（`CDY-AN00`）**：
+
+  | 步骤 | 结果 |
+  |---|---|
+  | 修复前（`audio/*`） | `/sdcard/Download/zhi-ni.m4s` 在选择器里**灰掉**（同一个文件的 `.mp3` 副本可选）——`r118-picker-audio.png` |
+  | 修复后 | 同一个 `.m4s` 变成可选（`r118-picker-open.png` / `r118-picker-scrolled.png`） |
+  | 选它 → 导入 | 「已导入 1 首」；磁盘多出 `zhi-ni.m4s 4388383`；扫描「新增 1」；列表出现 `zhi-ni`（`r118-android-import-m4s.png`） |
+  | 播放导入的 `.m4s` | `aria-valuenow=8 / aria-valuemax=271`，进度在走——**不只是拷进来，真能放** |
+  | 选非音频（`not-audio.bin`，octet-stream 所以可选） | 「选中的 1 个文件都不是音频」；磁盘**没有**多文件（`r118-android-import-skipped.png`） |
+
+### 3. 未做 / 值得你知道的
+
+- 系统 MIME 库不认的封装现在也能导入了，但**名单要对齐两处**：`core/src/local_library.rs::AUDIO_EXTENSIONS`
+  与 Kotlin 的 `AUDIO_EXTENSIONS`——加一种就得同时改，否则「选得了却拷不进来」；
+- 多个大文件仍然没有进度条（P3 余项），也没有「清理已导入」（拷一份会占双份空间）；
+- 一句编译坑：Kotlin 块注释里写 `audio/*` 会**当场闭合注释**，报 `Expecting an element`（GOTCHAS §63）；
+- 归档规则照旧：本轮把 R114 迁进 `archive/rounds/R101-R114.md`（原 `R101-R113.md` 改名）。
 
 ## 本轮目标（第一百一十七轮）
 
@@ -124,51 +160,20 @@ tldr: 当前 R117（通知/锁屏的进度）：`PlaybackState` 不再 `position
 - P4 通知栏歌词（可复用这套会话）、P3 余项（导入进度、清理已导入、`.m4s` 的 MIME）、
   R110 的「上游不是音频」进 UI 文案仍挂着。
 
-## 本轮目标（第一百一十四轮）
-
-> 起点：P0/P1/P2 都过了，手机上仍然只有一条「把音乐弄进来」的路——adb push。
-> 这不是普通用户能做的事，等于「本地音乐」在手机上不可用。
-
-### 1. 本轮做了什么
-
-| 层 | 改动 |
-|---|---|
-| Kotlin（`gen/android/.../ImportPlugin.kt`） | `@Command pickAudio` → `ACTION_OPEN_DOCUMENT`（`audio/*` + 多选）；`@ActivityCallback` 里在**后台线程**逐个拷贝（`contentResolver.openInputStream`），同名不覆盖（`a.mp3` → `a-1.mp3`），回 `{imported, failed, cancelled, dir}`。SAF 不需要任何存储权限 |
-| Rust 宿主（`src-tauri/src/importer.rs`） | 插件 `gently-import` 注册 Kotlin `ImportPlugin`，用 `run_mobile_plugin_async("pickAudio")`（异步：用户挑文件可能几十秒）+ `ImportOutcome` 结构体；`lib.rs` 新增宿主命令 `import_audio`。非 Android 如实回错（桌面端用「填目录」） |
-| 前端 | `services/import.service.ts`（无宿主返回「取消」的空结果，浏览器里静默）；`ScanPanel` 在**手机形态**多一行「从手机导入音频」+ 说明 + 结果提示（已导入 N 首 / 部分失败 / 没读到音频 / 打不开选择器），导入成功后用返回的 `dir` 调 `library.local.scan` |
-| 文案 | `page.local.importFromDevice/importing/importHint/imported/importedPartial/importEmpty/importFailed`（zh+en）；顺手修掉 `scanHint` 里那句已过时的「原生文件选择器需要额外的桌面插件」 |
-
-### 2. 验证
-
-- `pnpm typecheck` 通过；`pnpm smoke`：**535**（534 → +1「导入服务在无宿主时是空操作」）；
-- **真机（）完整走查**（测试文件 `adb push` 到 `/sdcard/Download/import-test.mp3`）：
-  1. 本地音乐 → 展开扫描面板 → 点「从手机导入音频」→ 系统选择器打开（「打开文件」：最近 / 音频 / 下载内容）；
-  2. 抽屉 → 下载内容 → 只有 `import-test.mp3` 可选（其它非音频文件是灰的）→ 点选；
-  3. 回到应用：提示「已导入 1 首」、「共 2 首」、列表出现 `import-test`；
-  4. 磁盘：`run-as com.xun.gently ls -l files/music` → `import-test.mp3 4388383`；
-  5. 入库：扫描结果「上次扫描 1 个文件，新增 1」；截图 `r114-android-import.png`。
-
-### 3. 未做 / 值得你知道的
-
-- **导入是「拷一份」**：原文件删掉不影响曲库；反面是占双份空间（后续可加「清理已导入」入口）；
-- 选择器只过滤 `audio/*`：`.m4s`、少见的无损封装可能不在系统 MIME 库里（桌面端不受影响）；
-- 多个大文件逐个拷没有进度条（只在结束后报数量）；P3 的其余部分（音乐目录授权、导出）未做；
-- P2-2（MediaSession + 通知栏传输控制 + 自定义通知图标 + `POST_NOTIFICATIONS` 授权入口）、P4 通知栏歌词、R110 的「上游不是音频」进 UI 文案仍挂着。
-
 ## 最近三轮
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
-| R117 | 通知/锁屏拿到真实位置与时长 + 自有通知图标 | `playback_banner` 多两个毫秒参数，`PlaybackState.setState(state, position, speed)` + `METADATA_KEY_DURATION`；`seekSeq` 记「位置跳变」所以不必订阅 `elapsed`；时长异步到手、元素跳位两个坑写进 GOTCHAS §62。真机：恢复 231 s → 播放 `position=231200`、拖到 50% `135465`、暂停 `speed=0.0`；小图标换成自己的 ♪ | [本轮](#本轮目标第一百一十七轮) |
+| R118 | P3 余项：任意封装都能导入 | 真机证实系统 MIME 库不认 `.m4s`（同一个文件改 `.mp3` 就能选），于是选择器放开到「音频 + 未知类型」，选完按扩展名筛（名单与核心 `AUDIO_EXTENSIONS` 一一对应），跳过数如实回报；结果文案抽成纯函数 `importNoteText`。真机：`.m4s` 可选 → 已导入 1 首 → 能放（`8/271`）；选 `.bin` → 「都不是音频」且磁盘没多文件；smoke 549 | [本轮](#本轮目标第一百一十八轮) |
+| R117 | 通知/锁屏拿到真实位置与时长 + 自有通知图标 | `playback_banner` 多两个毫秒参数，`PlaybackState.setState(state, position, speed)` + `METADATA_KEY_DURATION`；`seekSeq` 记「位置跳变」所以不必订阅 `elapsed`；时长异步到手、元素跳位两个坑写进 GOTCHAS §62。真机：恢复 231 s → 播放 `position=231200`、拖到 50% `135465`、暂停 `speed=0.0`；小图标换成自己的 ♪ | [下方](#本轮目标第一百一十七轮) |
 | R116 | P4 通知栏歌词 | 歌词只在页面算（`currentLyricLine`），`line` 作为 `playback_banner` 的第 5 个参数传到 Kotlin，写成通知的 `setContentText`（空串回落歌手）+ `MediaMetadata` 的 `DISPLAY_SUBTITLE`；去重键带上 `line`，换行才推。真机同一张通知原地把第二行从「第一句」换成「第二句」；smoke 541 | [下方](#本轮目标第一百一十六轮) |
-| R115 | P2-2 MediaSession + 传输控制 | framework `MediaSession` + `MediaStyle` 三按钮；原生只把 `toggle/next/prev` 经 `evaluateJavascript` 送回页面（播放状态仍以 store 为权威）。真机：暂停冻在 6 → 播放 6→10 → 下一首换歌且通知标题跟着变；`actions=566`；smoke 539 | [下方](#本轮目标第一百一十五轮) |
 
 ## 历史轮次
 
 - R01–R83：[`archive/rounds/R01-R83.md`](archive/rounds/R01-R83.md)
 - R84–R88：[`archive/rounds/R84-R88.md`](archive/rounds/R84-R88.md)
 - R89–R100：[`archive/rounds/R89-R100.md`](archive/rounds/R89-R100.md)（宠物从 M0 到 1.0 的全过程；R99/R100 为摘要）
-- R101–R113：[`archive/rounds/R101-R113.md`](archive/rounds/R101-R113.md)（桌面收尾 + 宠物 1.0 + 安卓 P0–P3 共 13 轮正文）
+- R101–R114：[`archive/rounds/R101-R114.md`](archive/rounds/R101-R114.md)（桌面收尾 + 宠物 1.0 + 安卓 P0–P3 共 14 轮正文）
 
 默认不需要读；查「当时为什么这么做 / 试过什么 / 证据文件叫什么」时再打开。轮次正文只写「当前轮 + 最近三轮」，
 更早的每三轮迁一次档——STATE 的预算是 250 token，不要退化成日记。
@@ -199,19 +204,20 @@ tldr: 当前 R117（通知/锁屏的进度）：`PlaybackState` 不再 `position
   `dumpsys media_session` 里 `description` 的第三项是 **ALBUM**（恒为 null），不能拿它判断字幕写没写进去（R116）。
 - 通知/锁屏的进度靠 `PlaybackState`：时长是**异步到手**的（必须进 effect 依赖）、暂停时速度必须是 `0f`、
   恢复曲目时元素会先报 0 再跳到续播点（大跨度跳变也要算跳变）（R117）。
+- SAF 的类型过滤会把「系统不认识的音频封装」灰掉（`.m4s` 就是）；自己按扩展名筛，且名单要与核心一致（R118）。
 
-## 下一步（按评估结论排序）
+## 下一步（按评估结论继续）
 
 1. **安卓收尾（都不挡路）**：`ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度——先确认有可见面再声明）、
-   `POST_NOTIFICATIONS` 运行时授权入口（API 33+ 才有意义）；P3 余项（导入进度、清理已导入、`.m4s` 的 MIME、
-   音乐目录授权/导出）。通知栏歌词（R116）与位置/时长 + 自有图标（R117）已落地。
+   `POST_NOTIFICATIONS` 运行时授权入口（API 33+ 才有意义）；P3 余项（导入进度条、「清理已导入」、音乐目录导出）。
+   通知栏歌词（R116）、位置/时长 + 自有图标（R117）、任意封装导入（R118）已落地。
    进度与拆分表见 [`ANDROID-PLAN.md`](ANDROID-PLAN.md) §7；每步的验收口径在 §4。
 2. **R110 留下的小任务**：把「上游返回的不是音频」变成用户能看懂的文案（`playback.resolve` 里先探一次并自动换候选，
    或加一条契约事件），别只留在日志里（GOTCHAS §56）。
 3. **宠物 M4 / 玩法打磨（随时可做、可暂缓）**：移动端渲染器（核心层已独立，见 ADR 0010）；`minPetCoreVersion`
    真版本比较、atlas 瘦身（1.5 MB）、走路避让窗口/任务栏、多宠物 UI（存储与 API 已预留）、逐像素 alpha 命中。
    触发条件是安卓决定做宠物。
-4. **工程债**：`GOTCHAS.md` 62 条按域拆分（现在是一份长表，查起来靠搜索）；截图证据改成「seeded 数据 + 可深链 +
+4. **工程债**：`GOTCHAS.md` 63 条按域拆分（现在是一份长表，查起来靠搜索）；截图证据改成「seeded 数据 + 可深链 +
    固定浅/深基线」，不再靠手算坐标（真机这半已由 `scripts/android-cdp.mjs` 解决）；拖动/悬停这类**注入式输入
    验证不了**的交互，补一份人工验收清单。
 5. 背景 P2（带 JS / 多文件网页壁纸）与迷你歌词视觉细调仍挂着，未排期。
