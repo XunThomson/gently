@@ -121,8 +121,7 @@
     "menu": "Navigation",
     "openPlayer": "Open player",
     "pickSong": "Pick a song from a list",
-    "actionsFor": "Actions for {{name}}",
-    "close": "Close navigation"
+    "actionsFor": "Actions for {{name}}"
   },
   "sidebar": {
     "playlists": "My playlists",
@@ -336,6 +335,7 @@
       "scanResult": "Last scan: {{scanned}} files, {{added}} added, {{updated}} updated, {{removed}} removed, {{skipped}} skipped, {{unreadable}} unreadable, {{ignored}} non-audio",
       "scanNeedsDesktop": "Scanning local folders needs the desktop app (the browser preview shows sample data).",
       "scanBriefIdle": "Expand to enter folders and scan",
+      "scanBriefIdleMobile": "Use Import from this phone to add songs",
       "scanBriefRunning": "Scanning · {{found}} files found{{percent}}",
       "scanBriefResult": "Last scan: {{scanned}} files, {{added}} added",
       "importFromDevice": "Import from this phone",
@@ -851,6 +851,7 @@
       "cacheUnavailable": "Cache management needs the desktop core; the browser preview has no local cache.",
       "dataDirTitle": "Data folder",
       "dataDirHint": "Database, plugins, skins, downloads and cache all live in this folder. It defaults to your user profile — move it to another drive here.",
+      "dataDirMobileHint": "Database, plugins, skins, downloads and cache live in the app's private storage, which the system manages; it cannot be moved inside the app and is removed when you uninstall it.",
       "dataDirCurrent": "Current location",
       "dataDirSource": "Source",
       "dataDirSourceDefault": "System default location",

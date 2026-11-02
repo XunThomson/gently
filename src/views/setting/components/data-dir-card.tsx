@@ -22,7 +22,7 @@ import styles from '../setting.module.css';
  * 3. **便携版默认跟着 exe 走**（exe 同目录放一个 `portable.txt` 即可），
  *    因此这里如实显示「数据目录是怎么定下来的」，而不是只说一个路径。
  */
-export function DataDirCard() {
+export function DataDirCard({mobile = false}: {mobile?: boolean}) {
     const {t} = useTranslation();
     const confirm = useConfirm();
     const available = coreAvailable();
@@ -84,6 +84,18 @@ export function DataDirCard() {
             },
         });
     };
+
+    /* 手机：目录由系统分配在应用私有目录，**不能迁**也没有「打开文件夹」——
+       只如实说一句，不给一个点了没反应的迁移表单（R121 用户反馈 / GOTCHAS §46）。
+       这一支放在「没有核心」之前：手机上有没有核心都不影响这条事实。 */
+    if (mobile) {
+        return (
+            <section className={styles.card}>
+                <h2 className={styles.cardTitle}>{t('page.setting.dataDirTitle')}</h2>
+                <p className={styles.hint}>{t('page.setting.dataDirMobileHint')}</p>
+            </section>
+        );
+    }
 
     if (!available) {
         return (

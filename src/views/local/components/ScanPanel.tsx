@@ -128,7 +128,10 @@ export function ScanPanel() {
                 scanned: scanSummary.scanned,
                 added: scanSummary.added,
             })
-          : t('page.local.scanBriefIdle');
+          : /* 手机上没有「填写音乐目录」这回事，提示语也不能那样写（R121 用户反馈） */
+            mobile
+            ? t('page.local.scanBriefIdleMobile')
+            : t('page.local.scanBriefIdle');
 
     return (
         <section className={styles.scan} data-open={open}>
@@ -190,38 +193,44 @@ export function ScanPanel() {
                         </div>
                     )}
 
-                    <div className={styles.scanRow}>
-                        <textarea
-                            className={styles.scanInput}
-                            value={paths}
-                            rows={2}
-                            spellCheck={false}
-                            placeholder={t('page.local.scanPlaceholder')}
-                            onChange={(event) => setPaths(event.target.value)}
-                            disabled={scanning}
-                        />
-                        <div className={styles.scanControls}>
-                            <label className={styles.scanToggle}>
-                                <input
-                                    type="checkbox"
-                                    checked={recursive}
-                                    onChange={(event) => setRecursive(event.target.checked)}
+                    {/* 「每行一个目录」是本机路径输入：手机上没有可粘贴的绝对路径，
+                        这一块整块不显示（R121 用户反馈「目录路径这类桌面专有项」） */}
+                    {!mobile && (
+                        <>
+                            <div className={styles.scanRow}>
+                                <textarea
+                                    className={styles.scanInput}
+                                    value={paths}
+                                    rows={2}
+                                    spellCheck={false}
+                                    placeholder={t('page.local.scanPlaceholder')}
+                                    onChange={(event) => setPaths(event.target.value)}
                                     disabled={scanning}
                                 />
-                                {t('page.local.scanRecursive')}
-                            </label>
-                            <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={start}
-                                disabled={scanning || dirs.length === 0}
-                            >
-                                {scanning ? t('page.local.scanRunningShort') : t('page.local.scanStart')}
-                            </Button>
-                        </div>
-                    </div>
+                                <div className={styles.scanControls}>
+                                    <label className={styles.scanToggle}>
+                                        <input
+                                            type="checkbox"
+                                            checked={recursive}
+                                            onChange={(event) => setRecursive(event.target.checked)}
+                                            disabled={scanning}
+                                        />
+                                        {t('page.local.scanRecursive')}
+                                    </label>
+                                    <Button
+                                        variant="primary"
+                                        size="sm"
+                                        onClick={start}
+                                        disabled={scanning || dirs.length === 0}
+                                    >
+                                        {scanning ? t('page.local.scanRunningShort') : t('page.local.scanStart')}
+                                    </Button>
+                                </div>
+                            </div>
 
-                    <p className={styles.scanHint}>{t('page.local.scanHint')}</p>
+                            <p className={styles.scanHint}>{t('page.local.scanHint')}</p>
+                        </>
+                    )}
 
                     {/* 进度：扫大目录可能几十秒，没有反馈就是「卡住了」 */}
                     {scanning && scanProgress && (

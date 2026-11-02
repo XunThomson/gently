@@ -70,6 +70,7 @@ import {resolveShellMode} from '../src/utils/shellMode';
 import {activeNavKey, MOBILE_HOME_PATH, mobileNavItems} from '../src/components/shell/mobile/nav';
 import {MobileNavDrawer} from '../src/components/shell/mobile/MobileNavDrawer';
 import {revealInDirAvailable} from '../src/services';
+import {DataDirCard} from '../src/views/setting/components/data-dir-card';
 import {
     actionsColumn,
     albumColumn,
@@ -2433,6 +2434,20 @@ async function main(): Promise<void> {
         check(
             '移动端能力： 「在文件夹中显示」只在桌面成立',
             revealInDirAvailable(false) === true && revealInDirAvailable(true) === false,
+        );
+        /* 手机上的「数据目录」只留一句说明：没有可迁移的路径，也没有「打开文件夹」
+           （R121 用户反馈「大量 desktop 专有名词与设置项」） */
+        const mobileDataDir = renderToString(
+            <MemoryRouter>
+                <ThemeProvider><DataDirCard mobile/></ThemeProvider>
+            </MemoryRouter>,
+        );
+        check(
+            '移动端：数据目录卡片只说一句「系统管理、不能迁移」，没有路径输入与打开按钮',
+            mobileDataDir.includes(i18n.t('page.setting.dataDirMobileHint')) &&
+                !mobileDataDir.includes('<input') &&
+                !mobileDataDir.includes(i18n.t('page.setting.dataDirOpen')),
+            mobileDataDir.slice(0, 200),
         );
 
         /* ---------- P1-5：手机列表换一份列定义（两行式 + ⋯），不是把 7 列压窄 ---------- */

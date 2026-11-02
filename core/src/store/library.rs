@@ -156,19 +156,32 @@ impl Store {
         Ok(())
     }
 
+    /// 最近播放：**每首歌一行**（取最近一次播放），`play_count` 是累计次数。
+    ///
+    /// 为什么在库里聚合而不是让界面去重：`play_history` 是「每次播放一行」（统计需要），
+    /// 但「最近播放」这个视图要的是「每首歌一行」。放两边各算一次必然走样
+    /// （界面若按 id 去重还会踩到 React key 重复 + 全部行高亮，R121 实测）。
+    /// 窗口函数在 SQLite 3.25+（rusqlite 自带的最新版）可用。
     pub fn list_history(&self, limit: usize, cursor: Option<&str>) -> Fallible<PageRows<HistoryRow>> {
         let conn = self.lock()?;
-        let total: i64 = conn.query_row("SELECT COUNT(*) FROM play_history", [], |row| row.get(0))?;
+        let total: i64 =
+            conn.query_row("SELECT COUNT(DISTINCT ref) FROM play_history", [], |row| row.get(0))?;
         let (after_at, after_id) = split_cursor(cursor);
 
         // 主键（id）只用于复合游标，因此只在这一层内部流转，不外泄到 HistoryRow
         let mut stmt = conn.prepare(
-            "SELECT id, ref, source, track, played_sec, completed, played_at,
-                    (SELECT COUNT(*) FROM play_history x WHERE x.ref = h.ref) AS play_count
-             FROM play_history h
-             WHERE (?1 IS NULL)
-                OR played_at < ?1
-                OR (played_at = ?1 AND id < ?2)
+            "WITH ranked AS (
+                 SELECT id, ref, source, track, played_sec, completed, played_at,
+                        ROW_NUMBER() OVER (PARTITION BY ref ORDER BY played_at DESC, id DESC) AS rn,
+                        COUNT(*) OVER (PARTITION BY ref) AS play_count
+                 FROM play_history
+             )
+             SELECT id, ref, source, track, played_sec, completed, played_at, play_count
+             FROM ranked
+             WHERE rn = 1
+               AND ((?1 IS NULL)
+                    OR played_at < ?1
+                    OR (played_at = ?1 AND id < ?2))
              ORDER BY played_at DESC, id DESC LIMIT ?3",
         )?;
         let rows = stmt.query_map(params![after_at, after_id, (limit + 1) as i64], |row| {
@@ -393,19 +406,19 @@ mod tests {
     }
 
     #[test]
-    fn history_keeps_every_play_and_counts_per_track() {
+    fn history_keeps_every_play_but_lists_one_row_per_track() {
         let store = store();
         for _ in 0..2 {
             store.push_history("src:a", "src", &track("src:a", "甲"), 30, false).unwrap();
         }
         store.push_history("src:b", "src", &track("src:b", "乙"), 200, true).unwrap();
 
-        assert_eq!(store.count_history().unwrap(), 3, "每次播放都留一行（用于统计与「最近播放」）");
+        assert_eq!(store.count_history().unwrap(), 3, "每次播放都留一行（统计要它）");
         let page = store.list_history(10, None).unwrap();
-        assert_eq!(page.items.len(), 3);
+        assert_eq!(page.items.len(), 2, "「最近播放」每首歌一行");
         let first = page.items.iter().find(|row| row.stored.reference == "src:a").unwrap();
         assert_eq!(first.play_count, 2, "同一首歌的累计次数");
-        assert_eq!(page.total, 3);
+        assert_eq!(page.total, 2, "总数也是歌数，不是播放次数");
 
         // 游标翻页不重不漏
         let first_page = store.list_history(1, None).unwrap();

@@ -177,7 +177,8 @@ pub fn history_push(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     Ok(Value::Null)
 }
 
-/// `library.history.list{limit?, cursor?}`：最近播放（每次播放一行，带累计次数）。
+/// `library.history.list{limit?, cursor?}`：最近播放（**每首歌一行**，取最近一次播放，
+/// 带累计播放次数；每次播放的原始行仍留在库里供统计用）。
 pub fn history_list(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     let params: PageParams = parse_params(params)?;
     let store = require_store(ctx)?;

@@ -180,7 +180,9 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
     因此 `favorites.list` / `history.list` / `playlists.list`（含 `playlists.save` 的返回）在下发前
     按路径重新签发当前地址；封面确实没了就删掉该字段（界面退回渐变，而不是显示破图）；
 - **收藏**：按 `ref` 去重，重复收藏只更新快照；取消收藏幂等；
-- **历史**：**每次播放留一行**（用于统计与「最近播放」），`playCount` 是该 ref 的累计次数；
+- **历史**：库里**每次播放留一行**（统计要它），但 `history.list` 下发的是**每首歌一行**
+  （取最近一次播放的时间与完成度，`playCount` 是该 ref 的累计次数）——「最近播放」页不该出现同一首歌好几条；
+  界面若自己按 id 去重，会连 React key 与「正在播」的行高亮一起重复（R121 实测）；
 - **歌单**：`save` 无 `id` 为新建（id 由核心生成 `pl-<hex>`）、有 `id` 为**整体覆盖**（曲目顺序 = `trackRefs` 顺序，
   重复引用只留一次）；`delete` 级联删除曲目行，删不存在的歌单 → `common.not_found`；
 - **分页**：`(时间戳, 主键)` 复合游标倒序，`nextCursor` 对调用方不透明（原样回传）；`limit` 夹到 1~500（缺省 50），

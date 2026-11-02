@@ -4,10 +4,42 @@ last_verified: 2026-11-02
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R120：**移动端收口**。用 `scripts/probes/route-audit.js`（pushState + popstate，不整页重载）把 8 个抽屉项 + `/now-playing` 逐个走了一遍：全部 `overflow=0`、无报错、空态都有文案。顺手修掉四个真机问题——首页「「」共 0 首」→「搜全部音源」；抽屉品牌行被状态栏压住（绝对定位不继承 shell 的让位）；手机上的「在文件夹里显示」是假入口（新谓词 `revealInDirAvailable`）；**进度条 32px 热区抢走播放条按钮的点击**（`elementFromPoint(158,858)` 返回「进度」，改成以进度线为中心的带状热区后拖动与点击都成立）。P0–P4 全部落地，余项见 ANDROID-PLAN §8。smoke **554**。
+tldr: 当前 R121（用户提了 10 条体验问题，本轮做逻辑与结构三件）：#4 最近播放重复且全部高亮 → 聚合放到核心（`library.history.list` 改成每首歌一行 + 累计 playCount，`total` 是歌数）；#8 抽屉去掉 ✕，新增 `useBackToClose`（浮层打开时压同 URL 历史标记，系统返回先 pop 它 → 关浮层而不是退回上一页），抽屉与行操作面板都接上，点空白也能关；#3/#10 手机形态隐藏设置里的宠物/桌面歌词/网页壁纸助手/下载目录路径/诊断，数据目录只剩一句「系统不可迁移」，本地页隐藏路径输入并把提示换成手机版文案。真机：5 次播放 → 历史 2 行、返回键关抽屉且路由不变。smoke **555**。
 ---
 
 # STATE
+
+## 本轮目标（第一百二十一轮）
+
+> 用户提了 10 个体验问题（手势、歌词页、桌面专有项、最近播放重复、动画穿模、过渡缺失、
+> 背景适配、抽屉关闭按钮、滚动重影、storage 未适配）。这一轮先做**逻辑与结构**的三件，
+> 它们都可真机验证；视觉与动效类（1/2/5/6/7/9）排在后面几轮。
+
+### 1. 本轮做了什么
+
+| 问题 | 改动 |
+|---|---|
+| #4 最近播放同一首歌出现多条、且都显示「正在播」 | **聚合放到核心**：`library.history.list` 用窗口函数改成「每首歌一行」（取最近一次播放 + 累计 `playCount`），`total` 也变成歌数。界面按 id 去重会连 React key 与行高亮一起重复，所以不在前端补 |
+| #8 抽屉的 ✕ 该去掉，改成点空白 / 回退关闭 | 删掉 ✕ 与 `mobile.close`；新增 `hooks/useBackToClose`：浮层打开时压一条**同 URL** 的历史标记，安卓系统返回（`history.back()`）先 pop 它 → 关浮层，而不是退回上一页；主动关闭时把标记收掉。抽屉与行操作底部面板都接上 |
+| #3/#10 手机上大量 desktop 专有项 | 设置页手机形态隐藏：宠物、桌面歌词（整块）、网页壁纸助手、下载目录路径输入、诊断；数据目录改成一句「系统分配、不能在应用内迁移」。本地页手机形态隐藏「每行一个目录」输入框与说明，收起提示语换成手机版文案；行操作里的「在文件夹中显示」上一轮已隐藏 |
+
+### 2. 验证
+
+- `pnpm typecheck` 通过；`pnpm smoke`：**555**（554 → +1：数据目录卡片在手机形态只剩一句说明、没有路径输入与打开按钮）；核心单测 88 项 + 集成测试全绿（`history` 用例改成断言「3 次播放 → 2 行、`total` 是歌数」）；
+- **真机（`CDY-AN00`）**：
+
+  | 项 | 结果 |
+  |---|---|
+  | #4 | 一首播 2 次 + 另一首播 3 次 → `library.history.list` 返回 `total: 2`（`import-test-2` playCount 2、`zhi-ni` playCount 3）；「最近播放」页两行、只有正在播的那行高亮 |
+  | #8 | 抽屉里**没有 ✕**；点面板右侧空白 → 关闭且路由不变（`/recent`）；开抽屉后按系统返回 → 关闭、路由不变、应用仍在前台 |
+  | #8 | 行操作底部面板同样按返回键收起 |
+  | #3/#10 | 设置页手机形态无宠物 / 桌面歌词 / 网页壁纸助手 / 诊断 / 下载目录路径；数据目录只剩一句说明；本地页无路径输入框，收起提示是手机版文案 |
+
+### 3. 未做（按用户清单排后续轮次）
+
+- #2 歌词页受封面尺寸限制、#5 动画穿模、#6 页面过渡缺失、#7 背景适配（加载慢）、
+  #9 滚动重影（透明度/虚化）、#1 手势（边缘滑出抽屉、下拉收起面板）；
+- 设置页「发现页自动试听」在手机上也没有对应页面（发现页不在 8 个入口里），下一轮一起收掉。
 
 ## 本轮目标（第一百二十轮）
 
@@ -119,54 +151,11 @@ P0–P4 的计划片全部落地并真机验证过：外壳与触摸语义、前
 - 一句编译坑：Kotlin 块注释里写 `audio/*` 会**当场闭合注释**，报 `Expecting an element`（GOTCHAS §63）；
 - 归档规则照旧：本轮把 R114 迁进归档（原 `R101-R113.md` 改名成 `R101-R114.md`）。
 
-## 本轮目标（第一百一十七轮）
-
-> 起点：R116 之后通知栏会显示「正在唱的那一句」，但 `PlaybackState` 仍然是
-> `position=-1`（当时刻意的取舍：位置不进原生）。代价是锁屏 / 车机 / 蓝牙
-> 拿不到「放到哪」，进度条一律不显示；通知小图标也还是系统自带的播放三角。
-
-### 1. 本轮做了什么
-
-| 层 | 改动 |
-|---|---|
-| store（`player.slice.ts` / `types.ts`） | `seekSeq`：位置**跳变**的计数（用户 seek、恢复时的跳位都算，正常 250ms 小步不算）。正常进度回写不碰它，所以订阅方不必订阅 `elapsed`（那会让整棵外壳每秒重渲染） |
-| 前端（`playbackBanner.service.ts` / `useAudioEngine.ts`） | `syncPlaybackBanner` 多两个参数 `positionMs` / `durationMs`（毫秒整数，Kotlin 不做浮点换算），去重键带上它们——拖了进度一定推得出去。effect 依赖加 `seekSeq` 与 `duration`（**时长是异步到手的**，见坑 1），位置在 effect 里按需 `store.getState()` 读准确值 |
-| 宿主（`playback.rs` / `lib.rs`） | `playback_banner` 与 `playback::update` 多两个 `i64`（毫秒）；注释写明这是**显示值**，原生不据此计时 |
-| Kotlin（`PlaybackService.kt`） | `PlaybackState.setState(state, position, speed)`：播放中速度 1f **由系统自己推算**，暂停时必须 0f；`MediaMetadata` 写 `METADATA_KEY_DURATION`；时长未知时位置给 `PLAYBACK_POSITION_UNKNOWN`。**不声明 `ACTION_SEEK_TO`**（锁屏拖动还没接，声明了就是假的） |
-| 通知图标 | 新的 `res/drawable/ic_gently_notification.xml`（24dp 音符剪影，纯白——系统只取 alpha 着白色），替掉 `android.R.drawable.ic_media_play` |
-| 取证工具 | `scripts/probes/playbar-state.js` / `playbar-toggle.js` / `playbar-geometry.js`：读播放条状态、点播放暂停并捕获异常、读按钮几何（点上没有反应的排查顺序） |
-
-### 2. 验证
-
-- `pnpm typecheck` 通过；`pnpm smoke`：**545**（541 → +4：`seekSeq` 在 seek 后 +1、正常回写不变、
-  媒体元素大跨度跳变也算跳变、位置/时长进键后拖进度一定换键）；
-- **真机（`CDY-AN00`）**：本地曲目 `import-test`（271 s），全程读 `dumpsys media_session`：
-
-  | 操作 | 结果 |
-  |---|---|
-  | 冷启动（恢复成暂停态，`elapsed=231`）→ 点播放 | `state=3, position=231200, speed=1.0`（本轮之前这里恒为 `-1`） |
-  | 点进度条中点（≈50%） | 页面 `135` → `position=135465`，说明**拖进度会重推** |
-  | 媒体键暂停（`input keyevent 127`） | `state=2, position=240154, speed=0.0`（暂停时速度归零，系统不会再往前推） |
-  | 再点播放 | `position=240343`（回到暂停时的位置重新对齐） |
-  | 元数据 | `metadata: size=4`（多出 `METADATA_KEY_DURATION`） |
-  | 通知栏 / 锁屏 / 控制中心 | 小图标变成自己的 ♪（`r117-android-notification.png`、`r117-android-lockscreen.png`）；**三处都不画进度条**——本机 ROM 的取舍，数据在会话里，可见面等 Android 11+ 或车机 |
-
-### 3. 未做 / 值得你知道的
-
-- **坑 1（第一版就是不生效）**：`duration` 是媒体元素加载完才回写的，没进 effect 依赖 →
-  原生一直「时长未知」，`metadata: size=3` + `position=-1`，看着像没跑；
-- **坑 2**：恢复曲目时元素先报 `0` 再跳到续播点，于是原生停在 0——所以 `setProgress` 里
-  把「大跨度跳变」也算成跳变（GOTCHAS §62）；
-- `ACTION_SEEK_TO` / `onSeekTo`（锁屏拖进度）刻意没接：需要一条「原生 → 页面」的 seek 通道，
-  而且本机 ROM 不画进度条，接了也验不到——留着等有可见面再做；
-- `POST_NOTIFICATIONS` 运行时授权入口仍未做（本机 API 29 用不到，API 33+ 才有意义）；
-- P3 余项（导入进度、「清理已导入」、`.m4s` 的 MIME、音乐目录授权/导出）与 R110 的
-  「上游不是音频」进 UI 文案仍挂着。
-
 ## 最近三轮
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
+| R121 | 用户 10 条体验问题：第一批（#4 #8 #3/#10） | #4 最近播放去重与高亮：聚合放核心（每首歌一行 + playCount）；#8 抽屉去掉 ✕，新增 `useBackToClose`（同 URL 历史标记 → 系统返回关浮层），抽屉与行操作面板都接上；#3/#10 手机形态隐藏桌面专有设置与路径输入。真机：5 次播放 → 历史 2 行；返回键关抽屉且路由不变；smoke 555 | [本轮](#本轮目标第一百二十一轮) |
 | R120 | 收口走查：9 个路由跑一遍，修掉 4 个真机问题 | `route-audit.js`（pushState + popstate，不整页重载）逐个进 8 个抽屉项 + `/now-playing`：全部不带横向溢出、无报错、空态有文案。修掉：首页「「」共 0 首」→「搜全部音源」；抽屉品牌行被状态栏压住（绝对定位不继承 shell 的让位）；手机上的「在文件夹中显示」是假入口；**进度条 32px 热区抢走播放条按钮的点击**（`elementFromPoint` 确诊，改成以进度线为中心的带状热区）。smoke 554 | [本轮](#本轮目标第一百二十轮) |
 | R119 | P3 余项：清理导入副本 | 新宿主命令 `imported_dir`（前端不猜 `<filesDir>`）+ `importedMusicDir()` 缓存 + 纯函数 `importedTracksOf`（路径前缀，拿不到目录一条不删）+ `purgeImported()`（要删的正在播就先停，逐条 `library.local.remove{deleteFile}`）；`ScanPanel` 手机形态给「清理副本」+ 危险确认。真机：3 首 → 清掉 2 个副本（磁盘 `files/music` 空、`probe` 留下、正在播的已停）；smoke 552 | [下方](#本轮目标第一百一十九轮) |
 | R118 | P3 余项：任意封装都能导入 | 真机证实系统 MIME 库不认 `.m4s`（同一个文件改 `.mp3` 就能选），于是选择器放开到「音频 + 未知类型」，选完按扩展名筛（名单与核心 `AUDIO_EXTENSIONS` 一一对应），跳过数如实回报；结果文案抽成纯函数 `importNoteText`。真机：`.m4s` 可选 → 已导入 1 首 → 能放（`8/271`）；选 `.bin` → 「都不是音频」且磁盘没多文件；smoke 549 | [下方](#本轮目标第一百一十八轮) |
@@ -176,7 +165,7 @@ P0–P4 的计划片全部落地并真机验证过：外壳与触摸语义、前
 - R01–R83：[`archive/rounds/R01-R83.md`](archive/rounds/R01-R83.md)
 - R84–R88：[`archive/rounds/R84-R88.md`](archive/rounds/R84-R88.md)
 - R89–R100：[`archive/rounds/R89-R100.md`](archive/rounds/R89-R100.md)（宠物从 M0 到 1.0 的全过程；R99/R100 为摘要）
-- R101–R116：[`archive/rounds/R101-R116.md`](archive/rounds/R101-R116.md)（桌面收尾 + 宠物 1.0 + 安卓 P0–P4 共 16 轮正文）
+- R101–R117：[`archive/rounds/R101-R117.md`](archive/rounds/R101-R117.md)（桌面收尾 + 宠物 1.0 + 安卓 P0–P4 共 17 轮正文）
 
 默认不需要读；查「当时为什么这么做 / 试过什么 / 证据文件叫什么」时再打开。轮次正文只写「当前轮 + 最近三轮」，
 更早的每三轮迁一次档——STATE 的预算是 250 token，不要退化成日记。

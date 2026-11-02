@@ -215,8 +215,10 @@ fn history_keeps_every_play_and_reports_counts() {
 
     let listed = call(&ctx, "library.history.list", json!({}));
     let items = listed["data"]["items"].as_array().unwrap();
-    assert_eq!(items.len(), 4, "每次播放都留一行");
-    assert_eq!(listed["data"]["total"], json!(4));
+    /* 「最近播放」每首歌一行（播放了 4 次，但只有 2 首歌）：
+       界面按 id 去重会让 React key 与「正在播」高亮一起重复，所以聚合放在核心 */
+    assert_eq!(items.len(), 2, "每首歌一行，不是每次播放一行");
+    assert_eq!(listed["data"]["total"], json!(2), "总数是歌数，不是播放次数");
 
     let first = items.iter().find(|row| row["id"] == json!("demo:a")).unwrap();
     assert_eq!(first["playCount"], json!(3), "同一首歌的累计次数");

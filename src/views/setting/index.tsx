@@ -36,6 +36,7 @@ const CACHE_LIMIT_OPTIONS = [
     8 * 1024 * 1024 * 1024,
 ];
 import {QUALITIES_DESC, qualityLabelKey} from '../../utils/quality';
+import {isMobilePlatform} from '../../utils/platform';
 import {DiagnosticsCard} from './components/diagnostics-card';
 import {BackgroundCard} from './components/background-card';
 import {DataDirCard} from './components/data-dir-card';
@@ -174,6 +175,10 @@ export default function SettingView() {
     const cacheTotal = cache ? cache.mediaBytes + cache.catalogBytes + cache.coversBytes : 0;
 
     const currentLang = (i18n.resolvedLanguage ?? 'zh').slice(0, 2);
+    /* 手机形态：桌面专有的设置项一律不显示（用户反馈 R121「大量 desktop 专有名词与设置项」）：
+       宠物窗口、桌面歌词窗口、网页壁纸助手、诊断里的路径与「在文件夹中显示」、
+       数据目录迁移——这些在手机上要么没有那个窗口，要么根本没有「路径」这个概念。 */
+    const mobile = isMobilePlatform();
 
     return (
         <Page title={t('page.setting.title')} subtitle={t('page.setting.subtitle')}>
@@ -250,75 +255,81 @@ export default function SettingView() {
                 <p className={styles.hint}>{t('page.setting.discoverPreviewHint')}</p>
             </section>
 
-            {/* ---------- 宠物（Beta 1.0）：独立置顶窗口 + 独立引擎 pet-core，默认关 ---------- */}
-            <section className={styles.card}>
-                <h2 className={styles.cardTitle}>{t('page.setting.petSection')}</h2>
-                <PetCard enabled={petEnabled} onToggle={setPetEnabled}/>
-            </section>
+            {/* ---------- 宠物（Beta 1.0）：独立置顶窗口 + 独立引擎 pet-core，默认关 ----------
+                手机上还没有宠物渲染器（见 ANDROID-PLAN），所以整块隐藏，不给假入口 */}
+            {!mobile && (
+                <section className={styles.card}>
+                    <h2 className={styles.cardTitle}>{t('page.setting.petSection')}</h2>
+                    <PetCard enabled={petEnabled} onToggle={setPetEnabled}/>
+                </section>
+            )}
 
             <BackgroundCard/>
-            <WallpaperAssistant/>
+            {/* 网页壁纸助教写的是本机文件（下载/转换），手机上没有这条路 */}
+            {!mobile && <WallpaperAssistant/>}
 
-            {/* ---------- 桌面歌词 ---------- */}
-            <section className={styles.card}>
-                <h2 className={styles.cardTitle}>{t('page.setting.lyricsSection')}</h2>
+            {/* ---------- 桌面歌词（独立窗口）：手机没有这个窗口，整块隐藏 ---------- */}
+            {!mobile && (
+                <section className={styles.card}>
+                    <h2 className={styles.cardTitle}>{t('page.setting.lyricsSection')}</h2>
 
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.lyricsLock')}</span>
-                    <span className={styles.value}>
-                        <UnderlineRadioGroup
-                            name="lyrics-lock"
-                            value={lyricsLocked ? 'lock' : 'free'}
-                            onChange={(value) => void setLyricsLocked(value === 'lock')}
-                            options={[
-                                {value: 'free', label: t('page.setting.lyricsLockOff')},
-                                {value: 'lock', label: t('page.setting.lyricsLockOn')},
-                            ]}
-                        />
-                    </span>
-                </div>
-                <p className={styles.hint}>{t('page.setting.lyricsLockHint')}</p>
+                    <div className={styles.field}>
+                        <span className={styles.label}>{t('page.setting.lyricsLock')}</span>
+                        <span className={styles.value}>
+                            <UnderlineRadioGroup
+                                name="lyrics-lock"
+                                value={lyricsLocked ? 'lock' : 'free'}
+                                onChange={(value) => void setLyricsLocked(value === 'lock')}
+                                options={[
+                                    {value: 'free', label: t('page.setting.lyricsLockOff')},
+                                    {value: 'lock', label: t('page.setting.lyricsLockOn')},
+                                ]}
+                            />
+                        </span>
+                    </div>
+                    <p className={styles.hint}>{t('page.setting.lyricsLockHint')}</p>
 
-                {/* 背景三档：透明背景在浅色壁纸上可能看不清字，所以默认仍是不透明 */}
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.lyricsBackground')}</span>
-                    <span className={styles.value}>
-                        <UnderlineRadioGroup
-                            name="lyrics-background"
-                            value={lyricsWindow.background}
-                            onChange={(value) =>
-                                setLyricsWindow(
-                                    writeLyricsWindowSettings({background: value as LyricsBackground}),
-                                )
-                            }
-                            options={[
-                                {value: 'solid', label: t('page.setting.lyricsBgSolid')},
-                                {value: 'translucent', label: t('page.setting.lyricsBgTranslucent')},
-                                {value: 'transparent', label: t('page.setting.lyricsBgTransparent')},
-                            ]}
-                        />
-                    </span>
-                </div>
+                    {/* 背景三档：透明背景在浅色壁纸上可能看不清字，所以默认仍是不透明 */}
+                    <div className={styles.field}>
+                        <span className={styles.label}>{t('page.setting.lyricsBackground')}</span>
+                        <span className={styles.value}>
+                            <UnderlineRadioGroup
+                                name="lyrics-background"
+                                value={lyricsWindow.background}
+                                onChange={(value) =>
+                                    setLyricsWindow(
+                                        writeLyricsWindowSettings({background: value as LyricsBackground}),
+                                    )
+                                }
+                                options={[
+                                    {value: 'solid', label: t('page.setting.lyricsBgSolid')},
+                                    {value: 'translucent', label: t('page.setting.lyricsBgTranslucent')},
+                                    {value: 'transparent', label: t('page.setting.lyricsBgTransparent')},
+                                ]}
+                            />
+                        </span>
+                    </div>
 
-                {/* 逐字展开（卡拉 OK 式）：默认关闭，用户显式打开 */}
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.lyricsSweep')}</span>
-                    <span className={styles.value}>
-                        <UnderlineRadioGroup
-                            name="lyrics-sweep"
-                            value={lyricsWindow.sweep ? 'on' : 'off'}
-                            onChange={(value) =>
-                                setLyricsWindow(writeLyricsWindowSettings({sweep: value === 'on'}))
-                            }
-                            options={[
-                                {value: 'off', label: t('page.setting.lyricsSweepOff')},
-                                {value: 'on', label: t('page.setting.lyricsSweepOn')},
-                            ]}
-                        />
-                    </span>
-                </div>
-                <p className={styles.hint}>{t('page.setting.lyricsSweepHint')}</p>
-            </section>
+                    {/* 逐字展开（卡拉 OK 式）：默认关闭，用户显式打开 */}
+                    <div className={styles.field}>
+                        <span className={styles.label}>{t('page.setting.lyricsSweep')}</span>
+                        <span className={styles.value}>
+                            <UnderlineRadioGroup
+                                name="lyrics-sweep"
+                                value={lyricsWindow.sweep ? 'on' : 'off'}
+                                onChange={(value) =>
+                                    setLyricsWindow(writeLyricsWindowSettings({sweep: value === 'on'}))
+                                }
+                                options={[
+                                    {value: 'off', label: t('page.setting.lyricsSweepOff')},
+                                    {value: 'on', label: t('page.setting.lyricsSweepOn')},
+                                ]}
+                            />
+                        </span>
+                    </div>
+                    <p className={styles.hint}>{t('page.setting.lyricsSweepHint')}</p>
+                </section>
+            )}
 
             {/* ---------- 音源与音质 ---------- */}
             <section className={styles.card}>
@@ -410,20 +421,26 @@ export default function SettingView() {
             <section className={styles.card}>
                 <h2 className={styles.cardTitle}>{t('page.setting.download')}</h2>
 
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.downloadDir')}</span>
-                    <span className={styles.value}>
-                        <input
-                            className={styles.input}
-                            type="text"
-                            value={downloadDir}
-                            placeholder={t('page.setting.downloadDirPlaceholder')}
-                            aria-label={t('page.setting.downloadDir')}
-                            onChange={(event) => setDownloadDir(event.target.value)}
-                        />
-                    </span>
-                </div>
-                <p className={styles.hint}>{t('page.setting.downloadDirHint')}</p>
+                {/* 下载目录是一条**本机路径**：手机上既没有可粘贴的绝对路径，也没有「在文件夹中显示」，
+                    所以整块不显示（文件落在应用私有目录，由系统管理） */}
+                {!mobile && (
+                    <>
+                        <div className={styles.field}>
+                            <span className={styles.label}>{t('page.setting.downloadDir')}</span>
+                            <span className={styles.value}>
+                                <input
+                                    className={styles.input}
+                                    type="text"
+                                    value={downloadDir}
+                                    placeholder={t('page.setting.downloadDirPlaceholder')}
+                                    aria-label={t('page.setting.downloadDir')}
+                                    onChange={(event) => setDownloadDir(event.target.value)}
+                                />
+                            </span>
+                        </div>
+                        <p className={styles.hint}>{t('page.setting.downloadDirHint')}</p>
+                    </>
+                )}
 
                 <div className={styles.field}>
                     <span className={styles.label}>{t('page.setting.maximumConcurrentDownloads')}</span>
@@ -582,8 +599,9 @@ export default function SettingView() {
                 )}
             </section>
 
-            {/* 数据目录：默认在用户目录，可迁到别的盘（便携版默认跟着 exe 走） */}
-            <DataDirCard/>
+            {/* 数据目录：默认在用户目录，可迁到别的盘（便携版默认跟着 exe 走）——
+                手机上由系统分配、不能在应用内迁移，所以只显示一句说明 */}
+            <DataDirCard mobile={mobile}/>
 
             <section className={styles.card}>
                 <h2 className={styles.cardTitle}>{t('page.setting.about')}</h2>
@@ -607,8 +625,9 @@ export default function SettingView() {
                 </div>
             </section>
 
-            {/* ---------- 本机核心诊断（浏览器下显示「浏览器模式」） ---------- */}
-            <DiagnosticsCard/>
+            {/* ---------- 本机核心诊断（浏览器下显示「浏览器模式」）----------
+                诊断里有数据目录/日志目录路径与「在文件夹中显示」，手机上没有意义 */}
+            {!mobile && <DiagnosticsCard/>}
         </Page>
     );
 }

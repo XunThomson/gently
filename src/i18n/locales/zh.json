@@ -121,8 +121,7 @@
     "menu": "导航",
     "openPlayer": "打开播放页",
     "pickSong": "从列表里挑一首开始",
-    "actionsFor": "{{name}}的操作",
-    "close": "关闭导航"
+    "actionsFor": "{{name}}的操作"
   },
   "sidebar": {
     "playlists": "我的歌单",
@@ -336,6 +335,7 @@
       "scanResult": "上次扫描：扫描 {{scanned}} 个文件，新增 {{added}}，更新 {{updated}}，移除 {{removed}}，跳过 {{skipped}}，读不了 {{unreadable}}，非音频文件 {{ignored}}",
       "scanNeedsDesktop": "扫描本地目录需要桌面端（浏览器预览展示的是示例数据）。",
       "scanBriefIdle": "展开后可填写音乐目录并扫描",
+      "scanBriefIdleMobile": "点下面的「从手机导入音频」把歌收进来",
       "scanBriefRunning": "扫描中 · 已发现 {{found}} 个文件{{percent}}",
       "scanBriefResult": "上次扫描 {{scanned}} 个文件，新增 {{added}}",
       "importFromDevice": "从手机导入音频",
@@ -851,6 +851,7 @@
       "cacheUnavailable": "缓存管理需要桌面端本机核心；浏览器预览没有本地缓存。",
       "dataDirTitle": "数据目录",
       "dataDirHint": "数据库、插件、皮肤、下载与缓存都放在这个目录里。默认在用户目录下；想换到别的盘就在这里迁移。",
+      "dataDirMobileHint": "数据库、插件、皮肤、下载与缓存都在应用私有目录里，由系统分配、不能在应用内迁移；卸载应用会一并删除。",
       "dataDirCurrent": "当前位置",
       "dataDirSource": "来源",
       "dataDirSourceDefault": "系统默认位置",

@@ -2,7 +2,7 @@ import type {CSSProperties} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useLocation, useNavigate} from 'react-router';
 import {appConfig} from '../../../config/app.config';
-import {IconClose} from '../../ui/icon';
+import {useBackToClose} from '../../../hooks/useBackToClose';
 import styles from './MobileShell.module.css';
 import {activeNavKey, mobileNavItems} from './nav';
 
@@ -32,6 +32,9 @@ export function MobileNavDrawer({open, onClose}: MobileNavDrawerProps) {
     const navigate = useNavigate();
     const location = useLocation();
     const active = activeNavKey(location.pathname);
+    /* 安卓的系统返回 = 关抽屉（主流习惯）；抽屉里因此**不再放 ✕**：
+       点旁边空白、按返回、选中一项，三条路都能关（R121 用户反馈） */
+    useBackToClose(open, onClose);
 
     if (!open) return null;
 
@@ -53,14 +56,6 @@ export function MobileNavDrawer({open, onClose}: MobileNavDrawerProps) {
             <nav className={styles.drawer} style={panelStyle} onClick={(event) => event.stopPropagation()}>
                 <div className={styles.drawerHeader}>
                     <span className={styles.brand}>{t('app.title')}</span>
-                    <button
-                        type="button"
-                        className={styles.drawerClose}
-                        aria-label={t('mobile.close')}
-                        onClick={onClose}
-                    >
-                        <IconClose size={16}/>
-                    </button>
                 </div>
                 {mobileNavItems.map((item) => {
                     const isActive = active === item.key;

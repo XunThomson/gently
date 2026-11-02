@@ -759,6 +759,23 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
 - 顺带：`position: absolute; inset: 0` 的覆盖层（抽屉）`top: 0` 落在容纳块的 **padding box** 上，
   **不会**继承父级 `padding-top` 的让位——状态栏 30px 的让位要自己再加一遍（R120 抽屉就是这么被时钟压住的）。
 
+## 65. 安卓系统返回要用来「关浮层」；而「每首歌一行」的聚合必须放在核心（R121）
+
+- **返回键 = 关浮层，不是退页**。安卓用户按返回时想关的是抽屉/底部面板。做法：浮层打开时
+  `history.pushState({...history.state, gentlyOverlay: true}, '')`（**同 URL**），再听 `popstate`——
+  系统返回在 WebView 里就是 `history.back()`，它会先 pop 掉这条标记并触发 `popstate`，我们据此关浮层。
+  两个必须做对的细节：① 主动关闭（点空白 / 选了某项）时要把标记 `history.back()` 收掉，
+  否则用户的「返回」被白吃一次；② `onClose` 用 ref 存最新值、effect 只依赖 `open`，否则内联回调
+  会让 effect 反复重跑、历史里堆一串标记（`hooks/useBackToClose.ts`）。
+- **「最近播放」这类视图的聚合放核心**：`play_history` 表是「每次播放一行」（统计要用），
+  但界面要的是「每首歌一行」。让界面按 id 去重会同时踩三个坑：React `key` 重复、
+  所有同 id 行一起高亮（用户看到的「好几个 a 都是选中态」）、`total` 与分页对不上。
+  核心用 `ROW_NUMBER() OVER (PARTITION BY ref ORDER BY played_at DESC, id DESC)` + `COUNT(*) OVER`
+  一次给出「最近一次 + 累计次数」，两端都不用再补逻辑。SQLite 3.25+ 才有窗口函数（rusqlite 自带的够新）。
+- 手机形态要隐藏的桌面专有项有一份清单（R121 收）：宠物窗口、桌面歌词窗口、网页壁纸助手、
+  下载目录/数据目录这类**本机路径**、诊断里的路径与「在文件夹中显示」、发现页相关设置。
+  判断一律用 `isMobilePlatform()`（形态），不要用窗口宽度——横屏手机同样是 mobile。
+
 
 
 

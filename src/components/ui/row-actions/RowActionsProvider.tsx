@@ -1,5 +1,6 @@
 import {createContext, useMemo, useState, type ReactNode} from 'react';
 import {useTranslation} from 'react-i18next';
+import {useBackToClose} from '../../../hooks/useBackToClose';
 import type {RowAction} from '../data-table';
 import styles from './RowActions.module.css';
 
@@ -46,6 +47,9 @@ export function RowActionsProvider({children}: { children: ReactNode }) {
         }),
         [],
     );
+
+    /* 安卓的系统返回 / 返回手势 = 收起面板（与抽屉一致，R121） */
+    useBackToClose(request !== null, api.close);
 
     return (
         <RowActionsContext.Provider value={api}>

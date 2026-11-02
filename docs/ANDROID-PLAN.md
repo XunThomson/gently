@@ -348,7 +348,7 @@ pnpm tauri android build --debug -t aarch64 --apk
 ### 7.2 R109：P1-4/5/6 的实现口径（结论）
 
 > 三片都只动**交互层与列定义**，store / 服务层 / 契约一个字没改。逐条取舍与真机走查见
-> [`archive/rounds/R101-R116.md`](archive/rounds/R101-R116.md) 的附录。
+> [`archive/rounds/R101-R117.md`](archive/rounds/R101-R117.md) 的附录。
 
 - **列表**：`table.config.tsx` 加 `mobileColumns` / `mobileTrackColumns`（手机 3 列 = 主信息 `1fr` + 时长 + ⋯），
   `DataTable` 用**纯函数** `resolveColumns(shell, columns, mobileColumns)` 裁决；手机隐藏表头，单元格留白收到
@@ -380,10 +380,13 @@ pnpm tauri android build --debug -t aarch64 --apk
 
 | R120 | 收口走查（9 个路由）+ 修 4 个真机问题 | `scripts/probes/route-audit.js`：`pushState` + `popstate`（react-router 听它，不整页重载）逐个进 8 个抽屉项 + `/now-playing`，记溢出/外壳/可疑文案/console 报错。修掉：首页「「」共 0 首」→ `subtitleIdle`；抽屉品牌行被状态栏压住（绝对定位不继承 shell 的 `padding-top`）；手机上的「在文件夹中显示」假入口（`revealInDirAvailable`）；**进度条 32px 热区吃掉播放条按钮上 21px 的点击**（改成以进度线为中心的带状热区，播放条让 `--space-3` 的带） | 9 个页面全部 `overflow=0 / hasShell=true / suspicious=[] / newErrors=[]`；`elementFromPoint(200,831)`→进度条、`(158,858)`→打开播放页；拖动 `30→137`、点标题区进 `/now-playing`；`r120-android-drawer-fixed.png` / `-row-sheet-mobile.png` / `-now-playing.png` / `-notification.png`；GOTCHAS §64 |
 
+| R121 | 用户 10 条体验问题的第一批（#4 / #8 / #3+#10） | **#4** 最近播放重复且全部高亮 → 聚合放核心：`library.history.list` 用窗口函数改成「每首歌一行」（最近一次播放 + 累计 `playCount`，`total` 是歌数）。**#8** 抽屉去掉 ✕（`mobile.close` 一并删）：新增 `hooks/useBackToClose`——浮层打开时压一条同 URL 历史标记，系统返回先 pop 它 → 关浮层而不是退回上一页；抽屉与行操作面板都接上，点空白也能关。**#3/#10** 手机形态隐藏宠物 / 桌面歌词 / 网页壁纸助手 / 下载目录路径 / 诊断，数据目录只剩一句「系统分配、不能迁移」；本地页隐藏「每行一个目录」输入框与说明，提示语换手机版 | 真机：一首播 2 次 + 另一首 3 次 → `history.list` 返回 `total: 2`（playCount 2 / 3）、最近播放两行只高亮一行；抽屉无 ✕、点空白关闭且路由不变、系统返回关闭且不退出；设置页无桌面专有块；smoke 555；GOTCHAS §65 |
+
 **下一步（P3 余项 / P2-2 余项）**：P2-2 只差两件——`ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度，
 要先确认能真机验到才接）、`POST_NOTIFICATIONS` 运行时授权入口（API 33+ 才需要；本机 API 29 验不了）。
 注意本机 ROM（EMUI 10 / Android 10）的通知、控制中心、锁屏卡片**都不画进度条**，位置数据的可见面要等
 Android 11+ 或车机/蓝牙（§7.3 R117）；P3 只剩导入进度条与音乐目录导出。
+**体验类问题**见 R121 起的收口批次（手势、歌词页布局、动画穿模与过渡、背景适配、滚动重影、storage 适配）。
 
 
 **拆分（每片独立可交付）**
