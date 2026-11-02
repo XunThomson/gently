@@ -1,6 +1,6 @@
 import {useEffect} from 'react';
 import {useActions, useSelect} from '../store';
-import {audioEngine, syncPlaybackBanner} from '../services';
+import {audioEngine, installMediaActionHandler, syncPlaybackBanner} from '../services';
 
 /**
  * 把 store 的播放状态与真实音频引擎对接：
@@ -15,7 +15,8 @@ export function useAudioEngine(): void {
     const playing = useSelect((s) => s.player.playing);
     const playable = useSelect((s) => s.player.playable);
     const volume = useSelect((s) => s.player.volume);
-    const {setProgress, next, markUnplayable, recoverPlayback, markInterrupted} = useActions().player;
+    const {setProgress, next, markUnplayable, recoverPlayback, markInterrupted, toggle, prev} =
+        useActions().player;
 
     /* 引擎事件 → store */
     useEffect(() => {
@@ -52,17 +53,33 @@ export function useAudioEngine(): void {
     }, [playId]);
 
     /**
-     * 手机的「播放通知 / 前台服务」（P2-1）。
+     * 手机的「播放通知 / 前台服务 / MediaSession」（P2-1 / P2-2）。
      *
-     * 只在「在播 / 换歌」时推一次：安卓那边把它当前台服务用——熄屏、切后台之后
-     * 系统才不会把 WebView 里的媒体挂起（真机实测见 `docs/ANDROID-PLAN.md` §7.4）。
-     * 桌面端与浏览器里是空操作。
+     * 两个入参不能混：`active` = **有没有当前曲目**（决定服务起不起），`playing` = 在不在播
+     * （决定通知按钮与锁屏控件显示「播放」还是「暂停」）。
+     * 第一版把两者写成同一个值，结果**一暂停就把服务和 MediaSession 一起关了**——
+     * 通知没了、耳机键也不再响应（R115 真机抓到的）。暂停时必须留着后台播放器。
      */
+    const hasTrack = useSelect((s) => !!s.player.current);
     const trackTitle = useSelect((s) => s.player.current?.title ?? '');
     const trackArtist = useSelect((s) => s.player.current?.artist ?? '');
     useEffect(() => {
-        void syncPlaybackBanner(playing, trackTitle, trackArtist);
-    }, [playing, trackTitle, trackArtist]);
+        void syncPlaybackBanner(hasTrack, trackTitle, trackArtist, playing);
+    }, [hasTrack, playing, trackTitle, trackArtist]);
+
+    /**
+     * 通知栏 / 锁屏 / 耳机键的传输动作（P2-2）。
+     *
+     * 原生侧不拥有播放状态：它只把动作（toggle / next / prev）送进页面，
+     * 这里翻译成 store 的命令——与界面上的按钮走同一条路，行为不会分叉。
+     */
+    useEffect(() => {
+        return installMediaActionHandler((action) => {
+            if (action === 'toggle') toggle();
+            else if (action === 'next') next();
+            else prev();
+        });
+    }, [toggle, next, prev]);
 
     /**
      * 看门狗：音源解析成功、界面也切到「播放中」，但**媒体元素其实还停着**时兜底。

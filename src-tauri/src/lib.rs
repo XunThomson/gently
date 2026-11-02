@@ -114,8 +114,13 @@ fn app_restart(app: tauri::AppHandle) {
 /// 不是每秒调用——播放位置不归 Kotlin 管，播放状态仍以前端 store 为唯一权威。
 /// 桌面端与浏览器里这条命令要么不存在、要么是空操作，前端只在手机宿主上调用。
 #[tauri::command]
-fn playback_banner(active: bool, title: String, artist: String) -> Result<(), String> {
-    playback::update(active, &title, &artist)
+fn playback_banner(
+    active: bool,
+    title: String,
+    artist: String,
+    playing: bool,
+) -> Result<(), String> {
+    playback::update(active, &title, &artist, playing)
 }
 
 /// 宿主命令：**从手机导入音频**（Android，P3）。

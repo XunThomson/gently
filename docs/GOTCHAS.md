@@ -668,5 +668,27 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
      现在 `seek()` 走 `ensure()`，定位挂到 `loadedmetadata` 上。
      真机复测：`150/271` → 冷启动 `restored=150` → 点播放 `156/271`（接着放）。
 
+## 60. 前台服务的「active」不等于「playing」：一暂停就把通知和 MediaSession 一起关了（R115）
+
+- 现象：通知栏的 ⏸ 按下去能暂停，但**之后再按 ⏯ / 耳机键就没反应了**——通知消失，
+  `dumpsys media_session` 里也没有我们的会话了。
+- 根因：前端把两个概念当成一个值传下去（`syncPlaybackBanner(playing, …)`），于是
+  暂停 = `active=false` → Kotlin `stopService()` → 前台服务退出 → `MediaSession.release()`。
+- 规避：**`active` = 有没有当前曲目**（决定服务起不起），**`playing` = 在不在播**
+  （只决定按钮图标与 `PlaybackState`）。暂停时服务必须留着，否则锁屏 / 耳机键那条路就断了。
+  真机判据：暂停后 `dumpsys media_session` 仍要有
+  `Media button session is com.xun.gently/gently-playback` 且 `state=PlaybackState {state=2 …}`
+  （2 = PAUSED，3 = PLAYING）。
+- 传输动作怎么回到页面（P2-2 的取舍）：**原生不拥有播放状态**。Kotlin 在 `Plugin.load(webView)`
+  里留下 WebView 引用；用户按按钮 → 服务 `evaluateJavascript("window.__gentlyMediaAction('toggle')")`
+  → 前端翻成 store 的 `toggle/next/prev`。为什么不走 Tauri 的插件事件：那条通道是
+  「JS 先订阅、Rust 转发」的单向管道，而「用户按了通知按钮」是**原生主动发起**的；
+  注入一行调用是最短的一条路（Tauri 自己装 `__TAURI_INTERNALS__` 也是同款做法）。
+- MediaSession 用 **framework 的 `android.media.session`**（API 21+）+ `Notification.MediaStyle`，
+  不引 `androidx.media`：这台机器离线，少一个 Gradle 依赖就少一条版本坑。
+- 真机验证口径（不用点通知栏，直接发媒体键）：`adb shell input keyevent 127`（暂停）/`126`（播放）/
+  `87`（下一首）/`88`（上一首），再读页面里 `[role=slider]` 的 `aria-valuenow` 对照。
+
+
 
 

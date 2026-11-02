@@ -1,46 +1,77 @@
 /**
- * 手机上的「播放通知 / 前台服务」同步（P2-1 · R112）。
+ * 手机上的「播放通知 / 前台服务 / MediaSession」同步 + 传输动作回调（P2 · R112/R115）。
  *
  * 为什么需要它：真机实测（`docs/ANDROID-PLAN.md` §7.4）表明，熄屏或切到后台后，
  * 系统会把 WebView 里的媒体挂起——先音频停住，时间再长一点直接回收渲染进程。
  * 把应用提到「前台服务」档次，系统才会把它当「正在放音的应用」。
  *
- * 边界（刻意做小）：
- * - 只在**手机宿主**上做（桌面端/浏览器里是空操作，不产生任何 IPC）；
- * - 只在「开始播放 / 停止播放 / 换歌」时推一次，**不跟随进度**——
- *   播放状态仍以前端 store 为唯一权威，Kotlin 那边只是输出层；
+ * 两个方向（边界刻意做小）：
+ * - **页面 → 原生**：`syncPlaybackBanner()` 只在「在播 / 停 / 换歌」时推一次（不跟随进度）；
+ * - **原生 → 页面**：`installMediaActionHandler()` 装一个全局函数，通知栏 / 锁屏 / 耳机键
+ *   的按钮由 Kotlin 侧 `evaluateJavascript` 调它，前端再去改 store——
+ *   **原生不拥有播放状态**，它只显示与转发。
  * - 失败只打一条 warn：通知起不来不该影响播放本身。
  */
+
+/** 原生能派发的传输动作（与 Kotlin `MediaActionBridge` 的字符串一一对应） */
+export type MediaAction = 'toggle' | 'next' | 'prev';
+
+/** 页面里那个全局函数的键名（原生侧硬编码同一个名字） */
+const HANDLER_KEY = '__gentlyMediaAction';
 
 let lastSynced = '';
 
 /**
- * 同步播放通知。
+ * 同步播放通知（含 MediaSession 的元数据与播放态）。
  *
- * @param active 是否正在播放（false 时关掉前台服务）
- * @param title  当前曲目标题（空串表示没有曲目）
- * @param artist 当前曲目歌手
+ * @param active  是否正在播放（false 时关掉前台服务）
+ * @param title   当前曲目标题（空串表示没有曲目）
+ * @param artist  当前曲目歌手
+ * @param playing 是否在播（决定通知按钮与锁屏控件显示「播放」还是「暂停」）
  */
 export async function syncPlaybackBanner(
     active: boolean,
     title: string,
     artist: string,
+    playing: boolean,
 ): Promise<void> {
     if (typeof window === 'undefined') return;
-    /* 只在「Tauri 宿主 + 手机平台」上调用：桌面端那条命令虽然是空操作，
-       但没有理由为它付出一次无用的 IPC；浏览器预览里更是没有宿主。 */
+    /* 只在「Tauri 宿主」上调用：桌面端那条命令是空操作，浏览器里更没有宿主。 */
     if (!('__TAURI_INTERNALS__' in window)) return;
 
-    const key = `${active ? 1 : 0}|${title}|${artist}`;
+    const key = `${active ? 1 : 0}|${playing ? 1 : 0}|${title}|${artist}`;
     if (key === lastSynced) return;
     lastSynced = key;
 
     try {
         const {invoke} = await import('@tauri-apps/api/core');
-        await invoke('playback_banner', {active, title, artist});
+        await invoke('playback_banner', {active, title, artist, playing});
     } catch (err) {
         // 失败就允许下次重试（比如服务还没起、或 API 级别不允许前台服务）
         lastSynced = '';
         console.warn('[playback] 播放通知同步失败', err);
     }
+}
+
+/**
+ * 安装「原生 → 页面」的传输动作回调，返回卸载函数。
+ *
+ * 只在有 Tauri 宿主时挂：浏览器里那个全局函数没有任何调用方，
+ * 挂上去只会让「页面有个看不见的入口」，排查时反而迷惑。
+ */
+export function installMediaActionHandler(
+    handler: (action: MediaAction) => void,
+): () => void {
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+        return () => undefined;
+    }
+
+    const target = window as unknown as Record<string, unknown>;
+    target[HANDLER_KEY] = (action: unknown) => {
+        if (action === 'toggle' || action === 'next' || action === 'prev') handler(action);
+    };
+
+    return () => {
+        delete target[HANDLER_KEY];
+    };
 }

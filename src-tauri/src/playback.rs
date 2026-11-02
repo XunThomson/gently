@@ -33,13 +33,14 @@ mod android {
             .build()
     }
 
-    /// 把「在播什么 / 停了吗」推给前台服务。
-    pub fn update(active: bool, title: &str, artist: &str) -> Result<(), String> {
+    /// 把「在播什么 / 在不在播」推给前台服务（通知按钮的图标据此切换）。
+    pub fn update(active: bool, title: &str, artist: &str, playing: bool) -> Result<(), String> {
         let handle = HANDLE.get().ok_or_else(|| "播放通知插件尚未注册".to_string())?;
         let payload = serde_json::json!({
             "active": active,
             "title": title,
             "artist": artist,
+            "playing": playing,
         });
         handle
             .run_mobile_plugin::<serde_json::Value>("update", payload)
@@ -61,14 +62,14 @@ pub fn plugin() -> TauriPlugin<Wry> {
 }
 
 /// 同步播放通知。桌面端是空操作（保持 `Ok`，前端不必分平台）。
-pub fn update(active: bool, title: &str, artist: &str) -> Result<(), String> {
+pub fn update(active: bool, title: &str, artist: &str, playing: bool) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        android::update(active, title, artist)
+        android::update(active, title, artist, playing)
     }
     #[cfg(not(target_os = "android"))]
     {
-        let _ = (active, title, artist);
+        let _ = (active, title, artist, playing);
         Ok(())
     }
 }

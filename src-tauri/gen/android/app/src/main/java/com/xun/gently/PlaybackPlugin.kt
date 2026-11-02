@@ -3,6 +3,7 @@ package com.xun.gently
 import android.app.Activity
 import android.content.Intent
 import android.os.Build
+import android.webkit.WebView
 import androidx.core.content.ContextCompat
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
@@ -16,19 +17,32 @@ class PlaybackBannerArgs {
     var active: Boolean = false
     var title: String = ""
     var artist: String = ""
+    /** 是否正在播放（只有它决定通知上的按钮是「播放」还是「暂停」） */
+    var playing: Boolean = false
 }
 
 /**
- * 播放通知 / 前台服务的桥（P2-1，R112）。
+ * 播放通知 / 前台服务 / MediaSession 的桥（P2-1 R112，P2-2 R115）。
  *
  * 前端（`services/playbackBanner.service.ts`）→ Tauri 命令 `playback_banner`
- * → `run_mobile_plugin("update", {active,title,artist})` → 这里 → [PlaybackService]。
+ * → `run_mobile_plugin("update", {active,title,artist,playing})` → 这里 → [PlaybackService]。
  *
- * 只做「起/停」两件事，所有播放状态仍以前端 store 为唯一权威：
- * 服务不读播放位置、也不自己计时（P2-2 的 MediaSession 同样只做输出层）。
+ * 两个方向：
+ * - **页面 → 原生**：`update` 把「在放什么 / 在不在播」推过来，服务据此刷新通知与 MediaSession；
+ * - **原生 → 页面**：`load()` 时把 WebView 交给 [MediaActionBridge]；用户点通知栏 / 锁屏 /
+ *   耳机键的按钮时，服务把动作（toggle/next/prev）送回页面，由前端改 store。
+ *   服务因此**不拥有播放状态**，只做输出与转发。
  */
 @TauriPlugin
 class PlaybackPlugin(private val activity: Activity) : Plugin(activity) {
+
+    override fun load(webView: WebView) {
+        MediaActionBridge.attach(webView)
+    }
+
+    override fun onDestroy() {
+        MediaActionBridge.detach()
+    }
 
     @Command
     fun update(invoke: Invoke) {
@@ -36,6 +50,7 @@ class PlaybackPlugin(private val activity: Activity) : Plugin(activity) {
         val intent = Intent(activity, PlaybackService::class.java).apply {
             putExtra(PlaybackService.EXTRA_TITLE, args.title)
             putExtra(PlaybackService.EXTRA_ARTIST, args.artist)
+            putExtra(PlaybackService.EXTRA_PLAYING, args.playing)
         }
 
         try {

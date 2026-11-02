@@ -4,10 +4,46 @@ last_verified: 2026-11-02
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R114（P3 SAF 导入）：安卓上「粘贴目录再扫描」只对开发者成立（普通用户拿不到绝对路径），本轮补上真正的入口——Kotlin `ImportPlugin` 走 **SAF**（`ACTION_OPEN_DOCUMENT`，`audio/*`，可多选），在后台线程把选中的 URI 拷进 `<filesDir>/music`（同名不覆盖、**不需要任何存储权限**），经 `src-tauri/src/importer.rs` 的移动插件桥 + 宿主命令 `import_audio` 回到前端；`ScanPanel` 在手机形态多一行「从手机导入音频」，导入后拿返回的 `dir` 直接调核心 `library.local.scan` 入库。真机走了一遍「选择器 → 下载内容 → 选文件 → 已导入 1 首 → 列表出现 import-test、磁盘有文件、扫描新增 1」。smoke 534 → **535**。
+tldr: 当前 R115（P2-2 传输控制）：`PlaybackService` 接上 **framework 的 `MediaSession`**（不引 androidx.media）+ `MediaMetadata`/`PlaybackState` + 通知的 `Notification.MediaStyle` 三个按钮（上一首 / 播放·暂停 / 下一首）；用户按按钮后服务只把动作（toggle/next/prev）经 `MediaActionBridge`（`evaluateJavascript` 调页面里的 `window.__gentlyMediaAction`）送回前端，**改 store 的永远是页面**。真机踩到一个关键 bug：前端把 `active` 与 `playing` 混成一个值，一暂停就 `stopService()` → MediaSession 一起被释放 → 之后耳机键/锁屏全部失效；拆开后暂停仍保留会话（`state=2`）。真机：`KEYCODE_MEDIA_PAUSE` 冻在 6 → `PLAY` 6→10 → `NEXT` 换歌且通知标题跟着变；通知栏三按钮截图 `r115-android-notification.png`。smoke 535 → **539**。
 ---
 
 # STATE
+
+## 本轮目标（第一百一十五轮）
+
+> 起点：R112 的前台服务让「熄屏还在放」成立，但通知栏只有一个「点一下回到应用」——
+> 锁屏、蓝牙、耳机键都控制不了播放。P2-2 就是补这一半。
+
+### 1. 本轮做了什么
+
+| 层 | 改动 |
+|---|---|
+| Kotlin（`PlaybackService.kt`） | 接上 **framework 的 `MediaSession`**（`android.media.session`，API 21+，不引 `androidx.media` 少一条 Gradle 坑）：`MediaMetadata`（标题/歌手）+ `PlaybackState`（PLAYING/PAUSED + `PLAY/PAUSE/PLAY_PAUSE/SKIP_NEXT/SKIP_PREV`）+ `Callback`（onPlay/onPause/onSkipToNext/onSkipToPrevious）；通知改用 `Notification.MediaStyle`（`setMediaSession` + 三个按钮：上一首 / 播放·暂停 / 下一首，图标随 `playing` 切换） |
+| Kotlin（`MediaActionBridge.kt`，新） | 原生 → 页面的**单向下发**：`Plugin.load(webView)` 里留 WebView 引用，按钮动作 → `evaluateJavascript("window.__gentlyMediaAction('toggle')")`。原生**不拥有播放状态**，只转发 |
+| 宿主（`playback.rs` / `lib.rs`） | `playback_banner` 多一个 `playing` 参数（决定按钮图标与 `PlaybackState`） |
+| 前端（`services/playbackBanner.service.ts`） | `syncPlaybackBanner(active, title, artist, playing)`；新增 `installMediaActionHandler()`：装 `window.__gentlyMediaAction`，**只在有宿主时装**，返回卸载函数。`useAudioEngine` 把它翻成 store 的 `toggle/next/prev`（与界面按钮同一条路） |
+| 修复（本轮真机发现） | `active` 必须表示「**有没有当前曲目**」，不能等于 `playing`——第一版用同一个值，暂停就把前台服务连同 MediaSession 一起关了，之后耳机键/锁屏全部失效（GOTCHAS §60） |
+
+### 2. 验证
+
+- `pnpm typecheck` 通过；`pnpm smoke`：**539**（535 → +4：宿主里装上回调 / 三动作到得了前端且未知动作被忽略 / 卸载后全局函数被移除 / 无宿主是空操作）；
+- **真机（`CDY-AN00`）**：
+
+  | 项 | 结果 |
+  |---|---|
+  | 会话注册 | `dumpsys media_session`：`Media button session is com.xun.gently/gently-playback`、`state=PlaybackState {state=3 … actions=566}`（566 = play+pause+play_pause+skip_next+skip_prev） |
+  | 暂停（媒体键 127） | 进度冻在 `6`；会话仍在（`state=2` PAUSED）——**这是修好 active/playing 之后才成立的** |
+  | 播放（126） | `6 → 10`，会话回到 `state=3` |
+  | 下一首（87） | 换歌（进度归 0 后重新走），通知标题跟着变成新曲目 |
+  | 通知栏 | 三个按钮（⏮ ⏸ ⏭）；截图 `r115-android-notification.png` |
+
+### 3. 未做 / 值得你知道的
+
+- 通知小图标仍是系统自带的 `ic_media_play`（改成应用自己的需要加 drawable 资源）；
+- `POST_NOTIFICATIONS` 运行时授权入口没有（API 33+ 不授权时通知不可见，但保活/媒体键仍生效）；
+- `PlaybackState` 不带播放位置（`position=-1`）：位置不进原生，避免两处真相；锁屏进度条因此不显示；
+- P4 通知栏歌词（可复用这套会话）、P3 余项（导入进度、清理已导入、`.m4s` 的 MIME）、
+  R110 的「上游不是音频」进 UI 文案仍挂着。
 
 ## 本轮目标（第一百一十四轮）
 
@@ -44,9 +80,9 @@ tldr: 当前 R114（P3 SAF 导入）：安卓上「粘贴目录再扫描」只�
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
-| R114 | P3 SAF 导入 | 手机上终于能自己把音乐弄进来：Kotlin `ImportPlugin`（`ACTION_OPEN_DOCUMENT` 多选 → 后台线程拷进 `<filesDir>/music`，**零存储权限**）→ 宿主命令 `import_audio` → `ScanPanel` 手机形态的「从手机导入音频」→ 拿目录调 `library.local.scan`。真机：选文件 → 已导入 1 首 → 列表出现、磁盘有文件、扫描新增 1；smoke 535 | [本轮](#本轮目标第一百一十四轮) |
+| R115 | P2-2 MediaSession + 传输控制 | framework `MediaSession` + `MediaStyle` 三按钮；原生只把 `toggle/next/prev` 经 `evaluateJavascript` 送回页面（播放状态仍以 store 为权威）。真机：暂停冻在 6 → 播放 6→10 → 下一首换歌且通知标题跟着变；`actions=566`；smoke 539 | [本轮](#本轮目标第一百一十五轮) |
+| R114 | P3 SAF 导入 | 手机上终于能自己把音乐弄进来：Kotlin `ImportPlugin`（`ACTION_OPEN_DOCUMENT` 多选 → 后台线程拷进 `<filesDir>/music`，**零存储权限**）→ 宿主命令 `import_audio` → `ScanPanel` 手机形态的「从手机导入音频」→ 拿目录调 `library.local.scan`。真机：选文件 → 已导入 1 首 → 列表出现、磁盘有文件、扫描新增 1；smoke 535 | [下方](#本轮目标第一百一十四轮) |
 | R113 | 页面重载后的续播（P2-3） | 「上次在放什么 / 放到哪」落进 localStorage（纯函数校验、10 秒节流、不存队列），启动恢复成**暂停态**并补候选；`toggle()` 对「没有地址的暂停」走 `recoverPlayback()`；`seek()` 不再在元素未建时放弃。真机 `150/271` → 冷启动 → 点播放 `156/271`；smoke 534 | [归档](archive/rounds/R101-R113.md#本轮目标第一百一十三轮) |
-| R112 | P2-1 前台服务（保活 + 通知） | Kotlin `PlaybackService` + `PlaybackPlugin` 经移动插件桥由宿主命令 `playback_banner` 驱动；前端只在「在播/停/换歌」推一次。真机 `isForeground=true foregroundId=1001`，**熄屏 4 分钟 5→258/271（+253 秒）**，HOME 后台 1 分钟 4→68，放完自动退出；smoke 529 | [归档](archive/rounds/R101-R113.md#本轮目标第一百一十二轮) |
 
 ## 历史轮次
 

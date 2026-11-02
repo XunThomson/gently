@@ -371,10 +371,11 @@ pnpm tauri android build --debug -t aarch64 --apk
 | R112 | P2-1 前台服务 | Kotlin `PlaybackService`（`startForeground` 必须 5 秒内调）+ `gently-playback` 渠道 + 常驻通知；`PlaybackPlugin` 由宿主命令 `playback_banner` 驱动，前端只在「在播/停/换歌」推一次。清单需要 `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MEDIA_PLAYBACK`（targetSdk 36） | 熄屏 4 分钟 `5/271 → 258/271`（+253 秒）；`isForeground=true foregroundId=1001`；GOTCHAS §58 |
 | R113 | P2-3 续播 | `utils/lastPlayback.ts`（纯函数校验、10 秒节流、**只存一首歌不存队列**）+ `toggle()` 的「没有地址的暂停」→ `recoverPlayback()`；`seek()` 不再在元素未建时放弃 | 真机 `150/271` → 冷启动 → 点播放 `156/271`；GOTCHAS §59 |
 | R114 | P3-1 SAF 导入 | Kotlin `ImportPlugin`（`ACTION_OPEN_DOCUMENT`，`audio/*` 多选）在**后台线程**拷进 `<filesDir>/music`（同名不覆盖、**零存储权限**）→ `src-tauri/src/importer.rs` + 宿主命令 `import_audio` → `ScanPanel` 手机形态的「从手机导入音频」→ `library.local.scan` 入库 | 真机选 1 首 → 列表出现、磁盘有文件、扫描新增 1；`r114-android-import.png` |
+| R115 | P2-2 MediaSession + 传输控制 | `PlaybackService` 用 framework 的 `MediaSession`（不引 androidx.media）：`MediaMetadata` + `PlaybackState`（`PLAY/PAUSE/SKIP_NEXT/SKIP_PREV`），通知用 `Notification.MediaStyle` 挂三个按钮（上一首 / 播放·暂停 / 下一首）；用户按按钮 → 服务只把动作（`toggle/next/prev`）经 `MediaActionBridge`（`evaluateJavascript` 调页面里的 `window.__gentlyMediaAction`）送回前端，**改 store 的永远是页面** | 真机 `KEYCODE_MEDIA_PAUSE` 后进度冻在 `6`、`KEYCODE_MEDIA_PLAY` 6→10、`KEYCODE_MEDIA_NEXT` 换歌且通知标题跟着变；`dumpsys media_session` 里 `state=3/2` 与 `actions=566`；通知栏三按钮截图 `r115-android-notification.png` |
 
-**下一步（P2-2 / P4）**：MediaSession + 通知栏的播放/暂停/上下曲（`PendingIntent` 回服务 → 用 Tauri 的
-`trigger` 或事件回前端，**播放状态仍要回 store 才算数**）、通知图标换成应用自己的、`POST_NOTIFICATIONS`
-运行时授权入口；P4 的通知栏歌词复用同一套前台服务。
+**下一步（P4 / P3 余项）**：P4 的通知栏歌词复用同一套前台服务（`MediaSession` 已经在，歌词走
+`Notification.bigContentView` 或自定义 `RemoteViews`）；`POST_NOTIFICATIONS` 运行时授权入口（设置页）；
+通知小图标换成应用自己的；P3 余项：导入进度、清理已导入、`.m4s` 这类系统 MIME 库不认的封装。
 
 
 **拆分（每片独立可交付）**
@@ -388,7 +389,7 @@ pnpm tauri android build --debug -t aarch64 --apk
 | P1-5 | `mobileColumns` + 各列表两行式呈现 | 列表在 360px 宽下不横向溢出 |
 | P1-6 | 窗口能力 no-op + 桥不挂 + 截图与文档 | 真机无报错；桌面截图无变化 |
 | P2-1 | **前台服务**保活 + 常驻通知（Kotlin Service + Tauri 移动插件桥） | 熄屏/后台继续播（实测熄屏 4 分钟 +253 秒）；停播即退出服务 |
-| P2-2 | MediaSession + 通知栏传输控制 + 通知图标 | 通知上能播放/暂停/上下曲，且状态回写 store |
+| P2-2 | MediaSession + 通知栏传输控制 + 通知图标（R115 已落地，图标仍是系统自带的） | 通知上能播放/暂停/上下曲，且状态回写 store |
 | P2-3 | 页面被系统重载后的续播（R113 已落地） | 冷启动后播放条有歌、位置正确、点播放从该位置接着放 |
 | P3-1 | **SAF 导入**（系统文件选择器 → 拷进应用目录 → 扫描入库，R114 已落地） | 真机选文件后列表里出现该曲目；不需要存储权限 |
 

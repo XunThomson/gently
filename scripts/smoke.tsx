@@ -79,7 +79,12 @@ import {
 } from '../src/config/table.config';
 import {resolveColumns, type ColumnDef} from '../src/components/ui/data-table';
 import {MobileRowActions, RowActionsProvider} from '../src/components/ui/row-actions';
-import {desktopWindowActionsAvailable, importAudioFiles, syncPlaybackBanner} from '../src/services';
+import {
+    desktopWindowActionsAvailable,
+    importAudioFiles,
+    installMediaActionHandler,
+    syncPlaybackBanner,
+} from '../src/services';
 import {lyricsScrollStep, lyricsScrollTarget} from '../src/utils/lyricsScroll';
 import {getThemeSkin, parseSkin, resolveTheme as resolveSkin, serializeSkin} from '../src/theme';
 import type {ThemeSkin} from '../src/theme';
@@ -2785,6 +2790,43 @@ async function main(): Promise<void> {
         check('播放通知：没有宿主时是静默空操作（不抛、不发 IPC）', threw === null, String(threw));
     }
 
+    /* 媒体动作（P2-2）：通知栏/锁屏的按钮由原生注入到页面里的一个全局函数派发 */
+    {
+        const scope = globalThis as unknown as {window?: unknown};
+        const backup = scope.window;
+        scope.window = {__TAURI_INTERNALS__: {}};
+        try {
+            const seen: string[] = [];
+            const uninstall = installMediaActionHandler((action) => seen.push(action));
+            const dispatch = (scope.window as Record<string, unknown>).__gentlyMediaAction as
+                | ((action: string) => void)
+                | undefined;
+            check('媒体动作：宿主里装上了页面回调', typeof dispatch === 'function');
+            dispatch?.('toggle');
+            dispatch?.('next');
+            dispatch?.('prev');
+            dispatch?.('bogus');
+            check(
+                '媒体动作：toggle / next / prev 到得了前端，未知动作被忽略',
+                seen.join(',') === 'toggle,next,prev',
+                seen.join(','),
+            );
+            uninstall();
+            check(
+                '媒体动作：卸载后全局函数被移除',
+                !('__gentlyMediaAction' in (scope.window as Record<string, unknown>)),
+            );
+        } finally {
+            if (backup === undefined) delete scope.window;
+            else scope.window = backup;
+        }
+        const noop = installMediaActionHandler(() => undefined);
+        check(
+            '媒体动作：没有宿主时是空操作（不往 globalThis 上装东西）',
+            typeof noop === 'function' && !('__gentlyMediaAction' in (globalThis as object)),
+        );
+    }
+
     /* 导入音频（P3）：没有宿主时返回「取消」，不能假装导入成功、也不能抛 */
     {
         const result = await importAudioFiles();
@@ -4108,7 +4150,7 @@ async function main(): Promise<void> {
                 JSON.stringify(libraryAfterScan.scanSummary),
             );
             /* 非音频文件数（R53）：`scanned=0` 与「目录是空的」必须能分辨——
-               用户的 `D:\Xun\Music` 里只有一个 `.m4s`，旧版界面只能显示「还没有本地音乐」 */
+               用户的 `D:\Music` 里只有一个 `.m4s`，旧版界面只能显示「还没有本地音乐」 */
             check(
                 'fake: 扫描统计带上非音频文件数（不再把「有文件但都不是音频」显示成空目录）',
                 libraryAfterScan.scanSummary?.ignored === 2,
