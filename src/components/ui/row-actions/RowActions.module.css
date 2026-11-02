@@ -48,6 +48,8 @@
 }
 
 .sheet {
+    /* 下拉收起（R125）：面板自己接管纵向拖拽，别让浏览器的滚动/回弹先把 pointermove 吃掉 */
+    touch-action: none;
     position: relative;
     display: flex;
     flex-direction: column;
@@ -134,6 +136,8 @@
 /* 减少动效：面板直接就位（polished-ui mobile-accessibility 的 reduced-motion 要求） */
 @media (prefers-reduced-motion: reduce) {
     .sheet {
+    /* 下拉收起（R125）：面板自己接管纵向拖拽，别让浏览器的滚动/回弹先把 pointermove 吃掉 */
+    touch-action: none;
         animation: none;
     }
 }

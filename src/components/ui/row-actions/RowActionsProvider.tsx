@@ -1,4 +1,4 @@
-import {createContext, useMemo, useState, type ReactNode} from 'react';
+import {createContext, useMemo, useRef, useState, type ReactNode} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useBackToClose} from '../../../hooks/useBackToClose';
 import type {RowAction} from '../data-table';
@@ -51,6 +51,27 @@ export function RowActionsProvider({children}: { children: ReactNode }) {
     /* 安卓的系统返回 / 返回手势 = 收起面板（与抽屉一致，R121） */
     useBackToClose(request !== null, api.close);
 
+    /* 面板下拉收起（R125，#1 的手势补齐）：底部面板的常规手势是「往下拖走」。
+       左边缘横滑那条路走不通（被系统返回吞掉，见 GOTCHAS §67），但下拉不冲突。
+       拖动时只跟位移、不打断点击：位移小于阈值松手就弹回原处。 */
+    const [dragY, setDragY] = useState(0);
+    const dragStart = useRef<number | null>(null);
+    const onSheetPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+        dragStart.current = event.clientY;
+        event.currentTarget.setPointerCapture(event.pointerId);
+    };
+    const onSheetPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (dragStart.current === null) return;
+        setDragY(Math.max(0, event.clientY - dragStart.current));
+    };
+    const onSheetPointerUp = () => {
+        if (dragStart.current === null) return;
+        const moved = dragY;
+        dragStart.current = null;
+        setDragY(0);
+        if (moved > 48) api.close();
+    };
+
     return (
         <RowActionsContext.Provider value={api}>
             {children}
@@ -72,7 +93,15 @@ export function RowActionsProvider({children}: { children: ReactNode }) {
                         onClick={api.close}
                     />
 
-                    <div className={styles.sheet} onClick={(event) => event.stopPropagation()}>
+                    <div
+                        className={styles.sheet}
+                        style={dragY > 0 ? {transform: `translateY(${dragY}px)`} : undefined}
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={onSheetPointerDown}
+                        onPointerMove={onSheetPointerMove}
+                        onPointerUp={onSheetPointerUp}
+                        onPointerCancel={onSheetPointerUp}
+                    >
                         <span className={styles.grabber} aria-hidden="true"/>
                         <p className={styles.title}>{request.title}</p>
 
