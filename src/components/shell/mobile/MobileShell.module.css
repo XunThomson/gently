@@ -228,10 +228,17 @@
     min-width: 0;
 }
 
-/* 浮层打开时压住底层的按压态（R133，#5 动画穿模）：
-   抽屉/面板已经盖在上面，底下还亮着的 :active 高亮会透过遮罩显得像「两层在动」。 */
-:global([data-overlay='open']) button:active,
-:global([data-overlay='open']) [class*='row']:active {
+/* 浮层打开时压住**被浮层盖住的那几层**的按压态（R133/R134，#5 动画穿模）：
+   抽屉/面板滑上来时，底下那颗刚被按过的按钮（☰ / 行的 ⋯ / 行本身）还在跑
+   `:active` 高亮的回退过渡，透过半透明遮罩就是「两层同时在动」。
+
+   只压顶栏与内容区的按钮——**浮层自己的按压反馈必须留着**：R133 用的是全局 `button:active`，
+   结果连抽屉项和底部面板的动作按钮一起被压成透明，点了像没反应。
+
+   表格行的规则不在这里：`.table[data-layout='mobile'] .row:active` 与这条同权重（0,4,0），
+   平局靠源码顺序，真机上只压住了过渡、没压住背景色。行的覆盖写在 DataTable.module.css 里。 */
+:global(html[data-overlay='open']) .headerAction:active,
+:global(html[data-overlay='open']) .content button:active {
     background-color: transparent;
     transition: none;
 }

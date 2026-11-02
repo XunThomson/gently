@@ -807,3 +807,31 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
 - 补充（R125）：与系统不冲突的手势是**底部面板下拉收起**；两件事必须同时做到——阈值别贪大（48px 够），面板上写 `touch-action: none`（否则浏览器/回弹先吃掉 pointermove，真机拖不动）。
 - 反面教训：这一版代码在真机上一次都没成功打开抽屉，只在「应用被杀」这一点上留下了痕迹——
   所以「手势类改动」没有真机 swipe 证据就不该进主干。
+
+## 68. 「浮层打开时压住底层按压态」：两条规则都可能白写（R133/R134）
+
+- 症状（用户反馈 #5「动画穿模」）：开抽屉 / 开行操作面板时，底下刚按过的那一层还在跑
+  `:active` 高亮的**回退过渡**，透过半透明遮罩看着像「两层同时动」。
+- 做法：浮层打开时给 `<html>` 打 `data-overlay="open"`（`hooks/useBackToClose.ts`，抽屉与底部面板共用），
+  CSS 在遮罩期间压掉底层的按压高亮与过渡。**必须只压被浮层盖住的那几层**：
+  全局 `button:active` 会把抽屉项与面板动作按钮一起压成透明，用户点了像没反应。
+- 两个真机才会暴露的坑：
+  1. **同权重平局**：外壳里的 `[data-overlay='open'] .content [class*='row']:active` 与表格自己的
+     `.table[data-layout='mobile'] .row:active` 都是 0,4,0 —— 平局按源码顺序，而打包后的顺序不由我们决定。
+     真机实测的结果很阴：`transition: none` 生效了、`background-color` 没生效（行还在亮）。
+     正解：行的覆盖写进 `DataTable.module.css`（紧挨被压的那条），并用 `html[data-overlay='open']` 提到 0,4,1。
+  2. `:active` 用注入事件测不出来（`dispatchEvent(new PointerEvent('pointerdown'))` 不会让元素进 `:active`）。
+- **验收方法（别再靠截图数像素）**：真机 CDP 上按元素强制伪类，再读 computed：
+
+  ```js
+  // Node 侧：DOM.enable / CSS.enable 之后
+  const {root} = await send('DOM.getDocument', {depth: 0});
+  const {nodeId} = await send('DOM.querySelector', {nodeId: root.nodeId, selector});
+  await send('CSS.forcePseudoState', {nodeId, forcedPseudoClasses: ['active']});
+  // 页面里读 getComputedStyle(el).backgroundColor / transitionDuration
+  ```
+
+  再用 `document.getAnimations().filter(a => !a.effect.target.closest('[role="dialog"]'))` 数「浮层外还剩几条」——
+  R134 的读数：顶栏按钮 / 行 / ⋯ 全变透明，抽屉项与面板动作按钮保留 `--bg-active`，浮层打开后浮层外 0 条动画。
+- 读 computed 时注意**过渡进行中**会拿到插值（从 0 到 0.04 的半路值是 0.004），
+  判断「压没压住」要么等过渡结束、要么看 `transitionProperty` 是否被压成 `none`。

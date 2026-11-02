@@ -385,11 +385,17 @@ pnpm tauri android build --debug -t aarch64 --apk
 | R122 | 用户反馈 #7 背景适配 / #9 滚动重影 | 真机诊断：`background.asset` 为空时会退回**内置 100 MB+ 演示视频**（`src/assets/bgc.mp4`）→ 手机一进应用就解码大文件、背景迟到、表面忽然变半透明+毛玻璃；19px 毛玻璃盖在动图上让滚动文字糊成一片。修：手机形态不用内置演示视频（只认用户导入的素材）、默认无毛玻璃 + 内容/抽屉不透明度下限 0.92、背景层淡入 | 真机冷启动后：无背景层、`data-video-bg` 未设置、`--surface-chrome: #ffffff`、`--surface-blur: none`；列表白底深字（`r122-android-local-opaque.png`）；GOTCHAS §66 |
 | R121 | 用户 10 条体验问题的第一批（#4 / #8 / #3+#10） | **#4** 最近播放重复且全部高亮 → 聚合放核心：`library.history.list` 用窗口函数改成「每首歌一行」（最近一次播放 + 累计 `playCount`，`total` 是歌数）。**#8** 抽屉去掉 ✕（`mobile.close` 一并删）：新增 `hooks/useBackToClose`——浮层打开时压一条同 URL 历史标记，系统返回先 pop 它 → 关浮层而不是退回上一页；抽屉与行操作面板都接上，点空白也能关。**#3/#10** 手机形态隐藏宠物 / 桌面歌词 / 网页壁纸助手 / 下载目录路径 / 诊断，数据目录只剩一句「系统分配、不能迁移」；本地页隐藏「每行一个目录」输入框与说明，提示语换手机版 | 真机：一首播 2 次 + 另一首 3 次 → `history.list` 返回 `total: 2`（playCount 2 / 3）、最近播放两行只高亮一行；抽屉无 ✕、点空白关闭且路由不变、系统返回关闭且不退出；设置页无桌面专有块；smoke 555；GOTCHAS §65 |
 
+| R128 | #3 尾项：手机形态不再提供「网页（静态单文件）」背景 | 背景类型选项按 `isMobilePlatform()` 分流：手机只有「视频」（网页背景是把单个 HTML 塞进 iframe 的桌面玩法），桌面两种都在、历史配置不清 | `pnpm typecheck` / `pnpm smoke` 通过（`kindWeb` 仍被桌面分支引用，死键守卫通过） |
+| R130 | #10 尾项：手机上下载落在哪 | 下载卡片在手机形态多一句「落在应用私有目录、卸载一并删除」（与数据目录卡片同一说法）；桌面仍显示目录输入框 | `pnpm smoke` 555 |
+| R133 | #5 动画穿模：第一刀 | 浮层（抽屉 / 行操作面板）打开时给 `<html>` 打 `data-overlay="open"`（抽屉与面板共用 `useBackToClose`，标记只在一处维护），CSS 压掉底层 `:active` 高亮与过渡。交付时只到门禁层 | 真机复核在 R134 补上（并量出两处偏差） |
+| R134 | #5 动画穿模：真机复核 + 修两处偏差 | 真机用 CDP `CSS.forcePseudoState` 强制 `:active` 读 computed、`document.getAnimations()` 数「浮层外还剩几条」：① 行规则与 `.table[data-layout='mobile'] .row:active` 同为 0,4,0，平局靠源码顺序 → 只压住过渡没压住背景色；② R133 的全局 `button:active` 越界到浮层自身。修：抑制收窄到顶栏 + 内容区按钮（`html[data-overlay='open']`），行的覆盖写进 `DataTable.module.css` 并提到 0,4,1 | 真机：顶栏/行/⋯ 强制 `:active` 后全透明、抽屉项与面板动作按钮保留 `--bg-active`、浮层打开后浮层外 0 条动画、标记随开关清理；`r134-android-drawer.png` / `-row-sheet.png`；smoke 555；GOTCHAS §68 |
+
 **下一步（P3 余项 / P2-2 余项）**：P2-2 只差两件——`ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度，
 要先确认能真机验到才接）、`POST_NOTIFICATIONS` 运行时授权入口（API 33+ 才需要；本机 API 29 验不了）。
 注意本机 ROM（EMUI 10 / Android 10）的通知、控制中心、锁屏卡片**都不画进度条**，位置数据的可见面要等
 Android 11+ 或车机/蓝牙（§7.3 R117）；P3 只剩导入进度条与音乐目录导出。
-**体验类问题**见 R121 起的收口批次（手势、歌词页布局、动画穿模与过渡、背景适配、滚动重影、storage 适配）。
+**体验类问题（R121 起的收口批次）已全部落地**：手势（返回关浮层、面板下拉收起；左边缘横滑是负结果，GOTCHAS §67）、
+歌词页尺寸、桌面专有项、最近播放去重、动画穿模与过渡、背景适配、滚动重影、storage 适配（逐轮见 R121–R134）。
 
 
 **拆分（每片独立可交付）**
