@@ -1,6 +1,17 @@
 import {isTauri} from './window.service';
 
 /**
+ * 「在文件夹中显示」在哪些形态下成立（纯谓词，冒烟直接钉）。
+ *
+ * 桌面端成立；**安卓不成立**：`revealItemInDir` 是桌面 shell 的能力，
+ * 手机上既没有「文件管理器定位」这回事，应用私有目录外部也看不到——
+ * 留一个点了没反应的菜单项比不留更坏（GOTCHAS §46）。
+ */
+export function revealInDirAvailable(mobile: boolean): boolean {
+    return !mobile;
+}
+
+/**
  * 文件系统 / 系统集成能力封装。
  * 浏览器 / `vite dev` 下为安全空操作，仅在 Tauri 宿主内调用原生能力。
  */

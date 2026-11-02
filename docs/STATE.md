@@ -4,10 +4,51 @@ last_verified: 2026-11-02
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R119（P3 余项）：导入是「拷一份」，而原来的「移除」只移出曲库、文件留在磁盘——私有目录只涨不清。新宿主命令 `imported_dir`（Kotlin 回 `<filesDir>/music`，前端不猜）→ `importedMusicDir()` 缓存 → 纯函数 `importedTracksOf` 按**路径前缀**挑副本（拿不到目录就一条不删）→ `purgeImported()` 连文件一起删（正在播的先停）→ `ScanPanel` 手机形态给「清理副本」+ 危险确认。真机：曲库 3 首 → 清掉 2 个副本（`files/music` 变空、`probe` 留下、正在播的已停）。归档：R115 迁进 `archive/rounds/R101-R115.md`。smoke **552**。
+tldr: 当前 R120：**移动端收口**。用 `scripts/probes/route-audit.js`（pushState + popstate，不整页重载）把 8 个抽屉项 + `/now-playing` 逐个走了一遍：全部 `overflow=0`、无报错、空态都有文案。顺手修掉四个真机问题——首页「「」共 0 首」→「搜全部音源」；抽屉品牌行被状态栏压住（绝对定位不继承 shell 的让位）；手机上的「在文件夹里显示」是假入口（新谓词 `revealInDirAvailable`）；**进度条 32px 热区抢走播放条按钮的点击**（`elementFromPoint(158,858)` 返回「进度」，改成以进度线为中心的带状热区后拖动与点击都成立）。P0–P4 全部落地，余项见 ANDROID-PLAN §8。smoke **554**。
 ---
 
 # STATE
+
+## 本轮目标（第一百二十轮）
+
+> P0–P4 的计划片都有落地记录了，但这不等于「手机上能用」：8 个路由没一次性走完过，
+> 也没人检查过「点了没反应」的地方。这一轮就是**按用户的路径走一遍**，把发现的问题修掉。
+
+### 1. 走查方式（可复现，不靠手算坐标）
+
+`scripts/probes/route-audit.js`：`pushState` + 派发 `popstate`（react-router 听的就是它，
+不用整页重载）逐个进 9 个页面（8 个抽屉项 + `/now-playing`），每页记：
+`scrollWidth - innerWidth`（横向溢出）、外壳与播放条在不在、文案里有没有
+「加载失败 / undefined / NaN」、以及期间有没有新的 `console.error` / 未捕获 rejection。
+
+### 2. 走查结果与修掉的四件事
+
+| 发现 | 修法 |
+|---|---|
+| 9 个页面**全部** `overflow=0`、外壳与播放条都在、无报错、空态都有文案（搜索/下载/收藏都是「…还没有…」这类） | 无需改 |
+| 首页副标题写成「「」共 0 首」——还没搜就说「搜了 0 首」 | 没有关键词时用 `page.search.subtitleIdle`（「搜全部音源」） |
+| 抽屉的「Gently」与 ✕ 被**状态栏时钟压住**：抽屉是 `position:absolute; inset:0`，`top:0` 落在 shell 的 **padding box** 上，不会继承那 30px 让位 | 抽屉面板按 `appConfig.mobile.statusBarInset` 叠加顶部内边距（值从组件传，不写死） |
+| 本地/下载行的「在文件夹中显示」在手机上点了没反应（桌面能力） | 新纯谓词 `revealInDirAvailable(mobile)`，手机形态不给这一项（GOTCHAS §46） |
+| 播放条上的「打开播放页」**上半截点不动**：进度条 32px 的触屏热区从播放条顶边往下铺，盖住了按钮的上 21px（`elementFromPoint(158,858)` 返回「进度」） | 播放条顶部让出 `--space-3` 的带宽，热区改成**以进度线为中心**（`top: -12px`、`height: 24px`），到按钮行开始处收住 |
+
+### 3. 验证
+
+- `pnpm typecheck` 通过；`pnpm smoke`：**554**（552 → +2：抽屉面板带状态栏让位 / 让位谓词在手机为 false）；
+- **真机（`CDY-AN00`）**：
+
+  | 项 | 结果 |
+  |---|---|
+  | 路由走查 | 9 个页面 `overflow=0`、`hasShell/hasPlaybar=true`、`suspicious=[]`、`newErrors=[]` |
+  | 抽屉 | 品牌行与 ✕ 落到 `y=42`（与外壳顶栏同高），不再被时钟压住（`r120-android-drawer-fixed.png`） |
+  | 行操作面板 | 手机只剩「播放 / 收藏 / 移除」（没有「在文件夹中显示」） |
+  | 播放条 | `elementFromPoint(200,831)` → 进度条（可拖）、`(158,858)` → 打开播放页（可点）；实测拖动 `30 → 137`、点标题区进 `/now-playing` |
+  | 播放链路 | 媒体键暂停 `state=2 speed=0.0 position=17943`、恢复后 `state=3`；通知栏 ♪ + 标题 + 三按钮 |
+
+### 4. 结论：移动端开发到此收口
+
+P0–P4 的计划片全部落地并真机验证过：外壳与触摸语义、前台服务保活、MediaSession 传输控制、
+通知栏歌词与位置/时长、SAF 导入（任意封装）、冷启动续播、导入副本清理。
+**剩下的都是「本机验不了或价值很低」的余项**，见 `ANDROID-PLAN.md` §8 的收尾清单，不再单独立轮。
 
 ## 本轮目标（第一百一十九轮）
 
@@ -39,7 +80,7 @@ tldr: 当前 R119（P3 余项）：导入是「拷一份」，而原来的「移
 
 - 只按**路径前缀**认副本，所以「用户在别处自己扫描进来的音乐」永远不在清理范围内——刻意的最小权限；
 - 清理逐条串行调用（几十首会有点慢），没有进度条；导入进度条与音乐目录导出仍挂着（P3 余项）；
-- 归档：本轮把 R115 迁进 `archive/rounds/R101-R115.md`（原 `R101-R114.md` 改名，frontmatter 与引用一并更新）；
+- 归档：本轮把 R115 迁进归档（`R101-R114.md` 改名成 `R101-R115.md`）；
 - P2-2 余项（`ACTION_SEEK_TO` + `onSeekTo`、`POST_NOTIFICATIONS`）与 R110 的「上游不是音频」进 UI 文案仍挂着。
 
 ## 本轮目标（第一百一十八轮）
@@ -122,55 +163,20 @@ tldr: 当前 R119（P3 余项）：导入是「拷一份」，而原来的「移
 - P3 余项（导入进度、「清理已导入」、`.m4s` 的 MIME、音乐目录授权/导出）与 R110 的
   「上游不是音频」进 UI 文案仍挂着。
 
-## 本轮目标（第一百一十六轮）
-
-> 起点：R115 之后通知栏能上一首/暂停/下一首了，但第二行永远是歌手。用户要的是**正在唱的那一句**。
-
-### 1. 本轮做了什么
-
-| 层 | 改动 |
-|---|---|
-| 前端（`utils/lyrics.ts`） | `currentLyricLine(lines, elapsed)`：没有命中行返回空串。歌词**只在页面算**，原生不碰时间轴 |
-| 前端（`services/playbackBanner.service.ts`） | `syncPlaybackBanner(active, title, artist, playing, line = '')`；去重键 `playbackBannerKey()` 把 `line` 也算进去——**换行才推一次**，不逐帧打原生。`useAudioEngine` 用一个返回字符串的 selector 取当前行 |
-| 宿主（`playback.rs` / `lib.rs`） | `update()` 与宿主命令 `playback_banner` 多第 5 个参数 `line` |
-| Kotlin（`PlaybackService.kt` / `PlaybackPlugin.kt`） | `PlaybackBannerArgs.line` → `EXTRA_LINE`；`setContentText(if (line.isNotBlank()) line else artist)`，并写进 `MediaMetadata` 的 `METADATA_KEY_DISPLAY_SUBTITLE` |
-
-### 2. 验证
-
-- `pnpm typecheck` 通过；`pnpm smoke`：**541**（539 → +2：`currentLyricLine` 命中/未命中、`playbackBannerKey` 换行后必须变）；
-- **真机（`CDY-AN00`）**：本地曲目播放中（前台服务在），用 CDP 直接走宿主命令，两次只换 `line`：
-
-  | 项 | 结果 |
-  |---|---|
-  | 第一次 `line='第一句：夜色温柔'` | 通知第二行 = 第一句：夜色温柔（`r116-android-lyrics-notification-1.png`） |
-  | 第二次 `line='第二句：灯火未眠'` | **同一张通知原地更新**，标题与按钮不变，第二行换成第二句（`r116-android-lyrics-notification-2.png`） |
-  | `dumpsys media_session` | `metadata: size=3`、`state=3`（会话存活） |
-
-### 3. 未做 / 值得你知道的
-
-- 本地曲目没有歌词，所以真机走的是「直接调宿主命令」的确定性验证；在线曲目（有歌词）在本机放不出声（GOTCHAS §56），
-  端到端「跟着歌换行」只能在桌面端看；
-- 两个**看文档容易踩空**的地方：`dumpsys media_session` 里 `description` 的第三项是 **ALBUM**（恒为 null），
-  不能用它判断字幕有没有写进去；系统界面（通知面板 / 锁屏）只能 `adb exec-out screencap -p` 截，
-  `node scripts/android-cdp.mjs shot` 只有 WebView 画面（已修脚本里的说明文字）；
-- 歌词同步有 1 个节流的余量：`line` 变了才推，但通知文字更新本身是同步 IPC，长歌词行不会造成压力；
-- 仍挂着：锁屏进度条（`position=-1`）、通知小图标换应用自己的、`POST_NOTIFICATIONS` 授权入口、
-  P3 余项、R110 的「上游不是音频」进 UI 文案。
-
 ## 最近三轮
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
-| R119 | P3 余项：清理导入副本 | 新宿主命令 `imported_dir`（前端不猜 `<filesDir>`）+ `importedMusicDir()` 缓存 + 纯函数 `importedTracksOf`（路径前缀，拿不到目录一条不删）+ `purgeImported()`（要删的正在播就先停，逐条 `library.local.remove{deleteFile}`）；`ScanPanel` 手机形态给「清理副本」+ 危险确认。真机：3 首 → 清掉 2 个副本（磁盘 `files/music` 空、`probe` 留下、正在播的已停）；smoke 552 | [本轮](#本轮目标第一百一十九轮) |
+| R120 | 收口走查：9 个路由跑一遍，修掉 4 个真机问题 | `route-audit.js`（pushState + popstate，不整页重载）逐个进 8 个抽屉项 + `/now-playing`：全部不带横向溢出、无报错、空态有文案。修掉：首页「「」共 0 首」→「搜全部音源」；抽屉品牌行被状态栏压住（绝对定位不继承 shell 的让位）；手机上的「在文件夹中显示」是假入口；**进度条 32px 热区抢走播放条按钮的点击**（`elementFromPoint` 确诊，改成以进度线为中心的带状热区）。smoke 554 | [本轮](#本轮目标第一百二十轮) |
+| R119 | P3 余项：清理导入副本 | 新宿主命令 `imported_dir`（前端不猜 `<filesDir>`）+ `importedMusicDir()` 缓存 + 纯函数 `importedTracksOf`（路径前缀，拿不到目录一条不删）+ `purgeImported()`（要删的正在播就先停，逐条 `library.local.remove{deleteFile}`）；`ScanPanel` 手机形态给「清理副本」+ 危险确认。真机：3 首 → 清掉 2 个副本（磁盘 `files/music` 空、`probe` 留下、正在播的已停）；smoke 552 | [下方](#本轮目标第一百一十九轮) |
 | R118 | P3 余项：任意封装都能导入 | 真机证实系统 MIME 库不认 `.m4s`（同一个文件改 `.mp3` 就能选），于是选择器放开到「音频 + 未知类型」，选完按扩展名筛（名单与核心 `AUDIO_EXTENSIONS` 一一对应），跳过数如实回报；结果文案抽成纯函数 `importNoteText`。真机：`.m4s` 可选 → 已导入 1 首 → 能放（`8/271`）；选 `.bin` → 「都不是音频」且磁盘没多文件；smoke 549 | [下方](#本轮目标第一百一十八轮) |
-| R117 | 通知/锁屏拿到真实位置与时长 + 自有通知图标 | `playback_banner` 多两个毫秒参数，`PlaybackState.setState(state, position, speed)` + `METADATA_KEY_DURATION`；`seekSeq` 记「位置跳变」所以不必订阅 `elapsed`；时长异步到手、元素跳位两个坑写进 GOTCHAS §62。真机：恢复 231 s → 播放 `position=231200`、拖到 50% `135465`、暂停 `speed=0.0`；小图标换成自己的 ♪ | [下方](#本轮目标第一百一十七轮) |
 
 ## 历史轮次
 
 - R01–R83：[`archive/rounds/R01-R83.md`](archive/rounds/R01-R83.md)
 - R84–R88：[`archive/rounds/R84-R88.md`](archive/rounds/R84-R88.md)
 - R89–R100：[`archive/rounds/R89-R100.md`](archive/rounds/R89-R100.md)（宠物从 M0 到 1.0 的全过程；R99/R100 为摘要）
-- R101–R115：[`archive/rounds/R101-R115.md`](archive/rounds/R101-R115.md)（桌面收尾 + 宠物 1.0 + 安卓 P0–P4 共 15 轮正文）
+- R101–R116：[`archive/rounds/R101-R116.md`](archive/rounds/R101-R116.md)（桌面收尾 + 宠物 1.0 + 安卓 P0–P4 共 16 轮正文）
 
 默认不需要读；查「当时为什么这么做 / 试过什么 / 证据文件叫什么」时再打开。轮次正文只写「当前轮 + 最近三轮」，
 更早的每三轮迁一次档——STATE 的预算是 250 token，不要退化成日记。
@@ -202,19 +208,20 @@ tldr: 当前 R119（P3 余项）：导入是「拷一份」，而原来的「移
 - 通知/锁屏的进度靠 `PlaybackState`：时长是**异步到手**的（必须进 effect 依赖）、暂停时速度必须是 `0f`、
   恢复曲目时元素会先报 0 再跳到续播点（大跨度跳变也要算跳变）（R117）。
 - SAF 的类型过滤会把「系统不认识的音频封装」灰掉（`.m4s` 就是）；自己按扩展名筛，且名单要与核心一致（R118）。
+- 「点了没反应」先 `document.elementFromPoint(x, y)` 看到底命中谁：扩大的触屏热区会抢走相邻控件的点击；
+  `position: absolute; inset: 0` 的覆盖层也不会继承父级的 `padding-top` 让位（R120，GOTCHAS §64）。
 
 ## 下一步（按评估结论继续）
 
-1. **安卓收尾（都不挡路）**：`ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度——先确认有可见面再声明）、
-   `POST_NOTIFICATIONS` 运行时授权入口（API 33+ 才有意义）；P3 余项（导入进度条、「清理已导入」、音乐目录导出）。
-   通知栏歌词（R116）、位置/时长 + 自有图标（R117）、任意封装导入（R118）已落地。
-   进度与拆分表见 [`ANDROID-PLAN.md`](ANDROID-PLAN.md) §7；每步的验收口径在 §4。
+1. **移动端已收口（R120）**：P0–P4 全部落地并真机验证，9 个路由走查无溢出/无报错。
+   剩下的余项见 [`ANDROID-PLAN.md`](ANDROID-PLAN.md) §8 收尾清单（`ACTION_SEEK_TO`、`POST_NOTIFICATIONS`、
+   导入进度条、音乐目录导出）。
 2. **R110 留下的小任务**：把「上游返回的不是音频」变成用户能看懂的文案（`playback.resolve` 里先探一次并自动换候选，
    或加一条契约事件），别只留在日志里（GOTCHAS §56）。
 3. **宠物 M4 / 玩法打磨（随时可做、可暂缓）**：移动端渲染器（核心层已独立，见 ADR 0010）；`minPetCoreVersion`
    真版本比较、atlas 瘦身（1.5 MB）、走路避让窗口/任务栏、多宠物 UI（存储与 API 已预留）、逐像素 alpha 命中。
    触发条件是安卓决定做宠物。
-4. **工程债**：`GOTCHAS.md` 63 条按域拆分（现在是一份长表，查起来靠搜索）；截图证据改成「seeded 数据 + 可深链 +
+4. **工程债**：`GOTCHAS.md` 64 条按域拆分（现在是一份长表，查起来靠搜索）；截图证据改成「seeded 数据 + 可深链 +
    固定浅/深基线」，不再靠手算坐标（真机这半已由 `scripts/android-cdp.mjs` 解决）；拖动/悬停这类**注入式输入
    验证不了**的交互，补一份人工验收清单。
 5. 背景 P2（带 JS / 多文件网页壁纸）与迷你歌词视觉细调仍挂着，未排期。

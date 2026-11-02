@@ -4,9 +4,10 @@ import {BadgeCell, DataTable, TextCell, type ColumnDef} from '../../../component
 import {actionsColumn, indexColumn, mobileColumns} from '../../../config/table.config';
 import {usePlayRow, useTrackActions} from '../../../hooks/useTrackActions';
 import {useConfirm} from '../../../hooks/useConfirm';
-import {fileService} from '../../../services';
+import {fileService, revealInDirAvailable} from '../../../services';
 import {useActions, useDownloadState} from '../../../store';
 import type {DownloadTask} from '../../../types';
+import {isMobilePlatform} from '../../../utils/platform';
 import {ClearFinishedButton} from '../components/ClearFinishedButton';
 import styles from '../download.module.css';
 
@@ -30,8 +31,10 @@ export default function DownloadedView() {
             queue: tracks,
             extra: [
                 /* 已下载的文件是用户资产：给一条「在文件夹中显示」的路，
-                   否则用户只能自己猜核心把文件放到了哪 */
-                ...(task.path
+                   否则用户只能自己猜核心把文件放到了哪。
+                   安卓上这条不成立（没有「文件管理器定位」这回事，私有目录外部也看不到），
+                   所以按平台能力决定给不给（GOTCHAS §46）。 */
+                ...(task.path && revealInDirAvailable(isMobilePlatform())
                     ? [
                         {
                             key: 'reveal',

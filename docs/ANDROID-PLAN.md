@@ -348,7 +348,7 @@ pnpm tauri android build --debug -t aarch64 --apk
 ### 7.2 R109：P1-4/5/6 的实现口径（结论）
 
 > 三片都只动**交互层与列定义**，store / 服务层 / 契约一个字没改。逐条取舍与真机走查见
-> [`archive/rounds/R101-R115.md`](archive/rounds/R101-R115.md) 的附录。
+> [`archive/rounds/R101-R116.md`](archive/rounds/R101-R116.md) 的附录。
 
 - **列表**：`table.config.tsx` 加 `mobileColumns` / `mobileTrackColumns`（手机 3 列 = 主信息 `1fr` + 时长 + ⋯），
   `DataTable` 用**纯函数** `resolveColumns(shell, columns, mobileColumns)` 裁决；手机隐藏表头，单元格留白收到
@@ -377,6 +377,8 @@ pnpm tauri android build --debug -t aarch64 --apk
 | R118 | P3 余项：任意封装都能导入 | 真机实测：`audio/*` 过滤会把 `.m4s` **灰掉**（同一个文件改名 `.mp3` 就能选），而 `.m4s` 是 B 站音频的常见封装。改成 `*/*` + `EXTRA_MIME_TYPES=[audio/*, application/octet-stream]`，选完由 `isAudioName()` 按扩展名筛（名单与核心 `AUDIO_EXTENSIONS` 一一对应），跳过数如实回报 `skipped`；导入结果文案抽成纯函数 `utils/importNote.ts` | `.m4s` 可选 → 「已导入 1 首」→ 列表出现 → 能放（`8/271`）；选 `not-audio.bin` → 「选中的 1 个文件都不是音频」且磁盘没多文件；`r118-android-import-m4s.png` / `-skipped.png`；GOTCHAS §63 |
 
 | R119 | P3 余项：清理导入副本 | 导入是「拷一份」，而「移除」只移出曲库、**文件留在磁盘**——私有目录只涨不清。新宿主命令 `imported_dir`（Kotlin 回 `<filesDir>/music`，前端不猜）+ `importedMusicDir()` 缓存 + 纯函数 `importedTracksOf`（按路径前缀挑副本；拿不到目录就一条不删）+ `purgeImported()`（要删的正在播就先停，逐条 `library.local.remove{deleteFile:true}`）；`ScanPanel` 手机形态给「应用内已导入 N 首（副本）」+「清理副本」+ 危险确认 | 真机：曲库 3 首 → 「已清理 2 首」→ `run-as ls files/music` 变**空**、`probe`（不在导入目录）留下、正在播的已停播；`r119-android-clean-entry.png` / `-confirm.png` / `-cleaned.png` |
+
+| R120 | 收口走查（9 个路由）+ 修 4 个真机问题 | `scripts/probes/route-audit.js`：`pushState` + `popstate`（react-router 听它，不整页重载）逐个进 8 个抽屉项 + `/now-playing`，记溢出/外壳/可疑文案/console 报错。修掉：首页「「」共 0 首」→ `subtitleIdle`；抽屉品牌行被状态栏压住（绝对定位不继承 shell 的 `padding-top`）；手机上的「在文件夹中显示」假入口（`revealInDirAvailable`）；**进度条 32px 热区吃掉播放条按钮上 21px 的点击**（改成以进度线为中心的带状热区，播放条让 `--space-3` 的带） | 9 个页面全部 `overflow=0 / hasShell=true / suspicious=[] / newErrors=[]`；`elementFromPoint(200,831)`→进度条、`(158,858)`→打开播放页；拖动 `30→137`、点标题区进 `/now-playing`；`r120-android-drawer-fixed.png` / `-row-sheet-mobile.png` / `-now-playing.png` / `-notification.png`；GOTCHAS §64 |
 
 **下一步（P3 余项 / P2-2 余项）**：P2-2 只差两件——`ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度，
 要先确认能真机验到才接）、`POST_NOTIFICATIONS` 运行时授权入口（API 33+ 才需要；本机 API 29 验不了）。
@@ -415,9 +417,18 @@ Android 11+ 或车机/蓝牙（§7.3 R117）；P3 只剩导入进度条与音乐
    「播不出声」的真凶是上游用 HTTP 200 + HTML 错误页冒充音频（风险 11）。诊断工具
    `scripts/android-cdp.mjs`（真机 CDP）与代理的「回了什么」日志是一对，别再靠 logcat 里的
    解码错误去猜。
-5. **P2 与 P3 已有落地片**：P2-1 前台服务（熄屏 4 分钟 +253 秒）、P2-3 冷启动续播、P3-1 SAF 导入
-   （手机选文件进曲库、零存储权限）都已真机验证。**下一步是 P2-2**（MediaSession + 通知栏传输控制）
-   与 P4（通知栏歌词）；另一个小任务是给「上游不是音频」补一条用户能看懂的文案（见 §7.3 结尾）。
+5. **P2 / P3 / P4 全部落地**（R112–R119）：前台服务保活（熄屏 4 分钟 +253 秒）、MediaSession 与通知栏
+   传输控制（R115）、冷启动续播（R113）、SAF 导入且**任意封装都能选**（R114/R118）、导入副本清理（R119）、
+   通知栏歌词（R116）与真实位置/时长 + 自有通知图标（R117）。
+6. **收口走查（R120）**：9 个路由逐个走一遍——无横向溢出、无 console 报错、空态都有文案；
+   顺手修掉四个真机问题（首页副标题、抽屉被状态栏压住、手机上的「在文件夹中显示」假入口、
+   进度条热区抢按钮点击）。**移动端开发到此收口**。
+7. **收尾清单（都不是阻塞项，本机也验不了或价值很低）**：
+   - `ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度）——本机 ROM 不画进度条，接了也验不到；
+   - `POST_NOTIFICATIONS` 运行时授权入口——只有 API 33+ 才有意义，本机 API 29；
+   - 导入进度条（大文件才有意义）与音乐目录导出；
+   - 「上游返回的不是音频」进 UI 文案（与桌面端共用，见 GOTCHAS §56）；
+   - 平板横屏专用布局（先用 `compact` 顶）、宠物渲染器、armv7 打包。
 
 ## 9. 相关文档
 

@@ -68,6 +68,8 @@ import {canPreview, mediaKindOf, previewWindow, PREVIEW_SECONDS} from '../src/ut
 import {appConfig} from '../src/config/app.config';
 import {resolveShellMode} from '../src/utils/shellMode';
 import {activeNavKey, MOBILE_HOME_PATH, mobileNavItems} from '../src/components/shell/mobile/nav';
+import {MobileNavDrawer} from '../src/components/shell/mobile/MobileNavDrawer';
+import {revealInDirAvailable} from '../src/services';
 import {
     actionsColumn,
     albumColumn,
@@ -2409,6 +2411,29 @@ async function main(): Promise<void> {
                 activeNavKey('/setting') === 'setting' &&
                 activeNavKey('/ranking') === null,
         );
+        /* 抽屉顶部要让出状态栏（R120 走查发现）：它是 `position:absolute; inset:0` 的覆盖层，
+           `top: 0` 落在 shell 的 padding box 上，不会继承那 30px 让位——不让的话品牌行与 ✕
+           会被状态栏的时钟盖住。让位值来自 `app.config`，不写死在 CSS 里。 */
+        const drawerHtml = renderToString(
+            <MemoryRouter initialEntries={['/local']}>
+                <ThemeProvider>
+                    <MobileNavDrawer open onClose={() => undefined}/>
+                </ThemeProvider>
+            </MemoryRouter>,
+        );
+        check(
+            '移动外壳：抽屉面板顶部叠加了状态栏让位',
+            drawerHtml.includes(
+                `padding-top:calc(var(--space-3) + ${appConfig.mobile.statusBarInset}px)`,
+            ),
+            drawerHtml.slice(0, 200),
+        );
+        /* 「在文件夹中显示」是桌面能力：安卓上没有文件管理器定位，私有目录外部也看不到。
+           手机形态下不给这一项，而不是给一个点了没反应的入口（GOTCHAS §46）。 */
+        check(
+            '移动端能力： 「在文件夹中显示」只在桌面成立',
+            revealInDirAvailable(false) === true && revealInDirAvailable(true) === false,
+        );
 
         /* ---------- P1-5：手机列表换一份列定义（两行式 + ⋯），不是把 7 列压窄 ---------- */
         {
@@ -2487,9 +2512,11 @@ async function main(): Promise<void> {
         {
             const css = readCssText();
             check(
-                '触屏：手机形态下进度条焦点常显、热区加高（不靠 hover）',
+                '触屏：手机形态下进度条焦点常显、热区贴着进度线（不靠 hover）',
                 css.includes(":global([data-shell='mobile']) .thumb") &&
-                    css.includes('var(--mobile-progress-hit-height)'),
+                    /* 热区必须**以进度线为中心往上伸**：手机播放条的按钮就在进度线下面 11px 处，
+                        往下的热区会把按钮上半截的点击抢走（R120 真机实测过） */
+                    /\[data-shell='mobile'\]\) \.root::before\s*\{[^}]*top: calc\(/.test(css),
             );
             check(
                 '触屏：手机形态下行点击有按下反馈（hover 退化为 active）',
@@ -2502,8 +2529,9 @@ async function main(): Promise<void> {
                     readFileSync('src/components/shell/mobile/MobilePlayerBar.module.css', 'utf8'),
                 )?.[1] ?? '';
             check(
-                '移动播放条：进度条锚在播放条顶边（.bar 是定位祖先）',
-                barBlock.includes('position: relative'),
+                '移动播放条：进度条锚在播放条顶边，并给热区让出一条带',
+                barBlock.includes('position: relative') &&
+                    barBlock.includes('padding-top: var(--space-3)'),
             );
         }
 

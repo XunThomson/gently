@@ -96,6 +96,8 @@
     width: var(--mobile-drawer-width);
     max-width: 82%;
     height: 100%;
+    /* 顶部内边距由组件按 `app.config.mobile.statusBarInset` 叠加（见 MobileNavDrawer：
+       抽屉的 `top: 0` 落在 shell 的 padding box 上，不会自动让出状态栏） */
     padding: var(--space-3) var(--space-2);
     box-sizing: border-box;
     overflow-y: auto;

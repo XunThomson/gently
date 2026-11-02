@@ -15,9 +15,10 @@ import {
 import {useCurrentTrackId, usePlayRow, useTrackActions} from '../../hooks/useTrackActions';
 import {useConfirm} from '../../hooks/useConfirm';
 import {useActions, useLibraryState} from '../../store';
-import {fileService} from '../../services';
+import {fileService, revealInDirAvailable} from '../../services';
 import type {LocalTrack} from '../../types';
 import {matchesQuery} from '../../utils/helpers';
+import {isMobilePlatform} from '../../utils/platform';
 import {ScanPanel} from './components/ScanPanel';
 
 export default function LocalView() {
@@ -43,11 +44,17 @@ export default function LocalView() {
         buildActions(track, {
             queue: rows,
             extra: [
-                {
-                    key: 'reveal',
-                    label: t('page.local.revealInDir'),
-                    onClick: () => void fileService.revealInDir(track.path),
-                },
+                /* 「在文件夹中显示」是桌面能力：安卓上点了没反应（私有目录外部也看不到），
+                   所以手机上干脆不给这一项，而不是给一个假入口（GOTCHAS §46） */
+                ...(revealInDirAvailable(isMobilePlatform())
+                    ? [
+                        {
+                            key: 'reveal',
+                            label: t('page.local.revealInDir'),
+                            onClick: () => void fileService.revealInDir(track.path),
+                        },
+                    ]
+                    : []),
                 {
                     key: 'remove',
                     label: t('page.local.remove'),

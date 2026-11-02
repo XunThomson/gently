@@ -125,7 +125,13 @@ export default function SearchView() {
     return (
         <Page
             title={t('page.search.title')}
-            subtitle={t('page.search.subtitle', {keyword, count: rows.length})}
+            /* 没有关键词时别写成「「」共 0 首」：那是在说「搜了个空词、结果 0 首」，
+               而实际状态是**还没搜**（手机上的 home 就是这个状态） */
+            subtitle={
+                keyword
+                    ? t('page.search.subtitle', {keyword, count: rows.length})
+                    : t('page.search.subtitleIdle')
+            }
             toolbar={<SourceFilter className={styles.filter}/>}
         >
             {!keyword ? (

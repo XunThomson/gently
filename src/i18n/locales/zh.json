@@ -531,6 +531,7 @@
     "search": {
       "title": "搜索结果",
       "subtitle": "「{{keyword}}」共 {{count}} 首",
+      "subtitleIdle": "搜全部音源",
       "hint": "输入关键词开始搜索",
       "empty": "没有找到相关歌曲",
       "noSource": "还没有安装任何音源，无法搜索"

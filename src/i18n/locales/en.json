@@ -531,6 +531,7 @@
     "search": {
       "title": "Search results",
       "subtitle": "{{count}} songs for “{{keyword}}”",
+      "subtitleIdle": "Searches every source",
       "hint": "Type a keyword to start searching",
       "empty": "No matching songs",
       "noSource": "No source is installed, so there is nothing to search"

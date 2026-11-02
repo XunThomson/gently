@@ -13,7 +13,7 @@ export {
 export type {MediaAction} from './playbackBanner.service';
 export {importAudioFiles, importedMusicDir} from './import.service';
 export type {ImportAudioResult} from './import.service';
-export {fileService} from './file.service';
+export {fileService, revealInDirAvailable} from './file.service';
 export {backgroundService} from './background.service';
 export type {
     BackgroundSaveError,

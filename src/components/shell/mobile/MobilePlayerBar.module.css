@@ -9,6 +9,10 @@
     flex-direction: column;
     flex: none;
     height: var(--mobile-player-bar-height);
+    /* 顶部给进度条让出一条带（见 SeekBar 的触屏热区）：不带这层内边距，行会从播放条
+       最顶上开始，热区就把按钮的上半截盖住了（R120 真机 `elementFromPoint` 实测：
+       点「打开播放页」上半部分返回的是「进度」）。 */
+    padding-top: var(--space-3);
     border-top: 1px solid var(--divider);
     background: var(--surface-chrome);
     backdrop-filter: var(--surface-blur);
