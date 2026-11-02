@@ -4,6 +4,7 @@ import {backgroundService} from '../../../services';
 import {useSelect} from '../../../store';
 import {useTheme} from '../../../theme';
 import {wrapWebWallpaper} from '../../../utils/backgroundWeb';
+import {isMobilePlatform} from '../../../utils/platform';
 import styles from './BackgroundVideo.module.css';
 
 /**
@@ -39,6 +40,11 @@ export function BackgroundVideo() {
     const {config} = useTheme();
     const background = useSelect((state) => state.ui.background);
     const {enabled} = config.components.background;
+    /* 手机形态（R122）：内容表面默认**不做毛玻璃**、且不透明度有下限——
+       毛玻璃盖在会动的视频上既贵（每帧重绘整屏）又会让滚动中的文字压色块（用户反馈 #9「字体重叠」）。
+       这是**默认值**，用户在设置里显式调过的仍然生效。 */
+    const mobile = isMobilePlatform();
+    const MOBILE_CONTENT_OPACITY = 0.92;
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const [objectUrl, setObjectUrl] = useState<string | null>(null);
@@ -95,7 +101,12 @@ export function BackgroundVideo() {
         };
     }, [background.web?.id, isWeb]);
 
-    const videoSrc = isWeb ? null : background.asset ? objectUrl : bgVideoUrl;
+    /* 手机上下载/导入的素材才算数：**内置的演示视频不上手机**（R122）。
+       它是一段 100 MB+ 的测试素材（`src/assets/README.md` 写的用途），
+       在桌面端当背景没问题，手机上却是「启动就解码一个大文件」——
+       背景迟迟不出现、首屏还更慢（用户反馈 #7「背景适配像加载过慢」）。
+       没有导入素材时干脆不激活背景：外壳保持不透明，列表文字也不会压在彩色视频上（#9）。 */
+    const videoSrc = isWeb ? null : background.asset ? objectUrl : mobile ? null : bgVideoUrl;
     const mediaReady = isWeb ? !!webHtml : !!videoSrc;
     /* 系统偏好只作默认：用户可以在设置里显式允许「减少动态效果时仍播放」 */
     const motionAllowed = !reduceMotion || background.playWhenReducedMotion;
@@ -144,14 +155,20 @@ export function BackgroundVideo() {
     /* 内容表面透明度/虚化：只改表面 token，文字/图标不受影响 */
     useEffect(() => {
         const root = document.documentElement;
-        const opacity =
+        const rawOpacity =
             background.options.contentOpacity ?? config.components.background.contentOpacity;
+        const opacity = mobile ? Math.max(rawOpacity, MOBILE_CONTENT_OPACITY) : rawOpacity;
         const blur =
-            background.options.contentBlurPx ?? config.components.background.surfaceBlurPx;
-        const drawerOpacity =
+            background.options.contentBlurPx ??
+            (mobile ? 0 : config.components.background.surfaceBlurPx);
+        const rawDrawerOpacity =
             background.options.drawerOpacity ?? config.components.background.drawerOpacity;
+        const drawerOpacity = mobile
+            ? Math.max(rawDrawerOpacity, MOBILE_CONTENT_OPACITY)
+            : rawDrawerOpacity;
         const drawerBlur =
-            background.options.drawerBlurPx ?? config.components.background.drawerBlurPx;
+            background.options.drawerBlurPx ??
+            (mobile ? 0 : config.components.background.drawerBlurPx);
         const mix = (base: string, value: number) => {
             const percent = Math.round(value * 100);
             return percent >= 100
@@ -192,6 +209,7 @@ export function BackgroundVideo() {
         };
     }, [
         active,
+        mobile,
         background.options.contentOpacity,
         background.options.contentBlurPx,
         background.options.drawerOpacity,

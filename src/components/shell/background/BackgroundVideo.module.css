@@ -4,6 +4,18 @@
     z-index: 0;
     overflow: hidden;
     pointer-events: none;
+    /* 背景是「后到」的（视频要等 canplay）：淡入而不是突然出现，
+       否则整屏表面颜色会跳一下，看着像「背景没适配」（用户反馈 #7）。 */
+    animation: layerIn var(--motion-slow) var(--ease) both;
+}
+
+@keyframes layerIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
 .video {
