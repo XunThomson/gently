@@ -1,11 +1,11 @@
 ---
 status: active
-last_verified: 2026-10-07
+last_verified: 2026-11-02
 version: 0.2
 owner: gently
 scope: 本机核心能力契约（无服务器形态）
 token_budget: 2600
-tldr: 本机核心的 Tauri 命令与事件清单（63 条命令 + 8 类事件）。v0.2 相对 v0.1 补齐三处硬伤：插件 API 支持专辑/歌单/歌词/榜单（否则对应命令永远无法实现）、媒体地址携带 headers 并由核心提供本地流代理（WebView 的 audio 无法设请求头、需 Range）、分发改为「单文件 JS + 订阅源索引」为主。
+tldr: 本机核心的 Tauri 命令与事件清单（76 条命令 + 9 类事件）。v0.2 相对 v0.1 补齐三处硬伤：插件 API 支持专辑/歌单/歌词/榜单（否则对应命令永远无法实现）、媒体地址携带 headers 并由核心提供本地流代理（WebView 的 audio 无法设请求头、需 Range）、分发改为「单文件 JS + 订阅源索引」为主。
 ---
 
 # 本机核心能力契约（local core）v0.2
@@ -254,9 +254,10 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
   `play` 不额外加权（历史里已经有它）。`action` 与 `progress` 都会校验，非法 → `common.invalid_argument`；
   反馈需要曲目快照（标签/歌手是打分的依据）：优先用调用方给的 `track`，否则从本机库（收藏 → 历史 → 本地曲库）反查。
 
-### playback（2）
+### playback（3）
 `playback.resolve{ref, quality, preferredSources?}` → `ResolvedMedia | null`（含 headers 与 `streamUrl`，见 §7）
 `playback.report{ref, source, quality, playedSec, completed, track?}`
+`playback.diagnose{ref}` → `UpstreamVerdict | null`
 
 > 参数名约定：**引用一律叫 `ref`**。`playback.resolve` 早期实现只认 `reference`，现在两者都接受
 > （`alias`），但对外只有一个名字——参数名不一致的代价是调用方收到「缺字段」而不是「名字不对」。
@@ -277,6 +278,15 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 - `playback.report` 写的就是播放历史（与 `library.history.push` **同一份实现**），
   `source` 是**实际播成的**音源（候选回退后可能与 `ref` 里的不同）；`quality` 暂不落库
   （`RecentTrack` 没有这一列，记了没人消费）。
+- **`playback.diagnose`：上游「回的到底是什么」（R110 的遗留）**。媒体元素只会给
+  `MediaError.code`，拿不到服务端原因，而上游常用 **HTTP 200 + HTML 错误页**冒充音频。
+  回环代理在转发时嗅开头字节，按曲目引用记一份判定：
+  `{reference, verdict: 'audio' | 'notAudio' | 'unknown', status, upstreamType?, sniffed?, atMs}`。
+  - `audio` = 字节里认出了容器；`notAudio` = 开头是 HTML / JSON 之类的文本（错误页 / 需登录 / 防盗链）；
+    **认不出的二进制、非 2xx 一律不下结论**（`null` 或 `unknown`），宁可说「无法播放」也不冤枉源；
+  - 只按曲目引用记账，**每次 `playback.resolve` 成功发布新令牌时清掉旧判定**（新地址 = 新尝试）；
+  - 查不到判定返回 `data: null`（不是错误）。它描述的是「上游那几个字节」，不是「播放失败的原因」——
+    界面只在媒体失败后用它把「源给的不是音频」与「解码失败」分开说。
 
 ### download（6）
 `download.list{status?}` · `download.create{ref, quality?, dir?, track?}` · `download.pause{id}` · `download.resume{id}` ·

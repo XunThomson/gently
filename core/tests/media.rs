@@ -189,6 +189,7 @@ fn proxy_is_loopback_only_and_rejects_unknown_tokens() {
             "https://cdn.example.com/a.m4a",
             vec![("Referer".into(), "https://example.com".into())],
             Some("audio/mp4".into()),
+            Some("demo:a"),
         )
         .expect("应能发布流令牌");
     assert!(stream_url.starts_with("http://127.0.0.1:"), "{stream_url}");
@@ -333,7 +334,7 @@ fn local_files_play_through_the_same_proxy_with_range() {
     // 非音频文件不允许被代理（白名单与扫描一致）
     let text = music.join("notes.txt");
     std::fs::write(&text, "not audio").unwrap();
-    let blocked = ctx.streams.publish_local(&text);
+    let blocked = ctx.streams.publish_local(&text, None);
     assert!(blocked.is_err(), "非音频文件必须被拒");
 
     std::fs::remove_dir_all(&dir).ok();
@@ -367,6 +368,29 @@ fn playback_report_records_history() {    let (ctx, dir) = setup();
 
     // 引用格式错误 → 参数非法；库不可用时 → library.io_error
     let bad = call(&ctx, "playback.report", json!({ "ref": "没有冒号" }));
+    assert_eq!(bad["error"]["code"], ErrorCode::InvalidArgument.as_str(), "{bad}");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// `playback.diagnose`：没有判定时**如实返回 null**（不是报错，也不伪造结论）。
+///
+/// 判定本身由回环代理在转发时写（`media.rs` 的单元测试覆盖了「上游回 HTML 错误页」那条）；
+/// 这里只保证命令注册、参数解析与「查不到就 null」这三件事，免得界面拿到一个假结果。
+#[test]
+fn playback_diagnose_is_null_until_the_proxy_sees_something() {
+    let (ctx, dir) = setup();
+
+    for params in [
+        json!({ "ref": "demo:a" }),
+        json!({ "ref": { "id": "demo:a", "source": "demo", "sourceTrackId": "a" } }),
+    ] {
+        let value = call(&ctx, "playback.diagnose", params.clone());
+        assert_eq!(value["ok"], json!(true), "{value}");
+        assert_eq!(value["data"], json!(null), "没有上游判定时必须给 null：{value}");
+    }
+
+    let bad = call(&ctx, "playback.diagnose", json!({ "ref": "没有冒号" }));
     assert_eq!(bad["error"]["code"], ErrorCode::InvalidArgument.as_str(), "{bad}");
 
     std::fs::remove_dir_all(&dir).ok();

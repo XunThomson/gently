@@ -21,6 +21,7 @@ import type {
     ResolvedMedia,
     TopListGroup,
     TopListPage,
+    UpstreamVerdict,
     WebLoginPlan,
 } from '../api';
 import type {Album, CuratedPlaylist, GroupedTrack, Track, TrackQuality} from '../types';
@@ -224,6 +225,21 @@ export async function coreResolveUrl(
 
 /** 调用失败时的回调：调用方可以据此区分「没有核心」与「核心报错」。 */
 type FailureHandler = (error: CoreError) => void;
+
+/**
+ * 问核心：这首曲目**最近一次上游响应**到底是什么（`playback.diagnose`）。
+ *
+ * 只在媒体元素报错之后调用——它是「为什么没声音」的补充说明，不是播放决策：
+ * - 没有核心 / 查不到判定 → `null`（界面按原来的「无法播放」说）；
+ * - 核心报错也不吵（诊断失败不该盖住真正的失败原因），只留一条 debug 日志。
+ */
+export async function coreDiagnoseUpstream(reference: string): Promise<UpstreamVerdict | null> {
+    if (!coreAvailable()) return null;
+    const result = await invokeCore<UpstreamVerdict | null>('playback.diagnose', {ref: reference});
+    if (result.ok) return result.data;
+    console.debug(`[core] playback.diagnose 失败：${result.error.code} ${result.error.message}`);
+    return null;
+}
 
 /**
  * 详情类命令的统一包装：无核心或核心报错一律返回 `null`，由调用方退回 mock / 空态。

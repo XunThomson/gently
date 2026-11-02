@@ -12,6 +12,8 @@ import type {PlaybackFailure} from '../store/types';
  * - `media`：有地址但媒体元素报错（解码、请求被拒、地址过期）；
  * - `interrupted`：**地址没问题**，是系统把播放管道掐了（安卓锁屏/后台一段时间后，
  *   `play()` 既不成功也不报错）。这时让用户看到「点播放继续」比只说「无法播放」有用。
+ * - `notAudio`：**上游回的字节根本不是音频**（`HTTP 200 + HTML 错误页` 冒充音频，R110）。
+ *   它比「音频加载失败」更具体：该换源 / 重新登录，而不是等地址恢复。
  */
 export function playbackFailureText(error: PlaybackFailure, t: TFunction): string {
     const reason =
@@ -19,6 +21,8 @@ export function playbackFailureText(error: PlaybackFailure, t: TFunction): strin
             ? t('player.failureNoSource', {count: error.failedSources.length})
             : error.kind === 'interrupted'
               ? t('player.failureInterrupted')
-              : t('player.failureMedia');
+              : error.kind === 'notAudio'
+                ? t('player.failureNotAudio')
+                : t('player.failureMedia');
     return error.detail ? `${reason} · ${error.detail}` : reason;
 }

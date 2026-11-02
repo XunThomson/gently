@@ -233,6 +233,7 @@
     "findingSource": "Searching…",
     "failureNoSource": "None of the {{count}} sources returned a playable URL",
     "failureMedia": "The audio failed to load (the URL may have expired)",
+    "failureNotAudio": "The source sent something that isn't audio (error page / login required / expired link)",
     "failureInterrupted": "Playback was interrupted by the system (tap play to continue)",
     "repeatOff": "Play in order",
     "repeatAll": "Repeat all",

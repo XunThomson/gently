@@ -39,6 +39,31 @@ const UPSTREAM_TIMEOUT: Duration = Duration::from_secs(10);
 /// 允许跟随的上游跳转次数（302 → CDN 是常态；Ring 用不上更多）
 const MAX_UPSTREAM_REDIRECTS: u32 = 3;
 
+/// 上游判定表最多记几条（只用于「播不出声」的排障，不需要留历史）。
+const VERDICT_CAP: usize = 64;
+
+/// 代理对**最近一次**上游响应的判定（`playback.diagnose` 的返回值）。
+///
+/// 为什么需要它：媒体元素只会给一个 `MediaError.code`，拿不到服务端原因
+/// （R110 的教训：上游常用 `HTTP 200 + HTML 错误页` 冒充音频）。判定必须在这里做，
+/// 否则界面只能说「无法播放 · Format error」，用户不知道该换源、重新登录还是等一等。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpstreamVerdict {
+    /// 曲目引用（`source:rawId`）：判定是**按曲目**记的，不是按令牌
+    pub reference: String,
+    /// `audio`（字节嗅探认出了容器）/ `notAudio`（回的是网页、JSON 之类的文本）/ `unknown`
+    pub verdict: String,
+    /// 上游 HTTP 状态码（200、206、403…）
+    pub status: u16,
+    /// 上游声明的 `Content-Type`（可空；**不能**当作判定依据，R110）
+    pub upstream_type: Option<String>,
+    /// 字节嗅探结果（认出容器时是它对应的 MIME）
+    pub sniffed: Option<String>,
+    /// 判定时刻（毫秒时间戳），排查时用来看「是不是这次播放」
+    pub at_ms: u64,
+}
+
 /// 一条流令牌指向什么。
 ///
 /// 远端（插件的 `getMediaSource` 给的地址）与本地文件（本地曲库）走**同一条代理**：
@@ -58,6 +83,9 @@ enum StreamTarget {
 struct StreamEntry {
     target: StreamTarget,
     expires_at: u64,
+    /// 这条令牌属于哪首曲目（`source:rawId`）：上游判定按它记账。
+    /// 缓存 / 本地文件也有引用，但只有远端转发才会写入判定。
+    reference: Option<String>,
 }
 
 /// 流令牌表 + 回环代理服务器。
@@ -66,6 +94,8 @@ struct StreamEntry {
 /// 因此表的句柄在构造时就固定下来，不做所有权搬运。
 pub struct StreamRegistry {
     table: Arc<Mutex<HashMap<String, StreamEntry>>>,
+    /// 按曲目引用记的「上游回的是什么」（见 `UpstreamVerdict`）
+    verdicts: Arc<Mutex<HashMap<String, UpstreamVerdict>>>,
     counter: AtomicU64,
     /// 已启动的代理端口（只启动一次）
     server: Mutex<Option<u16>>,
@@ -77,6 +107,7 @@ impl Default for StreamRegistry {
     fn default() -> Self {
         Self {
             table: Arc::new(Mutex::new(HashMap::new())),
+            verdicts: Arc::new(Mutex::new(HashMap::new())),
             counter: AtomicU64::new(0),
             server: Mutex::new(None),
             covers_dir: Arc::new(Mutex::new(None)),
@@ -111,25 +142,32 @@ impl StreamRegistry {
     ///
     /// `mime` 来自插件声明的 `mimeType`（可空）：代理会优先按**字节**判断容器类型，
     /// 嗅不出来时才用它（见 `effective_content_type`）。
+    ///
+    /// `reference`（`source:rawId`）让代理能把「这次上游到底回了什么」记到这首曲目上
+    /// （`playback.diagnose`）；拿不到引用时传 `None`，判定就不记。
     pub fn publish(
         &self,
         origin: &str,
         headers: Vec<(String, String)>,
         mime: Option<String>,
+        reference: Option<&str>,
     ) -> Fallible<String> {
         validate_origin(origin)?;
-        self.publish_target(StreamTarget::Remote {
-            origin: origin.to_string(),
-            headers,
-            mime,
-        })
+        self.publish_target(
+            StreamTarget::Remote {
+                origin: origin.to_string(),
+                headers,
+                mime,
+            },
+            reference,
+        )
     }
 
     /// 发布一个**本地文件**的可播放地址（本地曲库走同一条代理）。
     ///
     /// 只接受音频扩展名且必须存在：这条路会让 WebView 读到磁盘文件，
     /// 因此白名单与扫描用的那一份完全一致（能被扫到的文件才允许被代理）。
-    pub fn publish_local(&self, path: &Path) -> Fallible<String> {
+    pub fn publish_local(&self, path: &Path, reference: Option<&str>) -> Fallible<String> {
         if !crate::local_library::is_audio_path(path) {
             return Err(CoreError::new(
                 ErrorCode::MediaBlockedAddress,
@@ -141,17 +179,38 @@ impl StreamRegistry {
             return Err(CoreError::not_found(format!("文件不存在：{}", path.display()))
                 .with_details(json!({ "path": path.to_string_lossy() })));
         }
-        self.publish_target(StreamTarget::Local { path: path.to_path_buf() })
+        self.publish_target(StreamTarget::Local { path: path.to_path_buf() }, reference)
+    }
+
+    /// 曲目最近一次上游判定的快照（没有就在这里返回 `None`）。
+    ///
+    /// 每次 `publish` 都会把该曲目的旧判定清掉：新地址意味着新的一次尝试，
+    /// 拿上一轮的结论去解释这一轮的错误会误导用户（也误导排查）。
+    pub fn diagnose(&self, reference: &str) -> Option<UpstreamVerdict> {
+        self.verdicts
+            .lock()
+            .ok()
+            .and_then(|table| table.get(reference).cloned())
     }
 
     /// 令牌 → 表（远端与本地共用同一条路径，避免两份发布逻辑）。
-    fn publish_target(&self, target: StreamTarget) -> Fallible<String> {
+    fn publish_target(&self, target: StreamTarget, reference: Option<&str>) -> Fallible<String> {
         let port = self.ensure_server()?;
         let token = {
             let seq = self.counter.fetch_add(1, Ordering::Relaxed);
             format!("{}-{seq:x}", now_millis())
         };
-        let entry = StreamEntry { target, expires_at: now_secs() + TOKEN_TTL_SEC };
+        if let Some(reference) = reference {
+            // 新一次尝试：上一轮的判定作废（理由见 `diagnose`）
+            if let Ok(mut verdicts) = self.verdicts.lock() {
+                verdicts.remove(reference);
+            }
+        }
+        let entry = StreamEntry {
+            target,
+            expires_at: now_secs() + TOKEN_TTL_SEC,
+            reference: reference.map(str::to_string),
+        };
         self.table
             .lock()
             .map_err(|_| CoreError::internal("流令牌表锁已中毒"))?
@@ -178,6 +237,7 @@ impl StreamRegistry {
         // 代理线程持有表的克隆：与 publish 看到同一份数据
         let shared = Arc::clone(&self.table);
         let covers = Arc::clone(&self.covers_dir);
+        let verdicts = Arc::clone(&self.verdicts);
 
         std::thread::Builder::new()
             .name("gently-media-proxy".into())
@@ -187,6 +247,7 @@ impl StreamRegistry {
                         Ok(socket) => {
                             let table = Arc::clone(&shared);
                             let covers = Arc::clone(&covers);
+                            let verdicts = Arc::clone(&verdicts);
                             // 一条连接一个线程：拖动进度会产生新的连接（并发 Range 请求）
                             let _ = std::thread::Builder::new()
                                 .name("gently-media-conn".into())
@@ -198,7 +259,7 @@ impl StreamRegistry {
                                         .map(|addr| addr.to_string())
                                         .unwrap_or_else(|_| "unknown".into());
                                     tracing::info!(peer, "媒体连接已接受");
-                                    if let Err(err) = serve(socket, &table, &covers) {
+                                    if let Err(err) = serve(socket, &table, &covers, &verdicts) {
                                         tracing::debug!(%err, "媒体连接结束");
                                     }
                                 });
@@ -227,6 +288,7 @@ fn serve(
     socket: TcpStream,
     table: &Mutex<HashMap<String, StreamEntry>>,
     covers: &Mutex<Option<PathBuf>>,
+    verdicts: &Mutex<HashMap<String, UpstreamVerdict>>,
 ) -> std::io::Result<()> {
     socket.set_read_timeout(Some(Duration::from_secs(10)))?;
     let mut reader = BufReader::new(socket.try_clone()?);
@@ -286,16 +348,18 @@ fn serve(
         // 顺手清理过期令牌，避免长跑进程里堆积
         let now = now_secs();
         table.retain(|_, item| item.expires_at > now);
-        table.get(token).map(|item| item.target.clone())
+        table
+            .get(token)
+            .map(|item| (item.target.clone(), item.reference.clone()))
     };
 
-    let Some(target) = entry else {
+    let Some((target, reference)) = entry else {
         return write_simple(&socket, 404, "媒体令牌无效或已过期");
     };
 
     match target {
         StreamTarget::Remote { origin, headers, mime } => {
-            forward(&socket, &origin, &headers, range, mime.as_deref())
+            forward(&socket, &origin, &headers, range, mime.as_deref(), reference.as_deref(), verdicts)
         }
         StreamTarget::Local { path } => serve_local(&socket, &path, range),
     }
@@ -564,6 +628,82 @@ fn effective_content_type(
     }
 }
 
+/// 开头是文本/标记的迹象：HTML 错误页、JSON 报错、纯文本 403。
+///
+/// 只看「第一个有意义字符」，够用且不会冤枉合法的二进制容器：
+/// 目前所有被嗅探支持的容器首字节都不是 `<` / `{` / `[` / `"`。
+fn looks_textual(prefix: &[u8]) -> bool {
+    // 跳过前导空白与 UTF-8 BOM（错误页常带）
+    let head = prefix
+        .iter()
+        .skip_while(|byte| byte.is_ascii_whitespace() || **byte == 0xEF || **byte == 0xBB || **byte == 0xBF)
+        .copied()
+        .next();
+    matches!(head, Some(b'<') | Some(b'{') | Some(b'[') | Some(b'"'))
+}
+
+/// 给这一次上游响应下判定；不下结论时返回 `None`（**不冤枉上游**）。
+///
+/// - 嗅出容器 → `audio`；
+/// - 开头是文本/标记 → `notAudio`（R110 的「200 + HTML 错误页」正是这一种）；
+/// - 其余（认不出的二进制、非 2xx）→ 不下结论：可能是我们不认识的合法封装，
+///   也可能是别的问题，让界面说「无法播放」比指着源说「给的不是音频」更诚实。
+fn classify_upstream(
+    status: u16,
+    prefix: &[u8],
+    sniffed: Option<&str>,
+    upstream_type: Option<&str>,
+) -> Option<&'static str> {
+    if !(200..300).contains(&status) {
+        return None;
+    }
+    if sniffed.is_some() {
+        return Some("audio");
+    }
+    if looks_textual(prefix) {
+        return Some("notAudio");
+    }
+    // 上游自己说是文本：仍然是「不是音频」的一种（但字节里没抓到证据时就不下结论）
+    if upstream_type.is_some_and(|value| value.trim_start().to_ascii_lowercase().starts_with("text/")) {
+        return Some("notAudio");
+    }
+    None
+}
+
+/// 记下判定，顺手把表压在 `VERDICT_CAP` 条以内（只留最近的排障线索）。
+fn note_verdict(
+    verdicts: &Mutex<HashMap<String, UpstreamVerdict>>,
+    reference: &str,
+    verdict: &str,
+    status: u16,
+    upstream_type: Option<&str>,
+    sniffed: Option<&str>,
+) {
+    let Ok(mut table) = verdicts.lock() else { return };
+    let at_ms = now_millis();
+    table.insert(
+        reference.to_string(),
+        UpstreamVerdict {
+            reference: reference.to_string(),
+            verdict: verdict.to_string(),
+            status,
+            upstream_type: upstream_type.map(str::to_string),
+            sniffed: sniffed.map(str::to_string),
+            at_ms,
+        },
+    );
+    if table.len() > VERDICT_CAP {
+        // 丢掉最早的一条：诊断表不需要历史，只需要「最近发生了什么」
+        if let Some(oldest) = table
+            .iter()
+            .min_by_key(|(_, verdict)| verdict.at_ms)
+            .map(|(key, _)| key.clone())
+        {
+            table.remove(&oldest);
+        }
+    }
+}
+
 /// 转发上游响应（含 206 与请求头注入）。
 fn forward(
     socket: &TcpStream,
@@ -571,6 +711,8 @@ fn forward(
     headers: &[(String, String)],
     range: Option<String>,
     declared_mime: Option<&str>,
+    reference: Option<&str>,
+    verdicts: &Mutex<HashMap<String, UpstreamVerdict>>,
 ) -> std::io::Result<()> {
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(UPSTREAM_TIMEOUT)
@@ -658,6 +800,17 @@ fn forward(
             upstream_type = upstream_type.as_deref().unwrap_or("(none)"),
             "上游返回的不是可识别的音频（多半是错误页 / 需要登录 / 需要请求头）"
         );
+    }
+
+    /* 把「上游回的到底是什么」记到这首曲目上（`playback.diagnose`）。
+       只在能嗅到开头的请求上判定：Range 从中间开始的响应不是容器头，判了就是冤枉上游。 */
+    if sniffable {
+        if let (Some(reference), Some(verdict)) = (
+            reference,
+            classify_upstream(status, &prefix, sniffed, upstream_type.as_deref()),
+        ) {
+            note_verdict(verdicts, reference, verdict, status, upstream_type.as_deref(), sniffed);
+        }
     }
 
     let mut rest: &mut dyn Read = &mut body;
@@ -959,7 +1112,16 @@ mod tests {
         let writer = TcpStream::connect(("127.0.0.1", client_port)).expect("connect client");
         let (reader, _) = client.accept().expect("accept client");
 
-        forward(&writer, &upstream_url, &[], Some("bytes=0-".into()), None).expect("forward ok");
+        forward(
+            &writer,
+            &upstream_url,
+            &[],
+            Some("bytes=0-".into()),
+            None,
+            None,
+            &Mutex::new(HashMap::new()),
+        )
+        .expect("forward ok");
         drop(writer);
 
         let mut response = Vec::new();
@@ -1028,7 +1190,16 @@ mod tests {
         let writer = TcpStream::connect(("127.0.0.1", client_port)).expect("connect client");
         let (reader, _) = client.accept().expect("accept client");
 
-        forward(&writer, &origin_url, &[], Some("bytes=0-9".into()), None).expect("forward ok");
+        forward(
+            &writer,
+            &origin_url,
+            &[],
+            Some("bytes=0-9".into()),
+            None,
+            None,
+            &Mutex::new(HashMap::new()),
+        )
+        .expect("forward ok");
         drop(writer);
 
         let mut response = Vec::new();
@@ -1040,6 +1211,101 @@ mod tests {
         assert!(text.starts_with("HTTP/1.1 206"), "应当转发上游的 206：{text}");
         assert!(text.contains("AUDIOBYTES"), "应当转发 CDN 的音频字节：{text}");
         assert!(!text.contains("302 Found"), "302 不该原样转给客户端：{text}");
+    }
+
+    /// 判定的口径：**只认字节证据**，不认 Content-Type（R110：上游拿 200 + HTML 错误页冒充音频）。
+    #[test]
+    fn classifies_upstream_bodies_without_trusting_the_content_type() {
+        // 嗅出容器 → audio
+        assert_eq!(
+            classify_upstream(200, b"\x00\x00\x00\x20ftypiso5", Some("audio/mp4"), Some("text/html")),
+            Some("audio"),
+            "字节是 fMP4 就按音频算，上游说 text/html 也不算数"
+        );
+        // 开头是 HTML / JSON / 纯文本 → notAudio（R110 的真凶）
+        assert_eq!(classify_upstream(200, b"<!DOCTYPE html><html>404</html>", None, Some("text/html")), Some("notAudio"));
+        assert_eq!(classify_upstream(200, b"  \n{\"code\":403}", None, Some("application/json")), Some("notAudio"));
+        assert_eq!(classify_upstream(200, b"\xEF\xBB\xBF<html>", None, None), Some("notAudio"), "带 BOM 的错误页也要认");
+        // 认不出的二进制、非 2xx：不下结论（别冤枉「我们不认识的封装」）
+        assert_eq!(classify_upstream(200, b"\x00\x01binary-blob", None, Some("application/octet-stream")), None);
+        assert_eq!(classify_upstream(403, b"<html>denied</html>", None, None), None);
+        assert_eq!(classify_upstream(200, b"", None, None), None);
+    }
+
+    /// **端到端**：上游回 `200 + text/html + 错误页`，代理照常转发（让媒体元素自己失败），
+    /// 但要把判定记到那首曲目上，界面才能说「源给的不是音频」而不是「Format error」。
+    #[test]
+    fn records_a_not_audio_verdict_for_an_html_error_page() {
+        use std::io::{Read, Write};
+        use std::net::{TcpListener, TcpStream};
+        use std::thread;
+
+        const PAGE: &str = "<!DOCTYPE html><html><body>歌曲不存在</body></html>";
+
+        let upstream = TcpListener::bind("127.0.0.1:0").expect("bind upstream");
+        let upstream_url = format!("http://{}/song/1.mp3", upstream.local_addr().expect("addr"));
+        let body = PAGE.as_bytes().to_vec();
+        let upstream_thread = thread::spawn(move || {
+            let (mut socket, _) = upstream.accept().expect("accept");
+            let mut buffer = [0u8; 2048];
+            let _ = socket.read(&mut buffer);
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = socket.write_all(head.as_bytes());
+            let _ = socket.write_all(&body);
+        });
+
+        let client = TcpListener::bind("127.0.0.1:0").expect("bind client");
+        let client_port = client.local_addr().expect("client addr").port();
+        let writer = TcpStream::connect(("127.0.0.1", client_port)).expect("connect client");
+        let (reader, _) = client.accept().expect("accept client");
+
+        let verdicts = Mutex::new(HashMap::new());
+        forward(&writer, &upstream_url, &[], Some("bytes=0-".into()), None, Some("qqmusic:1"), &verdicts)
+            .expect("forward ok");
+        drop(writer);
+
+        let mut response = Vec::new();
+        (&reader).read_to_end(&mut response).expect("read response");
+        upstream_thread.join().expect("joined");
+        assert!(
+            String::from_utf8_lossy(&response).contains("歌曲不存在"),
+            "错误页要原样转给媒体元素（让播放器自己失败，而不是代理假装成功）"
+        );
+
+        let table = verdicts.lock().unwrap();
+        let verdict = table.get("qqmusic:1").expect("判定要落在曲目引用上");
+        assert_eq!(verdict.verdict, "notAudio");
+        assert_eq!(verdict.status, 200);
+        assert_eq!(verdict.upstream_type.as_deref(), Some("text/html; charset=utf-8"));
+        assert!(verdict.at_ms > 0);
+    }
+
+    /// 新一次解析 = 新一次尝试：旧判定必须作废，否则界面会拿上一轮的错误解释这一轮。
+    #[test]
+    fn a_new_publish_clears_the_previous_verdict() {
+        let registry = StreamRegistry::default();
+        note_verdict(&registry.verdicts, "demo:a", "notAudio", 200, Some("text/html"), None);
+        assert_eq!(registry.diagnose("demo:a").expect("记上了").verdict, "notAudio");
+        assert!(registry.diagnose("demo:b").is_none());
+
+        let url = registry
+            .publish("https://example.com/a.mp3", vec![], None, Some("demo:a"))
+            .expect("发布成功");
+        assert!(url.starts_with("http://127.0.0.1:"), "{url}");
+        assert!(registry.diagnose("demo:a").is_none(), "新地址意味着新尝试，旧判定要先清掉");
+    }
+
+    /// 诊断表只留最近几十条：它是排障线索，不是历史。
+    #[test]
+    fn the_verdict_table_stays_bounded() {
+        let verdicts = Mutex::new(HashMap::new());
+        for index in 0..(VERDICT_CAP + 10) {
+            note_verdict(&verdicts, &format!("demo:{index}"), "notAudio", 200, None, None);
+        }
+        assert_eq!(verdicts.lock().unwrap().len(), VERDICT_CAP);
     }
 }
 

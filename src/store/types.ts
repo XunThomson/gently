@@ -172,10 +172,12 @@ export interface PlayerState {
 
 /**
  * 播放失败：要么所有候选源都解析不到地址，要么媒体元素自己报错，
- * 要么**系统把播放管道掐了**（安卓锁屏/后台一段时间后 `play()` 既不成也不报错）。
+ * 要么**系统把播放管道掐了**（安卓锁屏/后台一段时间后 `play()` 既不成也不报错），
+ * 要么**上游回的根本不是音频**（`HTTP 200 + HTML 错误页`，R110 的坑——界面上必须与
+ * 「解码失败」分开说，因为处理方式完全不同：换源 / 重新登录，而不是等一等）。
  */
 export interface PlaybackFailure {
-    kind: 'noSource' | 'media' | 'interrupted';
+    kind: 'noSource' | 'media' | 'notAudio' | 'interrupted';
     /** 已经试过的音源 id（界面可以说「3 个源都试过了」）；`interrupted` 时为空。 */
     failedSources: string[];
     /** 媒体的原始错误（错误码 / 异常文本），只作为次要说明 */

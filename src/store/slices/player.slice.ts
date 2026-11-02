@@ -422,6 +422,33 @@ export function createPlayerSlice(
         return true;
     };
 
+    /**
+     * 媒体失败之后**再问核心一句**：上游回的是不是音频（`playback.diagnose`）。
+     *
+     * 为什么要有这一步：媒体元素只会给 `MediaError.code`，界面拿不到服务端原因。
+     * 上游常用 `HTTP 200 + HTML 错误页` 冒充音频（R110），此时「音频加载失败（地址可能已过期）」
+     * 会误导用户去等——真正该做的是换源或重新登录。核心的判定来自代理对字节的嗅探，
+     * 所以这里只做一件事：**把结论换成更具体的说法**，不改变播放决策。
+     *
+     * 三条护栏：期间切歌 / 已经重试成功 / 结论不是 `notAudio` → 一律不动当前状态。
+     */
+    const refineFailure = async (
+        track: NowPlaying,
+        playId: number,
+        source: string | null,
+    ): Promise<void> => {
+        const verdict = await catalogService.diagnoseUpstream(track, source ?? undefined);
+        if (!verdict || verdict.verdict !== 'notAudio') return;
+
+        const state = ctx.getState().player;
+        if (state.current?.playId !== playId) return;
+        if (state.playbackError?.kind !== 'media') return;
+        patch({
+            // 具体原因已经说清，媒体元素那句英文原文（Format error / DEMUXER…）留着只是噪声
+            playbackError: {kind: 'notAudio', failedSources: state.playbackError.failedSources},
+        });
+    };
+
     const actions: PlayerActions = {
         play(track, queue) {
             const list = queue ?? ctx.getState().player.queue;
@@ -526,7 +553,6 @@ export function createPlayerSlice(
         markUnplayable(message) {
             const {current, candidates, failedSources, activeSource} = ctx.getState().player;
             if (!current) return;
-
             /* 把「正在用的这个源」记为失败，然后拿剩下的候选再解析一次：
                多源的意义就在这里——A 源给的地址 403 了，B 源通常还能放。 */
             const failed =
@@ -574,6 +600,9 @@ export function createPlayerSlice(
                 playing: false,
                 playbackError: {kind: 'media', failedSources: failed, ...(message ? {detail: message} : {})},
             });
+            /* 再问核心一句「上游回的是不是音频」：是错误页就换成更具体的说法（R110 的遗留）。
+               不 await：界面先显示「音频加载失败」，判定回来后再改成「源返回的不是音频」。 */
+            void refineFailure(current, current.playId, activeSource);
         },
 
         markInterrupted() {

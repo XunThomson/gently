@@ -104,5 +104,6 @@ fn implemented_count_matches_milestone_scope() {
     // M0：system 三条；M1a：预览/安装/列表/卸载/启停/优先级；M1b：reload；
     // M1c：订阅四条 + catalog.list；M2：catalog.search / searchCancel / playback.resolve
     // R87：+ `system.dataDir` / `system.dataDir.move`（数据目录查询与迁移）
-    assert_eq!(implemented_count(), 75, "已实现命令数变了就要同步这里与 ROADMAP");
+    // R135：+ `playback.diagnose`（上游回的到底是不是音频）
+    assert_eq!(implemented_count(), 76, "已实现命令数变了就要同步这里与 ROADMAP");
 }

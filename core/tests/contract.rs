@@ -84,7 +84,8 @@ fn not_implemented_carries_command_name() {
 #[test]
 fn command_manifest_is_well_formed() {
     // R87：新增 `system.dataDir` / `system.dataDir.move`（数据目录可查、可迁移）
-    assert_eq!(command_count(), 75, "契约命令数变化时必须同步文档与前端类型");
+    // R135：新增 `playback.diagnose`（上游回的是不是音频 → 界面才能分开说明失败原因）
+    assert_eq!(command_count(), 76, "契约命令数变化时必须同步文档与前端类型");
 
     let mut seen = std::collections::HashSet::new();
     for name in COMMAND_NAMES {

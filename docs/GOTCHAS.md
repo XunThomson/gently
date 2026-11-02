@@ -607,6 +607,12 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
 - 现在的行为（R110 起）：代理嗅探首字节决定 `Content-Type`（fMP4 / ID3 / fLaC / OggS / RIFF-WAVE /
   ADTS / webm），认出不是音频就记一条 WARN「上游返回的不是可识别的音频（多半是错误页 / 需要登录 /
   需要请求头）」。**别再用「换个 Content-Type 试试」对待这类故障。**
+- **这件事现在也进界面了（R135）**：代理把判定按曲目引用记下来（`playback.diagnose{ref}` →
+  `verdict: audio / notAudio / unknown`），前端在媒体失败的**判死**分支问一次；`notAudio` 就把失败类型
+  换成 `notAudio`，文案「音源返回的不是音频（可能是错误页 / 需要登录 / 链接已失效）」。
+  三条边界别踩：① 判定只看字节（上游 `Content-Type` 不算数，`200 + text/html` 正是要抓的形态）；
+  ② 认不出的二进制与非 2xx **不下结论**（宁可说「加载失败」也不冤枉我们不认识的封装）；
+  ③ 新的 `playback.resolve` 会清掉旧判定，别拿上一轮的结论解释这一轮。
 - 取证口径（判断 App 侧通不通，与源无关）：把一段音频 push 进应用私有目录
   （`adb push` → `run-as com.gently cp music/`），在「本地音乐 → 扫描本地目录」里扫它，
   点播放后看 `媒体响应（本地文件） status=206`，再用 `scripts/android-cdp.mjs eval` 读

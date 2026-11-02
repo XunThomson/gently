@@ -233,6 +233,7 @@
     "findingSource": "查找中…",
     "failureNoSource": "{{count}} 个音源都没能给出可播放的地址",
     "failureMedia": "音频加载失败（地址可能已过期）",
+    "failureNotAudio": "音源返回的不是音频（可能是错误页 / 需要登录 / 链接已失效）",
     "failureInterrupted": "播放被系统中断（点播放继续）",
     "repeatOff": "顺序播放",
     "repeatAll": "列表循环",

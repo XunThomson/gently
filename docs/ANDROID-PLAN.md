@@ -390,6 +390,8 @@ pnpm tauri android build --debug -t aarch64 --apk
 | R133 | #5 动画穿模：第一刀 | 浮层（抽屉 / 行操作面板）打开时给 `<html>` 打 `data-overlay="open"`（抽屉与面板共用 `useBackToClose`，标记只在一处维护），CSS 压掉底层 `:active` 高亮与过渡。交付时只到门禁层 | 真机复核在 R134 补上（并量出两处偏差） |
 | R134 | #5 动画穿模：真机复核 + 修两处偏差 | 真机用 CDP `CSS.forcePseudoState` 强制 `:active` 读 computed、`document.getAnimations()` 数「浮层外还剩几条」：① 行规则与 `.table[data-layout='mobile'] .row:active` 同为 0,4,0，平局靠源码顺序 → 只压住过渡没压住背景色；② R133 的全局 `button:active` 越界到浮层自身。修：抑制收窄到顶栏 + 内容区按钮（`html[data-overlay='open']`），行的覆盖写进 `DataTable.module.css` 并提到 0,4,1 | 真机：顶栏/行/⋯ 强制 `:active` 后全透明、抽屉项与面板动作按钮保留 `--bg-active`、浮层打开后浮层外 0 条动画、标记随开关清理；`r134-android-drawer.png` / `-row-sheet.png`；smoke 555；GOTCHAS §68 |
 
+| R135 | 收尾清单里的「上游不是音频」进 UI 文案 | 新命令 `playback.diagnose{ref}`：回环代理转发时按字节判定（`audio` / `notAudio` / `unknown`；非 2xx 与认不出的封装不下结论），按曲目引用记账、新 `playback.resolve` 清旧判定；前端只在媒体失败判死分支问一次，`notAudio` 就换成新失败类型，文案「音源返回的不是音频（错误页 / 需要登录 / 链接已失效）」 | `cargo test -p gently-core` +5 断言；`pnpm smoke` **562**；契约 76 条命令 / 9 类事件；无真机视觉复核（需要真的回错误页的上游，仓库不内置，ADR-0005）；GOTCHAS §56 补充 |
+
 **下一步（P3 余项 / P2-2 余项）**：P2-2 只差两件——`ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度，
 要先确认能真机验到才接）、`POST_NOTIFICATIONS` 运行时授权入口（API 33+ 才需要；本机 API 29 验不了）。
 注意本机 ROM（EMUI 10 / Android 10）的通知、控制中心、锁屏卡片**都不画进度条**，位置数据的可见面要等
@@ -439,7 +441,8 @@ Android 11+ 或车机/蓝牙（§7.3 R117）；P3 只剩导入进度条与音乐
    - `ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度）——本机 ROM 不画进度条，接了也验不到；
    - `POST_NOTIFICATIONS` 运行时授权入口——只有 API 33+ 才有意义，本机 API 29；
    - 导入进度条（大文件才有意义）与音乐目录导出；
-   - 「上游返回的不是音频」进 UI 文案（与桌面端共用，见 GOTCHAS §56）；
+   - ~~「上游返回的不是音频」进 UI 文案~~ → **R135 已落地**（与桌面端共用：`playback.diagnose` + `notAudio` 失败类型，
+     见 GOTCHAS §56）；
    - 平板横屏专用布局（先用 `compact` 顶）、宠物渲染器、armv7 打包。
 
 ## 9. 相关文档

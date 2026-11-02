@@ -510,6 +510,25 @@ export interface ResolvedMedia {
     fromCache?: boolean;
 }
 
+/**
+ * `playback.diagnose`：回环代理对**最近一次**上游响应的判定。
+ *
+ * `verdict` 只认字节证据：`audio`（嗅出容器）/ `notAudio`（回的是 HTML、JSON 之类的文本）/
+ * `unknown`（认不出——不冤枉源）。上游的 `Content-Type` 不能当判据（R110：`200 + HTML`）。
+ */
+export interface UpstreamVerdict {
+    /** 曲目引用（`source:rawId`） */
+    reference: string;
+    verdict: 'audio' | 'notAudio' | 'unknown';
+    /** 上游 HTTP 状态码 */
+    status: number;
+    upstreamType?: string;
+    /** 字节嗅探结果（认出容器时是对应的 MIME） */
+    sniffed?: string;
+    /** 判定时刻（毫秒时间戳） */
+    atMs: number;
+}
+
 /* ============================== 契约 ============================== */
 
 export interface SystemCountsDto {
@@ -798,6 +817,14 @@ export interface PlaybackApi {
         completed: boolean;
         track?: Track;
     }): Promise<CoreResult<void>>;
+    /**
+     * 曲目**最近一次上游响应**是什么（`playback.diagnose`）：没有判定时 `data: null`。
+     *
+     * 媒体元素只会给 `MediaError.code`，拿不到服务端原因；上游常用 `HTTP 200 + HTML 错误页`
+     * 冒充音频（R110）。判定由回环代理在转发时按字节做（见契约 §3 playback），
+     * 界面只在媒体失败后用它把「源给的不是音频」与「解码失败」分开说——**它不是失败原因本身**。
+     */
+    diagnose(input: {ref: TrackRef}): Promise<CoreResult<UpstreamVerdict | null>>;
 }
 
 export interface PluginApi {

@@ -13,7 +13,8 @@ tldr: **已按契约 v0.2 修订**：按 M0 骨架与契约 → M1 插件宿主�
 
 **起点（已完成的事实）**：前端 UI 交付完毕（mock 数据，`pnpm smoke` 172/172、主包 338 KB）；
 契约已重写为本机核心命令清单（`docs/contracts/local-core-api.md` + `src/api/index.ts`），
-并经 **v0.2 修订**为约 57 条命令 + 8 类事件（补齐插件 ABI、媒体传输、订阅分发、流式搜索）；
+并经 **v0.2 修订**为约 57 条命令 + 8 类事件（补齐插件 ABI、媒体传输、订阅分发、流式搜索）
+（此后逐轮增长，**当前**是 76 条命令 + 9 类事件，以 `docs/contracts/local-core-api.md` 的 tldr 为准）；
 TS 后端形态已作废归档。Tauri 侧目前是标准模板（单 crate、只有一个 `greet` 命令、无 Cargo workspace）。
 
 **终点**：`pnpm tauri dev` 起的应用里，曲库/播放/本地库/推荐/下载/插件/皮肤全部由 Rust 本机核心提供，

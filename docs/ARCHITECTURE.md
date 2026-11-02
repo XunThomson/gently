@@ -226,6 +226,9 @@ plugins/index.ts        顶层判定 Tauri 宿主：没有宿主才动态注册�
   全部失败 → 停表并写 playbackError；只有浏览器预览（没有核心）才保留模拟时钟
 ```
 
+- **媒体元素报错后再问核心一句**（R135）：`markUnplayable` 判死时调 `catalogService.diagnoseUpstream()`，
+  核心用回环代理转发时按字节下的判定（`playback.diagnose` → `audio / notAudio / unknown`）把
+  「上游回的是错误页」与「解码失败」分开。判定只解释原因，不参与播放决策。
 - 候选 qualities 由**核心按各插件清单**带出（`catalog::merge_tracks` / 详情 / 收藏），
   前端再按该源能力降级；清单只是声明，实际档位仍以 `getMediaSource` 返回为准。
 - 手动切换：播放条的音源选择器可指定某个候选源（只试该源），失败的源在列表里标记「不可用」。

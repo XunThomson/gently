@@ -16,6 +16,7 @@ import type {
     LyricSearchResult,
     TopListGroup,
     TopListPage,
+    UpstreamVerdict,
     WebLoginPlan,
     WebLoginResult,
 } from '../api';
@@ -34,6 +35,7 @@ import type {CoreFavoriteCollection} from './core.catalog';
 import {coreAvailable, coreWebLogin} from './core.bridge';
 import {
     coreAlbum,
+    coreDiagnoseUpstream,
     coreFavoriteCollections,
     coreFavorites,
     coreLyricsSearch,
@@ -553,5 +555,19 @@ export const catalogService = {
     /** 统一曲目引用 `source:rawId`；避免 id 已经带前缀时重复拼接 */
     trackRef(sourceId: string, track: Track): string {
         return track.id.startsWith(`${sourceId}:`) ? track.id : `${sourceId}:${track.id}`;
+    },
+
+    /**
+     * 媒体失败后问核心「上游到底回了什么」（`playback.diagnose`）。
+     *
+     * 只在**媒体加载失败**之后调用：它解释「为什么没声音」，不参与播放决策。
+     * 没有核心、核心不认识这个源、或代理还没看到任何响应 → `null`，
+     * 界面按原来的「音频加载失败」说，不编原因。
+     */
+    async diagnoseUpstream(track: Track, sourceId?: string): Promise<UpstreamVerdict | null> {
+        const id = sourceId ?? track.source;
+        // 演示源不经代理，问了也只是噪声
+        if (!isCorePlayableSource(id)) return null;
+        return coreDiagnoseUpstream(this.trackRef(id, track));
     },
 };

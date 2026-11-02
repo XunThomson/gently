@@ -79,9 +79,10 @@ pub const COMMAND_NAMES: &[&str] = &[
     "recommend.home",
     "recommend.similar",
     "recommend.feedback",
-    // playback（2）
+    // playback（3）
     "playback.resolve",
     "playback.report",
+    "playback.diagnose",
     // download（6）
     "download.list",
     "download.create",

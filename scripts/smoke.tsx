@@ -3108,6 +3108,52 @@ async function main(): Promise<void> {
                 i18n.t('player.failureMedia'),
     );
 
+    /* 第四种失败：**上游回的根本不是音频**（`HTTP 200 + HTML 错误页`，R110）。
+       它必须与「音频加载失败」分开说：一个该换源 / 重新登录，一个可能要等地址恢复。 */
+    check(
+        '播放失败：上游回的不是音频有独立文案（R110 的遗留）',
+        playbackFailureText({kind: 'notAudio', failedSources: []}, i18n.t) ===
+            i18n.t('player.failureNotAudio') &&
+            playbackFailureText({kind: 'notAudio', failedSources: []}, i18n.t) !==
+                i18n.t('player.failureMedia'),
+    );
+
+    /* 判定从核心来（`playback.diagnose`）：命令名、参数、返回值都要对得上，
+       否则界面会把「解码失败」误说成「源给的不是音频」——那是冤枉源。 */
+    {
+        rememberCoreSourceList([{id: 'upstream-probe', enabled: true} as unknown as PluginSummary]);
+        const asked: Record<string, unknown>[] = [];
+        const probed = {id: 'p1', title: '探针', artist: '人', source: 'upstream-probe'} as unknown as Track;
+        await withFakeCore(
+            (command, params) => {
+                if (command === 'playback.diagnose') {
+                    asked.push(params);
+                    return envelope({
+                        reference: 'upstream-probe:p1',
+                        verdict: 'notAudio',
+                        status: 200,
+                        upstreamType: 'text/html; charset=utf-8',
+                        atMs: 1,
+                    });
+                }
+                return failure('common.not_found', `未预置：${command}`);
+            },
+            async () => {
+                const verdict = await catalogService.diagnoseUpstream(probed);
+                check(
+                    '上游判定：读核心结论（verdict=notAudio + 状态码）',
+                    verdict?.verdict === 'notAudio' && verdict?.status === 200,
+                );
+                check(
+                    '上游判定：按 `source:rawId` 问核心（引用的唯一口径）',
+                    asked.length === 1 && asked[0].ref === 'upstream-probe:p1',
+                );
+            },
+        );
+        check('上游判定：没有核心时不伪造结论（null）', (await catalogService.diagnoseUpstream(probed)) === null);
+        rememberCoreSourceList([]);
+    }
+
     /* 系统中断后 store 要**如实停表**，并保留曲目（点播放 = 重试，不是重头再来） */
     {
         const actions = useActions();
@@ -3537,6 +3583,12 @@ async function main(): Promise<void> {
     /** 这些源在假宿主里「解析不到地址」（R71 的停表 / 换源断言用它） */
     let resolveFailFor: string[] = [];
     /**
+     * 假宿主里 `playback.diagnose` 的结论（R135）：默认 `null` = 代理没看到任何响应，
+     * 与真实核心「查不到判定」时一致。要测「上游回的不是音频」时把它设成 notAudio。
+     */
+    let diagnoseVerdict: Record<string, unknown> | null = null;
+    const diagnoseCalls: Record<string, unknown>[] = [];
+    /**
      * 假宿主的 `plugin.list`（**可变**）：模拟「导入插件后核心清单变了」。
      * 导入后必须能立刻读到，不需要重启（R87 修的 bug）。
      */
@@ -3560,6 +3612,10 @@ async function main(): Promise<void> {
             if (command === 'playback.report') {
                 reportCalls.push(params);
                 return envelope(null);
+            }
+            if (command === 'playback.diagnose') {
+                diagnoseCalls.push(params);
+                return envelope(diagnoseVerdict);
             }
             if (command === 'catalog.track') {
                 // 源侧详情：补一个列表快照里没有的封面（真实插件常这么干）
@@ -4676,6 +4732,67 @@ async function main(): Promise<void> {
                     'store: 重试成功后失败提示消失',
                     s().player.playing === true && s().player.playbackError === null,
                     JSON.stringify({playing: s().player.playing, err: s().player.playbackError}),
+                );
+                actions.player.stop();
+            }
+
+            /* **上游回的到底是不是音频**（R135 / R110 的遗留）：媒体报错后问一句核心
+               （`playback.diagnose`），是「错误页冒充音频」就把原因换成更具体的说法。
+               这条必须真的走 store：界面上的文案是 store 里那个 `kind` 决定的。 */
+            {
+                const probeTrack = {
+                    id: 'local:99',
+                    source: 'local',
+                    title: '错误页探针',
+                    artist: '探针',
+                    album: '',
+                    durationSec: 120,
+                } as unknown as Track;
+
+                resolveFailFor = [];
+                diagnoseVerdict = {
+                    reference: 'local:99',
+                    verdict: 'notAudio',
+                    status: 200,
+                    upstreamType: 'text/html; charset=utf-8',
+                    atMs: 1,
+                };
+                diagnoseCalls.length = 0;
+                actions.player.play(probeTrack, [probeTrack]);
+                await new Promise((resolve) => setTimeout(resolve, 80));
+
+                /* 第一次报错：换源 / 重解析的额度还在，这里直接把它耗尽，
+                   第二次报错才会落到「停表 + 说明原因」那条路上 */
+                actions.player.markUnplayable('code 4');
+                await new Promise((resolve) => setTimeout(resolve, 80));
+                actions.player.markUnplayable('code 4');
+                await new Promise((resolve) => setTimeout(resolve, 120));
+
+                check(
+                    'store: 上游回的不是音频 → 原因换成 notAudio（不是笼统的媒体失败）',
+                    s().player.playing === false && s().player.playbackError?.kind === 'notAudio',
+                    JSON.stringify({playing: s().player.playing, err: s().player.playbackError}),
+                );
+                check(
+                    'store: 判定按当前源问核心（`source:rawId`）',
+                    diagnoseCalls.some((params) => params.ref === 'local:99'),
+                    JSON.stringify(diagnoseCalls),
+                );
+
+                /* 默认（核心没看到响应）时不许改口：仍然说「音频加载失败」 */
+                diagnoseVerdict = null;
+                diagnoseCalls.length = 0;
+                actions.player.play(probeTrack, [probeTrack]);
+                await new Promise((resolve) => setTimeout(resolve, 80));
+                actions.player.markUnplayable('code 4');
+                await new Promise((resolve) => setTimeout(resolve, 80));
+                actions.player.markUnplayable('code 4');
+                await new Promise((resolve) => setTimeout(resolve, 120));
+                check(
+                    'store: 没有上游判定时保持媒体失败（不编原因）',
+                    s().player.playbackError?.kind === 'media' &&
+                        diagnoseCalls.some((params) => params.ref === 'local:99'),
+                    JSON.stringify({err: s().player.playbackError, calls: diagnoseCalls.length}),
                 );
                 actions.player.stop();
             }

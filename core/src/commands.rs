@@ -246,6 +246,7 @@ pub fn dispatch(
         "catalog.searchCancel" => catalog_search_cancel(ctx, params),
         "playback.resolve" => playback_resolve(ctx, params),
         "playback.report" => playback_report(ctx, params),
+        "playback.diagnose" => playback_diagnose(ctx, params),
         // 其余命令：契约已登记，实现在后续里程碑接入
         other => Err(CoreError::not_implemented(other)),
     };
@@ -345,6 +346,7 @@ const IMPLEMENTED: &[&str] = &[
     "catalog.loginWeb",
     "playback.resolve",
     "playback.report",
+    "playback.diagnose",
 ];
 
 /// 已实现命令数。
@@ -1358,7 +1360,7 @@ fn playback_resolve(ctx: &CoreContext, params: serde_json::Value) -> Fallible<se
                 &crate::cache::media_key(&reference, &params.quality),
             );
             if let Some(hit) = exact.or_else(|| crate::cache::lookup_any(&ctx.paths, &reference)) {
-                match ctx.streams.publish_local(&hit.path) {
+                match ctx.streams.publish_local(&hit.path, Some(&reference)) {
                     Ok(stream_url) => {
                         let quality =
                             if hit.quality.is_empty() { params.quality.clone() } else { hit.quality };
@@ -1385,7 +1387,7 @@ fn playback_resolve(ctx: &CoreContext, params: serde_json::Value) -> Fallible<se
         // （前端因此只有一条播放路径：Range/拖动进度、无 Blob hack）
         if source == LOCAL_SOURCE {
             let path = std::path::Path::new(raw_id);
-            match ctx.streams.publish_local(path) {
+            match ctx.streams.publish_local(path, Some(&reference)) {
                 Ok(stream_url) => {
                     return to_json(json!({
                         "source": LOCAL_SOURCE,
@@ -1453,6 +1455,7 @@ fn playback_resolve(ctx: &CoreContext, params: serde_json::Value) -> Fallible<se
             &media.url,
             media.headers.clone(),
             media.mime_type.clone(),
+            Some(&reference),
         ) {
             Ok(url) => url,
             Err(error) => {
@@ -1529,6 +1532,30 @@ fn playback_report(ctx: &CoreContext, params: serde_json::Value) -> Fallible<ser
     let snapshot = crate::library::snapshot_of(&reference, &source, params.track.as_ref());
     store.push_history(&reference, &source, &snapshot, params.played_sec, params.completed)?;
     Ok(serde_json::Value::Null)
+}
+
+/// `playback.diagnose{ref}`：曲目**最近一次上游响应**的判定，没有就返回 `null`。
+///
+/// 存在的理由：媒体元素只会给 `MediaError.code`，拿不到服务端原因。上游常用
+/// `HTTP 200 + HTML 错误页` 冒充音频（R110），那种情况用户只看到「无法播放」，
+/// 既不知道该换源、该重新登录，还是该等一会儿。判定由回环代理在转发时做
+/// （`media.rs` 的 `classify_upstream`），这里只负责读出来。
+///
+/// **不是**「播放失败的原因」：它只描述上游那几个字节。界面用它把
+/// 「源给的不是音频」与「解码失败」分开说，其余情况照旧。
+fn playback_diagnose(ctx: &CoreContext, params: serde_json::Value) -> Fallible<serde_json::Value> {
+    #[derive(Debug, serde::Deserialize)]
+    struct Params {
+        #[serde(rename = "ref")]
+        reference: serde_json::Value,
+    }
+    let params: Params = parse_params(params)?;
+    // 引用既接受字符串也接受 TrackRef 对象（与 library / report 同一套解析）
+    let (reference, _source) = crate::library::resolve_ref(&params.reference)?;
+    match ctx.streams.diagnose(&reference) {
+        Some(verdict) => to_json(verdict),
+        None => to_json(serde_json::Value::Null),
+    }
 }
 
 /// 候选顺序：显式 candidates（按 preferredSources 排序）→ 否则只用引用自身来源。
