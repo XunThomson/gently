@@ -21,13 +21,18 @@ class PlaybackBannerArgs {
     var playing: Boolean = false
     /** 当前歌词行（P4 通知栏歌词）；空串表示没有歌词，通知第二行退回歌手 */
     var line: String = ""
+    /** 已播放毫秒数（R117 锁屏进度）。只作显示：原生不据此计时，播放中由系统按速度推算 */
+    var position: Long = 0
+    /** 总时长毫秒数（R117）；0 表示未知 → 不画进度条 */
+    var duration: Long = 0
 }
 
 /**
  * 播放通知 / 前台服务 / MediaSession 的桥（P2-1 R112，P2-2 R115）。
  *
  * 前端（`services/playbackBanner.service.ts`）→ Tauri 命令 `playback_banner`
- * → `run_mobile_plugin("update", {active,title,artist,playing})` → 这里 → [PlaybackService]。
+ * → `run_mobile_plugin("update", {active,title,artist,playing,line,position,duration})`
+ * → 这里 → [PlaybackService]。
  *
  * 两个方向：
  * - **页面 → 原生**：`update` 把「在放什么 / 在不在播」推过来，服务据此刷新通知与 MediaSession；
@@ -54,6 +59,8 @@ class PlaybackPlugin(private val activity: Activity) : Plugin(activity) {
             putExtra(PlaybackService.EXTRA_ARTIST, args.artist)
             putExtra(PlaybackService.EXTRA_PLAYING, args.playing)
             putExtra(PlaybackService.EXTRA_LINE, args.line)
+            putExtra(PlaybackService.EXTRA_POSITION, args.position)
+            putExtra(PlaybackService.EXTRA_DURATION, args.duration)
         }
 
         try {

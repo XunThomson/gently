@@ -26,6 +26,14 @@ import {
 
 let playSeq = 0;
 
+/**
+ * 「位置跳变」的阈值（秒）。
+ *
+ * 媒体元素正常回写是 250ms～1s 一小步；一次跨过 2 秒说明不是「在往前播」，
+ * 而是加载/恢复/跳位——这时才值得让通知栏 / 锁屏重新对齐进度（R117）。
+ */
+const PROGRESS_JUMP_SEC = 2;
+
 /** 已经上报过播放历史的 `playId`（同一首歌只报一次） */
 let reportedPlayId = 0;
 
@@ -86,6 +94,7 @@ export function createPlayerSlice(
         volume: appConfig.player.defaultVolume,
         elapsed: restored?.position ?? 0,
         duration: restored?.track.durationSec ?? 0,
+        seekSeq: 0,
         lyrics: [],
         lyricsSource: null,
         lyricsOffset: 0,
@@ -496,9 +505,20 @@ export function createPlayerSlice(
         },
 
         setProgress(elapsed, duration) {
+            const {duration: known, elapsed: previous, seekSeq} = ctx.getState().player;
             const patchDuration =
-                duration > 0 && Math.abs(duration - ctx.getState().player.duration) > 0.5;
-            patch(patchDuration ? {elapsed, duration} : {elapsed});
+                duration > 0 && Math.abs(duration - known) > 0.5;
+            /* 位置**跳变**（不是正常往前走）也记一笔：通知栏 / 锁屏的进度条据此重新对齐。
+               为什么必须记：恢复上次的曲目时，媒体元素会先报一次 0、再跳到续播点；
+               只认「用户拖了进度」的话，原生侧会一直停在 0（R117 真机踩到的）。 */
+            const jumped = Math.abs(elapsed - previous) > PROGRESS_JUMP_SEC;
+            patch(
+                jumped
+                    ? {elapsed, seekSeq: seekSeq + 1, ...(patchDuration ? {duration} : {})}
+                    : patchDuration
+                      ? {elapsed, duration}
+                      : {elapsed},
+            );
             // 位置每 10 秒落一次盘：「上次放到哪」只值这个精度（见 `rememberPlayback`）
             rememberPlayback();
         },
@@ -659,9 +679,11 @@ export function createPlayerSlice(
         },
 
         seek(seconds) {
-            const {duration} = ctx.getState().player;
+            const {duration, seekSeq} = ctx.getState().player;
             const next = Math.min(Math.max(0, seconds), duration || Number.MAX_SAFE_INTEGER);
-            patch({elapsed: next});
+            /* `seekSeq` 是给「不该订阅 elapsed 的订阅方」的信号（通知栏/锁屏的进度条，R117）：
+                播放中的位置由系统自己按速度推算，只有被手动改过才需要重推一次 */
+            patch({elapsed: next, seekSeq: seekSeq + 1});
             // 命令同时下发给音频引擎，保持 UI 与声音一致
             audioEngine.seek(next);
         },

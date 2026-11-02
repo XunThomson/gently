@@ -125,6 +125,14 @@ export interface PlayerState {
     elapsed: number;
     /** 当前曲目总秒数（优先取音频元数据） */
     duration: number;
+    /**
+     * 进度**被改动过**的次数（拖进度条 / 点进度条 / 续播跳位时 +1）。
+     *
+     * 为什么需要：手机的通知栏 / 锁屏要知道「放到哪」才能画进度条，但订阅 `elapsed` 会把整棵外壳
+     * 每秒重渲染好几次。这里只暴露「进度跳变了一次」这个事实，订阅方在回调里再按需
+     * `store.getState()` 读准确位置（R117）。
+     */
+    seekSeq: number;
     /** 当前曲目歌词（随播放切换异步加载；用户手动挑选的也放这里） */
     lyrics: LyricLine[];
     /**

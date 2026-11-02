@@ -1,5 +1,5 @@
 import {useEffect} from 'react';
-import {useActions, useSelect} from '../store';
+import {useActions, store, useSelect} from '../store';
 import {audioEngine, installMediaActionHandler, syncPlaybackBanner} from '../services';
 import {currentLyricLine} from '../utils/lyrics';
 
@@ -54,17 +54,19 @@ export function useAudioEngine(): void {
     }, [playId]);
 
     /**
-     * 手机的「播放通知 / 前台服务 / MediaSession / 通知栏歌词」（P2-1 / P2-2 / P4）。
+     * 手机的「播放通知 / 前台服务 / MediaSession / 通知栏歌词 / 锁屏进度」（P2-1 / P2-2 / P4 / R117）。
      *
-     * 三个入参各管一件事，**不能合并**：
+     * 入参各管一件事，**不能合并**：
      * - `active` = 有没有当前曲目（决定服务起不起）；
      * - `playing` = 在不在播（决定按钮图标与 `PlaybackState`）；
-     * - `line` = 当前歌词行（通知第二行显示它，没有歌词时退回歌手）。
+     * - `line` = 当前歌词行（通知第二行显示它，没有歌词时退回歌手）；
+     * - `position` / `duration` = 放到哪、一共多长（锁屏/车机画进度条；播放中由系统按 1× 速度
+     *   自行推算，所以**不需要**每秒推一次，只在状态变化与手动跳位时推）。
      * 第一版把 active 与 playing 写成同一个值，结果一暂停就把服务和会话一起关了——
      * 通知没了、耳机键也不再响应（R115 真机抓到的）。
      *
      * `line` 用**派生成字符串的选择器**：只有「唱到另一行」时才重渲染并推一次 IPC，
-     * 订阅 `elapsed`（每秒变）会把整棵外壳每秒重渲染一次。
+     * 订阅 `elapsed`（每秒变）会把整棵外壳每秒重渲染一次。位置同理，用 `seekSeq` 当信号。
      */
     const hasTrack = useSelect((s) => !!s.player.current);
     const trackTitle = useSelect((s) => s.player.current?.title ?? '');
@@ -72,9 +74,26 @@ export function useAudioEngine(): void {
     const lyricLine = useSelect((s) =>
         currentLyricLine(s.player.lyrics, s.player.elapsed + s.player.lyricsOffset),
     );
+    /* 进度跳变的次数（拖进度条 / 续播跳位）：只订阅它，**不订阅 elapsed**——
+       elapsed 每 250ms 变一次，订阅它等于让整棵外壳每秒重渲染好几次。 */
+    const seekSeq = useSelect((s) => s.player.seekSeq);
+    /* 时长是**异步到手**的：先把曲目信息摆上界面，音频元素加载完才知道真实时长
+       （列表里的本地文件常常是 0:00）。它不参与依赖的话，原生侧会一直停在
+       「时长未知 → 不画进度条」——R117 真机上就是这么发现的第一版没生效。 */
+    const trackDuration = useSelect((s) => Math.round(s.player.duration));
     useEffect(() => {
-        void syncPlaybackBanner(hasTrack, trackTitle, trackArtist, playing, lyricLine);
-    }, [hasTrack, playing, trackTitle, trackArtist, lyricLine]);
+        /* 位置按需读准确值：进入这个 effect 的时刻 = 「该重推一次」的时刻 */
+        const {elapsed, duration} = store.getState().player;
+        void syncPlaybackBanner(
+            hasTrack,
+            trackTitle,
+            trackArtist,
+            playing,
+            lyricLine,
+            elapsed * 1000,
+            duration * 1000,
+        );
+    }, [hasTrack, playing, trackTitle, trackArtist, lyricLine, seekSeq, trackDuration]);
 
     /**
      * 通知栏 / 锁屏 / 耳机键的传输动作（P2-2）。

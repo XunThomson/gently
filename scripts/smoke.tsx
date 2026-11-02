@@ -2778,6 +2778,34 @@ async function main(): Promise<void> {
             isStalled(null, 12, 999_999) === false,
     );
 
+    /* 进度跳变（R117）：锁屏的进度条要能知道「放到哪」，但不能靠订阅 elapsed（每秒变）。
+       约定：只有**被手动改过**（seek / 续播跳位）才 +1，正常回写不算。 */
+    {
+        const before = s().player;
+        const startSeq = before.seekSeq;
+        actions.player.seek(30);
+        check(
+            '进度跳变：seek 留下一个信号，位置真的改了',
+            s().player.seekSeq === startSeq + 1 && s().player.elapsed === 30,
+            `seekSeq=${s().player.seekSeq} elapsed=${s().player.elapsed}`,
+        );
+        const afterSeek = s().player.seekSeq;
+        actions.player.setProgress(31, s().player.duration);
+        check(
+            '进度跳变：正常进度回写不算跳变（不会每秒推一次 IPC）',
+            s().player.seekSeq === afterSeek && s().player.elapsed === 31,
+        );
+        /* 恢复播放时媒体元素会先报 0、再跳到续播点；这种**大跨度跳变**必须算跳变，
+           否则原生侧的进度条会一直停在 0（R117 真机踩到的） */
+        actions.player.setProgress(120, s().player.duration);
+        check(
+            '进度跳变：媒体元素的大跨度跳变也留信号（续播后进度条能对齐）',
+            s().player.seekSeq === afterSeek + 1 && s().player.elapsed === 120,
+            `seekSeq=${s().player.seekSeq} elapsed=${s().player.elapsed}`,
+        );
+        store.setState({player: before});
+    }
+
     /* 播放通知（P2-1）：浏览器/桌面没有宿主，调用必须是**静默空操作**——
        既不能抛（会把一次播放变成失败），也不能在浏览器预览里凭空发 IPC。 */
     {
@@ -2939,6 +2967,17 @@ async function main(): Promise<void> {
                 playbackBannerKey(true, true, '歌', '人', '第一句') &&
                 playbackBannerKey(true, true, '歌', '人', '第一句') !==
                     playbackBannerKey(true, true, '歌', '人', '第二句'),
+        );
+        /* 锁屏进度（R117）：位置进了键，所以「拖了进度」一定推得出去（否则会被去重吞掉）；
+           反过来时长不变、位置也不变的三次调用仍然只推一次。 */
+        check(
+            '锁屏进度：位置 / 时长变化会让键变化（拖进度一定推得出去）',
+            playbackBannerKey(true, true, '歌', '人', '', 1000, 200_000) !==
+                playbackBannerKey(true, true, '歌', '人', '', 30_000, 200_000) &&
+                playbackBannerKey(true, true, '歌', '人', '', 1000, 200_000) !==
+                    playbackBannerKey(true, true, '歌', '人', '', 1000, 240_000) &&
+                playbackBannerKey(false, true, '歌', '人', '', 0, 0) ===
+                    playbackBannerKey(false, true, '歌', '人', '', 0, 0),
         );
     }
 

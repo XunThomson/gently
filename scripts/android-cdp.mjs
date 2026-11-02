@@ -11,7 +11,7 @@
  *
  * 用法（真机连着 USB、装的是 debug 包）：
  *   node scripts/android-cdp.mjs eval --expr "location.href"
- *   node scripts/android-cdp.mjs eval --file scripts/probes/audio-state.js
+ *   node scripts/android-cdp.mjs eval --file scripts/probes/playbar-state.js
  *   node scripts/android-cdp.mjs tap  --text "播放"
  *   node scripts/android-cdp.mjs shot --out release/screenshots/x.png
  *   node scripts/android-cdp.mjs net  --seconds 12        # 媒体请求/响应/失败事件

@@ -33,16 +33,20 @@ mod android {
             .build()
     }
 
-    /// 把「在播什么 / 在不在播 / 正在唱哪一句」推给前台服务。
+    /// 把「在播什么 / 在不在播 / 正在唱哪一句 / 放到哪」推给前台服务。
     ///
     /// `line` 是通知栏歌词（P4 · R116）：前端按「当前行」派生好后传下来，
     /// 空串表示没有歌词——服务那边退回显示歌手。
+    /// `position` / `duration` 是毫秒（R117）：只给锁屏 / 车机画进度条用，原生**不据此计时**。
+    #[allow(clippy::too_many_arguments)]
     pub fn update(
         active: bool,
         title: &str,
         artist: &str,
         playing: bool,
         line: &str,
+        position: i64,
+        duration: i64,
     ) -> Result<(), String> {
         let handle = HANDLE.get().ok_or_else(|| "播放通知插件尚未注册".to_string())?;
         let payload = serde_json::json!({
@@ -51,6 +55,8 @@ mod android {
             "artist": artist,
             "playing": playing,
             "line": line,
+            "position": position,
+            "duration": duration,
         });
         handle
             .run_mobile_plugin::<serde_json::Value>("update", payload)
@@ -78,14 +84,16 @@ pub fn update(
     artist: &str,
     playing: bool,
     line: &str,
+    position: i64,
+    duration: i64,
 ) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        android::update(active, title, artist, playing, line)
+        android::update(active, title, artist, playing, line, position, duration)
     }
     #[cfg(not(target_os = "android"))]
     {
-        let _ = (active, title, artist, playing, line);
+        let _ = (active, title, artist, playing, line, position, duration);
         Ok(())
     }
 }

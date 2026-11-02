@@ -22,10 +22,10 @@ import android.os.IBinder
  * 系统才会把它当「正在放音的应用」，既不挂起也不回收。
  *
  * 职责边界（**服务不拥有播放状态**）：
- * - 它只显示「在放什么 / 是否在播」，并把用户的传输动作（通知栏、锁屏、耳机键）
- *   通过 [MediaActionBridge] 送回页面——改 store 的永远是前端；
- * - 播放位置不归它管（页面每 10 秒自己落盘，见 `utils/lastPlayback.ts`），
- *   所以 `PlaybackState` 只给「在播 / 暂停」，不假装自己知道进度。
+ * - 它只显示「在放什么 / 是否在播 / 放到哪 / 正在唱哪一句」，并把用户的传输动作
+ *   （通知栏、锁屏、耳机键）通过 [MediaActionBridge] 送回页面——改 store 的永远是前端；
+ * - 进度是**页面给的快照**（R117）：`PlaybackState` 带上 position 与 1× 速度，
+ *   系统据此自己往前推算；服务不计时、不落盘（落盘见 `utils/lastPlayback.ts`）。
  *
  * 注意 API 级别：本机是 API 29，但 `targetSdk = 36`，所以清单里同时声明
  * `FOREGROUND_SERVICE_MEDIA_PLAYBACK` 与 `foregroundServiceType="mediaPlayback"`
@@ -69,8 +69,10 @@ class PlaybackService : Service() {
         val artist = intent?.getStringExtra(EXTRA_ARTIST).orEmpty()
         val line = intent?.getStringExtra(EXTRA_LINE).orEmpty()
         val playing = intent?.getBooleanExtra(EXTRA_PLAYING, true) ?: true
+        val position = intent?.getLongExtra(EXTRA_POSITION, 0L) ?: 0L
+        val duration = intent?.getLongExtra(EXTRA_DURATION, 0L) ?: 0L
 
-        applyState(title, artist, line, playing)
+        applyState(title, artist, line, playing, position, duration)
         // 必须尽快进入前台态：API 26+ 起 startForegroundService 后 5 秒内不调 startForeground 会崩
         startForeground(NOTIFICATION_ID, buildNotification(title, artist, line, playing))
         return START_NOT_STICKY
@@ -89,28 +91,48 @@ class PlaybackService : Service() {
         }
     }
 
-    /** 同步 MediaSession 的元数据与播放态（锁屏 / 蓝牙 / 车机读的是它） */
-    private fun applyState(title: String, artist: String, line: String, playing: Boolean) {
+    /**
+     * 同步 MediaSession 的元数据与播放态（锁屏 / 蓝牙 / 车机读的是它）。
+     *
+     * `position` / `duration` 只用来画进度条（R117）：位置是**页面给的快照**，
+     * 播放中靠 `setState(…, speed=1f)` 让系统自己往前推算——所以正常播放时
+     * 不需要每秒推一次，只有暂停 / 换歌 / 拖进度这类时刻才重新对齐。
+     */
+    private fun applyState(
+        title: String,
+        artist: String,
+        line: String,
+        playing: Boolean,
+        position: Long = 0L,
+        duration: Long = 0L,
+    ) {
         val current = session ?: return
-        current.setMetadata(
-            MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_TITLE, title.ifBlank { getString(R.string.app_name) })
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
-                /* 通知栏歌词（P4）：副标题放当前这一句，锁屏上也能看到。
-                   没有歌词时退回歌手，避免锁屏出现一条空白副标题。 */
-                .putString(
-                    MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
-                    if (line.isNotBlank()) line else artist,
-                )
-                .build(),
-        )
+        val metadata = MediaMetadata.Builder()
+            .putString(MediaMetadata.METADATA_KEY_TITLE, title.ifBlank { getString(R.string.app_name) })
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
+            /* 通知栏歌词（P4）：副标题放当前这一句，锁屏上也能看到。
+               没有歌词时退回歌手，避免锁屏出现一条空白副标题。 */
+            .putString(
+                MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
+                if (line.isNotBlank()) line else artist,
+            )
+        if (duration > 0L) {
+            metadata.putLong(MediaMetadata.METADATA_KEY_DURATION, duration)
+        }
+        current.setMetadata(metadata.build())
+
         current.setPlaybackState(
             PlaybackState.Builder()
                 .setState(
                     if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
-                    PlaybackState.PLAYBACK_POSITION_UNKNOWN,
-                    1f,
+                    /* 没有时长时给 UNKNOWN(-1)：给出一个假的 0 会让锁屏显示「0:00 / 0:00」 */
+                    if (duration > 0L) position else PlaybackState.PLAYBACK_POSITION_UNKNOWN,
+                    /* 暂停时速度必须是 0：否则系统会自己把进度往前推（这是 PlaybackState 的约定） */
+                    if (playing) 1f else 0f,
                 )
+                /* 故意**不**声明 ACTION_SEEK_TO：那会让锁屏/QS 画一条能拖的进度条，
+                   而拖动走的是 `MediaSession.Callback.onSeekTo`，页面这一侧还没有接——
+                   「声明了但不生效」比不声明更坏（GOTCHAS §46）。等接上再一起声明。 */
                 .setActions(
                     PlaybackState.ACTION_PLAY or
                         PlaybackState.ACTION_PAUSE or
@@ -160,8 +182,9 @@ class PlaybackService : Service() {
             .setContentTitle(title.ifBlank { getString(R.string.app_name) })
             /* 通知栏歌词（P4）：第二行优先显示「正在唱的那一句」，没有歌词才退回歌手 */
             .setContentText(if (line.isNotBlank()) line else artist)
-            // 用系统自带的媒体图标：不为一个通知新增资源文件
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            /* 自己的音符剪影（`res/drawable/ic_gently_notification.xml`）：
+               系统只取 alpha 通道着白色，所以不要用彩色图标 */
+            .setSmallIcon(R.drawable.ic_gently_notification)
             .setContentIntent(openApp)
             .setOngoing(playing)
             .setShowWhen(false)
@@ -205,6 +228,12 @@ class PlaybackService : Service() {
         const val EXTRA_PLAYING = "playing"
         /** 当前歌词行（P4 通知栏歌词，R116） */
         const val EXTRA_LINE = "line"
+
+        /** 已播放毫秒数（R117 锁屏进度，仅显示） */
+        const val EXTRA_POSITION = "position"
+
+        /** 总时长毫秒数（R117；0 = 未知） */
+        const val EXTRA_DURATION = "duration"
 
         private const val CHANNEL_ID = "gently-playback"
         private const val NOTIFICATION_ID = 1001

@@ -373,10 +373,12 @@ pnpm tauri android build --debug -t aarch64 --apk
 | R114 | P3-1 SAF 导入 | Kotlin `ImportPlugin`（`ACTION_OPEN_DOCUMENT`，`audio/*` 多选）在**后台线程**拷进 `<filesDir>/music`（同名不覆盖、**零存储权限**）→ `src-tauri/src/importer.rs` + 宿主命令 `import_audio` → `ScanPanel` 手机形态的「从手机导入音频」→ `library.local.scan` 入库 | 真机选 1 首 → 列表出现、磁盘有文件、扫描新增 1；`r114-android-import.png` |
 | R115 | P2-2 MediaSession + 传输控制 | `PlaybackService` 用 framework 的 `MediaSession`（不引 androidx.media）：`MediaMetadata` + `PlaybackState`（`PLAY/PAUSE/SKIP_NEXT/SKIP_PREV`），通知用 `Notification.MediaStyle` 挂三个按钮（上一首 / 播放·暂停 / 下一首）；用户按按钮 → 服务只把动作（`toggle/next/prev`）经 `MediaActionBridge`（`evaluateJavascript` 调页面里的 `window.__gentlyMediaAction`）送回前端，**改 store 的永远是页面** | 真机 `KEYCODE_MEDIA_PAUSE` 后进度冻在 `6`、`KEYCODE_MEDIA_PLAY` 6→10、`KEYCODE_MEDIA_NEXT` 换歌且通知标题跟着变；`dumpsys media_session` 里 `state=3/2` 与 `actions=566`；通知栏三按钮截图 `r115-android-notification.png` |
 | R116 | P4 通知栏歌词 | 歌词**只在页面算**（`currentLyricLine()` 取当前行，没有歌词就是空串）→ 播放条的 `line` 作为第 5 个参数一路传到 `playback_banner` / `playback::update` / Kotlin `EXTRA_LINE`；服务把它写进 `Notification` 的 `setContentText`（空串回落成歌手）与 `MediaMetadata` 的 `DISPLAY_SUBTITLE`。前端去重键 `playbackBannerKey()` 加上 `line`，**只有换行才推一次**，不逐帧打扰原生 | 真机同一张通知原地把第二行从「第一句：夜色温柔」改成「第二句：灯火未眠」（`r116-android-lyrics-notification-1/2.png`）；`dumpsys media_session` 里 `metadata: size=3`、`state=3` |
+| R117 | P2-2 余项：位置 / 时长 + 自有通知图标 | `PlaybackState` 不再给 `PLAYBACK_POSITION_UNKNOWN`：前端把 `position`/`duration`（毫秒）一起推下来，服务写进 `setState(state, position, speed)` 与 `METADATA_KEY_DURATION`（暂停时速度必须 0，播放中靠系统按 1× 推算，所以**不需要**每秒推）。**不声明 `ACTION_SEEK_TO`**：锁屏拖动要走 `onSeekTo` 回页面，还没接——「声明了但不生效」比不声明更坏（§46）。通知小图标换成自己的音符矢量（`res/drawable/ic_gently_notification.xml`） | 冷启动恢复 231 s → 点播放 `position=231200`；点进度条 50% → `135465`；媒体键暂停 → `state=2 speed=0.0 position=240154`；`metadata: size=4`（含时长）。两个真机坑见 GOTCHAS §62；`r117-android-notification.png`（♪ 图标） |
 
-**下一步（P4 / P3 余项）**：P4 余下的都不挡路——锁屏进度条（`PlaybackState` 现在 `position=-1`）、
-通知小图标换应用自己的、`POST_NOTIFICATIONS` 运行时授权入口（设置页）；
-P3 余项：导入进度、清理已导入、`.m4s` 这类系统 MIME 库不认的封装。
+**下一步（P3 余项 / P2-2 余项）**：P2-2 只差两件——`ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度，
+要先确认能真机验到才接）、`POST_NOTIFICATIONS` 运行时授权入口（API 33+ 才需要；本机 API 29 验不了）。
+注意本机 ROM（EMUI 10 / Android 10）的通知、控制中心、锁屏卡片**都不画进度条**，位置数据的可见面要等
+Android 11+ 或车机/蓝牙（§7.3 R117）；P3 余项：导入进度、「清理已导入」、`.m4s` 这类系统 MIME 库不认的封装。
 
 
 **拆分（每片独立可交付）**
@@ -390,7 +392,7 @@ P3 余项：导入进度、清理已导入、`.m4s` 这类系统 MIME 库不认�
 | P1-5 | `mobileColumns` + 各列表两行式呈现 | 列表在 360px 宽下不横向溢出 |
 | P1-6 | 窗口能力 no-op + 桥不挂 + 截图与文档 | 真机无报错；桌面截图无变化 |
 | P2-1 | **前台服务**保活 + 常驻通知（Kotlin Service + Tauri 移动插件桥） | 熄屏/后台继续播（实测熄屏 4 分钟 +253 秒）；停播即退出服务 |
-| P2-2 | MediaSession + 通知栏传输控制 + 通知图标（R115 已落地，图标仍是系统自带的） | 通知上能播放/暂停/上下曲，且状态回写 store |
+| P2-2 | MediaSession + 通知栏传输控制 + 进度/时长 + 通知图标（R115，位置与图标 R117，`SEEK_TO` 未接） | 通知上能播放/暂停/上下曲，且状态回写 store |
 | P2-3 | 页面被系统重载后的续播（R113 已落地） | 冷启动后播放条有歌、位置正确、点播放从该位置接着放 |
 | P3-1 | **SAF 导入**（系统文件选择器 → 拷进应用目录 → 扫描入库，R114 已落地） | 真机选文件后列表里出现该曲目；不需要存储权限 |
 

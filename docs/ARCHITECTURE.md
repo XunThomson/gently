@@ -634,9 +634,9 @@ OpenAPI-over-HTTP 代码生成、Postgres/Redis/BullMQ/Docker。**新增**的必
   拷贝（跳过 cache/logs/SQLite 旁挂文件）→ 数据库副本 `PRAGMA quick_check` 自检 →
   写指针 → **下次启动生效**；旧目录不删。重启由宿主命令 `app_restart`（`AppHandle::request_restart`）
   发起，核心不认识「进程」。
-- **播放通知 / 前台服务（R112–R116，仅 Android）**：链路是
+- **播放通知 / 前台服务（R112–R117，仅 Android）**：链路是
   `services/playbackBanner.service.ts` → 宿主命令 `playback_banner`
-  （`active, title, artist, playing, line`，`src-tauri/src/lib.rs`）
+  （`active, title, artist, playing, line, position, duration`，`src-tauri/src/lib.rs`）
   → `src-tauri/src/playback.rs` 用一个 Tauri 插件把调用转发给 Kotlin
   （`run_mobile_plugin("update", …)` → `gen/android/.../PlaybackPlugin.kt` → `PlaybackService.kt`）。
   为什么要过宿主这一层：Tauri 的移动端桥只有「Rust → Kotlin」一个方向，而「开始播放」是前端的用户动作；
@@ -649,6 +649,10 @@ OpenAPI-over-HTTP 代码生成、Postgres/Redis/BullMQ/Docker。**新增**的必
   - 通知栏歌词（R116）同理只是展示：当前行由页面算（`utils/lyrics.ts::currentLyricLine`），
     作为 `line` 参数下来写成通知的第二行与 `MediaMetadata` 的 `DISPLAY_SUBTITLE`；
     前端去重键 `playbackBannerKey()` 把 `line` 算进去，所以**只有换行才推一次** IPC。
+  - 进度（R117）也是显示值：`positionMs` / `durationMs` 来自页面快照，服务写进
+    `PlaybackState.setState(state, position, speed)`（播放中速度 1× 由系统自己推算，暂停时必须 0）
+    与 `METADATA_KEY_DURATION`。前端只订阅 `seekSeq`（位置**跳变**计数）而不订阅 `elapsed`，
+    所以正常播放**不需要**每秒推 IPC；`ACTION_SEEK_TO` 刻意没声明（`onSeekTo` 回页面还没接）。
   - 非 Android 平台该插件是空插件、命令是空操作，前端不必分平台。
     原生代码住在 `src-tauri/gen/android/`（这是 Tauri 生成的工程，但**自定义原生代码就放在这里**）。
 - **从手机导入音频（R114，仅 Android）**：`services/import.service.ts` → 宿主命令 `import_audio`

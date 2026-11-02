@@ -108,10 +108,11 @@ fn app_restart(app: tauri::AppHandle) {
     app.request_restart();
 }
 
-/// 宿主命令：**同步播放通知 / 前台服务 / 通知栏歌词**（Android，P2 / P4）。
+/// 宿主命令：**同步播放通知 / 前台服务 / 通知栏歌词 / 锁屏进度**（Android，P2 / P4 / R117）。
 ///
-/// 前端只在「开始 / 暂停 / 换歌 / **换歌词行**」时调一次（`services/playbackBanner.service.ts`），
-/// 不是每秒调用——播放位置不归 Kotlin 管，播放状态仍以前端 store 为唯一权威。
+/// 前端在「开始 / 暂停 / 换歌 / 换歌词行 / **拖了进度**」时调一次
+/// （`services/playbackBanner.service.ts`），不是每秒调用——播放位置只作为**显示值**给锁屏，
+/// 原生不据此计时，播放状态与进度仍以前端 store 为唯一权威。
 /// 桌面端与浏览器里这条命令要么不存在、要么是空操作，前端只在手机宿主上调用。
 #[tauri::command]
 fn playback_banner(
@@ -120,8 +121,10 @@ fn playback_banner(
     artist: String,
     playing: bool,
     line: String,
+    position: i64,
+    duration: i64,
 ) -> Result<(), String> {
-    playback::update(active, &title, &artist, playing, &line)
+    playback::update(active, &title, &artist, playing, &line, position, duration)
 }
 
 /// 宿主命令：**从手机导入音频**（Android，P3）。
