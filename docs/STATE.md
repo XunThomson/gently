@@ -21,7 +21,7 @@ tldr: 当前 R136（ANDROID-PLAN §8 的「导入进度条」）：拷 1.3 GB �
 | **后台播放** | 找到并修掉两处「自己把后台播放搞死」的代码：① 后台恢复走 `resume()`，它失败就 `reload()`——每 5 秒一次，进度被反复清零（熄屏 150s 只走了 13s）；改成只 `nudge()`（裸 `play()`，不重载、不报错）；② 看门狗 2.5s 判「媒体元素没有开始播放」时页面隐藏也照判（后台定时器被系统延后，很容易把正常播放判死）——隐藏时不判，僵死留给回前台。**负结果**：给 `PlaybackService` 加 `requestAudioFocus(AUDIOFOCUS_GAIN)` 反而让**播放起不来**——Chromium 自己持有焦点（`dumpsys audio` 能看到 `AudioFocusDelegate`），服务再抢一次会让 WebView 收到 LOSS 并暂停；已回退。另加页面侧 `navigator.mediaSession` 元数据/播放态（Chromium 据此认定「这是后台媒体」，没有该 API 就静默跳过）。**真机：Home+熄屏 75s → 进度 12→97，仍在播** |
 | **抽屉滑动打开** | `MobileShell` 加横滑手势：起手点离屏幕左边 ≥ 48px（避开系统返回手势区——R124 的负结果），横向位移 ≥ 72px 且明显大于纵向才触发；`.content` 设 `touch-action: pan-y`；播放条标 `data-drawer-swipe="off"`（进度条自己就是横向拖动）；滑动后 **300ms 内**那一次 click 被吃掉（只吃这一下，不能把抽屉里紧接着的点击一起吞了） |
 | **抽屉导航项有时没反应** | 真机复现：冷启动后第一次「抽屉 → 设置」必失败。根因是 `useBackToClose` 收起时的 `history.back()` 与抽屉里的 `navigate()` 抢同一条历史（`navigate` 在 RouterProvider 里**异步落地**）。修：hook 返回「这次别动历史」的句柄，抽屉换页改为 `navigate(path, {replace: 标记存在})` 直接顶掉标记——页换了、历史不多一条。真机复测：冷启动第一次即成功，连续 8 次 0 失败、历史每次只增 1 |
-| **设置页改设置白屏** | 本机**没复现**（主题模式 / 语言 / 音质三组 / 列表展示方式 / 背景开关逐项点过，无异常、DOM 完好；也排除了滚动错位）。改法：给路由内容加 `RouteError` 错误边界——渲染抛错时只坏内容区、导航与播放条还在，显示「这个页面出错了」+ 可展开的出错信息 + 重试 / 重新加载，`console.error` 留堆栈。这样即使还有未知触发条件也不会是白屏 |
+| **设置页改设置白屏** | 用户澄清：**白屏时没有任何报错**——所以错误边界抓不到。本机也复现不出（主题模式 / 语言 / 音质三组 / 列表展示方式「含真实设备像素点击」/ 筛选样式 / 背景开关逐项点过，DOM 完好、无异常、滚动不错位）。于是改成**主动检测**：新看门狗 `utils/blankScreenWatchdog.ts` 每 400ms 判一次「看起来是空的」，三种形态都认——① `#root` 可见文本 < 8 字；② 有文字但看不见（抽样 12 个文字元素，逐个比对文字色与它背后第一个不透明背景色，几乎同色/opacity 0 才算）；③ `main` 高度塌到 < 40px。命中后弹一条**非模态**小横幅（不遮界面），给出判定原因 + 完整诊断（路由、视口、html/body/#root/main 的盒子与配色、`localStorage[gently:ui]`、shell 标记），带「复制诊断信息 / 重新加载 / 关掉」。另外保留 `RouteError` 边界与 `RootError`（异常那条路也兜住） |
 | **歌词页返回按钮** | 手机形态不再渲染「返回」（桌面保留——那边没有系统返回）。真机：`/now-playing` 的按钮只剩「封面作为背景 / 歌词工具」，系统返回 `/now-playing` → `/setting` → `/search` 逐级退回 |
 | **列表卡片观感** | 手机列表拆掉外层卡片：容器去掉边框 / 圆角 / 白底，行只留 1px 分隔线、底色交给页面（`.container[data-layout='mobile']`；容器也带 `data-layout`，因为 WebView 是 Chromium 92，不能用 `:has()`）。补回「播放中的行」底色（新规则特异性更高会盖掉 `.row.active`） |
 
@@ -34,7 +34,8 @@ tldr: 当前 R136（ANDROID-PLAN §8 的「导入进度条」）：拷 1.3 GB �
 | 歌词页 | 无「返回」按钮；系统返回逐级退回（`/now-playing` → `/setting` → `/search`） |
 | 列表 | `release/screenshots/r137-mobile-list-flat.png`：列表直接铺在页面上，无卡片外框 |
 | 后台播放 | Home + 熄屏 75s：进度 12 → **97**（+85s，仍在播）；再跑 180s：进度 4 → **195**（+191s，仍在播，已越过 R111 记的 2.8 分钟门槛） |
-| 门禁 | `pnpm typecheck`；`pnpm smoke` **575**（566 → +9）；契约 76 命令未变 |
+| 白屏看门狗 | 真机模拟两种白屏都被抓到：`#root.style.display='none'` → 「判定：#root 的 display 是 none」；注入 `* { color: #fff } + body { background: #fff }` → 「判定：文字与背景几乎同色（例：SPAN「probe」rgb(255,255,255) on rgb(255,255,255)）」；正常页面（`/search` 49 字、`/recent` 113 字）不误报。截图 `release/screenshots/r137-blank-watchdog.png` |
+| 门禁 | `pnpm typecheck`；`pnpm smoke` **578**（566 → +12）；契约 76 命令未变 |
 
 ### 3. 未做 / 下一步
 
@@ -42,7 +43,7 @@ tldr: 当前 R136（ANDROID-PLAN §8 的「导入进度条」）：拷 1.3 GB �
   `PlaybackService` 的 `MediaSession` 主动 `AudioManager.requestAudioFocus(AUDIOFOCUS_GAIN)`（暂停/停止时 abandon），
   让系统认为音频归本应用所有；另一条是页面侧维护 `navigator.mediaSession`（Chromium 据此判定「这是后台媒体」）。
   两条都要真机长测（≥5 分钟、含息屏），下一轮做；
-- **设置页白屏**：本机复现不出。请再触发一次，把错误边界上「出错信息」那段发我；
+- **设置页白屏**：本机复现不出（且**没有异常**，所以只能靠主动检测）。请装最新包后再切一次「列表展示方式」：出现白色空白约 2 秒后，底部会弹出「界面看起来是空白的」横幅——点**复制诊断信息**发我，里面已含判定原因与 DOM/配色/偏好快照；
 - 列表观感只做了「去卡片」：封面尺寸 / 行高 / 分隔线粗细还可以继续往主流靠。
 
 ## 本轮目标（第一百三十六轮）

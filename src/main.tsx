@@ -7,10 +7,14 @@ import {router} from "./router";
 import {applyInitialTheme, ThemeProvider} from "./theme";
 import {DesktopLyricsApp} from "./widgets/desktop-lyrics";
 import {PetWindowApp} from "./widgets/pet-window";
+import {installErrorOverlay} from "./utils/errorOverlay";
+import {installBlankScreenWatchdog} from "./utils/blankScreenWatchdog";
+import {RootError} from "./components/ui/route-error";
 
 /* 挂载前先注入主题变量，避免首屏闪烁 */
 applyInitialTheme();
-
+/* 未捕获错误 / 未处理的 Promise 拒绝：显示可读的面板，而不是白屏（R137） */
+installErrorOverlay();
 /**
  * 同一个前端产物服务三个窗口（`tauri.conf.json` 里各一个）：
  * - 主窗口：完整应用（路由 + 外壳 + 播放条）；
@@ -28,18 +32,23 @@ const petWindowMode = windowMode === 'pet';
 /* 给独立窗口打标记：整页要透明（见 assets/css/global.css），主窗口不受影响 */
 if (desktopLyricsMode || petWindowMode) {
     document.documentElement.dataset.window = windowMode as string;
+} else {
+    /* 白屏看门狗只在主窗口装：歌词窗 / 宠物窗本来就是小块透明区域 */
+    installBlankScreenWatchdog();
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <StrictMode>
-        <ThemeProvider>
-            {desktopLyricsMode ? (
-                <DesktopLyricsApp/>
-            ) : petWindowMode ? (
-                <PetWindowApp/>
-            ) : (
-                <RouterProvider router={router}/>
-            )}
-        </ThemeProvider>
+        <RootError>
+            <ThemeProvider>
+                {desktopLyricsMode ? (
+                    <DesktopLyricsApp/>
+                ) : petWindowMode ? (
+                    <PetWindowApp/>
+                ) : (
+                    <RouterProvider router={router}/>
+                )}
+            </ThemeProvider>
+        </RootError>
     </StrictMode>
 );

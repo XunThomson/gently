@@ -2509,6 +2509,37 @@ async function main(): Promise<void> {
                 mobileShellSrc.includes('<RouteError key={location.pathname}>') &&
                     appSrc.includes('<RouteError key={location.pathname}>'),
             );
+
+            /* 白屏兜底（R137 第二轮）：整棵树外再加一层 + 未捕获错误/未处理拒绝的原生面板。
+               走到这一步时主题变量可能没注入，所以面板必须自带配色（内联），不能读 token。 */
+            const mainSrc = readFileSync('src/main.tsx', 'utf8');
+            const overlaySrc = readFileSync('src/utils/errorOverlay.ts', 'utf8');
+            check(
+                '白屏兜底：入口挂了未捕获错误面板，且整棵树包在 RootError 里',
+                mainSrc.includes('installErrorOverlay()') &&
+                    mainSrc.includes('<RootError>') &&
+                    overlaySrc.includes("addEventListener('error'") &&
+                    overlaySrc.includes("addEventListener('unhandledrejection'"),
+            );
+            check(
+                '白屏兜底：面板自带内联配色（不读主题 token，否则可能白字白底）',
+                overlaySrc.includes('background:#ffffff') &&
+                    overlaySrc.includes('color:#111111') &&
+                    overlaySrc.includes('data-action="copy"') &&
+                    overlaySrc.includes('data-action="reload"'),
+            );
+
+            /* 「白屏但没有报错」：异常钩子抓不到，只能**主动检测**。
+               三类都要认：没内容 / 内容看不见（同色） / 布局塌了。 */
+            const watchdogSrc = readFileSync('src/utils/blankScreenWatchdog.ts', 'utf8');
+            check(
+                '白屏看门狗：主窗口装上，且没有异常也会判定（没内容 / 同色 / 塌陷）',
+                mainSrc.includes('installBlankScreenWatchdog()') &&
+                    watchdogSrc.includes('可见文本只有') &&
+                    watchdogSrc.includes('文字与背景几乎同色') &&
+                    watchdogSrc.includes('main 高度只有') &&
+                    watchdogSrc.includes('复制诊断信息'),
+            );
         }
         /* 「在文件夹中显示」是桌面能力：安卓上没有文件管理器定位，私有目录外部也看不到。
            手机形态下不给这一项，而不是给一个点了没反应的入口（GOTCHAS §46）。 */

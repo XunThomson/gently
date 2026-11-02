@@ -1,6 +1,7 @@
 import {Component, type ErrorInfo, type ReactNode} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Button} from '../button';
+import {reportFatalError} from '../../../utils/errorOverlay';
 import styles from './route-error.module.css';
 
 interface RouteErrorState {
@@ -59,3 +60,29 @@ function RouteErrorFallback({error, onRetry}: {error: Error; onRetry: () => void
 }
 
 export default RouteError;
+
+/**
+ * 整棵树的兜底边界（R137）。
+ *
+ * 比 `RouteError` 更外面一层：连 `ThemeProvider` / 路由内核这种「外壳之上」的渲染期错误也能兜住。
+ * 这里**不渲染 React 内容**（此时主题变量与样式表都可能不可用，渲染什么都可能是白字白底），
+ * 而是把错误交给 `utils/errorOverlay` 的原生面板——那一层自带内联配色，永远可读、可复制。
+ */
+export class RootError extends Component<{children: ReactNode}, {failed: boolean}> {
+    state = {failed: false};
+
+    static getDerivedStateFromError() {
+        return {failed: true};
+    }
+
+    componentDidCatch(error: Error, info: ErrorInfo): void {
+        reportFatalError(
+            '应用出错了',
+            `${error.message}\n${error.stack ?? ''}\n${info.componentStack ?? ''}\n${location.href}`,
+        );
+    }
+
+    render() {
+        return this.state.failed ? null : this.props.children;
+    }
+}
