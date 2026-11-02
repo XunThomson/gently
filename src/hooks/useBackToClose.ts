@@ -20,6 +20,8 @@ export function useBackToClose(open: boolean, onClose: () => void): void {
     useEffect(() => {
         if (!open || typeof window === 'undefined') return;
 
+        /* 浮层打开期间给根节点打标记：底层的按压态/过渡要能据此让位（R133，#5 穿模） */
+        document.documentElement.dataset.overlay = 'open';
         const onPop = () => latest.current();
         window.addEventListener('popstate', onPop);
         /* 同 URL 的 entry：路由不变，只当「关掉浮层」的令牌 */
@@ -27,6 +29,7 @@ export function useBackToClose(open: boolean, onClose: () => void): void {
 
         return () => {
             window.removeEventListener('popstate', onPop);
+            delete document.documentElement.dataset.overlay;
             const state = history.state as {gentlyOverlay?: boolean} | null;
             if (state?.gentlyOverlay) history.back();
         };

@@ -227,3 +227,11 @@
     flex: 1;
     min-width: 0;
 }
+
+/* 浮层打开时压住底层的按压态（R133，#5 动画穿模）：
+   抽屉/面板已经盖在上面，底下还亮着的 :active 高亮会透过遮罩显得像「两层在动」。 */
+:global([data-overlay='open']) button:active,
+:global([data-overlay='open']) [class*='row']:active {
+    background-color: transparent;
+    transition: none;
+}
