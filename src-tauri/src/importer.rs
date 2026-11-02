@@ -64,6 +64,14 @@ mod android {
             .map_err(|err| format!("读导入目录失败：{err}"))?;
         Ok(reply.dir)
     }
+
+    /// 这次导入到哪了（R136）：拷文件的进度由 Kotlin 维护，这里只是读走快照。
+    pub fn progress() -> Result<ImportProgress, String> {
+        let handle = HANDLE.get().ok_or_else(|| "导入插件尚未注册".to_string())?;
+        handle
+            .run_mobile_plugin::<ImportProgress>("importProgress", serde_json::json!({}))
+            .map_err(|err| format!("读导入进度失败：{err}"))
+    }
 }
 
 /// Kotlin `importedDir` 的返回体
@@ -71,6 +79,38 @@ mod android {
 pub struct ImportDir {
     #[serde(default)]
     pub dir: String,
+}
+
+/// 一次导入的进度快照（R136，与 Kotlin `ImportPlugin.Progress` 字段一一对应）。
+///
+/// 为什么是「快照 + 轮询」：Kotlin → Rust 没有回调通道，而 Rust → Kotlin 是现成的。
+/// 前端在导入期间每 250ms 问一次 `import_progress`——一轮导入几十次调用，代价可以忽略，
+/// 换来的是「拷 200 MB 文件时界面不再长时间停在『导入中…』」。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportProgress {
+    /// 是否有导入在进行
+    pub active: bool,
+    /// 正在拷的文件名（还没开始时为空串）
+    #[serde(default)]
+    pub file_name: String,
+    /// 第几个文件（从 1 开始；0 = 还没开始）
+    #[serde(default)]
+    pub file_index: u32,
+    /// 这次一共选了几个文件
+    #[serde(default)]
+    pub file_count: u32,
+    /// 已拷字节 / 总字节（读不到大小就是 0，界面按「未知总量」显示）
+    #[serde(default)]
+    pub bytes_done: u64,
+    #[serde(default)]
+    pub bytes_total: u64,
+    #[serde(default)]
+    pub imported: u32,
+    #[serde(default)]
+    pub failed: u32,
+    #[serde(default)]
+    pub skipped: u32,
 }
 
 pub fn plugin() -> TauriPlugin<Wry> {
@@ -104,5 +144,17 @@ pub fn import_dir() -> Result<String, String> {
     #[cfg(not(target_os = "android"))]
     {
         Ok(String::new())
+    }
+}
+
+/// 一次导入的进度；桌面端永远 `active: false`（没有系统文件选择器这条路）。
+pub fn progress() -> Result<ImportProgress, String> {
+    #[cfg(target_os = "android")]
+    {
+        android::progress()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Ok(ImportProgress::default())
     }
 }

@@ -392,10 +392,12 @@ pnpm tauri android build --debug -t aarch64 --apk
 
 | R135 | 收尾清单里的「上游不是音频」进 UI 文案 | 新命令 `playback.diagnose{ref}`：回环代理转发时按字节判定（`audio` / `notAudio` / `unknown`；非 2xx 与认不出的封装不下结论），按曲目引用记账、新 `playback.resolve` 清旧判定；前端只在媒体失败判死分支问一次，`notAudio` 就换成新失败类型，文案「音源返回的不是音频（错误页 / 需要登录 / 链接已失效）」 | `cargo test -p gently-core` +5 断言；`pnpm smoke` **562**；契约 76 条命令 / 9 类事件；无真机视觉复核（需要真的回错误页的上游，仓库不内置，ADR-0005）；GOTCHAS §56 补充 |
 
+| R136 | P3 余项：导入进度条 | Kotlin `ImportPlugin` 维护 `Progress` 快照（active / fileName / fileIndex / fileCount / bytesDone / bytesTotal / imported / failed / skipped）：拷贝改成 64 KiB 分块累加，先按 SAF `SIZE` 算总字节，跳过与截断都补差额；宿主加 `import_progress` 命令（桌面端 `{active:false}`），`ScanPanel` 导入期间 250ms 轮询并显示「正在导入 1/1 · 文件 · 45%」 | 真机导入 1.3 GB：40 秒窗口 16 个不同快照（`bytesDone` 194MB→1.32GB）、结束 `bytesDone==bytesTotal` + `imported:1`；界面截图 `r136-android-import-progress.png`；导入后曲库 4→5、清理副本回到 1；smoke 566；GOTCHAS §69 |
+
 **下一步（P3 余项 / P2-2 余项）**：P2-2 只差两件——`ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度，
 要先确认能真机验到才接）、`POST_NOTIFICATIONS` 运行时授权入口（API 33+ 才需要；本机 API 29 验不了）。
 注意本机 ROM（EMUI 10 / Android 10）的通知、控制中心、锁屏卡片**都不画进度条**，位置数据的可见面要等
-Android 11+ 或车机/蓝牙（§7.3 R117）；P3 只剩导入进度条与音乐目录导出。
+Android 11+ 或车机/蓝牙（§7.3 R117）；P3 只剩**音乐目录导出**（导入进度条已在 R136 落地）。
 **体验类问题（R121 起的收口批次）已全部落地**：手势（返回关浮层、面板下拉收起；左边缘横滑是负结果，GOTCHAS §67）、
 歌词页尺寸、桌面专有项、最近播放去重、动画穿模与过渡、背景适配、滚动重影、storage 适配（逐轮见 R121–R134）。
 
@@ -440,7 +442,8 @@ Android 11+ 或车机/蓝牙（§7.3 R117）；P3 只剩导入进度条与音乐
 7. **收尾清单（都不是阻塞项，本机也验不了或价值很低）**：
    - `ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度）——本机 ROM 不画进度条，接了也验不到；
    - `POST_NOTIFICATIONS` 运行时授权入口——只有 API 33+ 才有意义，本机 API 29；
-   - 导入进度条（大文件才有意义）与音乐目录导出；
+   - ~~导入进度条~~ → **R136 已落地**（原生快照 + `import_progress` 轮询，真机 1.3 GB 导入 16 个快照，见 GOTCHAS §69）；
+     音乐目录导出仍挂着；
    - ~~「上游返回的不是音频」进 UI 文案~~ → **R135 已落地**（与桌面端共用：`playback.diagnose` + `notAudio` 失败类型，
      见 GOTCHAS §56）；
    - 平板横屏专用布局（先用 `compact` 顶）、宠物渲染器、armv7 打包。

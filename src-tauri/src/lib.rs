@@ -148,6 +148,17 @@ fn imported_dir() -> Result<String, String> {
     importer::import_dir()
 }
 
+/// 宿主命令：**这次导入到哪了**（Android，P3 余项 · R136）。
+///
+/// 拷几个大文件可能几十秒，界面要有「到哪了」。进度由 Kotlin 侧维护，
+/// 这里只读快照——Kotlin → Rust 没有回调通道，而 Rust → Kotlin 是现成的，
+/// 所以前端在导入期间轮询本命令（250ms 一次）。
+/// 桌面端 / 浏览器回 `{active:false}`（那边没有系统文件选择器这条路）。
+#[tauri::command]
+fn import_progress() -> Result<importer::ImportProgress, String> {
+    importer::progress()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -264,6 +275,7 @@ pub fn run() {
             playback_banner,
             import_audio,
             imported_dir,
+            import_progress,
             web_login::web_login
         ])
         .build(tauri::generate_context!())

@@ -85,6 +85,7 @@ import {MobileRowActions, RowActionsProvider} from '../src/components/ui/row-act
 import {
     desktopWindowActionsAvailable,
     importAudioFiles,
+    importProgress,
     installMediaActionHandler,
     playbackBannerKey,
     syncPlaybackBanner,
@@ -104,7 +105,7 @@ import {
     LYRICS_BOTTOM_MARGIN,
     placeLyrics,
 } from '../src/utils/lyricsWindowPosition';
-import {importNoteText, importedTracksOf} from '../src/utils/importNote';
+import {importNoteText, importProgressText, importedTracksOf} from '../src/utils/importNote';
 import {lyricLineProgress} from '../src/utils/lyrics';
 import {
     LYRICS_OFFSET_FINE_STEP_SEC,
@@ -2945,6 +2946,35 @@ async function main(): Promise<void> {
             note({imported: 2, failed: 1, skipped: 0}) ===
                 i18n.t('page.local.importedPartial', {imported: 2, failed: 1}),
         );
+    }
+
+    /* 导入进度（R136）：拷大文件时界面要能说「到哪了」。两种形态分开：
+       读到大小 → 百分比；读不到大小 → 只说第几个 / 共几个，**不编 0%**。 */
+    {
+        const base = {fileIndex: 2, fileCount: 3, fileName: 'a.m4s', bytesDone: 0, bytesTotal: 0};
+        check(
+            '导入进度：读到文件大小时给百分比（大文件才看得出在动）',
+            importProgressText({...base, bytesDone: 512, bytesTotal: 1024}, i18n.t) ===
+                i18n.t('page.local.importProgressPercent', {
+                    index: 2,
+                    count: 3,
+                    name: 'a.m4s',
+                    percent: 50,
+                }),
+        );
+        check(
+            '导入进度：读不到大小时不编百分比',
+            importProgressText(base, i18n.t) ===
+                i18n.t('page.local.importProgress', {index: 2, count: 3, name: 'a.m4s'}),
+        );
+        check(
+            '导入进度：越界 / 缺失的序号被夹回 1..总数（不出现 0/3 或 4/3）',
+            importProgressText({...base, fileIndex: 0, fileCount: 0}, i18n.t).includes('1/1') &&
+                importProgressText({...base, fileIndex: 9}, i18n.t).includes('3/3') &&
+                importProgressText({...base, bytesDone: 4096, bytesTotal: 1024}, i18n.t).includes('100%'),
+        );
+        /* 没有宿主（浏览器 / 桌面端）时**不伪造进度**：返回 null，界面保持原来的「导入中…」 */
+        check('导入进度：没有宿主时返回 null（不伪造一条 0%）', (await importProgress()) === null);
     }
 
     /* 清理导入副本（R119）：只认路径落在导入目录里的曲目——拿不到目录就一条都不删，

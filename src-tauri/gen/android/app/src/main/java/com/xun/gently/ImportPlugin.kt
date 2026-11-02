@@ -31,6 +31,26 @@ import kotlin.concurrent.thread
 @TauriPlugin
 class ImportPlugin(private val activity: Activity) : Plugin(activity) {
 
+    /**
+     * 导入进度（R136）：拷几个大文件可能几十秒，界面要有「到哪了」。
+     *
+     * 为什么是**状态 + 轮询**而不是事件推送：Kotlin → Rust 没有现成的回调通道
+     * （Tauri 的移动插件只有 Rust → Kotlin 方向），而 Rust → Kotlin 是现成的
+     * （`run_mobile_plugin_async`）。所以让 Kotlin 只维护一份快照，Rust 侧用
+     * `importProgress` 命令读走，前端在导入期间每 250ms 问一次——一轮导入也就几十次调用。
+     */
+    data class Progress(
+        val active: Boolean,
+        val fileName: String,
+        val fileIndex: Int,
+        val fileCount: Int,
+        val bytesDone: Long,
+        val bytesTotal: Long,
+        val imported: Int,
+        val failed: Int,
+        val skipped: Int,
+    )
+
     @Command
     fun pickAudio(invoke: Invoke) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -65,11 +85,34 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve(JSObject().apply { put("dir", dir.absolutePath) })
     }
 
+    /**
+     * 当前这次导入到哪了（R136）：没有导入在进行时 `active = false`。
+     *
+     * 字段名与 Rust 的 `ImportProgress`（camelCase）一一对应，前端只做展示。
+     */
+    @Command
+    fun importProgress(invoke: Invoke) {
+        val state = snapshot()
+        invoke.resolve(JSObject().apply {
+            put("active", state.active)
+            put("fileName", state.fileName)
+            put("fileIndex", state.fileIndex)
+            put("fileCount", state.fileCount)
+            put("bytesDone", state.bytesDone)
+            put("bytesTotal", state.bytesTotal)
+            put("imported", state.imported)
+            put("failed", state.failed)
+            put("skipped", state.skipped)
+        })
+    }
+
     /** 选择器返回：拷文件可能很慢，**放到后台线程**，拷完再回调（不卡 UI）。 */
     @ActivityCallback
     fun onPickAudio(invoke: Invoke, result: ActivityResult) {
         val data = result.data
         if (result.resultCode != Activity.RESULT_OK || data == null) {
+            // 取消也要把进度收掉：否则界面上会留一条「上次导入到 62%」的假进度
+            setProgress(Progress(false, "", 0, 0, 0, 0, 0, 0, 0))
             invoke.resolve(JSObject().apply {
                 put("imported", 0)
                 put("failed", 0)
@@ -93,16 +136,61 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
             var imported = 0
             var failed = 0
             var skipped = 0
-            for (uri in uris) {
+            /* 先算一遍总字节数：进度条要「这个文件拷到哪了」，只有文件数不够用
+               （用户选一个 200 MB 的音频时，文件数一直是 1/1）。读不到大小的按 0 算。 */
+            val sizes = uris.map { sizeOf(it) }
+            val totalBytes = sizes.sum()
+            setProgress(
+                Progress(
+                    active = uris.isNotEmpty(),
+                    fileName = "",
+                    fileIndex = 0,
+                    fileCount = uris.size,
+                    bytesDone = 0,
+                    bytesTotal = totalBytes,
+                    imported = 0,
+                    failed = 0,
+                    skipped = 0,
+                ),
+            )
+            for ((position, uri) in uris.withIndex()) {
                 val name = displayName(uri) ?: "imported-${System.currentTimeMillis()}.audio"
                 /* 放开 MIME 之后用户可能选到图片/文档：按核心认得的扩展名筛掉，
                     并且**如实告诉用户跳过了几个**（静默丢弃会让人以为导入失败） */
                 if (!isAudioName(name)) {
                     skipped += 1
+                    updateProgress {
+                        it.copy(
+                            skipped = skipped,
+                            fileIndex = position + 1,
+                            // 跳过 = 这个文件立刻「完成」：否则进度条会停在那儿不动
+                            bytesDone = it.bytesDone + sizes[position],
+                        )
+                    }
                     continue
                 }
                 val target = uniqueFile(dir, name)
-                if (copyTo(uri, target)) imported++ else failed++
+                updateProgress { it.copy(fileName = name, fileIndex = position + 1) }
+
+                var copied = 0L
+                val ok = copyTo(uri, target) { chunk ->
+                    copied += chunk
+                    updateProgress { it.copy(bytesDone = it.bytesDone + chunk) }
+                }
+                if (ok) imported += 1 else failed += 1
+                /* 读到的字节比声明的小（拷一半失败 / 上游截断）时把差额补上：
+                   总进度只增不减，用户才不会看到「卡在 62%」 */
+                val gap = sizes[position] - copied
+                updateProgress {
+                    it.copy(
+                        imported = imported,
+                        failed = failed,
+                        bytesDone = if (gap > 0) it.bytesDone + gap else it.bytesDone,
+                    )
+                }
+            }
+            updateProgress {
+                it.copy(active = false, imported = imported, failed = failed, skipped = skipped)
             }
             invoke.resolve(JSObject().apply {
                 put("imported", imported)
@@ -155,10 +243,24 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
         return candidate
     }
 
-    private fun copyTo(uri: Uri, target: File): Boolean = try {
+    /**
+     * 拷一个文件；每读一块就回调一次已拷字节数（进度用）。
+     *
+     * 不用 `copyTo` 是因为它不给中间进度：用户选一个 200 MB 的文件时，
+     * 界面上会长时间停在「导入中…」，看起来像卡死。
+     */
+    private fun copyTo(uri: Uri, target: File, onChunk: (Long) -> Unit): Boolean = try {
         activity.contentResolver.openInputStream(uri).use { input ->
             if (input == null) return false
-            target.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
+            target.outputStream().use { output ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    output.write(buffer, 0, read)
+                    onChunk(read.toLong())
+                }
+            }
         }
         target.length() > 0
     } catch (err: Exception) {
@@ -167,7 +269,37 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
         false
     }
 
+    /** SAF 里声明的大小（字节）；读不到就是 0（进度条按「未知总量」显示）。 */
+    private fun sizeOf(uri: Uri): Long = try {
+        activity.contentResolver
+            .query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)
+            ?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (index >= 0 && !cursor.isNull(index)) cursor.getLong(index) else 0L
+                } else {
+                    0L
+                }
+            } ?: 0L
+    } catch (err: Exception) {
+        0L
+    }
+
     companion object {
+        /** 当前这次导入的快照（后台线程写、主线程读，一律经 `stateLock`）。 */
+        private val stateLock = Any()
+        private var state = Progress(false, "", 0, 0, 0, 0, 0, 0, 0)
+
+        private fun snapshot(): Progress = synchronized(stateLock) { state }
+
+        private fun setProgress(next: Progress) {
+            synchronized(stateLock) { state = next }
+        }
+
+        private fun updateProgress(block: (Progress) -> Progress) {
+            synchronized(stateLock) { state = block(state) }
+        }
+
         /**
          * 与核心的 `AUDIO_EXTENSIONS` 一一对应（`core/src/local_library.rs`）。
          *

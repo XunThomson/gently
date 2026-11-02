@@ -35,6 +35,55 @@ const EMPTY: ImportAudioResult = {
 };
 
 /**
+ * 一次导入的进度快照（R136）。
+ *
+ * `active` 为 false 表示当前没有导入在进行；`bytesTotal` 为 0 表示上游没给大小
+ * （界面按「未知总量」显示，不编一个百分比）。
+ */
+export interface ImportProgress {
+    active: boolean;
+    fileName: string;
+    /** 第几个文件（从 1 开始；0 = 还没开始） */
+    fileIndex: number;
+    /** 这次一共选了几个文件 */
+    fileCount: number;
+    bytesDone: number;
+    bytesTotal: number;
+    imported: number;
+    failed: number;
+    skipped: number;
+}
+
+/**
+ * 问宿主「导入到哪了」。
+ *
+ * 返回 `null` = 没有宿主（浏览器 / 桌面端）：界面据此保持原来的「导入中…」，
+ * 不显示一条永远 0% 的假进度。
+ */
+export async function importProgress(): Promise<ImportProgress | null> {
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return null;
+    try {
+        const {invoke} = await import('@tauri-apps/api/core');
+        const snapshot = await invoke<ImportProgress>('import_progress');
+        return {
+            active: Boolean(snapshot.active),
+            fileName: String(snapshot.fileName ?? ''),
+            fileIndex: Number(snapshot.fileIndex ?? 0),
+            fileCount: Number(snapshot.fileCount ?? 0),
+            bytesDone: Number(snapshot.bytesDone ?? 0),
+            bytesTotal: Number(snapshot.bytesTotal ?? 0),
+            imported: Number(snapshot.imported ?? 0),
+            failed: Number(snapshot.failed ?? 0),
+            skipped: Number(snapshot.skipped ?? 0),
+        };
+    } catch (err) {
+        // 读不到进度不该打断导入：调用方按「没有进度」处理
+        console.warn('[import] 读取导入进度失败', err);
+        return null;
+    }
+}
+
+/**
  * 导入副本的落点目录（`<filesDir>/music`），**一次安装内不变**，所以缓存。
  *
  * 只有原生知道这个绝对路径（`filesDir` 随包名/用户变化）；界面用它做两件事：

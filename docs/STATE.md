@@ -4,10 +4,50 @@ last_verified: 2026-11-02
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R135（R110 的遗留：把「上游返回的不是音频」变成用户能看懂的话）：媒体元素只会给 `MediaError`，拿不到服务端原因，而上游常用 `HTTP 200 + HTML 错误页` 冒充音频。新命令 `playback.diagnose{ref}` 读回环代理按字节下的判定（`audio` / `notAudio` / `unknown`，非 2xx 与认不出的封装不下结论），失效于下次 `playback.resolve`；前端只在判死分支问一次，是 `notAudio` 就把失败类型换成新的 `notAudio` 并显示「音源返回的不是音频（错误页 / 需要登录 / 链接已失效）」。cargo 新增 5 条断言、smoke **562**、契约 76 条命令。**没有真机视觉复核**（需要真的坏上游，仓库里没有也不该有）。
+tldr: 当前 R136（ANDROID-PLAN §8 的「导入进度条」）：拷 1.3 GB 文件时界面只显示「等待选择…」。做法是**原生维护进度快照、前端在导入期间轮询**——Kotlin 侧 `ImportPlugin.Progress`（active/fileName/fileIndex/fileCount/bytesDone/bytesTotal/imported/failed/skipped）由 64 KiB 分块拷贝累加，宿主新增 `import_progress` 命令（桌面端回 active:false），`ScanPanel` 每 250ms 读一次并显示「正在导入 1/1 · 文件 · 45%」。为什么轮询：Tauri 移动插件只有 Rust → Kotlin 方向，Kotlin → Rust 没有回调通道（GOTCHAS §69）。真机：40 秒内 16 个不同快照、bytesDone 194MB→1.32GB、结束 bytesDone==bytesTotal，界面确有百分比；导入后曲库 4→5、清理副本回到 1。smoke 566，契约 76 命令 / 9 事件。
 ---
 
 # STATE
+
+## 本轮目标（第一百三十六轮）
+
+> ANDROID-PLAN §8 收尾清单里的「导入进度条」：拷一个 1.3 GB 的文件时，界面从头到尾只有
+> 「等待选择…」，用户无法判断是在拷、卡住了，还是根本没开始。
+
+### 1. 做法：原生维护快照，前端在导入期间轮询
+
+| 层 | 改动 |
+|---|---|
+| Kotlin `ImportPlugin.kt` | 新增 `Progress` 快照（`active` / `fileName` / `fileIndex` / `fileCount` / `bytesDone` / `bytesTotal` / `imported` / `failed` / `skipped`）+ `importProgress` 命令；拷贝改成 64 KiB 分块循环，每块累加 `bytesDone`；选完先按 SAF 的 `SIZE` 算总字节；**跳过的文件也计入已完成字节**，读到的比声明的小时补差额（总进度只增不减，不会「卡在 62%」）；取消 / 新一轮开始时把快照收掉 |
+| 宿主 `importer.rs` / `lib.rs` | `ImportProgress` 结构 + `import_progress` 宿主命令（桌面端回 `{active:false}`） |
+| 契约 | 桌面层命令表补齐 `import_audio` / `imported_dir` / `import_progress`（原先只登记了 `web_login`） |
+| 前端 | `services/import.service.ts::importProgress()`（无宿主 → `null`，**不伪造进度**）+ 纯函数 `importProgressText()`；`ScanPanel` 导入期间 250ms 轮询一次，按钮旁显示「正在导入 1/1 · r136-1g.mp3 · 5%」 |
+| 文案 | `page.local.importProgress` / `importProgressPercent`（zh + en） |
+
+为什么是轮询而不是事件：**Kotlin → Rust 没有回调通道**（Tauri 移动插件只有 Rust → Kotlin 方向），
+而 Rust → Kotlin 是现成的。一轮导入几十次 IPC，代价可以忽略（GOTCHAS §69）。
+
+### 2. 验证（真机 `CDY-AN00`）
+
+把 105 MB 的演示视频复制成 332 MB / 1.3 GB 的 `.mp3` 放进 `/sdcard/Download`，在真机上从系统选择器导入：
+
+| 项 | 结果 |
+|---|---|
+| 进度链路（Kotlin → Rust → JS） | 40 秒窗口内采到 **16 个不同的 `active:true` 快照**：`bytesDone` 从 194,707,456 涨到 1,318,715,392，`bytesTotal` 恒为 1,326,041,664；结束后转 `active:false` 且 `bytesDone == bytesTotal`、`imported: 1` |
+| 界面 | 导入中的 WebView 图显示「**正在导入 1/1 · r136-1g.mp3 · 5%**」（`r136-android-import-progress.png`） |
+| 导入 + 扫描 | 「已导入 1 首」；曲库 4 → **5 首**，`r136-1g 1264.6 MB` 入库；扫描统计「扫描 4 个文件，新增 1，跳过 3」 |
+| 取消路径 | 关掉选择器后快照回 `active:false`（界面不会留「上次导入到 62%」的假进度） |
+| 清理 | 「清理副本」→ 曲库 5 → **1 首**（`probe` 留下），`run-as … ls files/music` **空**；`/sdcard/Download` 的测试文件已删 |
+
+### 3. 门禁
+
+`pnpm typecheck` 通过；`pnpm smoke`：**566**（562 → +4：百分比 / 未知总量不编百分比 / 序号夹回 / 无宿主返回 null）；
+`pnpm check:contract` 76 命令 / 9 事件；`pnpm verify` 全绿。
+
+### 4. 未做
+
+- 音乐目录**导出**（把 `filesDir/music` 经 SAF 另存到用户可见位置）仍是 §8 余项；
+- 进度到「文件级 + 字节级」为止，没有速度 / 剩余时间（要额外采样窗口，目测收益不值）。
 
 ## 本轮目标（第一百三十五轮）
 
@@ -117,34 +157,13 @@ tldr: 当前 R135（R110 的遗留：把「上游返回的不是音频」变成�
   → R134 量到浮层外 0 条动画，**这一刀不需要了**；
 - 文案与其它 9 条不变。
 
-## 本轮目标（第一百三十轮）
-
-> #10 的尾项：手机上已经隐藏「下载目录 / 数据目录」这类本机路径，但下载卡片只剩
-> 「并行数 / 音质」，用户不知道文件到底落在哪。
-
-### 1. 改动
-
-- `views/setting/index.tsx`：下载卡片在手机形态多一句
-  `page.setting.downloadDirMobileHint`（「下载与缓存都落在应用私有目录（由系统管理），卸载应用会一并删除。」），
-  与数据目录卡片的说法保持一致；桌面端仍显示目录输入框。
-- i18n：`page.setting.downloadDirMobileHint`（zh + en）。
-
-### 2. 验证
-
-- `pnpm typecheck` 通过；`pnpm smoke`：**555**（i18n 死键守卫通过，新键被引用）。
-
-### 3. 未做
-
-- **#5 动画穿模**（唯一完全未开始的一项）：需要真机复现 + 改层级/抑制底层按压态，留下一轮。
-
 ## 最近三轮
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
+| R136 | ANDROID-PLAN §8：导入进度条 | 原生维护进度快照（`ImportPlugin.Progress`，64 KiB 分块累加 bytesDone、按 SAF SIZE 算总字节、跳过/截断都补差额）+ 宿主 `import_progress` 命令 + `ScanPanel` 导入期间 250ms 轮询，显示「正在导入 1/1 · 文件 · 45%」。轮询而非事件：Kotlin → Rust 没有回调通道（GOTCHAS §69）。真机导入 1.3 GB：16 个不同快照、bytesDone 194MB→1.32GB、结束 bytesDone==bytesTotal；导入后曲库 4→5、清理副本回到 1。smoke 566 | [本轮](#本轮目标第一百三十六轮) |
 | R135 | R110 遗留：把「上游返回的不是音频」变成用户能看懂的话 | 新命令 `playback.diagnose{ref}` 读回环代理按字节下的判定（`audio` / `notAudio` / `unknown`；非 2xx 与认不出的封装不下结论，新 `playback.resolve` 清旧判定）；前端只在 `markUnplayable` 判死分支问一次，`notAudio` 就把失败类型换成新的 `notAudio`，文案「音源返回的不是音频（错误页 / 需要登录 / 链接已失效）」。cargo +5 断言、smoke **562**、契约 76 命令；无真机视觉复核（需要真的坏上游） | [本轮](#本轮目标第一百三十五轮) |
 | R134 | #5 动画穿模：真机复核 + 修 R133 的两处偏差 | 强制伪类 + `getAnimations()` 量出：① 行规则与 `.table[data-layout='mobile'] .row:active` 同权重（0,4,0），平局靠源码顺序 → 真机上只压住过渡、没压住背景色；② R133 的全局 `button:active` 越界到浮层自身。修：抑制收窄到顶栏 + 内容区按钮（`html[data-overlay='open']`），行的覆盖写进 `DataTable.module.css` 并提到 0,4,1。真机：顶栏/行/⋯ 全透明、抽屉项与面板动作按钮保留 `--bg-active`、浮层外 0 条动画、标记随开关清理；smoke 555 | [本轮](#本轮目标第一百三十四轮) |
-| R133 | #5 动画穿模第一刀：浮层打开时压住底层的按压态 | `useBackToClose` 打开时给 `<html>` 打 `data-overlay="open"`（抽屉与底部面板共用这一个 hook，标记只在一处维护）+ CSS 抑制底层 `:active` 高亮与过渡。交付时只到门禁（smoke 555），真机复核留给 R134 | [本轮](#本轮目标第一百三十三轮) |
-| R130 | #10 尾项：手机上下载落在哪 | 下载卡片在手机形态多一句 `page.setting.downloadDirMobileHint`（「落在应用私有目录、卸载一并删除」），与数据目录卡片说法一致；桌面仍显示目录输入框。smoke 555 | [本轮](#本轮目标第一百三十轮) |
 
 ## 历史轮次
 
@@ -152,7 +171,7 @@ tldr: 当前 R135（R110 的遗留：把「上游返回的不是音频」变成�
 - R84–R88：[`archive/rounds/R84-R88.md`](archive/rounds/R84-R88.md)
 - R89–R100：[`archive/rounds/R89-R100.md`](archive/rounds/R89-R100.md)（宠物从 M0 到 1.0 的全过程；R99/R100 为摘要）
 - R101–R117：[`archive/rounds/R101-R117.md`](archive/rounds/R101-R117.md)（桌面收尾 + 宠物 1.0 + 安卓 P0–P4 共 17 轮正文）
-- R118–R128：[`archive/rounds/R118-R128.md`](archive/rounds/R118-R128.md)（安卓 P3 余项 + 用户 10 条体验反馈的收口批次：手势、歌词页、桌面专有项、背景与重影、过渡）
+- R118–R130：[`archive/rounds/R118-R130.md`](archive/rounds/R118-R130.md)（安卓 P3 余项 + 用户 10 条体验反馈的收口批次：手势、歌词页、桌面专有项、背景与重影、过渡）
 
 默认不需要读；查「当时为什么这么做 / 试过什么 / 证据文件叫什么」时再打开。轮次正文只写「当前轮 + 最近三轮」，
 更早的每三轮迁一次档——STATE 的预算是 250 token，不要退化成日记。
@@ -195,13 +214,13 @@ tldr: 当前 R135（R110 的遗留：把「上游返回的不是音频」变成�
 1. **移动端已收口（R120）**：P0–P4 全部落地并真机验证，9 个路由走查无溢出/无报错。
    **用户 10 条体验反馈也在 R134 全部落地**（#1 只剩左边缘横滑这一负结果，见 GOTCHAS §67）。
    剩下的余项见 [`ANDROID-PLAN.md`](ANDROID-PLAN.md) §8 收尾清单（`ACTION_SEEK_TO`、`POST_NOTIFICATIONS`、
-   导入进度条、音乐目录导出）。
+   音乐目录导出）——导入进度条已在 R136 收掉。
 2. ~~**R110 留下的小任务**：把「上游返回的不是音频」变成用户能看懂的文案~~ → **R135 已落地**
    （`playback.diagnose` + 新的 `notAudio` 失败类型；判定在核心、文案在前端，GOTCHAS §56 的补充）。
 3. **宠物 M4 / 玩法打磨（随时可做、可暂缓）**：移动端渲染器（核心层已独立，见 ADR 0010）；`minPetCoreVersion`
    真版本比较、atlas 瘦身（1.5 MB）、走路避让窗口/任务栏、多宠物 UI（存储与 API 已预留）、逐像素 alpha 命中。
    触发条件是安卓决定做宠物。
-4. **工程债**：`GOTCHAS.md` 68 条按域拆分（现在是一份长表，查起来靠搜索）；截图证据改成「seeded 数据 + 可深链 +
+4. **工程债**：`GOTCHAS.md` 69 条按域拆分（现在是一份长表，查起来靠搜索）；截图证据改成「seeded 数据 + 可深链 +
    固定浅/深基线」，不再靠手算坐标（真机这半已由 `scripts/android-cdp.mjs` 解决）；拖动/悬停这类**注入式输入
    验证不了**的交互，补一份人工验收清单。
 5. 背景 P2（带 JS / 多文件网页壁纸）与迷你歌词视觉细调仍挂着，未排期。

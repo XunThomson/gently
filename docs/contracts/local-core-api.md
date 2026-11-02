@@ -321,11 +321,15 @@ interface CoreError {code: CoreErrorCode; message: string; details?: Record<stri
 
 ### 桌面层命令（不经 `core_invoke`）
 
-Tauri 适配层另外注册了一条命令：它需要**宿主能力**（读 webview 的 Cookie 罐），而核心不依赖 Tauri。
+Tauri 适配层另外注册了几条命令：它们需要**宿主能力**（读 webview 的 Cookie 罐、操作 Android Activity、
+调原生服务），而核心不依赖 Tauri。全部登记在 `src-tauri/src/lib.rs` 的 `generate_handler!` 里。
 
 | 命令 | 说明 |
 |---|---|
-| `web_login{source}` | 按 `catalog.loginWeb` 给出的计划打开登录页窗口，轮询**这个窗口**的 Cookie 罐；`cookieNames` 全部到齐后调 `plugin.credentials.set` 落库，返回 `{ok, data:{source, state, credentialKey?}}`，`state ∈ confirmed / canceled`（关窗或 300s 超时都算 canceled，**凭据不动**）。会话值**不经过前端**。注册在 `src-tauri/src/lib.rs` 的 `generate_handler!` 里，前端只经 `services/core.bridge.ts` 的 `coreWebLogin` 调它 |
+| `web_login{source}` | 按 `catalog.loginWeb` 给出的计划打开登录页窗口，轮询**这个窗口**的 Cookie 罐；`cookieNames` 全部到齐后调 `plugin.credentials.set` 落库，返回 `{ok, data:{source, state, credentialKey?}}`，`state ∈ confirmed / canceled`（关窗或 300s 超时都算 canceled，**凭据不动**）。会话值**不经过前端**。前端只经 `services/core.bridge.ts` 的 `coreWebLogin` 调它 |
+| `import_audio` | Android：打开系统文件选择器（SAF），把选中的音频**拷进**应用私有目录，返回 `{imported, failed, skipped, cancelled, dir}`。桌面端回「这台设备上没有系统文件选择器」。前端经 `services/import.service.ts` 调它，拿到 `dir` 后用核心的 `library.local.scan` 入库 |
+| `imported_dir` | Android：导入副本的落点目录（`<filesDir>/music`，一次安装内不变，前端缓存）。桌面端回空串，界面因此不显示「清理副本」 |
+| `import_progress` | Android：一次导入的**进度快照** `{active, fileName, fileIndex, fileCount, bytesDone, bytesTotal, imported, failed, skipped}`。Kotlin → Rust 没有回调通道，所以由原生维护快照、前端在导入期间**轮询**（250ms）；桌面端回 `{active:false}`。拷大文件时界面靠它说「到哪了」（R136） |
 
 ### 导入来源（插件与皮肤共用）
 ```tstype ImportSource =

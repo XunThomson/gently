@@ -2,10 +2,10 @@ import {useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Button} from '../../../components/ui/button';
 import {IconChevronDown, IconFolder} from '../../../components/ui/icon';
-import {coreAvailable, importAudioFiles, importedMusicDir} from '../../../services';
+import {coreAvailable, importAudioFiles, importProgress, importedMusicDir, type ImportProgress} from '../../../services';
 import {useActions, useLibraryState} from '../../../store';
 import {errorText} from '../../../i18n/errors';
-import {importNoteText, importedTracksOf} from '../../../utils/importNote';
+import {importNoteText, importProgressText, importedTracksOf} from '../../../utils/importNote';
 import {isMobilePlatform} from '../../../utils/platform';
 import {useConfirm} from '../../../hooks/useConfirm';
 import styles from '../local.module.css';
@@ -38,6 +38,8 @@ export function ScanPanel() {
     /** 手机导入是异步且可能被取消的，结果要留在界面上（说清导入了几首） */
     const [importing, setImporting] = useState(false);
     const [importNote, setImportNote] = useState('');
+    /** 导入进度（R136）：拷大文件时界面不能一直停在「等待选择…」 */
+    const [progress, setProgress] = useState<ImportProgress | null>(null);
     /** 导入副本的落点目录（只有手机宿主有）；`null` = 没有/还没问出来 */
     const [importDir, setImportDir] = useState<string | null>(null);
     const mobile = isMobilePlatform();
@@ -67,6 +69,29 @@ export function ScanPanel() {
     useEffect(() => {
         if (scanning) setOpen(true);
     }, [scanning]);
+
+    /* 导入进度（R136）：Kotlin 维护快照、这里轮询（250ms）。
+       为什么轮询而不是事件：Kotlin → Rust 没有回调通道，Rust → Kotlin 才有；
+       一轮导入几十次调用，代价可以忽略。导入结束就停表，不在后台常驻。 */
+    useEffect(() => {
+        if (!importing) {
+            setProgress(null);
+            return;
+        }
+        let alive = true;
+        const timer = window.setInterval(() => {
+            void importProgress().then((snapshot) => {
+                if (alive) setProgress(snapshot);
+            });
+        }, 250);
+        void importProgress().then((snapshot) => {
+            if (alive) setProgress(snapshot);
+        });
+        return () => {
+            alive = false;
+            window.clearInterval(timer);
+        };
+    }, [importing]);
 
     const start = () => {
         if (dirs.length === 0) return;
@@ -186,6 +211,12 @@ export function ScanPanel() {
                                             {t('page.local.cleanImported')}
                                         </Button>
                                     </>
+                                )}
+                                {/* 拷大文件时要有「到哪了」：进度优先，没有进度才退回「等待选择…」 */}
+                                {importing && progress?.active && (
+                                    <span className={styles.scanStatus}>
+                                        {importProgressText(progress, t)}
+                                    </span>
                                 )}
                                 {importNote && <span className={styles.scanStatus}>{importNote}</span>}
                             </div>

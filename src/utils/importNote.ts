@@ -36,8 +36,35 @@ export function importNoteText(result: ImportSummary, t: Translate): string {
 }
 
 /**
- * 挑出「导入进来的副本」：路径落在导入目录里的本地曲目（纯函数，冒烟直接钉）。
+ * 「正在导入到哪了」的一句话（纯函数，冒烟直接钉；R136）。
  *
+ * 两种形态必须分开：读到文件大小时给百分比（拷一个 200 MB 的文件才看得出在动），
+ * 读不到大小就只说「第几个 / 共几个 + 文件名」——**不编一个 0% 挂着**。
+ */
+export function importProgressText(
+    progress: {
+        fileIndex: number;
+        fileCount: number;
+        fileName: string;
+        bytesDone: number;
+        bytesTotal: number;
+    },
+    t: Translate,
+): string {
+    const total = progress.fileCount > 0 ? progress.fileCount : 1;
+    const index = Math.min(Math.max(progress.fileIndex, 1), total);
+    const name = progress.fileName || '';
+    const percent =
+        progress.bytesTotal > 0
+            ? Math.min(100, Math.round((progress.bytesDone / progress.bytesTotal) * 100))
+            : undefined;
+    return percent === undefined
+        ? t('page.local.importProgress', {index, count: total, name})
+        : t('page.local.importProgressPercent', {index, count: total, name, percent});
+}
+
+/**
+ * 挑出「导入进来的副本」：路径落在导入目录里的本地曲目（纯函数，冒烟直接钉）。
  * 为什么要挑：导入是**拷一份**（原文件删掉不影响曲库），反面是占双份空间。
  * 用户清理时只能删这些副本——他自己扫描进来的音乐在别的目录里，动它才是危险的。
  * `dir` 为空（桌面端 / 还没拿到目录）时返回空数组：**没有目录就不敢删任何东西**。

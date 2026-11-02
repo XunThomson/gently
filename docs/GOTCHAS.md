@@ -841,3 +841,18 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
   R134 的读数：顶栏按钮 / 行 / ⋯ 全变透明，抽屉项与面板动作按钮保留 `--bg-active`，浮层打开后浮层外 0 条动画。
 - 读 computed 时注意**过渡进行中**会拿到插值（从 0 到 0.04 的半路值是 0.004），
   判断「压没压住」要么等过渡结束、要么看 `transitionProperty` 是否被压成 `none`。
+
+## 69. Tauri 移动插件只有 **Rust → Kotlin** 一个方向（R136）
+
+- 事实：`plugin_handle.run_mobile_plugin[ _async ](command, args)` 是 Rust 调 Kotlin；
+  **没有**「Kotlin 主动回调 Rust」的通道（`@Command` 都是被 Rust 调进去的）。
+  所以「Kotlin 侧有持续发生的事」（导入进度、拷贝速度、系统回调流）不能像桌面事件那样 emit 给前端。
+- 三条可选路（按代价排序）：
+  1. **原生维护快照 + 前端轮询**（R136 选的路）：Kotlin 在 companion 里存一份 `Progress`，
+     再暴露一个 `@Command fun importProgress(invoke)`，Rust 加一条宿主命令转发，前端在**长任务期间**
+     每 250ms 问一次、结束就停表。一轮导入几十次 IPC，代价可忽略；快照字段简单、好测。
+  2. `evaluateJavascript`（`MediaActionBridge` 用的那条）：能动，但会把「数据」塞进 JS 字符串，
+     要自己处理转义与页面是否就绪，只适合**离散动作**（播放/暂停/上一首），不适合高频进度。
+  3. 让前端发命令时带一个 Tauri `Channel`，由 Rust 在轮询/回调里推——多一层管道，本轮不需要。
+- 配套注意：轮询要**在导入结束立刻停**（`importing` 变 false 就 `clearInterval`），并让「没有宿主」时
+  返回 `null` 而不是 0% 的假进度（界面宁可显示「等待选择…」）。桌面端这类命令统一回 `{active:false}`。
