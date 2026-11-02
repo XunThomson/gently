@@ -182,6 +182,8 @@
     "compatDesc": "“{{name}}” will only be allowed to reach: {{hosts}}. Every other host is rejected, so the plugin may fail if it needs another one; restoring compatibility mode requires importing it again.",
     "removeLocalTitle": "Remove from local library",
     "removeLocalDesc": "“{{name}}” will be removed from the library. The file on disk is kept.",
+    "purgeImportedTitle": "Clean imported copies",
+    "purgeImportedDesc": "{{count}} imported copy/copies will be removed from the library and deleted from disk. Music you scanned yourself is untouched (so are the original files).",
     "removeDownloadTitle": "Remove download task",
     "removeDownloadDesc": "The download record for “{{name}}” will be removed.",
     "deleteSkinTitle": "Delete skin",
@@ -342,6 +344,9 @@
       "imported": "Imported {{count}} file(s)",
       "importedPartial": "Imported {{imported}} file(s), {{failed}} could not be read",
       "importSkipped": "Skipped {{count}} non-audio file(s)",
+      "importedCopies": "{{count}} imported cop(ies) inside the app",
+      "cleanImported": "Clean copies",
+      "cleanedImported": "Removed {{count}} track(s) and their copies inside the app",
       "importEmpty": "None of the selected files were readable audio",
       "importSkippedOnly": "None of the {{count}} selected file(s) were audio (the hint below lists the recognised extensions)",
       "importFailed": "Could not open the file picker"

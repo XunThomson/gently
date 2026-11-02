@@ -55,6 +55,22 @@ mod android {
             .await
             .map_err(|err| format!("打开文件选择器失败：{err}"))
     }
+
+    /// 导入的落点目录（`<filesDir>/music`）：判断「哪些曲目是导入进来的副本」要用它。
+    pub fn import_dir() -> Result<String, String> {
+        let handle = HANDLE.get().ok_or_else(|| "导入插件尚未注册".to_string())?;
+        let reply = handle
+            .run_mobile_plugin::<ImportDir>("importedDir", serde_json::json!({}))
+            .map_err(|err| format!("读导入目录失败：{err}"))?;
+        Ok(reply.dir)
+    }
+}
+
+/// Kotlin `importedDir` 的返回体
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct ImportDir {
+    #[serde(default)]
+    pub dir: String,
 }
 
 pub fn plugin() -> TauriPlugin<Wry> {
@@ -76,5 +92,17 @@ pub async fn pick_audio() -> Result<ImportOutcome, String> {
     #[cfg(not(target_os = "android"))]
     {
         Err("这台设备上没有系统文件选择器（桌面端请直接填目录后扫描）".to_string())
+    }
+}
+
+/// 导入的落点目录；桌面端没有这回事（返回空串，前端因此不会列出「导入的副本」）。
+pub fn import_dir() -> Result<String, String> {
+    #[cfg(target_os = "android")]
+    {
+        android::import_dir()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Ok(String::new())
     }
 }

@@ -504,6 +504,13 @@ export interface LibraryActions {
     recordPlay: (track: Track) => void;
     clearRecent: () => void;
     removeLocal: (id: string) => void;
+    /**
+     * 清理「从手机导入进来的副本」：连**磁盘文件**一起删（R119）。
+     *
+     * 与 `removeLocal` 的区别：那个只移出曲库（文件留着，安全）；这里是用户明确要腾空间，
+     * 所以只动导入目录里的文件——他自己扫描进来的音乐一个都不碰。返回清理的条数。
+     */
+    purgeImported: () => Promise<number>;
 }
 
 export interface CollectionActions {

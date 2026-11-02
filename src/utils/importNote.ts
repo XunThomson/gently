@@ -34,3 +34,17 @@ export function importNoteText(result: ImportSummary, t: Translate): string {
     if (result.skipped === 0) return base;
     return `${base} · ${t('page.local.importSkipped', {count: result.skipped})}`;
 }
+
+/**
+ * 挑出「导入进来的副本」：路径落在导入目录里的本地曲目（纯函数，冒烟直接钉）。
+ *
+ * 为什么要挑：导入是**拷一份**（原文件删掉不影响曲库），反面是占双份空间。
+ * 用户清理时只能删这些副本——他自己扫描进来的音乐在别的目录里，动它才是危险的。
+ * `dir` 为空（桌面端 / 还没拿到目录）时返回空数组：**没有目录就不敢删任何东西**。
+ */
+export function importedTracksOf<T extends {path: string}>(tracks: T[], dir: string | null): T[] {
+    if (!dir) return [];
+    const root = dir.endsWith('/') ? dir : `${dir}/`;
+    const normalizedRoot = root.replace(/\\/g, '/');
+    return tracks.filter((track) => track.path.replace(/\\/g, '/').startsWith(normalizedRoot));
+}

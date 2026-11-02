@@ -4,10 +4,43 @@ last_verified: 2026-11-02
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R118（P3 余项）：真机证实 `audio/*` 过滤会把 `.m4s` **灰掉**（同文件改名 `.mp3` 就能选），于是选择器放开成 `*/*` + `EXTRA_MIME_TYPES=[audio/*, application/octet-stream]`，选完由 `isAudioName()` 按扩展名筛（名单与核心 `AUDIO_EXTENSIONS` 一一对应），跳过的非音频如实回报 `skipped`；结果文案抽成纯函数 `utils/importNote.ts`（五种结局，smoke 钉住）。真机：`.m4s` 可选 → 已导入 1 首 → 列表出现 → 能放（`8/271`）；选 `.bin` → 「都不是音频」且磁盘没多文件。顺手把 R114 迁进归档（`R101-R113.md` → `R101-R114.md`）。smoke **549**。
+tldr: 当前 R119（P3 余项）：导入是「拷一份」，而原来的「移除」只移出曲库、文件留在磁盘——私有目录只涨不清。新宿主命令 `imported_dir`（Kotlin 回 `<filesDir>/music`，前端不猜）→ `importedMusicDir()` 缓存 → 纯函数 `importedTracksOf` 按**路径前缀**挑副本（拿不到目录就一条不删）→ `purgeImported()` 连文件一起删（正在播的先停）→ `ScanPanel` 手机形态给「清理副本」+ 危险确认。真机：曲库 3 首 → 清掉 2 个副本（`files/music` 变空、`probe` 留下、正在播的已停）。归档：R115 迁进 `archive/rounds/R101-R115.md`。smoke **552**。
 ---
 
 # STATE
+
+## 本轮目标（第一百一十九轮）
+
+> 起点：R114/R118 的导入是**拷一份**（原文件删掉不影响曲库），反面是占双份空间。
+> 而当时「移除」只移出曲库、**文件留在磁盘**——应用私有目录只涨不清，用户没有任何入口腾空间。
+
+### 1. 本轮做了什么
+
+| 层 | 改动 |
+|---|---|
+| 宿主（`importer.rs` / `lib.rs` / Kotlin `ImportPlugin`） | 新宿主命令 `imported_dir`：Kotlin 回 `<filesDir>/music`（前端不该猜这个绝对路径）。桌面端回空串 |
+| 服务（`import.service.ts`） | `importedMusicDir()`：问一次就缓存（同一个安装内不变）；读不到返回 `null`，**不缓存失败** |
+| 纯函数（`utils/importNote.ts`） | `importedTracksOf(tracks, dir)`：按**路径前缀**挑出导入副本；`dir` 为空时返回空数组——拿不到目录就一条都不删 |
+| store（`library.slice.ts`） | `purgeImported()`：挑出副本 → 若正在播的是其中一首先 `stop()`（文件删了还显示「在播」就是骗人）→ 逐条 `library.local.remove{deleteFile:true}` → 从列表摘掉；返回清理条数 |
+| 界面（`ScanPanel` 手机形态） | 有副本时多一行「应用内已导入 N 首（副本）」+ `清理副本`；走 `useConfirm()` 的危险确认，清完提示「已清理 N 首（连同应用内的副本文件）」 |
+
+### 2. 验证
+
+- `pnpm typecheck` 通过；`pnpm smoke`：**552**（549 → +3：只挑导入目录里的（同前缀的兄弟目录不算）/ 没目录时一条不挑 / 无宿主时清理是空操作）；
+- **真机（`CDY-AN00`）**（清理前曲库 3 首，磁盘 2 个副本文件）：
+
+  | 步骤 | 结果 |
+  |---|---|
+  | 本地音乐 → 展开扫描面板 | 出现「应用内已导入 2 首（副本）」+「清理副本」——`probe` 的文件不在导入目录里，所以不计入（`r119-android-clean-entry.png`） |
+  | 点「清理副本」 | 危险确认：「将从曲库移除并从磁盘删除应用内的 2 个导入副本。你自己扫描进来的音乐不受影响（原文件也不受影响）」（`r119-android-confirm.png`） |
+  | 确定 | 「已清理 2 首（连同应用内的副本文件）」；曲库 3 → **1 首**（`probe` 留下）；`run-as … ls files/music` → **空**；正在播的 `zhi-ni` 已停播、播放条回到「还没有播放歌曲」（`r119-android-cleaned.png`） |
+
+### 3. 未做 / 值得你知道的
+
+- 只按**路径前缀**认副本，所以「用户在别处自己扫描进来的音乐」永远不在清理范围内——刻意的最小权限；
+- 清理逐条串行调用（几十首会有点慢），没有进度条；导入进度条与音乐目录导出仍挂着（P3 余项）；
+- 归档：本轮把 R115 迁进 `archive/rounds/R101-R115.md`（原 `R101-R114.md` 改名，frontmatter 与引用一并更新）；
+- P2-2 余项（`ACTION_SEEK_TO` + `onSeekTo`、`POST_NOTIFICATIONS`）与 R110 的「上游不是音频」进 UI 文案仍挂着。
 
 ## 本轮目标（第一百一十八轮）
 
@@ -43,7 +76,7 @@ tldr: 当前 R118（P3 余项）：真机证实 `audio/*` 过滤会把 `.m4s` **
   与 Kotlin 的 `AUDIO_EXTENSIONS`——加一种就得同时改，否则「选得了却拷不进来」；
 - 多个大文件仍然没有进度条（P3 余项），也没有「清理已导入」（拷一份会占双份空间）；
 - 一句编译坑：Kotlin 块注释里写 `audio/*` 会**当场闭合注释**，报 `Expecting an element`（GOTCHAS §63）；
-- 归档规则照旧：本轮把 R114 迁进 `archive/rounds/R101-R114.md`（原 `R101-R113.md` 改名）。
+- 归档规则照旧：本轮把 R114 迁进归档（原 `R101-R113.md` 改名成 `R101-R114.md`）。
 
 ## 本轮目标（第一百一十七轮）
 
@@ -124,56 +157,20 @@ tldr: 当前 R118（P3 余项）：真机证实 `audio/*` 过滤会把 `.m4s` **
 - 仍挂着：锁屏进度条（`position=-1`）、通知小图标换应用自己的、`POST_NOTIFICATIONS` 授权入口、
   P3 余项、R110 的「上游不是音频」进 UI 文案。
 
-## 本轮目标（第一百一十五轮）
-
-> 起点：R112 的前台服务让「熄屏还在放」成立，但通知栏只有一个「点一下回到应用」——
-> 锁屏、蓝牙、耳机键都控制不了播放。P2-2 就是补这一半。
-
-### 1. 本轮做了什么
-
-| 层 | 改动 |
-|---|---|
-| Kotlin（`PlaybackService.kt`） | 接上 **framework 的 `MediaSession`**（`android.media.session`，API 21+，不引 `androidx.media` 少一条 Gradle 坑）：`MediaMetadata`（标题/歌手）+ `PlaybackState`（PLAYING/PAUSED + `PLAY/PAUSE/PLAY_PAUSE/SKIP_NEXT/SKIP_PREV`）+ `Callback`（onPlay/onPause/onSkipToNext/onSkipToPrevious）；通知改用 `Notification.MediaStyle`（`setMediaSession` + 三个按钮：上一首 / 播放·暂停 / 下一首，图标随 `playing` 切换） |
-| Kotlin（`MediaActionBridge.kt`，新） | 原生 → 页面的**单向下发**：`Plugin.load(webView)` 里留 WebView 引用，按钮动作 → `evaluateJavascript("window.__gentlyMediaAction('toggle')")`。原生**不拥有播放状态**，只转发 |
-| 宿主（`playback.rs` / `lib.rs`） | `playback_banner` 多一个 `playing` 参数（决定按钮图标与 `PlaybackState`） |
-| 前端（`services/playbackBanner.service.ts`） | `syncPlaybackBanner(active, title, artist, playing)`；新增 `installMediaActionHandler()`：装 `window.__gentlyMediaAction`，**只在有宿主时装**，返回卸载函数。`useAudioEngine` 把它翻成 store 的 `toggle/next/prev`（与界面按钮同一条路） |
-| 修复（本轮真机发现） | `active` 必须表示「**有没有当前曲目**」，不能等于 `playing`——第一版用同一个值，暂停就把前台服务连同 MediaSession 一起关了，之后耳机键/锁屏全部失效（GOTCHAS §60） |
-
-### 2. 验证
-
-- `pnpm typecheck` 通过；`pnpm smoke`：**539**（535 → +4：宿主里装上回调 / 三动作到得了前端且未知动作被忽略 / 卸载后全局函数被移除 / 无宿主是空操作）；
-- **真机（`CDY-AN00`）**：
-
-  | 项 | 结果 |
-  |---|---|
-  | 会话注册 | `dumpsys media_session`：`Media button session is com.xun.gently/gently-playback`、`state=PlaybackState {state=3 … actions=566}`（566 = play+pause+play_pause+skip_next+skip_prev） |
-  | 暂停（媒体键 127） | 进度冻在 `6`；会话仍在（`state=2` PAUSED）——**这是修好 active/playing 之后才成立的** |
-  | 播放（126） | `6 → 10`，会话回到 `state=3` |
-  | 下一首（87） | 换歌（进度归 0 后重新走），通知标题跟着变成新曲目 |
-  | 通知栏 | 三个按钮（⏮ ⏸ ⏭）；截图 `r115-android-notification.png` |
-
-### 3. 未做 / 值得你知道的
-
-- 通知小图标仍是系统自带的 `ic_media_play`（改成应用自己的需要加 drawable 资源）；
-- `POST_NOTIFICATIONS` 运行时授权入口没有（API 33+ 不授权时通知不可见，但保活/媒体键仍生效）；
-- `PlaybackState` 不带播放位置（`position=-1`）：位置不进原生，避免两处真相；锁屏进度条因此不显示；
-- P4 通知栏歌词（可复用这套会话）、P3 余项（导入进度、清理已导入、`.m4s` 的 MIME）、
-  R110 的「上游不是音频」进 UI 文案仍挂着。
-
 ## 最近三轮
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
-| R118 | P3 余项：任意封装都能导入 | 真机证实系统 MIME 库不认 `.m4s`（同一个文件改 `.mp3` 就能选），于是选择器放开到「音频 + 未知类型」，选完按扩展名筛（名单与核心 `AUDIO_EXTENSIONS` 一一对应），跳过数如实回报；结果文案抽成纯函数 `importNoteText`。真机：`.m4s` 可选 → 已导入 1 首 → 能放（`8/271`）；选 `.bin` → 「都不是音频」且磁盘没多文件；smoke 549 | [本轮](#本轮目标第一百一十八轮) |
+| R119 | P3 余项：清理导入副本 | 新宿主命令 `imported_dir`（前端不猜 `<filesDir>`）+ `importedMusicDir()` 缓存 + 纯函数 `importedTracksOf`（路径前缀，拿不到目录一条不删）+ `purgeImported()`（要删的正在播就先停，逐条 `library.local.remove{deleteFile}`）；`ScanPanel` 手机形态给「清理副本」+ 危险确认。真机：3 首 → 清掉 2 个副本（磁盘 `files/music` 空、`probe` 留下、正在播的已停）；smoke 552 | [本轮](#本轮目标第一百一十九轮) |
+| R118 | P3 余项：任意封装都能导入 | 真机证实系统 MIME 库不认 `.m4s`（同一个文件改 `.mp3` 就能选），于是选择器放开到「音频 + 未知类型」，选完按扩展名筛（名单与核心 `AUDIO_EXTENSIONS` 一一对应），跳过数如实回报；结果文案抽成纯函数 `importNoteText`。真机：`.m4s` 可选 → 已导入 1 首 → 能放（`8/271`）；选 `.bin` → 「都不是音频」且磁盘没多文件；smoke 549 | [下方](#本轮目标第一百一十八轮) |
 | R117 | 通知/锁屏拿到真实位置与时长 + 自有通知图标 | `playback_banner` 多两个毫秒参数，`PlaybackState.setState(state, position, speed)` + `METADATA_KEY_DURATION`；`seekSeq` 记「位置跳变」所以不必订阅 `elapsed`；时长异步到手、元素跳位两个坑写进 GOTCHAS §62。真机：恢复 231 s → 播放 `position=231200`、拖到 50% `135465`、暂停 `speed=0.0`；小图标换成自己的 ♪ | [下方](#本轮目标第一百一十七轮) |
-| R116 | P4 通知栏歌词 | 歌词只在页面算（`currentLyricLine`），`line` 作为 `playback_banner` 的第 5 个参数传到 Kotlin，写成通知的 `setContentText`（空串回落歌手）+ `MediaMetadata` 的 `DISPLAY_SUBTITLE`；去重键带上 `line`，换行才推。真机同一张通知原地把第二行从「第一句」换成「第二句」；smoke 541 | [下方](#本轮目标第一百一十六轮) |
 
 ## 历史轮次
 
 - R01–R83：[`archive/rounds/R01-R83.md`](archive/rounds/R01-R83.md)
 - R84–R88：[`archive/rounds/R84-R88.md`](archive/rounds/R84-R88.md)
 - R89–R100：[`archive/rounds/R89-R100.md`](archive/rounds/R89-R100.md)（宠物从 M0 到 1.0 的全过程；R99/R100 为摘要）
-- R101–R114：[`archive/rounds/R101-R114.md`](archive/rounds/R101-R114.md)（桌面收尾 + 宠物 1.0 + 安卓 P0–P3 共 14 轮正文）
+- R101–R115：[`archive/rounds/R101-R115.md`](archive/rounds/R101-R115.md)（桌面收尾 + 宠物 1.0 + 安卓 P0–P4 共 15 轮正文）
 
 默认不需要读；查「当时为什么这么做 / 试过什么 / 证据文件叫什么」时再打开。轮次正文只写「当前轮 + 最近三轮」，
 更早的每三轮迁一次档——STATE 的预算是 250 token，不要退化成日记。

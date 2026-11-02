@@ -1,5 +1,6 @@
 import {appConfig} from '../../config/app.config';
-import {libraryService} from '../../services';
+import {importedMusicDir, libraryService} from '../../services';
+import {importedTracksOf} from '../../utils/importNote';
 import type {LibraryActions, LibraryState, StoreCtx} from '../types';
 
 /** 本地曲库与最近播放切片 */
@@ -92,6 +93,30 @@ export function createLibrarySlice(ctx: StoreCtx) {
             patch({local: ctx.getState().library.local.filter((t) => t.id !== id)});
             // 只移出曲库：删磁盘文件必须由用户在二次确认里明确选择（`deleteFile`）
             void libraryService.removeLocal(id);
+        },
+
+        /**
+         * 清理导入副本（R119）：**连文件一起删**。
+         *
+         * 只删落在导入目录里的那些——`importedTracksOf` 里先拿目录做前缀匹配，
+         * 拿不到目录就一条都不删（宁可什么都不做，也不误删用户自己的音乐）。
+         * 正在播的曲目若在被清理之列，先停播：文件被删了还显示「在播」就是骗人。
+         */
+        async purgeImported() {
+            const dir = await importedMusicDir();
+            const doomed = importedTracksOf(ctx.getState().library.local, dir);
+            if (doomed.length === 0) return 0;
+
+            const ids = new Set(doomed.map((track) => track.id));
+            const player = ctx.getActions().player;
+            const playing = ctx.getState().player.current;
+            if (playing && ids.has(playing.id)) player.stop();
+
+            for (const track of doomed) {
+                await libraryService.removeLocal(track.id, true);
+            }
+            patch({local: ctx.getState().library.local.filter((track) => !ids.has(track.id))});
+            return doomed.length;
         },
     };
 

@@ -11,7 +11,7 @@ export {
     playbackBannerKey,
 } from './playbackBanner.service';
 export type {MediaAction} from './playbackBanner.service';
-export {importAudioFiles} from './import.service';
+export {importAudioFiles, importedMusicDir} from './import.service';
 export type {ImportAudioResult} from './import.service';
 export {fileService} from './file.service';
 export {backgroundService} from './background.service';

@@ -52,6 +52,19 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    /**
+     * 导入用的落点目录（`<filesDir>/music`）。
+     *
+     * 为什么要问原生：界面上要能列出「哪些曲目是导入进来的副本」，并让用户一键清理。
+     * 判断依据是**路径前缀**，而这个目录只有原生知道（`filesDir` 随包名/用户变化，
+     * 前端不该猜）。同一个安装里它是稳定的，前端可以缓存。
+     */
+    @Command
+    fun importedDir(invoke: Invoke) {
+        val dir = File(activity.filesDir, "music").apply { mkdirs() }
+        invoke.resolve(JSObject().apply { put("dir", dir.absolutePath) })
+    }
+
     /** 选择器返回：拷文件可能很慢，**放到后台线程**，拷完再回调（不卡 UI）。 */
     @ActivityCallback
     fun onPickAudio(invoke: Invoke, result: ActivityResult) {

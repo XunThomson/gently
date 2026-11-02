@@ -663,6 +663,9 @@ OpenAPI-over-HTTP 代码生成、Postgres/Redis/BullMQ/Docker。**新增**的必
   选择器**不按音频类型过滤**（`*/*` + `audio/*`/`octet-stream`）：系统 MIME 库不认 `.m4s` 这类封装，
   只过滤音频等于把它们灰掉；改由 Kotlin 按扩展名筛，名单与核心的 `AUDIO_EXTENSIONS` 一一对应，
   跳过的数量如实回报（`skipped`）。桌面端该命令如实回错——那边直接填目录扫描。
+  副本的**清理**（R119）也过宿主：`imported_dir` 给出 `<filesDir>/music`，前端按路径前缀挑出副本
+  （`utils/importNote.ts::importedTracksOf`，拿不到目录就一条都不删），逐条调核心的
+  `library.local.remove{deleteFile:true}`——删文件这件事仍然由核心做（它才有「只删音频扩展名」的守卫）。
 
 ## 13. 遗留与归档
 

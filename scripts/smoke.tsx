@@ -101,7 +101,7 @@ import {
     LYRICS_BOTTOM_MARGIN,
     placeLyrics,
 } from '../src/utils/lyricsWindowPosition';
-import {importNoteText} from '../src/utils/importNote';
+import {importNoteText, importedTracksOf} from '../src/utils/importNote';
 import {lyricLineProgress} from '../src/utils/lyrics';
 import {
     LYRICS_OFFSET_FINE_STEP_SEC,
@@ -2901,6 +2901,36 @@ async function main(): Promise<void> {
             '导入文案：只跳过不说失败（跳过不是错误）',
             note({imported: 2, failed: 1, skipped: 0}) ===
                 i18n.t('page.local.importedPartial', {imported: 2, failed: 1}),
+        );
+    }
+
+    /* 清理导入副本（R119）：只认路径落在导入目录里的曲目——拿不到目录就一条都不删，
+       绝不能把用户自己扫描进来的音乐当成副本。 */
+    {
+        const tracks = [
+            {id: 'a', path: '/data/user/0/com.xun.gently/files/music/a.m4s'},
+            {id: 'b', path: '/data/user/0/com.xun.gently/music/b.mp3'},
+            {id: 'c', path: '/storage/emulated/0/Music/c.flac'},
+            {id: 'd', path: '/data/user/0/com.xun.gently/files/music-extra/d.mp3'},
+        ];
+        const picked = importedTracksOf(tracks, '/data/user/0/com.xun.gently/files/music');
+        check(
+            '清理副本：只挑导入目录里的（同前缀的兄弟目录不算）',
+            picked.map((track) => track.id).join(',') === 'a',
+            picked.map((track) => track.id).join(','),
+        );
+        check(
+            '清理副本：没有目录 / 空目录时一条都不挑（不敢删任何东西）',
+            importedTracksOf(tracks, null).length === 0 &&
+                importedTracksOf(tracks, '').length === 0,
+        );
+        /* 没有宿主（浏览器预览）时，「清理」必须什么都不做：目录读不到 → 不删 */
+        const before = s().library.local;
+        const removed = await actions.library.purgeImported();
+        check(
+            '清理副本：没有宿主时是空操作（曲库一条不少）',
+            removed === 0 && s().library.local === before,
+            `removed=${removed}`,
         );
     }
 

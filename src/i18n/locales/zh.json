@@ -182,6 +182,8 @@
     "compatDesc": "「{{name}}」将只允许访问：{{hosts}}。其余域名一律拒绝，若该插件还需要别的域名会请求失败；要恢复兼容模式只能重新导入该插件。",
     "removeLocalTitle": "移出本地音乐",
     "removeLocalDesc": "将从本地曲库中移除「{{name}}」，不会删除磁盘文件。",
+    "purgeImportedTitle": "清理导入的副本",
+    "purgeImportedDesc": "将从曲库移除并从磁盘删除应用内的 {{count}} 个导入副本。你自己扫描进来的音乐不受影响（原文件也不受影响）。",
     "removeDownloadTitle": "移除下载任务",
     "removeDownloadDesc": "将移除「{{name}}」的下载记录。",
     "deleteSkinTitle": "删除皮肤",
@@ -342,6 +344,9 @@
       "imported": "已导入 {{count}} 首",
       "importedPartial": "已导入 {{imported}} 首（{{failed}} 首没读到）",
       "importSkipped": "跳过 {{count}} 个非音频文件",
+      "importedCopies": "应用内已导入 {{count}} 首（副本）",
+      "cleanImported": "清理副本",
+      "cleanedImported": "已清理 {{count}} 首（连同应用内的副本文件）",
       "importEmpty": "选中的文件里没有可读取的音频",
       "importSkippedOnly": "选中的 {{count}} 个文件都不是音频（下一条说明里是认得的扩展名）",
       "importFailed": "打不开文件选择器"

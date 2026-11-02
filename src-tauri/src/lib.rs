@@ -138,6 +138,16 @@ async fn import_audio() -> Result<importer::ImportOutcome, String> {
     importer::pick_audio().await
 }
 
+/// 宿主命令：**导入副本的落点目录**（Android，P3 余项 · R119）。
+///
+/// 界面要能列出「哪些本地曲目是导入进来的副本」并让用户一键清理，
+/// 而判断依据是路径前缀——这个目录只有原生知道（`filesDir` 随包名/用户变化）。
+/// 桌面端回空串：那边没有「导入副本」这回事，前端因此不会显示清理入口。
+#[tauri::command]
+fn imported_dir() -> Result<String, String> {
+    importer::import_dir()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -253,6 +263,7 @@ pub fn run() {
             app_restart,
             playback_banner,
             import_audio,
+            imported_dir,
             web_login::web_login
         ])
         .build(tauri::generate_context!())

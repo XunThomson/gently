@@ -2,11 +2,12 @@ import {useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Button} from '../../../components/ui/button';
 import {IconChevronDown, IconFolder} from '../../../components/ui/icon';
-import {coreAvailable, importAudioFiles} from '../../../services';
+import {coreAvailable, importAudioFiles, importedMusicDir} from '../../../services';
 import {useActions, useLibraryState} from '../../../store';
 import {errorText} from '../../../i18n/errors';
-import {importNoteText} from '../../../utils/importNote';
+import {importNoteText, importedTracksOf} from '../../../utils/importNote';
 import {isMobilePlatform} from '../../../utils/platform';
+import {useConfirm} from '../../../hooks/useConfirm';
 import styles from '../local.module.css';
 
 /**
@@ -27,8 +28,9 @@ import styles from '../local.module.css';
  */
 export function ScanPanel() {
     const {t} = useTranslation();
-    const {scanning, scanProgress, scanSummary, scanError} = useLibraryState();
-    const {scan} = useActions().library;
+    const {scanning, scanProgress, scanSummary, scanError, local} = useLibraryState();
+    const {scan, purgeImported} = useActions().library;
+    const confirm = useConfirm();
 
     const [paths, setPaths] = useState('');
     const [recursive, setRecursive] = useState(true);
@@ -36,6 +38,8 @@ export function ScanPanel() {
     /** 手机导入是异步且可能被取消的，结果要留在界面上（说清导入了几首） */
     const [importing, setImporting] = useState(false);
     const [importNote, setImportNote] = useState('');
+    /** 导入副本的落点目录（只有手机宿主有）；`null` = 没有/还没问出来 */
+    const [importDir, setImportDir] = useState<string | null>(null);
     const mobile = isMobilePlatform();
 
     const available = coreAvailable();
@@ -43,6 +47,21 @@ export function ScanPanel() {
         .split('\n')
         .map((line) => line.trim())
         .filter(Boolean);
+
+    /* 导入目录只问一次：同一个安装内它是不变的（`filesDir` 随包名/用户定） */
+    useEffect(() => {
+        if (!mobile || !available) return;
+        let alive = true;
+        void importedMusicDir().then((dir) => {
+            if (alive) setImportDir(dir);
+        });
+        return () => {
+            alive = false;
+        };
+    }, [mobile, available]);
+
+    /* 导入副本 = 路径落在导入目录里的本地曲目（前端不猜，靠前缀匹配） */
+    const importedCopies = importedTracksOf(local, importDir);
 
     /* 扫描是不可中断的长任务：进度必须能看见，所以一开始就展开抽屉 */
     useEffect(() => {
@@ -72,6 +91,24 @@ export function ScanPanel() {
             // 导入的曲目立刻进库：用户不用再自己把路径抄进文本框
             void scan({dirs: [result.dir], recursive: true});
         }
+    };
+
+    /**
+     * 清理导入副本（R119）：连磁盘文件一起删，只动导入目录里的那些。
+     *
+     * 必须走二次确认：这是**删除文件**，与「移出曲库」不是一回事。
+     */
+    const cleanImported = () => {
+        confirm({
+            titleKey: 'confirm.purgeImportedTitle',
+            descKey: 'confirm.purgeImportedDesc',
+            descParams: {count: importedCopies.length},
+            tone: 'danger',
+            onConfirm: async () => {
+                const removed = await purgeImported();
+                setImportNote(t('page.local.cleanedImported', {count: removed}));
+            },
+        });
     };
 
     if (!available) {
@@ -129,6 +166,24 @@ export function ScanPanel() {
                                         ? t('page.local.importing')
                                         : t('page.local.importFromDevice')}
                                 </Button>
+                                {/* 导入是拷一份：占双份空间，得让用户能把副本清掉（R119） */}
+                                {importedCopies.length > 0 && (
+                                    <>
+                                        <span className={styles.scanStatus}>
+                                            {t('page.local.importedCopies', {
+                                                count: importedCopies.length,
+                                            })}
+                                        </span>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={cleanImported}
+                                            disabled={importing || scanning}
+                                        >
+                                            {t('page.local.cleanImported')}
+                                        </Button>
+                                    </>
+                                )}
                                 {importNote && <span className={styles.scanStatus}>{importNote}</span>}
                             </div>
                             <p className={styles.scanHint}>{t('page.local.importHint')}</p>

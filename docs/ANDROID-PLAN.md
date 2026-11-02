@@ -348,7 +348,7 @@ pnpm tauri android build --debug -t aarch64 --apk
 ### 7.2 R109：P1-4/5/6 的实现口径（结论）
 
 > 三片都只动**交互层与列定义**，store / 服务层 / 契约一个字没改。逐条取舍与真机走查见
-> [`archive/rounds/R101-R114.md`](archive/rounds/R101-R114.md) 的附录。
+> [`archive/rounds/R101-R115.md`](archive/rounds/R101-R115.md) 的附录。
 
 - **列表**：`table.config.tsx` 加 `mobileColumns` / `mobileTrackColumns`（手机 3 列 = 主信息 `1fr` + 时长 + ⋯），
   `DataTable` 用**纯函数** `resolveColumns(shell, columns, mobileColumns)` 裁决；手机隐藏表头，单元格留白收到
@@ -376,10 +376,12 @@ pnpm tauri android build --debug -t aarch64 --apk
 | R117 | P2-2 余项：位置 / 时长 + 自有通知图标 | `PlaybackState` 不再给 `PLAYBACK_POSITION_UNKNOWN`：前端把 `position`/`duration`（毫秒）一起推下来，服务写进 `setState(state, position, speed)` 与 `METADATA_KEY_DURATION`（暂停时速度必须 0，播放中靠系统按 1× 推算，所以**不需要**每秒推）。**不声明 `ACTION_SEEK_TO`**：锁屏拖动要走 `onSeekTo` 回页面，还没接——「声明了但不生效」比不声明更坏（§46）。通知小图标换成自己的音符矢量（`res/drawable/ic_gently_notification.xml`） | 冷启动恢复 231 s → 点播放 `position=231200`；点进度条 50% → `135465`；媒体键暂停 → `state=2 speed=0.0 position=240154`；`metadata: size=4`（含时长）。两个真机坑见 GOTCHAS §62；`r117-android-notification.png`（♪ 图标） |
 | R118 | P3 余项：任意封装都能导入 | 真机实测：`audio/*` 过滤会把 `.m4s` **灰掉**（同一个文件改名 `.mp3` 就能选），而 `.m4s` 是 B 站音频的常见封装。改成 `*/*` + `EXTRA_MIME_TYPES=[audio/*, application/octet-stream]`，选完由 `isAudioName()` 按扩展名筛（名单与核心 `AUDIO_EXTENSIONS` 一一对应），跳过数如实回报 `skipped`；导入结果文案抽成纯函数 `utils/importNote.ts` | `.m4s` 可选 → 「已导入 1 首」→ 列表出现 → 能放（`8/271`）；选 `not-audio.bin` → 「选中的 1 个文件都不是音频」且磁盘没多文件；`r118-android-import-m4s.png` / `-skipped.png`；GOTCHAS §63 |
 
+| R119 | P3 余项：清理导入副本 | 导入是「拷一份」，而「移除」只移出曲库、**文件留在磁盘**——私有目录只涨不清。新宿主命令 `imported_dir`（Kotlin 回 `<filesDir>/music`，前端不猜）+ `importedMusicDir()` 缓存 + 纯函数 `importedTracksOf`（按路径前缀挑副本；拿不到目录就一条不删）+ `purgeImported()`（要删的正在播就先停，逐条 `library.local.remove{deleteFile:true}`）；`ScanPanel` 手机形态给「应用内已导入 N 首（副本）」+「清理副本」+ 危险确认 | 真机：曲库 3 首 → 「已清理 2 首」→ `run-as ls files/music` 变**空**、`probe`（不在导入目录）留下、正在播的已停播；`r119-android-clean-entry.png` / `-confirm.png` / `-cleaned.png` |
+
 **下一步（P3 余项 / P2-2 余项）**：P2-2 只差两件——`ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度，
 要先确认能真机验到才接）、`POST_NOTIFICATIONS` 运行时授权入口（API 33+ 才需要；本机 API 29 验不了）。
 注意本机 ROM（EMUI 10 / Android 10）的通知、控制中心、锁屏卡片**都不画进度条**，位置数据的可见面要等
-Android 11+ 或车机/蓝牙（§7.3 R117）；P3 余项：导入进度条、「清理已导入」（R118 之后能导入的封装已经够用）。
+Android 11+ 或车机/蓝牙（§7.3 R117）；P3 只剩导入进度条与音乐目录导出。
 
 
 **拆分（每片独立可交付）**

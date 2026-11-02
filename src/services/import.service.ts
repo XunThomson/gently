@@ -35,6 +35,32 @@ const EMPTY: ImportAudioResult = {
 };
 
 /**
+ * 导入副本的落点目录（`<filesDir>/music`），**一次安装内不变**，所以缓存。
+ *
+ * 只有原生知道这个绝对路径（`filesDir` 随包名/用户变化）；界面用它做两件事：
+ * 判断「哪些本地曲目是导入进来的副本」、显示「清理」入口。桌面端返回 `null`。
+ */
+let cachedImportDir: string | null | undefined;
+
+export async function importedMusicDir(): Promise<string | null> {
+    if (cachedImportDir !== undefined) return cachedImportDir;
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+        cachedImportDir = null;
+        return null;
+    }
+    try {
+        const {invoke} = await import('@tauri-apps/api/core');
+        const dir = await invoke<string>('imported_dir');
+        cachedImportDir = dir ? dir : null;
+    } catch (err) {
+        // 读不到就当没有（不缓存失败：下次打开面板还可以再试）
+        console.warn('[import] 读取导入目录失败', err);
+        return null;
+    }
+    return cachedImportDir;
+}
+
+/**
  * 打开系统文件选择器导入音频。
  *
  * 浏览器 / 桌面端：直接返回空结果（`cancelled: true`）——桌面端用「填目录 + 扫描」，
