@@ -7,7 +7,24 @@
 
 import {appConfig} from '../config/app.config';
 import {placeLyrics, type Position} from '../utils/lyricsWindowPosition';
-import {placePet} from '../utils/petWindowPosition';
+import {
+    PET_HUD_GAP,
+    PET_HUD_RESERVE,
+    layoutPetWindow,
+    placePet,
+    type PetHudSide,
+    type PetHudSpec,
+    type Point,
+    type Rect,
+} from '../utils/petWindowPosition';
+import {
+    DEFAULT_PET_SIZE,
+    PET_DISPLAY_HEIGHT,
+    parsePetSize,
+    petMonitorRects,
+    petWindowDimensions,
+    type PetSize,
+} from '../utils/petPresentation';
 import {isMobilePlatform} from '../utils/platform';
 
 export const isTauri = (): boolean =>
@@ -253,7 +270,8 @@ export const windowService = {
         try {
             const win = await petWindow();
             if (!win) return false;
-            await placePetWindow(win);
+            await resizePetWindowForSize(win, windowService.petSize());
+            await placePetWindow(win, windowService.petSize());
             await win.show();
             /* 锁定状态是持久化的：每次显示都重新同步一次（窗口重建后不会「自己解锁」） */
             const locked = windowService.petLocked();
@@ -270,7 +288,12 @@ export const windowService = {
         }
     },
 
-    /** 隐藏宠物窗口（保留窗口实例：下次显示更快，也不用重建 WebView） */
+    /**
+     * 隐藏宠物窗口（保留窗口实例：下次显示更快，也不用重建 WebView）。
+     *
+     * 位置由宠物窗口自己在拖动结束 / 隐藏前按**本体脚底锚点**记下来；
+     * 这里不再读窗口坐标——窗口坐标会随 HUD 上下翻转而变，拿它当位置会让宠物跳动。
+     */
     hidePetWindow: async (): Promise<void> => {
         if (!isTauri()) return;
         try {
@@ -290,6 +313,39 @@ export const windowService = {
         } catch (err) {
             console.warn('[window] 读取宠物窗口状态失败', err);
             return false;
+        }
+    },
+
+    petSize: (): PetSize => parsePetSize(storage()?.getItem(PET_SIZE_KEY)),
+
+    setPetSize: (size: PetSize): void => {
+        try {
+            storage()?.setItem(PET_SIZE_KEY, size);
+        } catch {
+            /* 存储被禁用：本次生效，重启后不记忆 */
+        }
+        void import('@tauri-apps/api/event')
+            .then(({emit}) => emit(PET_SIZE_EVENT, {size}))
+            .catch(() => undefined);
+    },
+
+    /**
+     * 按图集内容调整宠物窗口尺寸，并保持**本体脚底锚点**不动。
+     *
+     * @param anchor 本体脚底中心（屏幕物理像素）；不传就用上次记住的锚点。
+     * @returns 新的窗口内锚点与 HUD 方向（CSS 像素），渲染器据此摆本体和面板。
+     */
+    resizePetWindow: async (
+        content: {width: number; height: number},
+        anchor?: Point,
+    ): Promise<PetWindowLayoutState | null> => {
+        if (!isTauri()) return null;
+        try {
+            const win = await petWindow();
+            return win ? await resizePetWindowToContent(win, content, anchor ?? readPetAnchor()) : null;
+        } catch (err) {
+            console.warn('[window] 调整宠物窗口尺寸失败', err);
+            return null;
         }
     },
 
@@ -314,7 +370,7 @@ export const windowService = {
     /**
      * 锁定 / 解锁宠物窗口：锁定后鼠标点击**穿透**到下面的窗口，宠物不会被点到。
      *
-     * 为什么需要：宠物是 200×160 的矩形窗口，透明区域也会吃鼠标；
+     * 为什么需要：宠物窗口是按图集与操作面板计算的矩形，透明区域也会吃鼠标；
      * 桌宠压在别的应用上时，这一点很烦。锁定后它就「只是一张图」。
      * 解锁入口**只在设置页**（锁上之后宠物窗口自己收不到任何点击，这是歌词窗口同款的坑）。
      */
@@ -338,21 +394,24 @@ export const windowService = {
         return locked;
     },
 
-    /** 记住宠物窗口位置（宠物窗口拖动时自己写；主窗口下次显示时读） */
-    rememberPetPosition: (position: {x: number; y: number}): void => {
+    /**
+     * 记住宠物**本体脚底中心**的屏幕坐标（物理像素）。
+     *
+     * 为什么不记窗口坐标：窗口高度里有一大块 HUD 预留，状态卡/菜单还会上下翻转；
+     * 同一个窗口坐标可能对应本体在窗口顶部或底部。脚底锚点才是用户看到的「宠物在哪」。
+     */
+    rememberPetAnchor: (anchor: Point): void => {
         try {
-            /* 摆放那一刻产生的 onMoved 不算用户拖动（否则位置永远被默认值覆盖） */
-            const placed = storage()?.getItem(PLACED_PET_POSITION_KEY);
-            if (placed) {
-                const at = JSON.parse(placed) as {x?: number; y?: number};
-                if (Math.abs((at.x ?? -99999) - position.x) <= 2 && Math.abs((at.y ?? -99999) - position.y) <= 2) {
-                    return;
-                }
-            }
-            storage()?.setItem(PET_WINDOW_POSITION_KEY, JSON.stringify(position));
+            storage()?.setItem(PET_BODY_ANCHOR_KEY, JSON.stringify(anchor));
         } catch {
             /* 存储被禁用：位置不记忆，不影响宠物 */
         }
+    },
+
+    notifyPetProfileChanged: (): void => {
+        void import('@tauri-apps/api/event')
+            .then(({emit}) => emit(PET_PROFILE_EVENT))
+            .catch(() => undefined);
     },
 
     /** 宠物窗口请求关闭时通知主窗口（主窗口据此把开关关掉） */
@@ -364,10 +423,19 @@ export const windowService = {
 /** 宠物窗口（label 与 `tauri.conf.json` 里的一致） */
 export const PET_WINDOW_LABEL = 'pet';
 
-/** 宠物窗口位置（与主窗口同源，localStorage 共享） */
-export const PET_WINDOW_POSITION_KEY = 'gently:pet-window-pos';
-/** 最近一次「程序摆放」的位置：宠物窗口用它区分「摆放」与「用户拖动」 */
-export const PLACED_PET_POSITION_KEY = 'gently:pet-window-placed';
+/** 宠物本体脚底锚点（与主窗口同源，localStorage 共享） */
+export const PET_BODY_ANCHOR_KEY = 'gently:pet-body-anchor';
+
+/** 窗口尺寸变化后渲染器需要同步的布局（CSS 像素） */
+export interface PetWindowLayoutState {
+    /** 本体脚底中心在窗口内的位置 */
+    anchor: Point;
+    hud: PetHudSide;
+    /** HUD 槽位在窗口内的矩形（CSS 像素） */
+    hudRect: Rect;
+    /** 窗口内容区尺寸 */
+    size: {width: number; height: number};
+}
 
 /** 「点击穿透（锁定）」的持久化键（与桌面歌词同款做法） */
 export const PET_LOCKED_KEY = 'gently:pet-locked';
@@ -383,6 +451,10 @@ export const PET_WALK_EVENT = 'gently:pet:walk';
 export const PET_ROAM_EVENT = 'gently:pet:roam';
 /** 「允许走动」的持久化键 */
 export const PET_ROAM_KEY = 'gently:pet-roam';
+export const PET_SIZE_KEY = 'gently:pet-size';
+export const PET_SIZE_EVENT = 'gently:pet:size';
+export const PET_MENU_EVENT = 'gently:pet:menu';
+export const PET_PROFILE_EVENT = 'gently:pet:profile';
 
 /** 宿主 → 宠物窗口：该看向哪个方向（0..16，0 = 正上、顺时针）；非 Windows 平台不会发 */
 export const PET_LOOK_EVENT = 'gently:pet:look';
@@ -406,37 +478,91 @@ async function petWindow() {
 
 type PetWin = NonNullable<Awaited<ReturnType<typeof petWindow>>>;
 
+/** 缩放某个「CSS 像素尺寸」到物理像素 */
+function physicalSize(size: {width: number; height: number}, scale: number): {width: number; height: number} {
+    return {width: Math.round(size.width * scale), height: Math.round(size.height * scale)};
+}
+
+/** 摆放前的本体尺寸：内置图集没读到时用档位高度估一个（宽度=高度，高度×1.08） */
+function petBodyForSize(size: PetSize): {width: number; height: number} {
+    const height = PET_DISPLAY_HEIGHT[size] ?? PET_DISPLAY_HEIGHT[DEFAULT_PET_SIZE];
+    return {width: height, height: Math.round(height * 1.08)};
+}
+
+/** HUD 槽位（物理像素）：布局纯函数与窗口尺寸用同一份预告 */
+function petHudSpec(scale: number): PetHudSpec {
+    return {
+        width: Math.round(PET_HUD_RESERVE * scale),
+        height: Math.round(PET_HUD_RESERVE * scale),
+        gap: Math.round(PET_HUD_GAP * scale),
+    };
+}
+
+async function resizePetWindowForSize(win: PetWin, size: PetSize): Promise<void> {
+    const {LogicalSize} = await import('@tauri-apps/api/window');
+    const logical = petWindowDimensions(petBodyForSize(size));
+    await win.setSize(new LogicalSize(logical.width, logical.height));
+}
+
+async function resizePetWindowToContent(
+    win: PetWin,
+    content: {width: number; height: number},
+    anchor: Point | null,
+): Promise<PetWindowLayoutState> {
+    const {LogicalSize, PhysicalPosition, availableMonitors} = await import('@tauri-apps/api/window');
+    const logical = petWindowDimensions(content);
+    const [scale, monitors] = await Promise.all([win.scaleFactor(), availableMonitors()]);
+    const nextSize = physicalSize(logical, scale);
+    await win.setSize(new LogicalSize(logical.width, logical.height));
+
+    const body = physicalSize(content, scale);
+    const hud = petHudSpec(scale);
+    const rects = petMonitorRects(monitors);
+    const layout = anchor
+        ? layoutPetWindow(anchor, body, hud, nextSize, rects)
+        : placePet(readPetAnchor(), rects, body, hud, nextSize);
+    await win.setPosition(new PhysicalPosition(layout.window.x, layout.window.y));
+
+    return {
+        anchor: {x: layout.anchor.x / scale, y: layout.anchor.y / scale},
+        hud: layout.hud,
+        hudRect: {
+            x: layout.hudRect.x / scale,
+            y: layout.hudRect.y / scale,
+            width: layout.hudRect.width / scale,
+            height: layout.hudRect.height / scale,
+        },
+        size: logical,
+    };
+}
+
 /** 摆放宠物窗口：用户拖动过就尊重，否则主屏右下角（判断在纯函数里） */
-async function placePetWindow(win: PetWin): Promise<void> {
+async function placePetWindow(win: PetWin, size: PetSize): Promise<void> {
     try {
         const {availableMonitors, PhysicalPosition} = await import('@tauri-apps/api/window');
-        const [monitors, size] = await Promise.all([availableMonitors(), win.outerSize()]);
-        const rects = monitors.map((monitor) => ({
-            x: monitor.position.x,
-            y: monitor.position.y,
-            width: monitor.size.width,
-            height: monitor.size.height,
-        }));
-        const position = placePet(readPetPosition(), rects, size);
-        await win.setPosition(new PhysicalPosition(position.x, position.y));
-        /* 记下「这次是程序摆的」：宠物窗口收到 onMoved 时，如果位置正好等于它，
-           说明只是摆放（不是用户拖动），不该覆盖用户记住的位置——
-           否则每次启动都会被「创建时的默认位置」污染（曾经出现的怪现象：
-           宠物出现在主窗口旁边而不是右下角）。 */
-        try {
-            storage()?.setItem(PLACED_PET_POSITION_KEY, JSON.stringify(position));
-        } catch {
-            /* 存储被禁用：不记也没关系 */
-        }
+        const [monitors, windowSize, scale] = await Promise.all([
+            availableMonitors(),
+            win.innerSize(),
+            win.scaleFactor(),
+        ]);
+        const body = physicalSize(petBodyForSize(size), scale);
+        const layout = placePet(
+            readPetAnchor(),
+            petMonitorRects(monitors),
+            body,
+            petHudSpec(scale),
+            windowSize,
+        );
+        await win.setPosition(new PhysicalPosition(layout.window.x, layout.window.y));
     } catch (err) {
         console.warn('[window] 摆放宠物窗口失败（保持默认位置）', err);
     }
 }
 
-/** 读用户上次拖动后的位置（读不出来就 `null`：交给默认摆放） */
-export function readPetPosition(): {x: number; y: number} | null {
+/** 读用户上次拖动后的**本体脚底锚点**（读不出来就 `null`：交给默认摆放） */
+export function readPetAnchor(): Point | null {
     try {
-        const raw = storage()?.getItem(PET_WINDOW_POSITION_KEY);
+        const raw = storage()?.getItem(PET_BODY_ANCHOR_KEY);
         if (!raw) return null;
         const parsed: unknown = JSON.parse(raw);
         if (!parsed || typeof parsed !== 'object') return null;

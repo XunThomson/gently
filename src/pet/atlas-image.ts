@@ -11,7 +11,7 @@ import {
     backgroundToStrip,
     stripBackground,
 } from './atlas-matte';
-import {frameBox, planAtlas, type AtlasPlan} from './frame-layout';
+import {frameCell, planAtlas, type AtlasPlan} from './frame-layout';
 
 export interface DecodedAtlas {
     image: HTMLImageElement;
@@ -56,17 +56,14 @@ export function frameSourceRect(
     animation: number,
     frame: number,
 ): {x: number; y: number; w: number; h: number} | null {
-    const box = frameBox(decoded.plan, animation, frame);
-    const index = Number.isInteger(animation) && animation >= 0 ? animation : 0;
-    const scale = decoded.plan.animationScales[index] ?? decoded.plan.scale;
-    const anchor = decoded.plan.anchors[index] ?? {x: 0, y: 0};
-    if (!(scale > 0)) return null;
-    /* 盒子里算出来的偏移含锚点；源矩形只认格子本身，所以把锚点减回去 */
+    const {plan} = decoded;
+    if (!(plan.cellWidth > 0) || !(plan.cellHeight > 0)) return null;
+    const {column, row} = frameCell(plan, animation, frame);
     return {
-        x: (box.offsetX - anchor.x) / scale,
-        y: (box.offsetY - anchor.y) / scale,
-        w: decoded.plan.cellWidth,
-        h: decoded.plan.cellHeight,
+        x: column * plan.cellWidth,
+        y: row * plan.cellHeight,
+        w: plan.cellWidth,
+        h: plan.cellHeight,
     };
 }
 

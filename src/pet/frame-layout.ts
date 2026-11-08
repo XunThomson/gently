@@ -115,6 +115,43 @@ function px(value: number): number {
     return Math.round(value);
 }
 
+/** 背景在浏览器里实际渲染出的尺寸（`background-size` 是取整后的 px） */
+function backgroundSizeOf(
+    image: {imageWidth: number; imageHeight: number},
+    scale: number,
+): {width: number; height: number} {
+    return {
+        width: Math.max(1, px(image.imageWidth * scale)),
+        height: Math.max(1, px(image.imageHeight * scale)),
+    };
+}
+
+/**
+ * 背景里一格的**实际**尺寸（以取整后的 `background-size` 为准）。
+ *
+ * 不能用 `cellWidth × scale` 直接算：`background-size` 取整后，格边界会落在小数像素上
+ * （比如 1.08 倍时格子实际是 207.375px）。只要起点向上、终点向下取整，
+ * 窗口就严格落在格子里，`image-rendering: pixelated` 不会采到邻居的最后一列/行。
+ */
+function renderedCell(
+    plan: {imageWidth: number; imageHeight: number; cellWidth: number; cellHeight: number},
+    scale: number,
+): {background: {width: number; height: number}; width: number; height: number} {
+    const background = backgroundSizeOf(plan, scale);
+    return {
+        background,
+        width: (plan.cellWidth * background.width) / plan.imageWidth,
+        height: (plan.cellHeight * background.height) / plan.imageHeight,
+    };
+}
+
+/** 第 `index` 格在背景里的安全窗口（起点 ceil、终点 floor，容差防浮点抖动） */
+function safeCellWindow(index: number, cellSize: number): {offset: number; size: number} {
+    const offset = Math.ceil(index * cellSize - 1e-6);
+    const end = Math.floor((index + 1) * cellSize + 1e-6);
+    return {offset, size: Math.max(1, end - offset)};
+}
+
 /** 读一行动画的适配参数（缺省 = 原样） */
 function fitOf(animation: LayoutAnimation): {scale: number; offsetX: number; offsetY: number} {
     const scale = animation.fit?.scale;
@@ -258,6 +295,28 @@ function buildPlan(
     };
 }
 
+/**
+ * 某一帧落在图集的第几列 / 第几行。
+ *
+ * 偏移值里已经带了「列 × 格宽」的取整误差，除回去再四舍五入就能还原下标
+ * （缩略图要按原图格子取源矩形，不能从背景偏移反推小数坐标）。
+ */
+export function frameCell(plan: AtlasPlan, animation: number, frame: number): {column: number; row: number} {
+    const index =
+        Number.isInteger(animation) && animation >= 0 && animation < plan.frames.length
+            ? animation
+            : 0;
+    const offsets = plan.frames[index] ?? plan.frames[0] ?? [];
+    const offset = offsets[frame] ?? offsets[0] ?? {x: 0, y: 0};
+    const scale = plan.animationScales[index] ?? plan.scale;
+    const cellWidth = plan.cellWidth * scale;
+    const cellHeight = plan.cellHeight * scale;
+    return {
+        column: cellWidth > 0 ? Math.round(offset.x / cellWidth) : 0,
+        row: cellHeight > 0 ? Math.round(offset.y / cellHeight) : 0,
+    };
+}
+
 /** 取某个 look 方向那一格的绘制参数（look 两行永远按基础缩放：它们是「同一张脸」的不同朝向） */
 export function lookBox(plan: AtlasPlan, look: number): FrameBox | null {
     if (!plan.lookFrames) return null;
@@ -269,16 +328,21 @@ export function lookBox(plan: AtlasPlan, look: number): FrameBox | null {
         x: px((plan.width - width) / 2),
         y: px(plan.height - height),
     };
+    const cell = renderedCell(plan, plan.scale);
+    const column = plan.cellWidth > 0 ? Math.round(offset.x / (plan.cellWidth * plan.scale)) : 0;
+    const row = plan.cellHeight > 0 ? Math.round(offset.y / (plan.cellHeight * plan.scale)) : 0;
+    const window = safeCellWindow(column, cell.width);
+    const rows = safeCellWindow(row, cell.height);
     return {
         width: plan.width,
         height: plan.height,
-        left: anchor.x,
-        top: anchor.y,
-        frameWidth: width,
-        frameHeight: height,
-        backgroundSize: `${px(plan.imageWidth * plan.scale)}px ${px(plan.imageHeight * plan.scale)}px`,
-        offsetX: offset.x,
-        offsetY: offset.y,
+        left: anchor.x + Math.round((width - window.size) / 2),
+        top: anchor.y + (height - rows.size),
+        frameWidth: window.size,
+        frameHeight: rows.size,
+        backgroundSize: `${cell.background.width}px ${cell.background.height}px`,
+        offsetX: window.offset,
+        offsetY: rows.offset,
     };
 }
 
@@ -288,21 +352,24 @@ export function frameBox(plan: AtlasPlan, animation: number, frame: number): Fra
         Number.isInteger(animation) && animation >= 0 && animation < plan.frames.length
             ? animation
             : 0;
-    const offsets = plan.frames[index] ?? plan.frames[0] ?? [];
-    const offset = offsets[frame] ?? offsets[0] ?? {x: 0, y: 0};
     const anchor = plan.anchors[index] ?? {x: 0, y: 0};
     const scale = plan.animationScales[index] ?? plan.scale;
     const size = plan.frameSizes[index] ?? {width: plan.width, height: plan.height};
+    const cell = renderedCell(plan, scale);
+    const {column, row} = frameCell(plan, animation, frame);
+    const window = safeCellWindow(column, cell.width);
+    const rows = safeCellWindow(row, cell.height);
     return {
         width: plan.width,
         height: plan.height,
-        left: anchor.x,
-        top: anchor.y,
-        frameWidth: size.width,
-        frameHeight: size.height,
-        backgroundSize: `${px(plan.imageWidth * scale)}px ${px(plan.imageHeight * scale)}px`,
-        offsetX: offset.x,
-        offsetY: offset.y,
+        /* 安全窗口比名义尺寸小 0~1px：水平居中、底部对齐，脚底不会因为少画一行而上浮 */
+        left: anchor.x + Math.round((size.width - window.size) / 2),
+        top: anchor.y + (size.height - rows.size),
+        frameWidth: window.size,
+        frameHeight: rows.size,
+        backgroundSize: `${cell.background.width}px ${cell.background.height}px`,
+        offsetX: window.offset,
+        offsetY: rows.offset,
     };
 }
 

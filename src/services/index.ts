@@ -28,8 +28,8 @@ export {
     DESKTOP_LYRICS_EVENTS,
     PET_WINDOW_LABEL,
     PET_WINDOW_EVENTS,
-    PET_WINDOW_POSITION_KEY,
-    readPetPosition,
+    PET_BODY_ANCHOR_KEY,
+    readPetAnchor,
 } from './window.service';
 export {
     coreAvailable,

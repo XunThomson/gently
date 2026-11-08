@@ -12,6 +12,9 @@
 
 import {PET_HITBOX_EVENT} from '../services/window.service';
 
+/** 本体（精灵）的可交互区域 id：宿主还用它当「看向哪里」的原点 */
+export const BODY_HIT_AREA_ID = 'sprite';
+
 export interface HitArea {
     x: number;
     y: number;
@@ -63,16 +66,20 @@ export function publishHitAreas(): void {
     void Promise.resolve().then(() => {
         pending = false;
         const rects: HitArea[] = [];
-        for (const registration of registrations.values()) {
+        let body: HitArea | null = null;
+        for (const [id, registration] of registrations) {
             const area = registration.measure();
-            if (area) rects.push(area);
+            if (!area) continue;
+            rects.push(area);
+            /* 宿主用「精灵本体中心」算看向方向：窗口里还有 HUD 预留，窗口中心不等于本体 */
+            if (id === BODY_HIT_AREA_ID) body = area;
         }
         if (rects.length === 0) return;
         const key = rects.map((r) => `${r.x},${r.y},${r.width},${r.height}`).join('|');
         if (key === lastKey) return;
         lastKey = key;
         void import('@tauri-apps/api/event')
-            .then(({emit}) => emit(PET_HITBOX_EVENT, {rects}))
+            .then(({emit}) => emit(PET_HITBOX_EVENT, {rects, body}))
             .catch(() => undefined);
     });
 }

@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Boids 鸟群算法 · 分布式领导</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; height: 100%; overflow: hidden;
+            background: #030306;
+            font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+            color: #eaeaea;
+        }
+        #cv { display: block; width: 100vw; height: 100vh; }
+
+        .hud {
+            position: fixed;
+            left: 50%; bottom: 26px;
+            transform: translateX(-50%);
+            display: flex; gap: 12px;
+            z-index: 10;
+            flex-wrap: wrap;
+            justify-content: center;
+            width: max-content;
+            max-width: 92vw;
+        }
+        button {
+            padding: 10px 22px;
+            border: 0;
+            border-radius: 999px;
+            background: rgba(59,130,246,.85);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background .18s, transform .06s;
+            font-family: inherit;
+            backdrop-filter: blur(6px);
+        }
+        button:hover:not(:disabled) { background: rgba(37,99,235,.95); }
+        button:active:not(:disabled) { transform: scale(.97); }
+        button:disabled { background: rgba(40,40,50,.8); color: #666; cursor: not-allowed; }
+        button.danger { background: rgba(239,68,68,.85); }
+        button.danger:hover:not(:disabled) { background: rgba(220,38,38,.95); }
+
+        .tip {
+            position: fixed;
+            left: 50%; top: 20px;
+            transform: translateX(-50%);
+            font-size: 12.5px;
+            color: #6b6b7a;
+            text-align: center;
+            line-height: 1.7;
+            pointer-events: none;
+            z-index: 10;
+            max-width: 90vw;
+        }
+        .tip b { color: #9a9ab0; font-weight: 600; }
+    </style>
+</head>
+<body>
+
+<canvas id="cv"></canvas>
+
+<div class="tip" id="tip">
+    <b>Boids 鸟群算法</b>：分离 · 对齐 · 聚合，再加一层「分布式局部领导」。<br>
+    每只鸟都在附近寻找当前领导力最高的邻居作为临时头鸟；接入声音后，低音会让领导权在鸟群中流动。
+</div>
+
+<div class="hud">
+    <button id="btnSys">捕获电脑声音</button>
+    <button id="btnMic">使用麦克风</button>
+    <button id="btnStop" class="danger" disabled>停止</button>
+</div>
+
+<script>
+    (() => {
+        'use strict';
+
+        /* =========================================================
+           配置（所有可调参数集中在这里）
+           ========================================================= */
+        const CFG = {
+            BIRD_COUNT: 180,          // 鸟的数量
+
+            /* ---- Boids 三大规则 ---- */
+            SEP_R: 26,                // 分离半径
+            SEP_W: 360,               // 分离权重
+            ALI_R: 85,                // 对齐半径
+            ALI_W: 1.7,               // 对齐权重
+            COH_R: 150,               // 聚合半径
+            COH_W: 0.55,              // 聚合权重
+
+            /* ---- 感知半径（网格搜索上界，需 >= 上面三者最大值） ---- */
+            NEIGHBOR_R: 160,
+
+            /* ---- 分布式局部领导 ---- */
+            LEAD_AHEAD: 0.30,         // 追随点 = 领导位置 + 领导速度 * 此值
+            LEAD_PULL: 1.10,          // 拉力系数
+            LEAD_MAX: 220,            // 最大拉力
+            LEAD_ALIGN: 1.6,          // 与领导速度对齐的权重
+            WANDER: 3.2,              // 没有领导时的自由游走强度
+
+            /* ---- 运动 ---- */
+            MAX_SPEED: 210,
+            MIN_SPEED: 35,
+            DAMP: 1.6,                // 阻尼
+            AMAX: 2600,               // 最大加速度
+
+            /* ---- 音频 ---- */
+            FFT_SIZE: 2048,
+            SILENT_TH: 3,
+            LOW_BINS: 8,
+            BASS_SPEED: 120,          // 低音带来的额外最高速度
+            BASS_LEAD: 2.2            // 低音对领导力的最大加成系数
+        };
+
+        /* =========================================================
+           DOM / 画布
+           ========================================================= */
+        const canvas  = document.getElementById('cv');
+        const ctx     = canvas.getContext('2d');
+        const btnSys  = document.getElementById('btnSys');
+        const btnMic  = document.getElementById('btnMic');
+        const btnStop = document.getElementById('btnStop');
+        const tip     = document.getElementById('tip');
+
+        let W = 0, H = 0, DPR = 1;
+        let bgGrad = null;
+        let stars = [];
+
+        /* =========================================================
+           鸟群数据
+           ========================================================= */
+        let flock = [];
+        let flockReady = false;
+
+        function initFlock() {
+            flock = [];
+            const spread = Math.min(W, H) * 0.32;
+
+            for (let i = 0; i < CFG.BIRD_COUNT; i++) {
+                const a  = Math.random() * Math.PI * 2;
+                const r  = Math.random() * spread;
+                const a0 = Math.random() * Math.PI * 2;
+
+                flock.push({
+                    x: W * 0.5 + Math.cos(a) * r,
+                    y: H * 0.5 + Math.sin(a) * r,
+                    vx: Math.cos(a0) * 120,
+                    vy: Math.sin(a0) * 120,
+
+                    size: 4.6 + Math.random() * 3.0,
+                    seed: Math.random() * Math.PI * 2,
+
+                    // 领导力的个人参数：不同鸟在不同时刻想当领导
+                    leadBase:  0.15 + Math.random() * 0.35,
+                    leadAmp:   0.25 + Math.random() * 0.35,
+                    leadFreq:  0.60 + Math.random() * 1.00,
+                    leadPhase: Math.random() * Math.PI * 2,
+                    bassBoost: Math.random() * CFG.BASS_LEAD,
+
+                    leadership: 0,
+                    leaderIndex: -1,
+                    followCount: 0,
+                    glowSmooth: 0
+                });
+            }
+        }
+
+        /* =========================================================
+           尺寸
+           ========================================================= */
+        function resize() {
+            DPR = Math.min(window.devicePixelRatio || 1, 2);
+            W = canvas.clientWidth;
+            H = canvas.clientHeight;
+            canvas.width  = Math.round(W * DPR);
+            canvas.height = Math.round(H * DPR);
+            ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+            bgGrad = ctx.createRadialGradient(
+                W * 0.5, H * 0.32, 0,
+                W * 0.5, H * 0.32, Math.max(W, H) * 0.85
+            );
+            bgGrad.addColorStop(0,    '#0b0f1c');
+            bgGrad.addColorStop(0.55, '#06070d');
+            bgGrad.addColorStop(1,    '#020204');
+
+            stars = [];
+            const n = Math.round((W * H) / 26000);
+            for (let i = 0; i < n; i++) {
+                stars.push({
+                    x: Math.random() * W,
+                    y: Math.random() * H,
+                    r: Math.random() * 1.3 + 0.2,
+                    a: Math.random() * 0.5 + 0.15,
+                    ph: Math.random() * Math.PI * 2
+                });
+            }
+
+            if (!flockReady) {
+                initFlock();
+                flockReady = true;
+            } else {
+                for (let i = 0; i < flock.length; i++) {
+                    const b = flock[i];
+                    if (b.x < -100)    b.x = 100;
+                    if (b.x > W + 100) b.x = W - 100;
+                    if (b.y < -100)    b.y = 100;
+                    if (b.y > H + 100) b.y = H - 100;
+                }
+            }
+        }
+
+        /* =========================================================
+           空间网格（让邻居搜索从 O(n²) 降到近似 O(n)）
+           ========================================================= */
+        const CELL      = 80;
+        const KEY_MUL   = 100003;                     // 大质数，避免 key 碰撞
+        const SPAN      = Math.ceil(CFG.NEIGHBOR_R / CELL);
+        const grid      = new Map();
+
+        function cellKey(cx, cy) { return cx * KEY_MUL + cy; }
+
+        /* =========================================================
+           核心：Boids + 分布式局部领导
+           ========================================================= */
+        function updateFlock(dt, t, bass) {
+            const n = flock.length;
+
+            /* ---------- 1. 计算每只鸟的领导力 ---------- */
+            for (let i = 0; i < n; i++) {
+                const b = flock[i];
+                b.leadership =
+                    b.leadBase +
+                    b.leadAmp * Math.sin(t * b.leadFreq + b.leadPhase) +
+                    bass * b.bassBoost;
+                b.followCount = 0;
+                b.leaderIndex = -1;
+            }
+
+            /* ---------- 2. 重建空间网格 ---------- */
+            grid.clear();
+            for (let i = 0; i < n; i++) {
+                const b = flock[i];
+                const key = cellKey(Math.floor(b.x / CELL), Math.floor(b.y / CELL));
+                let arr = grid.get(key);
+                if (!arr) { arr = []; grid.set(key, arr); }
+                arr.push(i);
+            }
+
+            /* ---------- 3. 逐鸟计算转向力 ---------- */
+            const NR2    = CFG.NEIGHBOR_R * CFG.NEIGHBOR_R;
+            const SEP_R2 = CFG.SEP_R * CFG.SEP_R;
+            const ALI_R2 = CFG.ALI_R * CFG.ALI_R;
+            const COH_R2 = CFG.COH_R * CFG.COH_R;
+
+            const cx0 = W * 0.5;
+            const cy0 = H * 0.5;
+            const R0  = Math.min(W, H) * 0.38;
+
+            for (let i = 0; i < n; i++) {
+                const b   = flock[i];
+                const bcx = Math.floor(b.x / CELL);
+                const bcy = Math.floor(b.y / CELL);
+
+                let sepX = 0, sepY = 0, nSep = 0;
+                let aliX = 0, aliY = 0, nAli = 0;
+                let cohX = 0, cohY = 0, nCoh = 0;
+
+                let bestIdx   = -1;
+                let bestScore = b.leadership;
+
+                /* --- 遍历 5×5 网格内的所有邻居 --- */
+                for (let ix = bcx - SPAN; ix <= bcx + SPAN; ix++) {
+                    for (let iy = bcy - SPAN; iy <= bcy + SPAN; iy++) {
+                        const arr = grid.get(cellKey(ix, iy));
+                        if (!arr) continue;
+
+                        for (let k = 0; k < arr.length; k++) {
+                            const j = arr[k];
+                            if (j === i) continue;
+
+                            const o  = flock[j];
+                            const dx = o.x - b.x;
+                            const dy = o.y - b.y;
+                            const d2 = dx * dx + dy * dy;
+                            if (d2 > NR2 || d2 < 0.0001) continue;
+
+                            // ① 分离：越近推得越远
+                            if (d2 < SEP_R2) {
+                                const d = Math.sqrt(d2);
+                                const w = 1 - d / CFG.SEP_R;
+                                sepX -= (dx / d) * w;
+                                sepY -= (dy / d) * w;
+                                nSep++;
+                            }
+                            // ② 对齐：收集邻居速度
+                            if (d2 < ALI_R2) {
+                                aliX += o.vx;
+                                aliY += o.vy;
+                                nAli++;
+                            }
+                            // ③ 聚合：收集邻居位置
+                            if (d2 < COH_R2) {
+                                cohX += o.x;
+                                cohY += o.y;
+                                nCoh++;
+                            }
+                            // ④ 找局部领导：领导力比自己高的邻居
+                            if (o.leadership > bestScore) {
+                                bestScore = o.leadership;
+                                bestIdx   = j;
+                            }
+                        }
+                    }
+                }
+
+                /* ---------- 合成转向力 ---------- */
+                let fx = 0, fy = 0;
+
+                // ① 分离
+                if (nSep > 0) {
+                    fx += sepX * CFG.SEP_W;
+                    fy += sepY * CFG.SEP_W;
+                }
+
+                // ② 对齐
+                if (nAli > 0) {
+                    aliX /= nAli;
+                    aliY /= nAli;
+                    fx += (aliX - b.vx) * CFG.ALI_W;
+                    fy += (aliY - b.vy) * CFG.ALI_W;
+                }
+
+                // ③ 聚合
+                if (nCoh > 0) {
+                    cohX /= nCoh;
+                    cohY /= nCoh;
+                    fx += (cohX - b.x) * CFG.COH_W;
+                    fy += (cohY - b.y) * CFG.COH_W;
+                }
+
+                // ④ 分布式领导：追随局部头鸟
+                if (bestIdx >= 0) {
+                    const L  = flock[bestIdx];
+                    const tx = L.x + L.vx * CFG.LEAD_AHEAD - b.x;
+                    const ty = L.y + L.vy * CFG.LEAD_AHEAD - b.y;
+                    const td = Math.sqrt(tx * tx + ty * ty) || 1;
+                    const pull = Math.min(td * CFG.LEAD_PULL, CFG.LEAD_MAX);
+
+                    fx += (tx / td) * pull;
+                    fy += (ty / td) * pull;
+                    fx += (L.vx - b.vx) * CFG.LEAD_ALIGN;
+                    fy += (L.vy - b.vy) * CFG.LEAD_ALIGN;
+
+                    b.leaderIndex = bestIdx;
+                    flock[bestIdx].followCount++;
+                } else {
+                    // 附近没有比自己更强的 → 自己就是局部领导 → 自由游走
+                    const wander =
+                        Math.sin(t * 0.55 + b.seed) *
+                        Math.sin(t * 0.21 + b.seed * 2);
+                    const sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy) || 1;
+                    fx += (-b.vy / sp) * wander * CFG.WANDER;
+                    fy += ( b.vx / sp) * wander * CFG.WANDER;
+                }
+
+                // ⑤ 软边界：离画面中心太远就轻轻推回
+                const dxc = cx0 - b.x;
+                const dyc = cy0 - b.y;
+                const dc  = Math.sqrt(dxc * dxc + dyc * dyc) || 1;
+                if (dc > R0) {
+                    const push = (dc - R0) * 2.0;
+                    fx += (dxc / dc) * push;
+                    fy += (dyc / dc) * push;
+                }
+
+                // ---------- 限加速度 ----------
+                const am = Math.sqrt(fx * fx + fy * fy);
+                if (am > CFG.AMAX) {
+                    fx = fx / am * CFG.AMAX;
+                    fy = fy / am * CFG.AMAX;
+                }
+
+                // ---------- 积分 + 阻尼 ----------
+                b.vx += fx * dt;
+                b.vy += fy * dt;
+
+                const damp = Math.exp(-dt * CFG.DAMP);
+                b.vx *= damp;
+                b.vy *= damp;
+
+                // ---------- 限速 ----------
+                const sp2 = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+                const maxSp = CFG.MAX_SPEED + bass * CFG.BASS_SPEED;
+
+                if (sp2 > maxSp) {
+                    b.vx = b.vx / sp2 * maxSp;
+                    b.vy = b.vy / sp2 * maxSp;
+                } else if (sp2 < CFG.MIN_SPEED) {
+                    if (sp2 < 0.01) {
+                        const a = Math.random() * Math.PI * 2;
+                        b.vx = Math.cos(a) * CFG.MIN_SPEED;
+                        b.vy = Math.sin(a) * CFG.MIN_SPEED;
+                    } else {
+                        b.vx = b.vx / sp2 * CFG.MIN_SPEED;
+                        b.vy = b.vy / sp2 * CFG.MIN_SPEED;
+                    }
+                }
+
+                // ---------- 更新位置 ----------
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+
+                // 兜底环绕
+                const pad = 140;
+                if (b.x < -pad)         b.x = W + pad;
+                else if (b.x > W + pad) b.x = -pad;
+                if (b.y < -pad)         b.y = H + pad;
+                else if (b.y > H + pad) b.y = -pad;
+            }
+
+            /* ---------- 4. 平滑发光强度（视觉用） ---------- */
+            for (let i = 0; i < n; i++) {
+                const b = flock[i];
+                const target = Math.min(b.followCount, 5) / 5;
+                b.glowSmooth += (target - b.glowSmooth) * 0.10;
+            }
+        }
+
+        /* =========================================================
+           绘制单只鸟
+           ========================================================= */
+        function drawBird(b, t) {
+            const speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+            const angle = Math.atan2(b.vy, b.vx) + Math.PI / 2;
+
+            const f = b.glowSmooth;                    // 0 普通 → 1 金色领导
+            const s = b.size * (1 + f * 0.3);
+
+            const flapSpeed = 7 + speed * 0.012;
+            const flap = 1 + Math.sin(t * flapSpeed + b.seed) * 0.2;
+
+            // 颜色：蓝 → 青 → 金
+            let hue;
+            if (f < 0.5) hue = 210 - (f / 0.5) * 30;          // 210 → 180
+            else         hue = 180 - ((f - 0.5) / 0.5) * 135; // 180 → 45
+
+            const sat   = 85 + f * 15;
+            const light = 55 + f * 18 + Math.min(speed / 350, 1) * 8;
+            const alpha = 0.5 + f * 0.4;
+
+            ctx.save();
+            ctx.translate(b.x, b.y);
+            ctx.rotate(angle);
+
+            // 鸟形：尖头 + 后掠双翼
+            ctx.beginPath();
+            ctx.moveTo(0, -s * 0.58);
+            ctx.quadraticCurveTo( s * 0.42, -s * 0.18,  s * 0.98 * flap, s * 0.52);
+            ctx.quadraticCurveTo( s * 0.38,  s * 0.20,  0,                s * 0.38);
+            ctx.quadraticCurveTo(-s * 0.38,  s * 0.20, -s * 0.98 * flap, s * 0.52);
+            ctx.quadraticCurveTo(-s * 0.42, -s * 0.18,  0,               -s * 0.58);
+            ctx.closePath();
+
+            ctx.lineJoin = 'round';
+            ctx.lineCap  = 'round';
+
+            if (f > 0.08) {
+                ctx.strokeStyle = `hsla(${hue}, 95%, 65%, ${f * 0.28})`;
+                ctx.lineWidth = 5;
+                ctx.stroke();
+
+                ctx.shadowColor = `hsla(${hue}, 95%, 60%, ${f * 0.9})`;
+                ctx.shadowBlur  = 8 + f * 16;
+            }
+
+            ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
+            ctx.lineWidth = 1.4 + f * 0.9;
+            ctx.stroke();
+
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        /* =========================================================
+           渲染
+           ========================================================= */
+        const drawOrder = [];
+
+        function render(t, bass) {
+            // 背景
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, W, H);
+
+            // 星空
+            ctx.globalCompositeOperation = 'lighter';
+            for (let i = 0; i < stars.length; i++) {
+                const st = stars[i];
+                const tw = 0.7 + 0.3 * Math.sin(t * 1.4 + st.ph);
+                ctx.beginPath();
+                ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(180,205,255,${st.a * tw})`;
+                ctx.fill();
+            }
+
+            // 低音光晕：跟随群体质心
+            if (bass > 0.01) {
+                let gx = 0, gy = 0;
+                for (let i = 0; i < flock.length; i++) { gx += flock[i].x; gy += flock[i].y; }
+                gx /= flock.length; gy /= flock.length;
+
+                const glowR = 240 + bass * 200;
+                const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, glowR);
+                g.addColorStop(0,   `rgba(245,158,11,${bass * 0.14})`);
+                g.addColorStop(0.4, `rgba(59,130,246,${bass * 0.07})`);
+                g.addColorStop(1,   'rgba(0,0,0,0)');
+                ctx.fillStyle = g;
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            // 按发光强度升序绘制，金色头鸟叠在最上层
+            drawOrder.length = 0;
+            for (let i = 0; i < flock.length; i++) drawOrder.push(flock[i]);
+            drawOrder.sort((a, b) => a.glowSmooth - b.glowSmooth);
+
+            for (let i = 0; i < drawOrder.length; i++) {
+                drawBird(drawOrder[i], t);
+            }
+
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        /* =========================================================
+           音频
+           ========================================================= */
+        let audioCtx = null, analyser = null, source = null;
+        let freqBuf = null, timeBuf = null;
+        let stream = null;
+        let listening = false;
+        let bass = 0;
+
+        async function startCapture(type) {
+            if (listening) return;
+
+            btnSys.disabled = true;
+            btnMic.disabled = true;
+            tip.textContent = '正在等待你选择共享内容…';
+
+            try {
+                if (type === 'display') {
+                    stream = await navigator.mediaDevices.getDisplayMedia({
+                        video: true,   // 必须为 true，否则部分浏览器不弹选择框
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+                    stream.getVideoTracks().forEach(tr => {
+                        try { tr.stop(); } catch (_) {}
+                    });
+                } else {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+                }
+            } catch (err) {
+                btnSys.disabled = false;
+                btnMic.disabled = false;
+                if (err && err.name === 'NotAllowedError') {
+                    tip.innerHTML = '操作被取消。请重新点击，并在弹窗中选择 <b>标签页</b> 或 <b>整个屏幕</b>。';
+                } else {
+                    tip.innerHTML = '获取失败：' + (err && err.message ? err.message : err);
+                }
+                return;
+            }
+
+            const audioTracks = stream.getAudioTracks().filter(tr => tr.readyState === 'live');
+            if (audioTracks.length === 0) {
+                cleanupStream();
+                btnSys.disabled = false;
+                btnMic.disabled = false;
+                tip.innerHTML =
+                    '没有获取到音频。请重新点击，并在共享弹窗中：<br>' +
+                    '• 选择 <b>整个屏幕</b> 并勾选 <b>「分享系统音频」</b>，或<br>' +
+                    '• 选择 <b>某个标签页</b> 并勾选 <b>「分享标签页音频」</b>。';
+                return;
+            }
+
+            audioTracks.forEach(tr => {
+                tr.addEventListener('ended', () => {
+                    if (listening) stopCapture('共享已结束。');
+                });
+            });
+
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                await audioCtx.resume();
+
+                const audioStream = new MediaStream(audioTracks);
+                source   = audioCtx.createMediaStreamSource(audioStream);
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = CFG.FFT_SIZE;
+                analyser.smoothingTimeConstant = 0.72;
+
+                freqBuf = new Uint8Array(analyser.frequencyBinCount);
+                timeBuf = new Uint8Array(analyser.fftSize);
+
+                // 只连 analyser，不连 destination，避免二次输出产生回声
+                source.connect(analyser);
+            } catch (err) {
+                cleanupAll();
+                btnSys.disabled = false;
+                btnMic.disabled = false;
+                tip.textContent = '音频初始化失败：' + (err && err.message ? err.message : err);
+                return;
+            }
+
+            listening = true;
+            btnSys.disabled = true;
+            btnMic.disabled = true;
+            btnStop.disabled = false;
+            tip.innerHTML =
+                '正在跟随音乐飞行。<b>低音越强，越多鸟会短暂获得领导权</b>，鸟群会不断重组成若干小组。<br>' +
+                '播放音乐试试吧。';
+        }
+
+        function stopCapture(reason) {
+            listening = false;
+            bass = 0;
+            cleanupAll();
+
+            btnSys.disabled = false;
+            btnMic.disabled = false;
+            btnStop.disabled = true;
+
+            if (typeof reason === 'string' && reason) {
+                tip.textContent = reason;
+            } else {
+                tip.innerHTML =
+                    '<b>Boids 鸟群算法</b>：分离 · 对齐 · 聚合，再加一层「分布式局部领导」。<br>' +
+                    '每只鸟都在附近寻找当前领导力最高的邻居作为临时头鸟；接入声音后，低音会让领导权在鸟群中流动。';
+            }
+        }
+
+        function cleanupStream() {
+            if (stream) {
+                stream.getTracks().forEach(tr => {
+                    try { tr.stop(); } catch (_) {}
+                });
+                stream = null;
+            }
+        }
+        function cleanupAll() {
+            cleanupStream();
+            if (audioCtx) {
+                audioCtx.close().catch(() => {});
+                audioCtx = null;
+            }
+            analyser = null;
+            source = null;
+            freqBuf = null;
+            timeBuf = null;
+        }
+
+        /* =========================================================
+           主循环
+           ========================================================= */
+        let lastT = performance.now();
+
+        function loop(now) {
+            requestAnimationFrame(loop);
+
+            let dt = (now - lastT) / 1000;
+            lastT = now;
+            if (dt > 0.05)   dt = 0.05;
+            if (dt < 0.0001) dt = 0.0001;
+
+            const t = now / 1000;
+
+            /* ---------- 音频分析 ---------- */
+            if (listening && analyser) {
+                analyser.getByteFrequencyData(freqBuf);
+                analyser.getByteTimeDomainData(timeBuf);
+
+                let maxDev = 0;
+                for (let i = 0; i < timeBuf.length; i++) {
+                    const d = Math.abs(timeBuf[i] - 128);
+                    if (d > maxDev) maxDev = d;
+                }
+                const silent = maxDev < CFG.SILENT_TH;
+
+                let sum = 0;
+                const end = Math.min(CFG.LOW_BINS, freqBuf.length - 1);
+                for (let i = 1; i <= end; i++) sum += freqBuf[i];
+                const lowE = (sum / end) / 255;
+
+                const target = silent ? 0 : Math.pow(lowE, 0.88);
+                bass += (target - bass) * (1 - Math.exp(-dt * 11));
+                if (bass < 0.001) bass = 0;
+            } else {
+                bass += (0 - bass) * (1 - Math.exp(-dt * 6));
+                if (bass < 0.001) bass = 0;
+            }
+
+            /* ---------- 更新 & 渲染 ---------- */
+            updateFlock(dt, t, bass);
+            render(t, bass);
+        }
+
+        /* =========================================================
+           事件 & 启动
+           ========================================================= */
+        btnSys.addEventListener('click', () => startCapture('display'));
+        btnMic.addEventListener('click', () => startCapture('mic'));
+        btnStop.addEventListener('click', () => stopCapture());
+
+        let resizeTimer = 0;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(resize, 120);
+        });
+
+        resize();
+        requestAnimationFrame(loop);
+
+        // 环境检测
+        if (!navigator.mediaDevices) {
+            btnSys.disabled = true;
+            btnMic.disabled = true;
+        } else {
+            if (!navigator.mediaDevices.getDisplayMedia) btnSys.disabled = true;
+            if (!navigator.mediaDevices.getUserMedia)   btnMic.disabled = true;
+        }
+    })();
+</script>
+</body>
+</html>

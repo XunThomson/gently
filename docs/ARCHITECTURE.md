@@ -357,12 +357,25 @@ URL 是 `index.html?window=desktop-lyrics`；`main.tsx` 按 query 决定挂载�
 - 事件名用冒号分段（Tauri 字符集约束）；窗口权限在 `capabilities/default.json` 同时授予
   两个窗口（`allow-show` / `allow-hide` / `allow-set-position` / `allow-start-dragging` 等）。
 
-### 桌面宠物扩展点（2.x 预留，当前为空）
+### 桌面宠物（独立置顶小窗）
 
 `src/pet/` 定义 `PetDefinition`（`mount` / `dispose`）与只读的 `PetContext`
 （播放快照 + 订阅）；`PetHost` 挂在外壳里——没有注册宠物时渲染 `null`，注册后给一个
 覆盖窗口、默认 `pointer-events: none` 的容器由宠物自己挂 DOM。接口边界（纯本地、只读、
-无商店、性能预算）见 `docs/adr/0007-versioning-and-pet-extension.md`；当前版本没有任何内置宠物。
+无商店、性能预算）见 `docs/adr/0007-versioning-and-pet-extension.md`。
+
+宠物住在独立窗口 `pet`（`index.html?window=pet`，无边框 / 置顶 / 跳过任务栏），
+窗口间只通过 `gently:pet:*` 事件同步：主窗口推播放快照，宠物窗口上报可交互区域和
+锁定 / 走动状态。位置与几何的约定（`src/utils/petWindowPosition.ts`，纯函数）：
+
+- **本体是唯一被夹进显示器的东西**；窗口是以本体为中心、四边各留一份
+  `PET_HUD_RESERVE + PET_HUD_GAP` 的画布（本体在窗口中的位置是常量），本身允许越出屏幕。
+  四边等距是必须的：只按脚底对称会让上方留白少一截，上方菜单会被窗口上沿裁掉。
+- **HUD 槽位独立摆放**：贴左右边时放到本体内侧，否则优先上方 / 下方；槽位永远整块留在
+  屏幕里，也永远不超出窗口画布，面板放不下不会反过来限制宠物能站哪。
+- `edgeOverhang` 预留「贴边爬行」的越界距离（默认 0 = 本体整只可见）；宿主走动的边界
+  按**本体**算，窗口只做同样的平移。
+- 拖动 / 隐藏持久化的是**本体脚底锚点**（物理像素），不是窗口坐标。
 
 ### 第三方授权（OAuth 2.0，端点由插件声明）
 

@@ -28,9 +28,19 @@ import {
     PET_HITBOX_EVENT,
     PET_LOCK_EVENT,
     PET_LOOK_EVENT,
+    PET_MENU_EVENT,
+    PET_PROFILE_EVENT,
     PET_ROAM_EVENT,
+    PET_SIZE_EVENT,
     PET_WALK_EVENT,
 } from '../src/services/window.service';
+import {
+    DEFAULT_PET_SIZE,
+    PET_DISPLAY_HEIGHT,
+    nextPetSize,
+    parsePetSize,
+    petWindowDimensions,
+} from '../src/utils/petPresentation';
 import {filterGroupsBySource, groupTracks} from '../src/utils/track';
 import {currentLyricLine, toLyricLines} from '../src/utils/lyrics';
 import {errorText} from '../src/i18n/errors';
@@ -129,7 +139,13 @@ import {
 import {clearPets, listPets, PetHost, petPlaybackSnapshot, registerCorePet, registerPet} from '../src/pet';
 import {BUILTIN_PET_SPEC} from '../src/pet/builtin';
 import {planAtlas, frameBox, lookBox} from '../src/pet/frame-layout';
-import {PET_WINDOW_MARGIN, placePet} from '../src/utils/petWindowPosition';
+import {
+    PET_HUD_GAP,
+    PET_HUD_RESERVE,
+    PET_WINDOW_MARGIN,
+    layoutPetWindow,
+    placePet,
+} from '../src/utils/petWindowPosition';
 import {atlasDataUrl, atlasMime, backgroundToStrip, stripBackground} from '../src/pet/atlas-matte';
 import {frameSourceRect} from '../src/pet/atlas-image';
 import {payloadToSnapshot} from '../src/widgets/pet-window/types';
@@ -1660,16 +1676,44 @@ async function main(): Promise<void> {
             JSON.stringify(fitPlan?.anchors), // eslint-disable-line
         );
         // 每帧真的按各自的行缩放取偏移（0.84 的行第 5 帧 = 5 × 96 × 0.84 ≈ 403）
+        // 窗口比名义格子小 0~1px（起点 ceil、终点 floor）：背景落在半像素上时不会采到相邻格的像素
         check(
             'pet: 帧偏移按各自行的缩放算（不是整张图一个倍率）',
             fitPlan !== null &&
-                frameBox(fitPlan, 1, 5).offsetX === Math.round(5 * 96 * 0.84) &&
+                frameBox(fitPlan, 1, 5).offsetX === 404 &&
                 frameBox(fitPlan, 2, 5).offsetX === Math.round(5 * 96 * 1.16) &&
                 frameBox(fitPlan, 1, 5).width === 111 &&
-                frameBox(fitPlan, 1, 5).left === 15 &&
-                frameBox(fitPlan, 1, 5).frameWidth === 81 &&
+                frameBox(fitPlan, 1, 5).left === 16 &&
+                frameBox(fitPlan, 1, 5).top === 35 &&
+                frameBox(fitPlan, 1, 5).frameWidth === 79 &&
+                frameBox(fitPlan, 1, 5).frameHeight === 86 &&
                 fitPlan.frames[1].every((frame) => Number.isInteger(frame.x)),
             JSON.stringify(frameBox(fitPlan!, 1, 5)), // eslint-disable-line
+        );
+        /* 这条是「上一帧的线段」的回归守卫：1.08 倍时格子实际是 207.375×224.666px，
+           偏移取整后可能落到格子外面 0.6px，pixelated 就会把上一行/列的最后一像素带出来。 */
+        const fractionalPlan = planAtlas(
+            {
+                atlasLayout: {frameWidth: 192, frameHeight: 208, columns: 8, rows: 9},
+                animations: [{name: 'run', frames: 6, row: 7, fit: {scale: 1.08}}],
+            },
+            1536,
+            1872,
+            208,
+        );
+        const fractionalBox = fractionalPlan ? frameBox(fractionalPlan, 0, 5) : null;
+        const fractionalCell = {
+            width: (192 * Math.round(1536 * 1.08)) / 1536,
+            height: (208 * Math.round(1872 * 1.08)) / 1872,
+        };
+        check(
+            'pet: 非整数倍缩放的帧窗口严格落在格子里（不会带出相邻帧的线段）',
+            fractionalBox !== null &&
+                fractionalBox.offsetX >= 5 * fractionalCell.width &&
+                fractionalBox.offsetX + fractionalBox.frameWidth <= 6 * fractionalCell.width &&
+                fractionalBox.offsetY >= 7 * fractionalCell.height &&
+                fractionalBox.offsetY + fractionalBox.frameHeight <= 8 * fractionalCell.height,
+            JSON.stringify(fractionalBox), // eslint-disable-line
         );
         // 没有 fit 的包：尺寸与从前一模一样（老宠物包不受影响）
         check(
@@ -1832,6 +1876,28 @@ async function main(): Promise<void> {
             builtinAnimations.map((animation) => animation.name).join(','),
         );
 
+        check(
+            'pet: 三档尺寸与非法持久化值回退',
+            DEFAULT_PET_SIZE === 'medium' &&
+                PET_DISPLAY_HEIGHT.small === 104 &&
+                PET_DISPLAY_HEIGHT.medium === 208 &&
+                PET_DISPLAY_HEIGHT.large === 312 &&
+                parsePetSize('large') === 'large' &&
+                parsePetSize('broken') === DEFAULT_PET_SIZE &&
+                nextPetSize('large') === 'small',
+        );
+        const petPad = PET_HUD_RESERVE + PET_HUD_GAP;
+        const petLargeWindow = petWindowDimensions({width: 288, height: 312});
+        const petSmallWindow = petWindowDimensions({width: 104, height: 112});
+        check(
+            'pet: 窗口是以本体为中心的对称画布（四边各留一份 HUD 槽位）',
+            petLargeWindow.width === 288 + petPad * 2 &&
+                petLargeWindow.height === 312 + petPad * 2 &&
+                petSmallWindow.width === 104 + petPad * 2 &&
+                petSmallWindow.height === 112 + petPad * 2,
+            JSON.stringify({petLargeWindow, petSmallWindow}),
+        );
+
         /* 宠物窗口的事件名：Tauri 只认字母数字与 `- / : _`，带点号的事件会整条丢失
            （命令照常返回、只是收不到——见 GOTCHAS §31）。这里把常量全量守一遍。 */
         check(
@@ -1840,6 +1906,9 @@ async function main(): Promise<void> {
                 PET_HITBOX_EVENT,
                 PET_LOCK_EVENT,
                 PET_ROAM_EVENT,
+                PET_SIZE_EVENT,
+                PET_MENU_EVENT,
+                PET_PROFILE_EVENT,
                 PET_LOOK_EVENT,
                 PET_WALK_EVENT,
                 PET_DRAGGING_EVENT,
@@ -1848,6 +1917,9 @@ async function main(): Promise<void> {
                 PET_HITBOX_EVENT,
                 PET_LOCK_EVENT,
                 PET_ROAM_EVENT,
+                PET_SIZE_EVENT,
+                PET_MENU_EVENT,
+                PET_PROFILE_EVENT,
                 PET_LOOK_EVENT,
                 PET_WALK_EVENT,
                 PET_DRAGGING_EVENT,
@@ -1855,25 +1927,205 @@ async function main(): Promise<void> {
         );
 
         /* ---------------- 宠物窗口（独立置顶小窗） ---------------- */
-        // 默认位置：主屏右下角（宠物不再被音乐软件的窗口边界限制）
         const monitor = [{x: 0, y: 0, width: 1920, height: 1080}];
-        const petPlacement = placePet(null, monitor, {width: 200, height: 200});
+        const petBody = {width: 200, height: 200};
+        const petHud = {width: PET_HUD_RESERVE, height: PET_HUD_RESERVE, gap: PET_HUD_GAP};
+        const petWindow = {
+            width: petBody.width + petPad * 2,
+            height: petBody.height + petPad * 2,
+        };
+        const screenAnchor = (layout: {window: {x: number; y: number}; anchor: {x: number; y: number}}) => ({
+            x: layout.window.x + layout.anchor.x,
+            y: layout.window.y + layout.anchor.y,
+        });
+        const screenHud = (layout: {
+            window: {x: number; y: number};
+            hudRect: {x: number; y: number; width: number; height: number};
+        }) => ({
+            x: layout.window.x + layout.hudRect.x,
+            y: layout.window.y + layout.hudRect.y,
+            width: layout.hudRect.width,
+            height: layout.hudRect.height,
+        });
+        const rectInside = (
+            rect: {x: number; y: number; width: number; height: number},
+            bounds: {x: number; y: number; width: number; height: number},
+        ): boolean =>
+            rect.width <= bounds.width &&
+            rect.height <= bounds.height &&
+            rect.x >= bounds.x &&
+            rect.y >= bounds.y &&
+            rect.x + rect.width <= bounds.x + bounds.width &&
+            rect.y + rect.height <= bounds.y + bounds.height;
+        const bodyInside = (
+            layout: {window: {x: number; y: number}; anchor: {x: number; y: number}},
+            bounds: {x: number; y: number; width: number; height: number} = monitor[0],
+        ): boolean => {
+            const anchor = screenAnchor(layout);
+            return rectInside(
+                {
+                    x: anchor.x - petBody.width / 2,
+                    y: anchor.y - petBody.height,
+                    width: petBody.width,
+                    height: petBody.height,
+                },
+                bounds,
+            );
+        };
+        const hudInside = (
+            layout: Parameters<typeof screenHud>[0],
+            bounds: {x: number; y: number; width: number; height: number} = monitor[0],
+        ): boolean => rectInside(screenHud(layout), bounds);
+        /* 槽位不仅要在屏幕里，还得在**窗口画布**里：窗口外的 DOM 会被直接裁掉，
+           上方菜单被截断的旧问题就出在画布上沿留白不够。 */
+        const hudInCanvas = (layout: {
+            hudRect: {x: number; y: number; width: number; height: number};
+        }): boolean =>
+            rectInside(layout.hudRect, {x: 0, y: 0, width: petWindow.width, height: petWindow.height});
+
+        // 默认位置：本体在主屏右下角；贴右边 → 面板放左侧。窗口允许越界（透明画布）
+        const petPlacement = placePet(null, monitor, petBody, petHud, petWindow);
+        const defaultAnchor = screenAnchor(petPlacement);
         check(
-            'pet: 宠物窗口默认摆在主屏右下角',
-            petPlacement.x === 1920 - 200 - PET_WINDOW_MARGIN &&
-                petPlacement.y === 1080 - 200 - PET_WINDOW_MARGIN,
+            'pet: 默认把本体摆在主屏右下角（贴右边 → 面板在左侧，窗口可越界）',
+            defaultAnchor.x === 1920 - PET_WINDOW_MARGIN - petBody.width / 2 &&
+                defaultAnchor.y === 1080 - PET_WINDOW_MARGIN &&
+                petPlacement.hud === 'left' &&
+                bodyInside(petPlacement) &&
+                hudInside(petPlacement) &&
+                petPlacement.window.y + petWindow.height > 1080,
             JSON.stringify(petPlacement),
         );
-        // 用户拖动过就尊重用户的位置
-        const savedPet = placePet({x: 300, y: 260}, monitor, {width: 200, height: 200});
-        check('pet: 记住的位置优先于默认位置', savedPet.x === 300 && savedPet.y === 260);
-        // 副屏被拔掉：上次的坐标落在虚拟屏幕外 → 必须夹回主屏，否则宠物「消失」
-        const rescuedPet = placePet({x: 2600, y: 900}, monitor, {width: 200, height: 200});
+        // 用户拖动过就尊重脚底锚点（贴近左边时面板放右侧）
+        const savedPet = placePet({x: 300, y: 260}, monitor, petBody, petHud, petWindow);
+        const savedAnchor = screenAnchor(savedPet);
         check(
-            'pet: 屏幕外记住的位置会被夹回可见区域',
-            rescuedPet.x === 1920 - 200 - PET_WINDOW_MARGIN &&
-                rescuedPet.y === 1080 - 200 - PET_WINDOW_MARGIN,
+            'pet: 记住的脚底锚点优先于默认位置（贴近左边 → 面板在右侧）',
+            savedAnchor.x === 300 && savedAnchor.y === 260 && savedPet.hud === 'right' && hudInside(savedPet),
+            JSON.stringify(savedPet),
+        );
+        // 本体四个角都到得了：本体贴边、面板换到屏幕内侧，槽位永远整块可见
+        const corners = [
+            {name: '左上', x: petBody.width / 2, y: petBody.height, hud: 'right'},
+            {name: '右上', x: 1920 - petBody.width / 2, y: petBody.height, hud: 'left'},
+            {name: '左下', x: petBody.width / 2, y: 1080, hud: 'right'},
+            {name: '右下', x: 1920 - petBody.width / 2, y: 1080, hud: 'left'},
+        ] as const;
+        const cornersOk = corners.every((corner) => {
+            const layout = layoutPetWindow(
+                {x: corner.x, y: corner.y},
+                petBody,
+                petHud,
+                petWindow,
+                monitor,
+            );
+            const anchor = screenAnchor(layout);
+            return (
+                anchor.x === corner.x &&
+                anchor.y === corner.y &&
+                layout.hud === corner.hud &&
+                bodyInside(layout) &&
+                hudInside(layout) &&
+                hudInCanvas(layout)
+            );
+        });
+        check('pet: 本体能到屏幕四个角（面板换到内侧，不限制本体）', cornersOk, JSON.stringify(corners));
+
+        // 上方差 1px 放不下就翻到下方：菜单不会再被屏幕/窗口上沿裁掉
+        const roomAbove = PET_HUD_RESERVE + PET_HUD_GAP;
+        const justFits = layoutPetWindow(
+            {x: 500, y: roomAbove + petBody.height},
+            petBody,
+            petHud,
+            petWindow,
+            monitor,
+        );
+        const justMisses = layoutPetWindow(
+            {x: 500, y: roomAbove + petBody.height - 1},
+            petBody,
+            petHud,
+            petWindow,
+            monitor,
+        );
+        check(
+            'pet: HUD 在上/在下按屏幕空间自动翻转（差 1px 也不硬塞），上方也完整落在画布里',
+            justFits.hud === 'above' &&
+                justMisses.hud === 'below' &&
+                hudInside(justMisses) &&
+                hudInCanvas(justFits) &&
+                hudInCanvas(justMisses),
+            JSON.stringify({justFits, justMisses}),
+        );
+
+        // 贴边爬行预备：允许本体伸出屏幕边缘时，HUD 仍然整块留在屏幕里
+        const hangingPet = layoutPetWindow(
+            {x: 0, y: 400},
+            petBody,
+            petHud,
+            petWindow,
+            monitor,
+            {edgeOverhang: 60},
+        );
+        const flushPet = layoutPetWindow({x: 0, y: 400}, petBody, petHud, petWindow, monitor);
+        check(
+            'pet: edgeOverhang 让本体挂出屏幕边缘（默认 0 = 整只可见），HUD 不受影响',
+            screenAnchor(hangingPet).x === 40 &&
+                screenAnchor(flushPet).x === petBody.width / 2 &&
+                hangingPet.window.x < 0 &&
+                hudInside(hangingPet),
+            JSON.stringify({hangingPet, flushPet}),
+        );
+
+        // 副屏被拔掉：上次的脚底锚点落在屏幕外 → 夹回本体完整可见（贴边而不是回默认位）
+        const rescuedPet = layoutPetWindow({x: 2600, y: 900}, petBody, petHud, petWindow, monitor);
+        const rescuedAnchor = screenAnchor(rescuedPet);
+        check(
+            'pet: 屏幕外的记住位置会夹回（本体贴边可见，槽位在屏内）',
+            rescuedAnchor.x === 1920 - petBody.width / 2 &&
+                rescuedAnchor.y === 900 &&
+                bodyInside(rescuedPet) &&
+                hudInside(rescuedPet),
             JSON.stringify(rescuedPet),
+        );
+        // 多屏：按本体所在的那块屏夹（不能因为本体越界就跳到另一块屏）
+        const dualMonitors = [
+            {x: 0, y: 0, width: 1920, height: 1080},
+            {x: 1920, y: 0, width: 1920, height: 1080},
+        ];
+        const secondScreenPet = layoutPetWindow(
+            {x: 3700, y: 900},
+            petBody,
+            petHud,
+            petWindow,
+            dualMonitors,
+        );
+        const secondAnchor = screenAnchor(secondScreenPet);
+        check(
+            'pet: 多屏时按本体所在屏幕夹（面板也在同一块屏）',
+            secondAnchor.x === 3700 &&
+                secondAnchor.y === 900 &&
+                bodyInside(secondScreenPet, dualMonitors[1]) &&
+                hudInside(secondScreenPet, dualMonitors[1]),
+            JSON.stringify(secondScreenPet),
+        );
+        // 屏幕比 HUD 还小：所有坐标有限，槽位至少夹在屏幕原点
+        const oversizedPet = layoutPetWindow(
+            {x: 75, y: 70},
+            petBody,
+            petHud,
+            petWindow,
+            [{x: 0, y: 0, width: 150, height: 140}],
+        );
+        const oversizedHud = screenHud(oversizedPet);
+        check(
+            'pet: 屏幕比 HUD 还小时不产生非法坐标（槽位夹在屏幕原点）',
+            oversizedHud.x === 0 &&
+                oversizedHud.y === 0 &&
+                Number.isFinite(oversizedPet.window.x) &&
+                Number.isFinite(oversizedPet.window.y) &&
+                Number.isFinite(oversizedPet.anchor.x) &&
+                Number.isFinite(oversizedPet.anchor.y),
+            JSON.stringify(oversizedPet),
         );
         // 载荷 → 只读快照：宠物窗口没有 store，全靠这份映射
         const petSnapshot = payloadToSnapshot({

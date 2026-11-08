@@ -5,9 +5,9 @@ import {Button} from '../../../components/ui/button';
 import {petService} from '../../../services';
 import {windowService} from '../../../services/window.service';
 import {
+    PET_BODY_ANCHOR_KEY,
     PET_WINDOW_LABEL,
-    PET_WINDOW_POSITION_KEY,
-    readPetPosition,
+    readPetAnchor,
 } from '../../../services/window.service';
 import styles from '../setting.module.css';
 
@@ -73,7 +73,7 @@ export function PetDebugPanel({activePetId}: {activePetId: string | null}) {
                 win.outerPosition(),
                 win.outerSize(),
             ]);
-            const saved = readPetPosition();
+            const saved = readPetAnchor();
             setWindowInfo({
                 visible,
                 position: `${position.x}, ${position.y}`,
@@ -173,7 +173,7 @@ export function PetDebugPanel({activePetId}: {activePetId: string | null}) {
 
     const resetWindow = async () => {
         try {
-            window.localStorage.removeItem(PET_WINDOW_POSITION_KEY);
+            window.localStorage.removeItem(PET_BODY_ANCHOR_KEY);
         } catch {
             /* 存储被禁用：位置本来也记不住 */
         }

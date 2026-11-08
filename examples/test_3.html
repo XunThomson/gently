@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>波浪线波形 Demo</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; min-height: 100%;
+            background: radial-gradient(1200px 600px at 50% -10%, #12121a 0%, #0a0a0d 60%);
+            color: #eaeaea;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+            padding: 24px;
+        }
+        canvas {
+            width: min(94vw, 920px);
+            height: 280px;
+            background: #06060a;
+            border-radius: 16px;
+            box-shadow: 0 0 0 1px #1e1e26, 0 20px 60px rgba(0,0,0,.7);
+            display: block;
+        }
+        .bar { margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+        button {
+            padding: 11px 26px; border: 0; border-radius: 999px;
+            background: #3b82f6; color: #fff; font-size: 15px; font-weight: 500;
+            cursor: pointer; transition: background .18s, transform .06s;
+            font-family: inherit;
+        }
+        button:hover:not(:disabled) { background: #2563eb; }
+        button:active:not(:disabled) { transform: scale(.97); }
+        button:disabled { background: #26262e; color: #5a5a66; cursor: not-allowed; }
+        button.danger { background: #ef4444; }
+        button.danger:hover:not(:disabled) { background: #dc2626; }
+        #tip {
+            margin-top: 16px; font-size: 13.5px; color: #8a8a96;
+            text-align: center; max-width: 780px; line-height: 1.7;
+        }
+        #tip b { color: #c4c4d0; font-weight: 600; }
+        kbd {
+            background: #1c1c24; border: 1px solid #2e2e38; border-bottom-width: 2px;
+            border-radius: 5px; padding: 1px 6px; font-size: 12px; color: #c8c8d4;
+            font-family: ui-monospace, monospace;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="cv"></canvas>
+
+<div class="bar">
+    <button id="btnSys">捕获电脑声音</button>
+    <button id="btnMic">使用麦克风</button>
+    <button id="btnStop" class="danger" disabled>停止</button>
+</div>
+
+<div id="tip">
+    点击「捕获电脑声音」→ 在弹窗中选一个正在播放音乐/视频的
+    <b>标签页</b>（勾选「分享标签页音频」）或 <b>整个屏幕</b>（勾选「分享系统音频」）。
+</div>
+
+<script>
+    (() => {
+        'use strict';
+
+        /* ================= DOM ================= */
+        const canvas  = document.getElementById('cv');
+        const ctx     = canvas.getContext('2d');
+        const btnSys  = document.getElementById('btnSys');
+        const btnMic  = document.getElementById('btnMic');
+        const btnStop = document.getElementById('btnStop');
+        const tip     = document.getElementById('tip');
+
+        /* ================= 配置 ================= */
+        const FFT_SIZE  = 2048;   // 时域采样点数
+        const POINTS    = 220;    // 波浪线上的点数（越多越细）
+        const GAIN      = 1.9;    // 显示增益
+        const SILENT_TH = 3;      // maxDev < 此值 → 静音 → 直线
+        const SMOOTH_T  = 0.75;   // Analyser 平滑
+        const GLOW      = 16;     // 发光强度
+
+        /* ================= 状态 ================= */
+        let W = 0, H = 0;
+        let audioCtx = null, analyser = null, source = null;
+        let timeBuf = null;
+        let stream = null;
+        let running = false;
+        let rafId = 0;
+
+        // 当前绘制的点（用于过渡插值，让线条不抖）
+        const curY = new Float32Array(POINTS);
+        const tgtY = new Float32Array(POINTS);
+        let   curAmp = 0;         // 当前整体振幅（静音时归零）
+        let   tgtAmp = 0;
+
+        /* ================= 画布尺寸 ================= */
+        function resize() {
+            const dpr  = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            W = Math.max(1, rect.width);
+            H = Math.max(1, rect.height);
+            canvas.width  = Math.round(W * dpr);
+            canvas.height = Math.round(H * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+            // 初始化点位置到中线
+            for (let i = 0; i < POINTS; i++) {
+                const x = i / (POINTS - 1) * W;
+                curY[i] = H / 2;
+                tgtY[i] = H / 2;
+            }
+            if (!running) drawSilence();
+        }
+
+        /* ================= 背景网格 ================= */
+        function drawGrid() {
+            ctx.strokeStyle = '#14141b';
+            ctx.lineWidth = 1;
+            for (let i = 1; i <= 4; i++) {
+                const y = H * i / 5;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(W, y);
+                ctx.stroke();
+            }
+        }
+
+        /* ================= 静音：一条直线 ================= */
+        function drawSilence() {
+            ctx.clearRect(0, 0, W, H);
+            drawGrid();
+
+            ctx.beginPath();
+            ctx.moveTo(0, H / 2);
+            ctx.lineTo(W, H / 2);
+            ctx.strokeStyle = '#4b5563';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+        }
+
+        /* ================= 用平滑曲线画波浪 ================= */
+        function strokeSmoothWave(pts, offsetY, lineWidth, color, glowColor, glow) {
+            const n = pts.length / 2;
+
+            ctx.beginPath();
+            ctx.moveTo(pts[0], pts[1] + offsetY);
+
+            // 中点二次贝塞尔平滑：曲线穿过每两个点的中点，视觉更圆润
+            for (let i = 1; i < n - 1; i++) {
+                const x  = pts[i * 2];
+                const y  = pts[i * 2 + 1] + offsetY;
+                const xc = (pts[i * 2] + pts[(i + 1) * 2]) / 2;
+                const yc = (pts[i * 2 + 1] + pts[(i + 1) * 2 + 1]) / 2 + offsetY;
+                ctx.quadraticCurveTo(x, y, xc, yc);
+            }
+            ctx.lineTo(pts[(n - 1) * 2], pts[(n - 1) * 2 + 1] + offsetY);
+
+            ctx.lineJoin = 'round';
+            ctx.lineCap  = 'round';
+            ctx.lineWidth = lineWidth;
+            ctx.strokeStyle = color;
+
+            if (glow > 0 && glowColor) {
+                ctx.shadowColor = glowColor;
+                ctx.shadowBlur  = glow;
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+
+        /* ================= 有声音：画波浪线 ================= */
+        function drawWave() {
+            ctx.clearRect(0, 0, W, H);
+            drawGrid();
+
+            const n = POINTS;
+            const pts = new Float32Array(n * 2);
+            for (let i = 0; i < n; i++) {
+                pts[i * 2]     = i / (n - 1) * W;
+                pts[i * 2 + 1] = curY[i];
+            }
+
+            // 横向渐变：青 → 蓝 → 紫
+            const grad = ctx.createLinearGradient(0, 0, W, 0);
+            grad.addColorStop(0,    '#22d3ee');
+            grad.addColorStop(0.35, '#3b82f6');
+            grad.addColorStop(0.7,  '#6366f1');
+            grad.addColorStop(1,    '#a855f7');
+
+            // 1) 底层“残影波”，偏移几像素，营造厚度与流动感
+            strokeSmoothWave(
+                pts,  4,
+                2.2,
+                'rgba(59,130,246,0.28)',
+                null, 0
+            );
+
+            // 2) 主波浪线（先描一圈更亮的细线做高光，再描主线）
+            strokeSmoothWave(
+                pts, 0,
+                6,
+                'rgba(99,102,241,0.25)',
+                null, 0
+            );
+            strokeSmoothWave(
+                pts, 0,
+                3,
+                grad,
+                '#3b82f6',
+                GLOW
+            );
+
+            // 3) 最亮的一层：细高光
+            strokeSmoothWave(
+                pts, 0,
+                1.2,
+                'rgba(224,242,254,0.55)',
+                null, 0
+            );
+        }
+
+        /* ================= 主循环 ================= */
+        function loop() {
+            if (!running) return;
+            rafId = requestAnimationFrame(loop);
+
+            if (!analyser || !timeBuf) return;
+
+            analyser.getByteTimeDomainData(timeBuf);
+
+            // 1) 判断静音
+            let maxDev = 0;
+            for (let i = 0; i < timeBuf.length; i++) {
+                const d = Math.abs(timeBuf[i] - 128);
+                if (d > maxDev) maxDev = d;
+            }
+            const silent = maxDev < SILENT_TH;
+
+            // 2) 计算目标点位置
+            const n = POINTS;
+            const amp = H / 2 - 10;
+            const len = timeBuf.length;
+
+            for (let i = 0; i < n; i++) {
+                const idx = Math.min(len - 1, Math.floor(i / (n - 1) * (len - 1)));
+                const v = (timeBuf[idx] - 128) / 128;       // -1 ~ 1
+                let y = H / 2 + v * amp * GAIN;
+                if (y < 6) y = 6;
+                else if (y > H - 6) y = H - 6;
+                tgtY[i] = y;
+            }
+
+            // 3) 静音时目标直接拉回中线，并平滑过渡
+            tgtAmp = silent ? 0 : 1;
+            curAmp += (tgtAmp - curAmp) * 0.18;
+
+            const lerpK = silent ? 0.25 : 0.55;  // 静音时回落稍慢，有声音时跟随快
+            let moved = 0;
+            for (let i = 0; i < n; i++) {
+                const target = silent ? H / 2 : tgtY[i];
+                curY[i] += (target - curY[i]) * lerpK;
+                if (Math.abs(curY[i] - H / 2) > 1) moved++;
+            }
+
+            // 4) 绘制
+            if (curAmp < 0.02 && moved < 3) {
+                drawSilence();
+            } else {
+                drawWave();
+            }
+        }
+
+        /* ================= 启动 ================= */
+        async function startCapture(type) {
+            if (running) return;
+
+            btnSys.disabled = true;
+            btnMic.disabled = true;
+            tip.textContent = '正在等待你选择共享内容…';
+
+            try {
+                if (type === 'display') {
+                    stream = await navigator.mediaDevices.getDisplayMedia({
+                        video: true,   // 必须为 true，否则部分浏览器不弹选择框
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+                    // 丢弃视频，只保留声音
+                    stream.getVideoTracks().forEach(t => {
+                        try { t.stop(); } catch (_) {}
+                    });
+                } else {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+                }
+            } catch (err) {
+                btnSys.disabled = false;
+                btnMic.disabled = false;
+                if (err && err.name === 'NotAllowedError') {
+                    tip.innerHTML = '操作被取消。请重新点击，并在弹窗中选择 <b>标签页</b> 或 <b>整个屏幕</b>。';
+                } else {
+                    tip.innerHTML = '获取失败：' + (err && err.message ? err.message : err);
+                }
+                return;
+            }
+
+            // 检查音频轨道
+            const audioTracks = stream.getAudioTracks().filter(t => t.readyState === 'live');
+            if (audioTracks.length === 0) {
+                cleanupStream();
+                btnSys.disabled = false;
+                btnMic.disabled = false;
+                tip.innerHTML =
+                    '没有获取到音频。请重新点击，并在共享弹窗中：<br>' +
+                    '• 选择 <b>整个屏幕</b> 并勾选 <b>「分享系统音频」</b>，或<br>' +
+                    '• 选择 <b>某个标签页</b> 并勾选 <b>「分享标签页音频」</b>。';
+                return;
+            }
+
+            // 用户点浏览器自带「停止共享」时收尾
+            audioTracks.forEach(track => {
+                track.addEventListener('ended', () => {
+                    if (running) stop('共享已结束。');
+                });
+            });
+
+            // 构建音频图
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                await audioCtx.resume();
+
+                const audioStream = new MediaStream(audioTracks);
+                source   = audioCtx.createMediaStreamSource(audioStream);
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = FFT_SIZE;
+                analyser.smoothingTimeConstant = SMOOTH_T;
+
+                timeBuf = new Uint8Array(analyser.fftSize);
+
+                // 关键：只连 analyser，不要连 destination，否则会二次输出产生回声
+                source.connect(analyser);
+            } catch (err) {
+                cleanupAll();
+                btnSys.disabled = false;
+                btnMic.disabled = false;
+                tip.textContent = '音频初始化失败：' + (err && err.message ? err.message : err);
+                return;
+            }
+
+            // 重置状态
+            for (let i = 0; i < POINTS; i++) {
+                curY[i] = H / 2;
+                tgtY[i] = H / 2;
+            }
+            curAmp = 0;
+            tgtAmp = 0;
+
+            running = true;
+            btnSys.disabled = true;
+            btnMic.disabled = true;
+            btnStop.disabled = false;
+            tip.innerHTML =
+                '正在监听… 静音时显示一条直线，有声音时显示 <b>波浪线</b>。<br>' +
+                '现在去别的标签页或播放器里播放音乐/视频吧。';
+
+            cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(loop);
+        }
+
+        /* ================= 停止 ================= */
+        function stop(reason) {
+            running = false;
+            cancelAnimationFrame(rafId);
+            rafId = 0;
+
+            cleanupAll();
+
+            for (let i = 0; i < POINTS; i++) {
+                curY[i] = H / 2;
+                tgtY[i] = H / 2;
+            }
+            curAmp = 0;
+            tgtAmp = 0;
+
+            btnSys.disabled = false;
+            btnMic.disabled = false;
+            btnStop.disabled = true;
+
+            drawSilence();
+
+            if (typeof reason === 'string' && reason) {
+                tip.textContent = reason;
+            } else {
+                tip.innerHTML = '已停止。可以再次点击按钮重新开始。';
+            }
+        }
+
+        /* ================= 清理 ================= */
+        function cleanupStream() {
+            if (stream) {
+                stream.getTracks().forEach(t => {
+                    try { t.stop(); } catch (_) {}
+                });
+                stream = null;
+            }
+        }
+        function cleanupAll() {
+            cleanupStream();
+            if (audioCtx) {
+                audioCtx.close().catch(() => {});
+                audioCtx = null;
+            }
+            analyser = null;
+            source = null;
+            timeBuf = null;
+        }
+
+        /* ================= 事件绑定 ================= */
+        btnSys.addEventListener('click', () => startCapture('display'));
+        btnMic.addEventListener('click', () => startCapture('mic'));
+        btnStop.addEventListener('click', () => stop());
+        window.addEventListener('resize', resize);
+        window.addEventListener('orientationchange', resize);
+
+        /* ================= 初始化 ================= */
+        resize();
+        drawSilence();
+
+        // 环境检测
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+            btnSys.disabled = true;
+            tip.innerHTML =
+                '当前浏览器不支持 <b>getDisplayMedia</b>。<br>' +
+                '请使用 <b>Chrome / Edge</b>，并在 <kbd>https</kbd> 或 <kbd>localhost</kbd> 环境下打开。';
+        }
+    })();
+</script>
+</body>
+</html>

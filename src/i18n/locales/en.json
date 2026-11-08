@@ -16,6 +16,24 @@
       "friendly": "Friendly",
       "close": "Close",
       "devoted": "Devoted"
+    },
+    "status": {
+      "title": "Pet status",
+      "satiety": "Satiety",
+      "affection": "Affection"
+    },
+    "action": {
+      "feed": "Feed",
+      "touch": "Pat head",
+      "size": "Size",
+      "roamStart": "Start roaming",
+      "roamStop": "Stop roaming",
+      "hide": "Hide pet"
+    },
+    "size": {
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large"
     }
   },
   "routeError": {
@@ -744,7 +762,8 @@
       "petSection": "Pet (Beta)",
       "petBeta": "Beta 1.0",
       "petToggle": "Pet",
-      "petHint": "When on, the pet lives in its own always-on-top window (separate from the app, survives minimizing it): it looks at your cursor and clicks pass through everywhere except its body. Left click to pet, right click to feed. It runs on its own engine and database, independent of the music core. Off by default.",
+      "petHint": "The pet lives in its own always-on-top window. Left click to pat, drag its body to move it, hover for status, and right click for feeding and size controls. Transparent areas pass clicks through. It uses an independent engine and database, and is off by default.",
+      "petSize": "Pet size",
       "petNeedsDesktop": "The pet needs the desktop core; the browser preview has no pet engine, so it is unavailable.",
       "petInstalled": "Installed",
       "petNone": "No pets yet (turning the switch on installs a built-in one)",

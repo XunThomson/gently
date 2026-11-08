@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BIOLUME · 会呼吸的音乐生命体</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; height: 100%; overflow: hidden;
+            background: #010106;
+            font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        }
+        #cv { display: block; width: 100vw; height: 100vh; }
+
+        .hud {
+            position: fixed;
+            left: 50%; bottom: 26px;
+            transform: translateX(-50%);
+            display: flex; gap: 12px;
+            z-index: 10;
+            flex-wrap: wrap;
+            justify-content: center;
+            width: max-content;
+            max-width: 92vw;
+        }
+        button {
+            padding: 10px 22px;
+            border: 1px solid rgba(80, 255, 220, 0.30);
+            border-radius: 4px;
+            background: rgba(0, 40, 45, 0.55);
+            color: #7effea;
+            font-size: 13px;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all .18s;
+            font-family: inherit;
+            backdrop-filter: blur(8px);
+        }
+        button:hover:not(:disabled) {
+            background: rgba(0, 90, 100, 0.75);
+            border-color: rgba(80, 255, 220, 0.9);
+            box-shadow: 0 0 18px rgba(80, 255, 220, 0.35);
+            color: #d8fff8;
+        }
+        button:active:not(:disabled) { transform: scale(.97); }
+        button:disabled {
+            background: rgba(16, 22, 26, 0.55);
+            border-color: rgba(70, 90, 100, 0.22);
+            color: #36404a;
+            cursor: not-allowed;
+        }
+        button.danger {
+            border-color: rgba(255, 60, 160, 0.30);
+            color: #ff8cc8;
+            background: rgba(50, 0, 30, 0.5);
+        }
+        button.danger:hover:not(:disabled) {
+            background: rgba(110, 0, 60, 0.7);
+            border-color: rgba(255, 60, 160, 0.9);
+            box-shadow: 0 0 18px rgba(255, 60, 160, 0.35);
+            color: #ffe0ef;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="cv"></canvas>
+
+<div class="hud">
+    <button id="btnSys">唤醒生命 · 捕获电脑声音</button>
+    <button id="btnMic">用麦克风唤醒</button>
+    <button id="btnStop" class="danger" disabled>让它沉睡</button>
+</div>
+
+<script>
+    (() => {
+        'use strict';
+
+        /* =========================================================
+           配置
+           ========================================================= */
+        const CFG = {
+            /* 触须 */
+            TENDRIL_INIT: 8,          // 初始触须数（沉睡状态）
+            TENDRIL_MAX: 18,          // 最大触须数
+            NODE_MIN: 4,              // 最短时的节点数
+            NODE_MAX: 56,             // 最长时的节点数
+            SEG_LEN: 13,              // 相邻节点间距（像素）
+            BASE_Y: 0.86,             // 触须根部所在的画面高度比例
+
+            /* 生长 / 收缩速度 */
+            GROW_RATE: 1.6,           // 每秒最多长出的节点数（乘以 midE）
+            SHRINK_RATE: 0.55,        // 每秒最多缩回的节点数
+
+            /* 摆动 */
+            ANGLE_FOLLOW: 0.055,      // 角度跟随系数（越小越柔和）
+
+            /* 音频 */
+            BAND_COUNT: 8,
+            FFT_SIZE: 4096,
+            SILENT_TH: 3,
+            GAIN_MIN: 0.5,
+            GAIN_MAX: 9,
+
+            /* 粒子 */
+            PARTICLE_MAX: 260,
+        };
+
+        /* =========================================================
+           DOM / 画布
+           ========================================================= */
+        const canvas  = document.getElementById('cv');
+        const ctx     = canvas.getContext('2d', { alpha: false });
+        const btnSys  = document.getElementById('btnSys');
+        const btnMic  = document.getElementById('btnMic');
+        const btnStop = document.getElementById('btnStop');
+
+        let W = 0, H = 0, DPR = 1;
+        let groundY = 0;
+
+        /* =========================================================
+           音频状态
+           ========================================================= */
+        const bandRaw    = new Float32Array(CFG.BAND_COUNT);
+        const bandSmooth = new Float32Array(CFG.BAND_COUNT);
+        let bandBins = [];
+
+        let lowE = 0, midE = 0, highE = 0;
+        let lowPrev = 0;
+        let autoGain = 1;
+
+        let analyser = null, source = null, audioCtx = null;
+        let freqBuf = null, timeBuf = null;
+        let stream = null;
+        let listening = false;
+
+        /* =========================================================
+           触须（生命体）
+           ========================================================= */
+        let tendrils = [];
+
+        let globalPhase = 0;
+
+        class Tendril {
+            constructor(baseX, baseY, baseAngle, baseHue) {
+                this.baseX = baseX;
+                this.baseY = baseY;
+                this.baseAngle = baseAngle;
+                this.baseHue = baseHue;
+                this.phase = Math.random() * Math.PI * 2;
+                this.breath = Math.random() * Math.PI * 2;
+
+                this.nodes = [];
+                // 初始最短
+                for (let i = 0; i < CFG.NODE_MIN; i++) {
+                    this.nodes.push(this._makeNode(baseAngle, i));
+                }
+                this.growAcc = 0;
+                this.shrinkAcc = 0;
+
+                this.pulses = [];       // 光脉冲
+                this.glow = 0;          // 整体亮度（平滑）
+            }
+
+            _makeNode(baseAngle, index) {
+                return {
+                    angle: baseAngle + (Math.random() - 0.5) * 0.25,
+                    x: 0, y: 0,
+                    noisePhase: Math.random() * Math.PI * 2,
+                    noiseFreq:  0.30 + Math.random() * 0.55,
+                    noiseAmp:   0.10 + Math.random() * 0.16,
+                    // 每节独立的轻微偏转角
+                    swayAmp:    0.06 + Math.random() * 0.10,
+                    swayFreq:   0.5 + Math.random() * 0.8,
+                };
+            }
+
+            emitPulse(strength) {
+                this.pulses.push({
+                    pos: 0,
+                    alpha: Math.min(1, 0.6 + strength),
+                    speed: 0.9 + Math.random() * 0.5
+                });
+            }
+
+            update(t, dt, lowE, midE, highE, silent) {
+                const n = this.nodes.length;
+
+                /* ---------- 1. 角度更新 ---------- */
+                for (let i = 0; i < n; i++) {
+                    const nd = this.nodes[i];
+
+                    // 目标：以 baseAngle 为基准，向上（-PI/2）收敛
+                    let target = nd.angle;
+
+                    // 整体朝向：向上生长 + 本触须的初始偏转
+                    const upBias = -Math.PI / 2;
+                    target += (upBias - target) * 0.018;
+
+                    // 向 baseAngle 轻微回正（根系特征）
+                    target += Math.sin(t * 0.25 + this.phase) * 0.02;
+
+                    // 噪声摆动
+                    target += Math.sin(t * nd.noiseFreq + nd.noisePhase) * nd.noiseAmp;
+
+                    // 低频脉动：整根像呼吸一样轻轻起伏
+                    target += Math.sin(t * 1.6 + this.breath) * lowE * 0.09;
+
+                    // 高频：末梢抖动（更“活”）
+                    const tipFactor = i / Math.max(1, n - 1);
+                    target += Math.sin(t * 4.2 + nd.noisePhase * 2.0) *
+                        tipFactor * highE * 0.14;
+
+                    // 平滑跟随
+                    nd.angle += (target - nd.angle) * CFG.ANGLE_FOLLOW;
+
+                    // 限制角度范围，避免乱飞
+                    if (nd.angle > 0.9)  nd.angle = 0.9;
+                    if (nd.angle < -2.35) nd.angle = -2.35;
+                }
+
+                /* ---------- 2. 计算节点位置（FK 链） ---------- */
+                let x = this.baseX;
+                let y = this.baseY;
+                for (let i = 0; i < n; i++) {
+                    const nd = this.nodes[i];
+                    if (i > 0) {
+                        x += Math.cos(nd.angle) * CFG.SEG_LEN;
+                        y += Math.sin(nd.angle) * CFG.SEG_LEN;
+                    }
+                    nd.x = x;
+                    nd.y = y;
+                }
+
+                /* ---------- 3. 生长 / 收缩 ---------- */
+                if (!silent && midE > 0.12 && n < CFG.NODE_MAX) {
+                    this.growAcc += dt * (0.5 + midE * CFG.GROW_RATE * 2.2);
+                    while (this.growAcc >= 1 && this.nodes.length < CFG.NODE_MAX) {
+                        this.growAcc -= 1;
+                        const last = this.nodes[this.nodes.length - 1];
+                        this.nodes.push(this._makeNode(last.angle, this.nodes.length));
+                    }
+                } else if (n > CFG.NODE_MIN) {
+                    this.shrinkAcc += dt * (midE < 0.04 ? CFG.SHRINK_RATE * 1.6 : CFG.SHRINK_RATE * 0.35);
+                    while (this.shrinkAcc >= 1 && this.nodes.length > CFG.NODE_MIN) {
+                        this.shrinkAcc -= 1;
+                        this.nodes.pop();
+                    }
+                }
+                if (this.growAcc > 3) this.growAcc = 3;
+
+                /* ---------- 4. 脉冲推进 ---------- */
+                for (let i = this.pulses.length - 1; i >= 0; i--) {
+                    const p = this.pulses[i];
+                    p.pos += dt * p.speed;
+                    p.alpha -= dt * 0.55;
+                    if (p.pos > 1.15 || p.alpha <= 0.01) {
+                        this.pulses.splice(i, 1);
+                    }
+                }
+
+                /* ---------- 5. 整体亮度（平滑） ---------- */
+                const glowTarget = (midE * 0.7 + highE * 0.5 + lowE * 0.4) *
+                    (n / CFG.NODE_MAX) * 1.3;
+                this.glow += (glowTarget - this.glow) * (1 - Math.exp(-dt * 6));
+            }
+        }
+
+        /* =========================================================
+           初始化触须
+           ========================================================= */
+        function initTendrils() {
+            tendrils = [];
+            for (let i = 0; i < CFG.TENDRIL_INIT; i++) {
+                spawnTendril(true);
+            }
+        }
+
+        function spawnTendril(initial) {
+            if (tendrils.length >= CFG.TENDRIL_MAX) return;
+
+            const margin = W * 0.06;
+            const x = margin + Math.random() * (W - margin * 2);
+            const angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.9;
+            const hue = 178 + Math.random() * 118;   // 青 → 蓝 → 紫 → 粉
+
+            const td = new Tendril(x, groundY, angle, hue);
+
+            if (!initial) {
+                // 新生的触须从最短开始
+                td.nodes.length = CFG.NODE_MIN;
+                for (let k = 0; k < CFG.NODE_MIN; k++) {
+                    td.nodes[k] = td._makeNode(angle, k);
+                }
+            }
+
+            tendrils.push(td);
+        }
+
+        /* =========================================================
+           尺寸
+           ========================================================= */
+        function resize() {
+            DPR = Math.min(window.devicePixelRatio || 1, 2);
+            W = canvas.clientWidth;
+            H = canvas.clientHeight;
+            canvas.width  = Math.round(W * DPR);
+            canvas.height = Math.round(H * DPR);
+            ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+            groundY = H * CFG.BASE_Y;
+
+            // 触须根部跟随新的地面
+            if (tendrils.length) {
+                const oldGround = tendrils[0].baseY;
+                const dy = groundY - oldGround;
+                for (const td of tendrils) td.baseY += dy;
+            }
+        }
+
+        /* =========================================================
+           音频分箱
+           ========================================================= */
+        function computeBandBins(binCount) {
+            bandBins = [];
+            const minB = 2;
+            const maxB = binCount - 1;
+            const logMin = Math.log(minB);
+            const logMax = Math.log(maxB);
+
+            for (let i = 0; i < CFG.BAND_COUNT; i++) {
+                const t0 = i / CFG.BAND_COUNT;
+                const t1 = (i + 1) / CFG.BAND_COUNT;
+
+                let s = Math.floor(Math.exp(logMin + (logMax - logMin) * t0));
+                let e = Math.floor(Math.exp(logMin + (logMax - logMin) * t1));
+
+                if (s < minB) s = minB;
+                if (e <= s) e = s + 1;
+                if (e > binCount) e = binCount;
+
+                bandBins.push([s, e]);
+            }
+        }
+
+        /* =========================================================
+           音频更新
+           ========================================================= */
+        function updateAudio(dt) {
+            if (!analyser) {
+                const k = Math.exp(-dt * 6);
+                for (let i = 0; i < CFG.BAND_COUNT; i++) bandSmooth[i] *= k;
+                lowE  *= k;
+                midE  *= k;
+                highE *= k;
+                lowPrev = lowE;
+                autoGain += (1 - autoGain) * 0.02;
+                return;
+            }
+
+            analyser.getByteFrequencyData(freqBuf);
+            analyser.getByteTimeDomainData(timeBuf);
+
+            // 静音判断
+            let maxDev = 0;
+            for (let i = 0; i < timeBuf.length; i++) {
+                const d = Math.abs(timeBuf[i] - 128);
+                if (d > maxDev) maxDev = d;
+            }
+            const silent = maxDev < CFG.SILENT_TH;
+
+            // 8 频段原始能量
+            for (let i = 0; i < CFG.BAND_COUNT; i++) {
+                const [s, e] = bandBins[i];
+                let sum = 0;
+                for (let j = s; j < e; j++) sum += freqBuf[j];
+                bandRaw[i] = (sum / (e - s)) / 255;
+            }
+
+            // 自动增益
+            if (!silent) {
+                let frameMax = 0;
+                for (let i = 0; i < CFG.BAND_COUNT; i++) {
+                    if (bandRaw[i] > frameMax) frameMax = bandRaw[i];
+                }
+                if (frameMax > 0.012) {
+                    const desired = 0.80 / frameMax;
+                    autoGain += (desired - autoGain) * (1 - Math.exp(-dt * 4));
+                    autoGain = Math.max(CFG.GAIN_MIN, Math.min(CFG.GAIN_MAX, autoGain));
+                }
+            }
+
+            // 平滑
+            const kk = 1 - Math.exp(-dt * 14);
+            for (let i = 0; i < CFG.BAND_COUNT; i++) {
+                const target = silent ? 0 : Math.min(1, bandRaw[i] * autoGain);
+                bandSmooth[i] += (target - bandSmooth[i]) * kk;
+                if (bandSmooth[i] < 0.0008) bandSmooth[i] = 0;
+            }
+
+            // 三通道加权
+            const low  = (bandSmooth[0] * 0.9 + bandSmooth[1] * 1.0 + bandSmooth[2] * 0.8) / 2.7;
+            const mid  = (bandSmooth[3] * 1.0 + bandSmooth[4] * 0.9) / 1.9;
+            const high = (bandSmooth[5] * 1.0 + bandSmooth[6] * 0.9 + bandSmooth[7] * 0.7) / 2.6;
+
+            const ko = 1 - Math.exp(-dt * 16);
+            lowE  += (low  - lowE)  * ko;
+            midE  += (mid  - midE)  * ko;
+            highE += (high - highE) * ko;
+        }
+
+        /* =========================================================
+           粒子（飘散的孢子）
+           ========================================================= */
+        const particles = [];
+        let spawnAcc = 0;
+
+        function updateParticles(dt) {
+            /* 高频越强，孢子越多 */
+            const rate = highE * 180 + midE * 40;
+            spawnAcc += rate * dt;
+            if (spawnAcc > 5) spawnAcc = 5;
+
+            while (spawnAcc >= 1 && particles.length < CFG.PARTICLE_MAX) {
+                spawnAcc -= 1;
+
+                // 从触须的梢部附近随机出生
+                let ox = W * (0.1 + Math.random() * 0.8);
+                let oy = groundY - Math.random() * H * 0.55;
+
+                if (tendrils.length && Math.random() < 0.7) {
+                    const td = tendrils[(Math.random() * tendrils.length) | 0];
+                    const nd = td.nodes[td.nodes.length - 1];
+                    ox = nd.x + (Math.random() - 0.5) * 24;
+                    oy = nd.y + (Math.random() - 0.5) * 24;
+                }
+
+                particles.push({
+                    x: ox,
+                    y: oy,
+                    vx: (Math.random() - 0.5) * 22,
+                    vy: -18 - Math.random() * 50,
+                    life: 1,
+                    decay: 0.20 + Math.random() * 0.35,
+                    size: 0.7 + Math.random() * 1.9,
+                    hue: 175 + Math.random() * 135,
+                    phase: Math.random() * Math.PI * 2
+                });
+            }
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.phase += dt * 1.7;
+                p.x += (p.vx + Math.sin(p.phase) * 12) * dt;
+                p.y += p.vy * dt;
+                p.vy -= 4 * dt;         // 缓慢上浮加速
+                p.life -= p.decay * dt;
+
+                if (p.life <= 0 || p.y < -40 || p.x < -40 || p.x > W + 40) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        function drawParticles() {
+            for (let i = 0; i < particles.length; i++) {
+                const p = particles[i];
+                const a = p.life * 0.72;
+                if (a < 0.02) continue;
+
+                // 外圈柔光
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size * 3.2, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${p.hue}, 100%, 65%, ${a * 0.16})`;
+                ctx.fill();
+
+                // 核心
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${p.hue}, 100%, 82%, ${a})`;
+                ctx.fill();
+            }
+        }
+
+        /* =========================================================
+           地面（生命之壤）
+           ========================================================= */
+        function drawGround(t) {
+            // 土壤下方的辉光
+            const g = ctx.createLinearGradient(0, groundY - 30, 0, H);
+            g.addColorStop(0,   `rgba(0, 240, 220, ${0.02 + lowE * 0.08})`);
+            g.addColorStop(0.5, `rgba(30, 100, 140, ${0.02 + lowE * 0.04})`);
+            g.addColorStop(1,   'rgba(0,0,0,0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, groundY - 30, W, H - groundY + 30);
+
+            // 波动的地面线
+            ctx.beginPath();
+            for (let x = 0; x <= W; x += 6) {
+                const w1 = Math.sin(x * 0.010 + t * 1.6) * 4.5 * lowE;
+                const w2 = Math.sin(x * 0.026 - t * 2.4) * 2.2 * lowE;
+                const w3 = Math.sin(x * 0.0035 + t * 0.9) * 3.0 * lowE;
+                const y = groundY + w1 + w2 + w3;
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = `hsla(178, 100%, ${52 + lowE * 22}%, ${0.35 + lowE * 0.45})`;
+            ctx.lineWidth = 1.6;
+            ctx.stroke();
+
+            // 线下方的一层浅色反光
+            ctx.beginPath();
+            for (let x = 0; x <= W; x += 6) {
+                const w1 = Math.sin(x * 0.010 + t * 1.6) * 4.5 * lowE;
+                const w2 = Math.sin(x * 0.026 - t * 2.4) * 2.2 * lowE;
+                const w3 = Math.sin(x * 0.0035 + t * 0.9) * 3.0 * lowE;
+                const y = groundY + w1 + w2 + w3 + 2;
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = `hsla(190, 100%, 70%, ${0.10 + lowE * 0.20})`;
+            ctx.lineWidth = 4;
+            ctx.stroke();
+        }
+
+        /* =========================================================
+           触须之间的感应光桥
+           ========================================================= */
+        function drawBridges(t) {
+            const n = tendrils.length;
+            if (n < 2) return;
+
+            const threshold = Math.min(W, H) * 0.20;
+            const th2 = threshold * threshold;
+
+            ctx.lineCap = 'round';
+
+            for (let i = 0; i < n; i++) {
+                const ti = tendrils[i];
+                const ai = ti.nodes[ti.nodes.length - 1];
+                if (!ai) continue;
+
+                for (let j = i + 1; j < n; j++) {
+                    const tj = tendrils[j];
+                    const bj = tj.nodes[tj.nodes.length - 1];
+                    if (!bj) continue;
+
+                    const dx = ai.x - bj.x;
+                    const dy = ai.y - bj.y;
+                    const d2 = dx * dx + dy * dy;
+                    if (d2 > th2) continue;
+
+                    const d = Math.sqrt(d2);
+                    const prox = 1 - d / threshold;
+                    const alpha = prox * prox * (0.05 + lowE * 0.28 + highE * 0.10);
+
+                    if (alpha < 0.005) continue;
+
+                    // 中间点微微向上拱起
+                    const mx = (ai.x + bj.x) / 2 + (Math.random() - 0.5) * 4;
+                    const my = (ai.y + bj.y) / 2 - prox * 22;
+
+                    const hueA = ti.baseHue;
+                    const hueB = tj.baseHue;
+
+                    const grad = ctx.createLinearGradient(ai.x, ai.y, bj.x, bj.y);
+                    grad.addColorStop(0, `hsla(${hueA}, 100%, 70%, ${alpha})`);
+                    grad.addColorStop(1, `hsla(${hueB}, 100%, 70%, ${alpha})`);
+
+                    ctx.beginPath();
+                    ctx.moveTo(ai.x, ai.y);
+                    ctx.quadraticCurveTo(mx, my, bj.x, bj.y);
+                    ctx.strokeStyle = grad;
+                    ctx.lineWidth = 0.7 + prox * 1.3;
+                    ctx.stroke();
+                }
+            }
+        }
+
+        /* =========================================================
+           绘制单根触须
+           ========================================================= */
+        function drawTendril(td, t) {
+            const nodes = td.nodes;
+            const n = nodes.length;
+            if (n < 2) return;
+
+            const glow = Math.min(1, td.glow);
+            const hueBase = td.baseHue;
+
+            /* ---------- 1. 主路径（平滑曲线） ---------- */
+            function buildPath() {
+                ctx.beginPath();
+                ctx.moveTo(nodes[0].x, nodes[0].y);
+                for (let i = 1; i < n - 1; i++) {
+                    const xc = (nodes[i].x + nodes[i + 1].x) / 2;
+                    const yc = (nodes[i].y + nodes[i + 1].y) / 2;
+                    ctx.quadraticCurveTo(nodes[i].x, nodes[i].y, xc, yc);
+                }
+                ctx.lineTo(nodes[n - 1].x, nodes[n - 1].y);
+            }
+
+            /* ---------- 2. 颜色渐变（根 → 梢） ---------- */
+            const x0 = nodes[0].x, y0 = nodes[0].y;
+            const x1 = nodes[n - 1].x, y1 = nodes[n - 1].y;
+
+            const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+            // 根部：青色；中段：蓝紫；梢部：粉紫
+            grad.addColorStop(0,    `hsla(${hueBase}, 100%, 58%, ${0.55 + glow * 0.40})`);
+            grad.addColorStop(0.55, `hsla(${hueBase + 42}, 100%, 62%, ${0.60 + glow * 0.40})`);
+            grad.addColorStop(1,    `hsla(${hueBase + 96}, 100%, 68%, ${0.70 + glow * 0.30})`);
+
+            /* ---------- 3. 光晕层 ---------- */
+            buildPath();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = `hsla(${hueBase + 30}, 100%, 60%, ${0.10 + glow * 0.16})`;
+            ctx.lineWidth = 10 + glow * 14;
+            ctx.stroke();
+
+            /* ---------- 4. 主体层 ---------- */
+            buildPath();
+            ctx.strokeStyle = grad;
+            ctx.lineWidth = 2.0 + glow * 1.8;
+            ctx.stroke();
+
+            /* ---------- 5. 高光层（细白芯） ---------- */
+            buildPath();
+            ctx.strokeStyle = `rgba(230, 255, 255, ${0.16 + glow * 0.32})`;
+            ctx.lineWidth = 0.7;
+            ctx.stroke();
+
+            /* ---------- 6. 节点光点 ---------- */
+            const dotStride = 3;
+            for (let i = 1; i < n; i += dotStride) {
+                const nd = nodes[i];
+                const u = i / (n - 1);
+                const dotAlpha = (0.20 + glow * 0.55) * (0.4 + u * 0.6);
+                if (dotAlpha < 0.05) continue;
+
+                const hue = hueBase + u * 96;
+
+                ctx.beginPath();
+                ctx.arc(nd.x, nd.y, 1.1 + glow * 1.0, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${hue}, 100%, 80%, ${dotAlpha})`;
+                ctx.fill();
+            }
+
+            /* ---------- 7. 光脉冲 ---------- */
+            if (td.pulses.length) {
+                for (let pi = 0; pi < td.pulses.length; pi++) {
+                    const p = td.pulses[pi];
+                    if (p.alpha <= 0.02) continue;
+
+                    const pulseCenter = p.pos * (n - 1);
+
+                    for (let i = 1; i < n; i++) {
+                        const dist = Math.abs(i - pulseCenter);
+                        if (dist > 5) continue;
+
+                        const intensity = Math.max(0, 1 - dist / 5) * p.alpha;
+                        if (intensity < 0.03) continue;
+
+                        const a = nodes[i - 1];
+                        const b = nodes[i];
+                        const u = i / (n - 1);
+                        const hue = hueBase + u * 96;
+
+                        // 脉冲亮段
+                        ctx.beginPath();
+                        ctx.moveTo(a.x, a.y);
+                        ctx.lineTo(b.x, b.y);
+                        ctx.strokeStyle = `hsla(${hue}, 100%, 82%, ${intensity * 0.85})`;
+                        ctx.lineWidth = 3.5 + intensity * 4;
+                        ctx.lineCap = 'round';
+                        ctx.stroke();
+
+                        // 白亮芯
+                        ctx.beginPath();
+                        ctx.moveTo(a.x, a.y);
+                        ctx.lineTo(b.x, b.y);
+                        ctx.strokeStyle = `rgba(255, 255, 255, ${intensity * 0.9})`;
+                        ctx.lineWidth = 1.2;
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            /* ---------- 8. 梢部光球 ---------- */
+            const tip = nodes[n - 1];
+            const tipGlow = 0.30 + glow * 0.7 + highE * 0.3;
+            const tipR = 2.5 + glow * 4.5 + highE * 3.5;
+
+            // 外圈大辉光
+            const gg = ctx.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, tipR * 3.4);
+            gg.addColorStop(0,   `hsla(${hueBase + 96}, 100%, 85%, ${0.55 * tipGlow})`);
+            gg.addColorStop(0.4, `hsla(${hueBase + 60}, 100%, 70%, ${0.22 * tipGlow})`);
+            gg.addColorStop(1,   'rgba(0,0,0,0)');
+            ctx.fillStyle = gg;
+            ctx.beginPath();
+            ctx.arc(tip.x, tip.y, tipR * 3.4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 核心
+            ctx.beginPath();
+            ctx.arc(tip.x, tip.y, tipR, 0, Math.PI * 2);
+            ctx.fillStyle = `hsla(${hueBase + 96}, 100%, 88%, ${0.75 * tipGlow})`;
+            ctx.fill();
+
+            // 白点
+            ctx.beginPath();
+            ctx.arc(tip.x, tip.y, tipR * 0.42, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255,255,255,${0.85 * tipGlow})`;
+            ctx.fill();
+        }
+
+        /* =========================================================
+           渲染
+           ========================================================= */
+        function render(t, dt) {
+            /* ---- 拖影：半透明覆盖 ---- */
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = 'rgba(1, 1, 8, 0.30)';
+            ctx.fillRect(0, 0, W, H);
+
+            /* ---- 叠加发光 ---- */
+            ctx.globalCompositeOperation = 'lighter';
+
+            drawGround(t);
+            drawBridges(t);
+
+            // 触须按“亮度”从低到高绘制，亮的叠在上面
+            tendrils.sort((a, b) => a.glow - b.glow);
+            for (let i = 0; i < tendrils.length; i++) {
+                drawTendril(tendrils[i], t);
+            }
+
+            drawParticles();
+
+            /* ---- 暗角 ---- */
+            ctx.globalCompositeOperation = 'source-over';
+            const vig = ctx.createRadialGradient(
+                W / 2, H * 0.5, Math.min(W, H) * 0.25,
+                W / 2, H * 0.5, Math.max(W, H) * 0.80
+            );
+            vig.addColorStop(0, 'rgba(0,0,0,0)');
+            vig.addColorStop(1, 'rgba(0,0,0,0.72)');
+            ctx.fillStyle = vig;
+            ctx.fillRect(0, 0, W, H);
+        }
+
+        /* =========================================================
+           主循环
+           ========================================================= */
+        let lastT = performance.now();
+
+        function loop(now) {
+            requestAnimationFrame(loop);
+
+            let dt = (now - lastT) / 1000;
+            lastT = now;
+            if (dt > 0.05)   dt = 0.05;
+            if (dt < 0.0001) dt = 0.0001;
+
+            const t = now / 1000;
+            globalPhase += dt;
+
+            /* ---- 音频 ---- */
+            updateAudio(dt);
+            const silent = lowE < 0.012 && midE < 0.012 && highE < 0.012;
+
+            /* ---- 低音触发脉冲（边沿检测） ---- */
+            if (lowE > 0.22 && lowPrev < 0.16) {
+                // 所有触须同时收到脉冲，但错开一点，形成"波浪"
+                for (let i = 0; i < tendrils.length; i++) {
+                    const td = tendrils[i];
+                    setTimeout(() => td.emitPulse(lowE), i * 25);
+                }
+            }
+            lowPrev = lowE;
+
+            /* ---- 生长新触须 ---- */
+            if (tendrils.length < CFG.TENDRIL_MAX &&
+                midE > 0.18 &&
+                Math.random() < dt * 0.35 * (1 + midE)) {
+                spawnTendril(false);
+            }
+
+            /* ---- 更新触须 ---- */
+            for (let i = 0; i < tendrils.length; i++) {
+                tendrils[i].update(t, dt, lowE, midE, highE, silent);
+            }
+
+            /* ---- 更新粒子 ---- */
+            updateParticles(dt);
+
+            /* ---- 渲染 ---- */
+            render(t, dt);
+        }
+
+        /* =========================================================
+           音频接入
+           ========================================================= */
+        async function startCapture(type) {
+            if (listening) return;
+
+            btnSys.disabled = true;
+            btnMic.disabled = true;
+
+            try {
+                if (type === 'display') {
+                    stream = await navigator.mediaDevices.getDisplayMedia({
+                        video: true,
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+                    stream.getVideoTracks().forEach(tr => {
+                        try { tr.stop(); } catch (_) {}
+                    });
+                } else {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+                }
+            } catch (err) {
+                btnSys.disabled = false;
+                btnMic.disabled = false;
+                return;
+            }
+
+            const audioTracks = stream.getAudioTracks().filter(tr => tr.readyState === 'live');
+            if (audioTracks.length === 0) {
+                cleanupStream();
+                btnSys.disabled = false;
+                btnMic.disabled = false;
+                return;
+            }
+
+            audioTracks.forEach(tr => {
+                tr.addEventListener('ended', () => {
+                    if (listening) stopCapture();
+                });
+            });
+
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                await audioCtx.resume();
+
+                const audioStream = new MediaStream(audioTracks);
+                source   = audioCtx.createMediaStreamSource(audioStream);
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = CFG.FFT_SIZE;
+                analyser.smoothingTimeConstant = 0.72;
+
+                freqBuf = new Uint8Array(analyser.frequencyBinCount);
+                timeBuf = new Uint8Array(analyser.fftSize);
+
+                computeBandBins(analyser.frequencyBinCount);
+
+                // 只连 analyser，不连 destination，避免二次输出产生回声
+                source.connect(analyser);
+            } catch (err) {
+                cleanupAll();
+                btnSys.disabled = false;
+                btnMic.disabled = false;
+                return;
+            }
+
+            bandSmooth.fill(0);
+            bandRaw.fill(0);
+            lowE = midE = highE = 0;
+            lowPrev = 0;
+            autoGain = 1;
+            particles.length = 0;
+
+            listening = true;
+            btnSys.disabled = true;
+            btnMic.disabled = true;
+            btnStop.disabled = false;
+        }
+
+        function stopCapture() {
+            listening = false;
+            cleanupAll();
+
+            btnSys.disabled = false;
+            btnMic.disabled = false;
+            btnStop.disabled = true;
+        }
+
+        function cleanupStream() {
+            if (stream) {
+                stream.getTracks().forEach(tr => {
+                    try { tr.stop(); } catch (_) {}
+                });
+                stream = null;
+            }
+        }
+
+        function cleanupAll() {
+            cleanupStream();
+            if (audioCtx) {
+                audioCtx.close().catch(() => {});
+                audioCtx = null;
+            }
+            analyser = null;
+            source = null;
+            freqBuf = null;
+            timeBuf = null;
+        }
+
+        /* =========================================================
+           事件 & 启动
+           ========================================================= */
+        btnSys.addEventListener('click', () => startCapture('display'));
+        btnMic.addEventListener('click', () => startCapture('mic'));
+        btnStop.addEventListener('click', () => stopCapture());
+
+        let resizeTimer = 0;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(resize, 100);
+        });
+
+        /* ---- 初始化 ---- */
+        resize();
+        initTendrils();
+        requestAnimationFrame(loop);
+
+        // 环境检测
+        if (!navigator.mediaDevices) {
+            btnSys.disabled = true;
+            btnMic.disabled = true;
+        } else {
+            if (!navigator.mediaDevices.getDisplayMedia) btnSys.disabled = true;
+            if (!navigator.mediaDevices.getUserMedia)   btnMic.disabled = true;
+        }
+    })();
+</script>
+</body>
+</html>

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>电脑声音波形 · 静音直线</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; min-height: 100%;
+            background: radial-gradient(1200px 600px at 50% -10%, #12121a 0%, #0a0a0d 60%);
+            color: #eaeaea;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+            padding: 24px;
+        }
+        canvas {
+            width: min(94vw, 900px);
+            height: 240px;
+            background: #06060a;
+            border-radius: 16px;
+            box-shadow: 0 0 0 1px #1e1e26, 0 20px 60px rgba(0,0,0,.7);
+            display: block;
+        }
+        .bar { margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+        button {
+            padding: 11px 26px; border: 0; border-radius: 999px;
+            background: #3b82f6; color: #fff; font-size: 15px; font-weight: 500;
+            cursor: pointer; transition: background .18s, transform .06s;
+            font-family: inherit;
+        }
+        button:hover:not(:disabled) { background: #2563eb; }
+        button:active:not(:disabled) { transform: scale(.97); }
+        button:disabled { background: #26262e; color: #5a5a66; cursor: not-allowed; }
+        button.danger { background: #ef4444; }
+        button.danger:hover:not(:disabled) { background: #dc2626; }
+        #tip {
+            margin-top: 16px; font-size: 13.5px; color: #8a8a96;
+            text-align: center; max-width: 760px; line-height: 1.7;
+        }
+        #tip b { color: #c4c4d0; font-weight: 600; }
+        kbd {
+            background: #1c1c24; border: 1px solid #2e2e38; border-bottom-width: 2px;
+            border-radius: 5px; padding: 1px 6px; font-size: 12px; color: #c8c8d4;
+            font-family: ui-monospace, monospace;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="cv"></canvas>
+
+<div class="bar">
+    <button id="btnStart">捕获电脑声音</button>
+    <button id="btnStop" class="danger" disabled>停止</button>
+</div>
+
+<div id="tip">
+    点击「捕获电脑声音」→ 在弹窗中选一个正在播放音乐/视频的
+    <b>标签页</b>（勾选「分享标签页音频」）或 <b>整个屏幕</b>（勾选「分享系统音频」）。
+</div>
+
+<script>
+    (() => {
+        'use strict';
+
+        /* ================= DOM ================= */
+        const canvas   = document.getElementById('cv');
+        const ctx      = canvas.getContext('2d');
+        const btnStart = document.getElementById('btnStart');
+        const btnStop  = document.getElementById('btnStop');
+        const tip      = document.getElementById('tip');
+
+        /* ================= 配置 ================= */
+        const FFT_SIZE    = 2048;      // 时域采样点数：越大波形越密
+        const SMOOTHING   = 0.65;      // 平滑系数
+        const SILENT_TH   = 3;         // maxDev 小于此值 → 静音 → 画直线
+        const GAIN        = 1.8;       // 显示增益（系统音频通常幅度偏小）
+        const COLOR_LINE  = '#4b5563'; // 静音直线颜色
+        const COLOR_GUIDE = '#191922'; // 中线参考颜色
+        const COLOR_WAVE  = '#3b82f6'; // 波形颜色
+
+        /* ================= 状态 ================= */
+        let W = 0, H = 0;
+        let audioCtx = null, analyser = null, buf = null, source = null;
+        let stream = null;
+        let running = false;
+        let rafId = 0;
+
+        /* ================= 画布尺寸（含高清屏） ================= */
+        function resize() {
+            const dpr  = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            W = Math.max(1, rect.width);
+            H = Math.max(1, rect.height);
+            canvas.width  = Math.round(W * dpr);
+            canvas.height = Math.round(H * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            if (!running) drawSilence();
+        }
+
+        /* ================= 静音：一条直线 ================= */
+        function drawSilence() {
+            ctx.clearRect(0, 0, W, H);
+
+            // 淡参考线
+            ctx.beginPath();
+            ctx.moveTo(0, H / 2);
+            ctx.lineTo(W, H / 2);
+            ctx.strokeStyle = COLOR_GUIDE;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // 主体直线
+            ctx.beginPath();
+            ctx.moveTo(0, H / 2);
+            ctx.lineTo(W, H / 2);
+            ctx.strokeStyle = COLOR_LINE;
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+        }
+
+        /* ================= 有声音：画波形 ================= */
+        function drawWave() {
+            ctx.clearRect(0, 0, W, H);
+
+            // 中线参考
+            ctx.beginPath();
+            ctx.moveTo(0, H / 2);
+            ctx.lineTo(W, H / 2);
+            ctx.strokeStyle = COLOR_GUIDE;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // 波形：按像素采样，均匀且高效
+            const n = buf.length;
+            const amp = H / 2 - 6;
+
+            ctx.beginPath();
+            for (let x = 0; x <= W; x++) {
+                const i = Math.min(n - 1, Math.floor((x / W) * n));
+                const norm = (buf[i] - 128) / 128;      // -1 ~ 1
+                let y = H / 2 + norm * amp * GAIN;
+                if (y < 2) y = 2;
+                else if (y > H - 2) y = H - 2;
+
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = COLOR_WAVE;
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.stroke();
+        }
+
+        /* ================= 主循环 ================= */
+        function loop() {
+            if (!running) return;
+            rafId = requestAnimationFrame(loop);
+
+            if (!analyser || !buf) return;
+
+            analyser.getByteTimeDomainData(buf);
+
+            // 计算偏离中点的最大值，判断是否静音
+            let maxDev = 0;
+            for (let i = 0; i < buf.length; i++) {
+                const d = Math.abs(buf[i] - 128);
+                if (d > maxDev) maxDev = d;
+            }
+
+            if (maxDev < SILENT_TH) drawSilence();
+            else drawWave();
+        }
+
+        /* ================= 启动 ================= */
+        async function start() {
+            if (running) return;
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+                tip.innerHTML = '当前浏览器不支持 <b>getDisplayMedia</b>，请使用 Chrome / Edge 等现代浏览器。';
+                return;
+            }
+
+            btnStart.disabled = true;
+            tip.textContent = '正在等待你选择共享内容…';
+
+            /* 1) 请求屏幕/标签页共享，并要求音频 */
+            try {
+                stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,            // 必须为 true，否则部分浏览器不弹选择框
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                });
+            } catch (err) {
+                btnStart.disabled = false;
+                if (err && err.name === 'NotAllowedError') {
+                    tip.innerHTML = '共享被取消。请重新点击，并在弹窗中选择 <b>标签页</b> 或 <b>整个屏幕</b>。';
+                } else {
+                    tip.innerHTML = '获取失败：' + (err && err.message ? err.message : err);
+                }
+                return;
+            }
+
+            /* 2) 丢弃视频轨道（只要声音） */
+            stream.getVideoTracks().forEach(t => {
+                try { t.stop(); } catch (_) {}
+            });
+
+            /* 3) 检查音频轨道 */
+            const audioTracks = stream.getAudioTracks().filter(t => t.readyState === 'live');
+            if (audioTracks.length === 0) {
+                cleanupStream();
+                btnStart.disabled = false;
+                tip.innerHTML =
+                    '没有获取到音频。请重新点击，并在共享弹窗中：<br>' +
+                    '• 选择 <b>整个屏幕</b> 并勾选 <b>「分享系统音频」</b>，或<br>' +
+                    '• 选择 <b>某个标签页</b> 并勾选 <b>「分享标签页音频」</b>。';
+                return;
+            }
+
+            /* 4) 监听音频轨道结束（用户点浏览器自带的「停止共享」） */
+            audioTracks.forEach(track => {
+                track.addEventListener('ended', () => {
+                    if (running) stop('共享已结束（你停止了共享）。');
+                });
+            });
+
+            /* 5) 构建音频图：MediaStreamSource → AnalyserNode
+                  注意：绝不 connect(audioCtx.destination)，否则会二次输出 → 回声 */
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                await audioCtx.resume();
+
+                const audioStream = new MediaStream(audioTracks);
+                source   = audioCtx.createMediaStreamSource(audioStream);
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = FFT_SIZE;
+                analyser.smoothingTimeConstant = SMOOTHING;
+                buf = new Uint8Array(analyser.fftSize);
+
+                source.connect(analyser);
+            } catch (err) {
+                cleanupAll();
+                btnStart.disabled = false;
+                tip.textContent = '音频初始化失败：' + (err && err.message ? err.message : err);
+                return;
+            }
+
+            /* 6) 进入运行状态 */
+            running = true;
+            btnStart.disabled = true;
+            btnStop.disabled  = false;
+            tip.innerHTML =
+                '正在监听电脑播放的声音… 现在去 <b>别的标签页</b> 或 <b>播放器</b> 里播放音乐/视频。<br>' +
+                '静音时显示一条直线，有声音时显示波形。';
+
+            cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(loop);
+        }
+
+        /* ================= 停止 ================= */
+        function stop(reason) {
+            running = false;
+            cancelAnimationFrame(rafId);
+            rafId = 0;
+
+            cleanupAll();
+
+            btnStart.disabled = false;
+            btnStop.disabled  = true;
+
+            drawSilence();
+
+            if (typeof reason === 'string' && reason) {
+                tip.textContent = reason;
+            } else {
+                tip.innerHTML = '已停止。可以再次点击「捕获电脑声音」重新开始。';
+            }
+        }
+
+        /* ================= 清理 ================= */
+        function cleanupStream() {
+            if (stream) {
+                stream.getTracks().forEach(t => {
+                    try { t.stop(); } catch (_) {}
+                });
+                stream = null;
+            }
+        }
+
+        function cleanupAll() {
+            cleanupStream();
+            if (audioCtx) {
+                audioCtx.close().catch(() => {});
+                audioCtx = null;
+            }
+            analyser = null;
+            source   = null;
+            buf      = null;
+        }
+
+        /* ================= 事件 ================= */
+        btnStart.addEventListener('click', start);
+        btnStop.addEventListener('click', () => stop());
+        window.addEventListener('resize', resize);
+        window.addEventListener('orientationchange', resize);
+
+        /* ================= 初始化 ================= */
+        resize();
+        drawSilence();
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+            btnStart.disabled = true;
+            tip.innerHTML =
+                '当前浏览器不支持 <b>getDisplayMedia</b>。<br>' +
+                '请使用 <b>Chrome / Edge</b>，并在 <kbd>https</kbd> 或 <kbd>localhost</kbd> 环境下打开。';
+        }
+    })();
+</script>
+</body>
+</html>

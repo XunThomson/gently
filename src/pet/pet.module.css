@@ -17,13 +17,57 @@
     flex-direction: column;
     align-items: center;
     gap: var(--space-1);
-    pointer-events: auto;
+    pointer-events: none;
 }
 
-/* 独立宠物窗口里：窗口本身就是「一小块桌面」，不再让出播放条的高度 */
+/* 状态卡 / 气泡 / 操作菜单的容器。
+   它只负责「贴着本体上下左右移动」，不参与本体的定位——面板放不下时
+   换到另一侧，绝不能反过来把宠物挤离屏幕边缘。
+   独立窗口里槽位是固定大小的（由渲染器设置 left/top/width/height），
+   内容按 data-side 靠向本体：上/下贴底/贴顶，左/右靠内边。 */
+.hud {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-1);
+    width: calc(100vw - var(--space-4));
+    max-width: var(--panel-width);
+    pointer-events: none;
+}
+
+/* 本体下方时：菜单离本体最近（视觉顺序反过来） */
+.hud[data-side='below'] {
+    flex-direction: column-reverse;
+}
+
+/* 本体在右：面板放左边，内容靠右（贴着本体） */
+.hud[data-side='left'] {
+    align-items: flex-end;
+    justify-content: center;
+}
+
+/* 本体在左：面板放右边，内容靠左（贴着本体） */
+.hud[data-side='right'] {
+    align-items: flex-start;
+    justify-content: center;
+}
+
+/* 独立宠物窗口里：窗口本身就是「一小块桌面」，不再让出播放条的高度。
+   整窗当一个坐标系用：本体与 HUD 都由渲染器绝对定位，靠屏幕空间决定上下/左右。 */
 :global(html[data-window='pet']) .builtin {
-    right: var(--space-2);
-    bottom: var(--space-2);
+    position: fixed;
+    inset: 0;
+    display: block;
+    transform: none;
+}
+
+:global(html[data-window='pet']) .hud {
+    position: absolute;
+}
+
+:global(html[data-window='pet']) .body {
+    position: absolute;
 }
 
 /* 小家伙本体：可点、有焦点环（无障碍：它是个按钮） */
@@ -40,10 +84,8 @@
     border-radius: var(--radius-full);
     box-shadow: var(--shadow-md);
     cursor: pointer;
-    transition:
-        transform var(--motion-base),
-        background-color var(--motion-base);
-    will-change: transform;
+    pointer-events: auto;
+    transition: background-color var(--motion-base);
 }
 
 .body:hover {
@@ -66,7 +108,6 @@
     background: transparent;
     border-radius: 0;
     box-shadow: none;
-    transition: transform var(--motion-base);
     /* 像素画必须关掉平滑缩放：双线性插值会在深色描边旁边产生「黑色颗粒/毛边」。
        `pixelated` 让浏览器取最近像素；再配合整数倍缩放（见 frame-layout 的 104px）才干净。 */
     image-rendering: pixelated;
@@ -76,6 +117,13 @@
     /* 盒子可能比单帧大（有的行动画放大）：必须裁掉溢出，否则会露出旁边格子的像素 */
     position: relative;
     overflow: hidden;
+}
+
+.motionLayer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    will-change: transform;
 }
 
 /* 精灵图层：只有「格子大小」，背景（整张图集）挂在这里，位置由 frame-layout 算好 */
@@ -115,11 +163,137 @@
     pointer-events: none;
 }
 
+.status,
+.menu {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: 100%;
+    box-sizing: border-box;
+    padding: var(--space-3);
+    color: var(--text-primary);
+    font-size: var(--font-size-xs);
+    background: var(--surface-drawer);
+    backdrop-filter: var(--surface-drawer-blur);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    pointer-events: auto;
+}
+
+.statusHeading,
+.statusRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.statusHeading {
+    justify-content: space-between;
+    color: var(--text-secondary);
+}
+
+.statusHeading strong {
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.statusRow {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+
+.statusValue {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.meter {
+    width: 100%;
+    height: var(--space-1);
+    overflow: hidden;
+    appearance: none;
+    background: var(--bg-subtle);
+    border: 0;
+    border-radius: var(--radius-full);
+}
+
+.meter::-webkit-progress-bar {
+    background: var(--bg-subtle);
+}
+
+.meter::-webkit-progress-value {
+    background: var(--brand);
+    border-radius: var(--radius-full);
+}
+
+.meter::-moz-progress-bar {
+    background: var(--brand);
+    border-radius: var(--radius-full);
+}
+
+.menu {
+    gap: var(--space-1);
+}
+
+.menuItem,
+.sizeButton {
+    min-height: var(--button-height-sm);
+    padding: var(--space-1) var(--space-2);
+    color: var(--text-primary);
+    font: inherit;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.menuItem:hover,
+.sizeButton:hover {
+    background: var(--bg-hover);
+}
+
+.menuItem:focus-visible,
+.sizeButton:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: -2px;
+}
+
+.menuLabel {
+    padding: var(--space-1) var(--space-2) 0;
+    color: var(--text-tertiary);
+}
+
+.sizeGroup {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-1);
+}
+
+.sizeButton {
+    text-align: center;
+}
+
+.sizeButton.selected {
+    color: var(--brand);
+    background: var(--brand-soft);
+}
+
+.status[hidden],
+.menu[hidden],
+.bubble[hidden],
+.motionLayer[hidden] {
+    display: none;
+}
+
 /* 系统要求减少动态效果时不上下浮动（信息仍在动画状态与气泡里） */
 @media (prefers-reduced-motion: reduce) {
-    .body {
+    .motionLayer {
         transform: none !important;
-        transition: none;
     }
 }
 

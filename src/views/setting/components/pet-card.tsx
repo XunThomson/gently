@@ -7,6 +7,8 @@ import {BadgeCell, TextCell} from '../../../components/ui/data-table';
 import {useConfirm} from '../../../hooks/useConfirm';
 import {errorText} from '../../../i18n/errors';
 import {petService, windowService} from '../../../services';
+import {PET_PROFILE_EVENT, PET_ROAM_EVENT, PET_SIZE_EVENT} from '../../../services/window.service';
+import type {PetSize} from '../../../utils/petPresentation';
 import {useActions} from '../../../store';
 import styles from '../setting.module.css';
 import {PetPreview} from './pet-preview';
@@ -38,6 +40,7 @@ export function PetCard({enabled, onToggle}: {enabled: boolean; onToggle: (next:
     const [locked, setLocked] = useState<boolean>(() => windowService.petLocked());
     /** 是否允许宠物在屏幕上走动（默认关：它会自己挪窗口） */
     const [roam, setRoam] = useState<boolean>(() => windowService.petRoam());
+    const [petSize, setPetSize] = useState<PetSize>(() => windowService.petSize());
     const [specText, setSpecText] = useState('');
     const [atlasFile, setAtlasFile] = useState<File | null>(null);
 
@@ -56,8 +59,36 @@ export function PetCard({enabled, onToggle}: {enabled: boolean; onToggle: (next:
         void refresh();
     }, [refresh]);
 
-    /** 统一动作：失败只提示；成功后重读列表并让渲染器重新挂载 */
-    const run = async (action: () => Promise<{ok: boolean; error?: {code: string; message: string}}>) => {
+    useEffect(() => {
+        let disposed = false;
+        const unlisteners: (() => void)[] = [];
+        void (async () => {
+            try {
+                const {listen} = await import('@tauri-apps/api/event');
+                const offSize = await listen<{size: PetSize}>(PET_SIZE_EVENT, (event) => setPetSize(event.payload.size));
+                const offRoam = await listen<{enabled: boolean}>(PET_ROAM_EVENT, (event) => setRoam(event.payload.enabled));
+                const offProfile = await listen(PET_PROFILE_EVENT, () => void refresh());
+                if (disposed) {
+                    offSize();
+                    offRoam();
+                    offProfile();
+                } else {
+                    unlisteners.push(offSize, offRoam, offProfile);
+                }
+            } catch {
+                /* 浏览器预览没有窗口事件总线 */
+            }
+        })();
+        return () => {
+            disposed = true;
+            for (const unlisten of unlisteners) unlisten();
+        };
+    }, []);
+
+    const run = async (
+        action: () => Promise<{ok: boolean; error?: {code: string; message: string}}>,
+        remount = true,
+    ) => {
         setBusy(true);
         setError(null);
         setNotice(null);
@@ -69,7 +100,8 @@ export function PetCard({enabled, onToggle}: {enabled: boolean; onToggle: (next:
             return false;
         }
         await refresh();
-        bumpPetRevision();
+        if (remount) bumpPetRevision();
+        else windowService.notifyPetProfileChanged();
         return true;
     };
 
@@ -175,6 +207,26 @@ export function PetCard({enabled, onToggle}: {enabled: boolean; onToggle: (next:
                     <p className={styles.hint}>{t('page.setting.petLockHint')}</p>
 
                     <div className={styles.field}>
+                        <span className={styles.label}>{t('page.setting.petSize')}</span>
+                        <span className={styles.value}>
+                            <UnderlineRadioGroup
+                                name="pet-size"
+                                value={petSize}
+                                onChange={(value) => {
+                                    const next = value as PetSize;
+                                    windowService.setPetSize(next);
+                                    setPetSize(next);
+                                }}
+                                options={[
+                                    {value: 'small', label: t('pet.size.small')},
+                                    {value: 'medium', label: t('pet.size.medium')},
+                                    {value: 'large', label: t('pet.size.large')},
+                                ]}
+                            />
+                        </span>
+                    </div>
+
+                    <div className={styles.field}>
                         <span className={styles.label}>{t('page.setting.petRoam')}</span>
                         <span className={styles.value}>
                             <UnderlineRadioGroup
@@ -245,7 +297,7 @@ export function PetCard({enabled, onToggle}: {enabled: boolean; onToggle: (next:
                                                                 message: 'feed failed',
                                                             },
                                                         };
-                                                })
+                                                }, false)
                                             }
                                         >
                                             {t('page.setting.petFeed')}
