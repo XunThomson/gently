@@ -88,6 +88,7 @@ store.subscribe(() => {
         background,
         discoverAutoPreview,
         petEnabled,
+        homePath,
     } = store.getState().ui;
 
     const key = [
@@ -106,6 +107,7 @@ store.subscribe(() => {
         JSON.stringify(background),
         String(discoverAutoPreview),
         String(petEnabled),
+        homePath,
     ].join('|');
     if (key === lastPersistedKey) return;
     lastPersistedKey = key;
@@ -126,6 +128,7 @@ store.subscribe(() => {
         background,
         discoverAutoPreview,
         petEnabled,
+        homePath,
     });
 });
 

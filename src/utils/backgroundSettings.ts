@@ -7,7 +7,7 @@ import {appConfig} from '../config/app.config';
  * （`services/background.service.ts`），localStorage 只存元数据与预设。
  * 从 localStorage / 剪贴板 / 外部 JSON 进来的值一律走 `normalize*`，不信任输入。
  */
-export type BackgroundFit = 'cover' | 'contain';
+export type BackgroundFit = 'cover' | 'contain' | 'fill' | 'free';
 export type BackgroundKind = 'video' | 'web';
 
 export interface BackgroundAsset {
@@ -29,6 +29,16 @@ export interface WebAsset {
 
 export interface BackgroundOptions {
     fit: BackgroundFit;
+    /**
+     * 画面锚点（0~100%）：`50/50` 是居中。铺满（cover）时用户常想把人像/主体挪到
+     * 不被内容卡片挡住的位置，这就是「左右上下」的自由调整。
+     */
+    positionX: number;
+    positionY: number;
+    /** 在 fit 的基础上再放大（1 = 不缩放，上限 2.5），用于「再靠近一点」的构图 */
+    scale: number;
+    /** 水平翻转（自由构图时的「翻转」开关） */
+    flip: boolean;
     /** 0.25~2 */
     playbackRate: number;
     /** null = 跟随主题的 background.opacity */
@@ -85,6 +95,10 @@ export interface BackgroundSettings {
 
 export const DEFAULT_BACKGROUND_OPTIONS: BackgroundOptions = {
     fit: 'cover',
+    positionX: 50,
+    positionY: 50,
+    scale: 1,
+    flip: false,
     playbackRate: 1,
     opacity: null,
     blurPx: null,
@@ -110,8 +124,23 @@ export function clampPlaybackRate(value: number): number {
 
 export function normalizeBackgroundOptions(input: unknown): BackgroundOptions {
     if (!isRecord(input)) return {...DEFAULT_BACKGROUND_OPTIONS};
-    const fit = input.fit === 'contain' ? 'contain' : 'cover';
+    const fit =
+        input.fit === 'contain'
+            ? 'contain'
+            : input.fit === 'fill'
+              ? 'fill'
+              : input.fit === 'free'
+                ? 'free'
+                : 'cover';
     const rawRate = typeof input.playbackRate === 'number' ? input.playbackRate : 1;
+    const percent = (value: unknown, fallback: number) =>
+        typeof value === 'number' && Number.isFinite(value)
+            ? Math.min(100, Math.max(0, value))
+            : fallback;
+    const scale =
+        typeof input.scale === 'number' && Number.isFinite(input.scale)
+            ? Math.min(2.5, Math.max(1, input.scale))
+            : DEFAULT_BACKGROUND_OPTIONS.scale;
     const opacity =
         typeof input.opacity === 'number' && Number.isFinite(input.opacity)
             ? Math.min(1, Math.max(0, input.opacity))
@@ -138,6 +167,10 @@ export function normalizeBackgroundOptions(input: unknown): BackgroundOptions {
             : null;
     return {
         fit,
+        positionX: percent(input.positionX, DEFAULT_BACKGROUND_OPTIONS.positionX),
+        positionY: percent(input.positionY, DEFAULT_BACKGROUND_OPTIONS.positionY),
+        scale,
+        flip: input.flip === true,
         playbackRate: clampPlaybackRate(rawRate),
         opacity,
         blurPx,

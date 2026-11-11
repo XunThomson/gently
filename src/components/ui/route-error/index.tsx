@@ -1,5 +1,6 @@
 import {Component, type ErrorInfo, type ReactNode} from 'react';
 import {useTranslation} from 'react-i18next';
+import {useRouteError} from 'react-router';
 import {Button} from '../button';
 import {reportFatalError} from '../../../utils/errorOverlay';
 import styles from './route-error.module.css';
@@ -60,6 +61,32 @@ function RouteErrorFallback({error, onRetry}: {error: Error; onRetry: () => void
 }
 
 export default RouteError;
+
+/**
+ * React Router 的 `errorElement`（R139）。
+ *
+ * 路由级错误（最典型：lazy 分包加载失败）**不经过 React 渲染错误边界**，
+ * 会落到 Router 自带的默认页——那一页没有应用主题，看起来就是白屏。
+ * 这里复用同一套人话 + 重试 + 重新加载；chunk 失败只能重载，不能靠 setState 复位。
+ *
+ * 诊断里带上「构建形态 / 导航类型」：如果装的是 dev 包，reload 后拉不到 dev server，
+ * 这一段会直接指出原因。
+ */
+export function RouterErrorPage() {
+    const error = useRouteError();
+    const message =
+        error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : JSON.stringify(error);
+    return (
+        <RouteErrorFallback
+            error={new Error(`${message}\n构建：${import.meta.env.DEV ? 'dev' : 'bundled'}`)}
+            onRetry={() => window.location.reload()}
+        />
+    );
+}
 
 /**
  * 整棵树的兜底边界（R137）。

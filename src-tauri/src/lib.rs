@@ -12,6 +12,7 @@
 pub mod importer;
 pub mod pet_watch;
 pub mod playback;
+pub mod startup_guard;
 pub mod state;
 pub mod web_login;
 
@@ -61,7 +62,18 @@ async fn pet_invoke(
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut engine = pet.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        pet_envelope(pet_core::dispatch(&mut engine, &command, params, now_ms))
+        /* 走动门控（R139）：宿主在**同进程**里读当前动画的位移能力，不新增命令/事件。
+           只对 `pet.tick` 记——其它命令不改变动画。 */
+        let tick_pet_id = if command == "pet.tick" {
+            params.get("petId").and_then(serde_json::Value::as_str).map(str::to_string)
+        } else {
+            None
+        };
+        let result = pet_core::dispatch(&mut engine, &command, params, now_ms);
+        if let Some(id) = tick_pet_id {
+            pet_watch::note_motion(engine.motion(&id));
+        }
+        pet_envelope(result)
     })
     .await
     .map_err(|err| format!("宠物命令执行被中止：{err}"))
@@ -136,6 +148,15 @@ fn playback_banner(
 #[tauri::command]
 async fn import_audio() -> Result<importer::ImportOutcome, String> {
     importer::pick_audio().await
+}
+
+/// 宿主命令：**选择目录并递归导入音频**（Android，R139）。
+///
+/// 与 `import_audio` 的区别只在「怎么拿到 URI」：目录选择后递归收集音频，
+/// 拷贝/进度/扩展名筛选复用同一个 Kotlin `importUris`。
+#[tauri::command]
+async fn import_audio_dir() -> Result<importer::ImportOutcome, String> {
+    importer::pick_directory().await
 }
 
 /// 宿主命令：**导入副本的落点目录**（Android，P3 余项 · R119）。
@@ -251,6 +272,8 @@ pub fn run() {
             /* 宠物「看向鼠标」：宿主轮询全局光标（Windows），方向变了才发事件给宠物窗口。
                非 Windows 平台这里什么都不做（宠物退化成像素动画，不报错）。 */
             pet_watch::install(app.handle().clone());
+            /* 启动看门狗：WebView2 环境坏掉时主窗口可能永远不出现，至少给用户一条可执行的提示 */
+            startup_guard::install(app.handle().clone());
 
             /* 主窗口关掉 = 应用退出。
                为什么需要特意接：桌面歌词窗口与宠物窗口是**在同一进程里的独立窗口**，
@@ -274,6 +297,7 @@ pub fn run() {
             app_restart,
             playback_banner,
             import_audio,
+            import_audio_dir,
             imported_dir,
             import_progress,
             web_login::web_login

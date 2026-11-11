@@ -11,6 +11,7 @@ import {
 } from '../../utils/backgroundSettings';
 import type {PersistedUi} from '../persist';
 import type {UiActions, UiState, StoreCtx} from '../types';
+import {normalizeMobileHomePath} from '../../config/mobileNav';
 
 /**
  * UI 切片：主题、侧边栏折叠、全局搜索词、音源展示偏好。
@@ -59,6 +60,11 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         /* 宠物是 2.x 的形态：默认关（1.x 用户看不到任何宠物入口） */
         petEnabled: persisted.petEnabled === true,
         petRevision: 0,
+        /* 定时关闭：默认不启用（会话级状态，不持久化） */
+        sleepTimerUntil: null,
+        sleepTimerMode: null,
+        /* 移动端主页：只接受导航表里的真实路径（旧数据 / 手改 localStorage 都归一化） */
+        homePath: normalizeMobileHomePath(persisted.homePath),
     };
 
     const patch = (partial: Partial<UiState>) => {
@@ -286,6 +292,29 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
                     viaCore,
                 ),
             });
+        },
+
+        setSleepTimer(minutes) {
+            if (minutes === null) {
+                patch({sleepTimerUntil: null, sleepTimerMode: null});
+                return;
+            }
+            patch({
+                sleepTimerUntil: Date.now() + minutes * 60_000,
+                sleepTimerMode: 'duration',
+            });
+        },
+
+        setSleepTimerEndOfTrack() {
+            patch({sleepTimerUntil: null, sleepTimerMode: 'endOfTrack'});
+        },
+
+        cancelSleepTimer() {
+            patch({sleepTimerUntil: null, sleepTimerMode: null});
+        },
+
+        setHomePath(path) {
+            patch({homePath: normalizeMobileHomePath(path)});
         },
     };
 

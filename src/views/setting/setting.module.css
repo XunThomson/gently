@@ -108,6 +108,16 @@
     width: min(calc(var(--space-12) * 4.5), 100%);
     accent-color: var(--brand);
     cursor: pointer;
+    /* 纵向留给页面滚动，横向交给 range 自己；抽屉手势在 JS 里已按控件跳过 */
+    touch-action: pan-y;
+}
+
+/* 背景自由构图里的「翻转」：原生 checkbox，只统一尺寸与强调色 */
+.checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--brand);
+    cursor: pointer;
 }
 
 .valueText {

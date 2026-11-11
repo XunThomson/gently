@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Outlet, useLocation} from 'react-router';
 import {appConfig} from '../../../config/app.config';
@@ -20,6 +20,11 @@ import styles from './MobileShell.module.css';
  * 与桌面外壳的关系：**同一个 `App`** 按 `useShellMode()` 分叉——
  * `mobile` 只换外壳（导航与播放条的排布），路由、store、服务层完全共用，
  * 所以不会出现「桌面能做的事手机上另一套实现」。
+ *
+ * **抽屉跟手交互**（R138，QQ 风格）：
+ * - 用户从内容区向右拖动时，抽屉跟着手指实时移动（不是阈值触发）
+ * - 松手时按位置（>40% 宽度）或速度（快速轻扫）决定打开还是弹回
+ * - 抽屉打开后，向左拖动同样跟手关闭
  */
 export function MobileShell() {
     const {t} = useTranslation();
@@ -28,17 +33,12 @@ export function MobileShell() {
     const contentRef = useRef<HTMLElement>(null);
     const onSearch = location.pathname === '/search' || location.pathname.startsWith('/search/');
 
-    /* 换页回到顶部（R123）：`.content` 是滚动容器，不重置的话从长列表点进另一页
-       会停在上一页的滚动位置，看起来像「页面没换」。
-       横向也要归零（R137 真机踩到）：长标签（如设置页的「聚合（同一首歌只显示一条）」）
-       会让内容横向溢出，**聚焦元素会让浏览器把容器横向滚过去**，而 `overflow-x: hidden`
-       只裁剪不阻止程序滚动——于是卡片被顶到屏幕左侧、右边一片空白，用户还滚不回来。 */
+    /* 换页回到顶部（R123） */
     useEffect(() => {
         contentRef.current?.scrollTo({top: 0, left: 0});
     }, [location.pathname]);
 
-    /* 横向滚动的兜底钳制（R137）：只要不是 0 就掰回 0。
-       正常情况根本不该出现横向滚动，出现就说明某个控件撑破了容器——归零比让用户看着白屏好。 */
+    /* 横向滚动的兜底钳制（R137） */
     useEffect(() => {
         const element = contentRef.current;
         if (!element) return;
@@ -49,70 +49,197 @@ export function MobileShell() {
         return () => element.removeEventListener('scroll', clamp);
     }, []);
 
-    /**
-     * 横滑打开抽屉（R137 用户反馈「滑动打开抽屉」）。
-     *
-     * 三条约束都是真机踩出来的：
-     * 1. **不从最左侧起手**：手势导航把屏幕左边缘当「返回」，从那儿横滑会把应用送回桌面
-     *    （R124 的负结果）。所以起手点要离开边缘 `ignoreEdgePx`——用户从内容区任何位置往右划都行；
-     * 2. **只认横向**：位移要够长、且明显大于纵向，否则那是在滚列表（`slopeRatio`）；
-     * 3. **不抢别的控件**：播放条上的进度条本身就是横向拖动，那里标了 `data-drawer-swipe="off"`，
-     *    手势直接跳过；滑动成功后还会**吃掉这一次 click**，免得顺手把手指下的行点了。
-     *
-     * 不用 `setPointerCapture`：只要 pointermove 的就近语义就够了，捕获反而会打断列表滚动。
-     */
-    const swipe = useRef<{x: number; y: number; pointerId: number} | null>(null);
-    /** 横滑打开抽屉的时刻：只吃掉「紧接着那一下」的 click，不能把之后的正常点击一起吞了 */
+    /* ---------- 跟手拖动的状态 ---------- */
+    const [dragOffset, setDragOffset] = useState<number | null>(null);
+    const dragState = useRef<{
+        pointerId: number;
+        startX: number;
+        startY: number;
+        lastX: number;
+        lastTime: number;
+        phase: 'idle' | 'pending' | 'dragging';
+        direction: 'open' | 'close' | null;
+        offset: number;
+    }>({
+        pointerId: -1,
+        startX: 0,
+        startY: 0,
+        lastX: 0,
+        lastTime: 0,
+        phase: 'idle',
+        direction: null,
+        offset: 0,
+    });
+
+    /* 真横滑之后，浏览器还会补一次 click（落在手指下的行上）。
+       **只吞这一次、且只吞真正横滑过的那一下**：垂直滚动列表后紧接着点歌必须正常——
+       上一版在「任何 pointermove 都把 dragOffset 从 null 改掉」之后无差别吞 300ms，
+       正是用户报的「概率性点击没反应」（R139）。 */
     const swallowClickAt = useRef(0);
 
-    const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-        if (drawerOpen || event.pointerType === 'mouse') return;
-        if (event.clientX < appConfig.mobile.drawerSwipe.ignoreEdgePx) return;
+    /* 抽屉宽度（用于计算百分比阈值） */
+    const [drawerWidth, setDrawerWidth] = useState(280);
+    useEffect(() => {
+        const cssWidth = getComputedStyle(document.documentElement)
+            .getPropertyValue('--mobile-drawer-width')
+            .trim();
+        if (cssWidth) {
+            const parsed = parseFloat(cssWidth);
+            if (!Number.isNaN(parsed)) setDrawerWidth(parsed);
+        }
+    }, []);
+
+    /**
+     * 开始拖动：记录起点，判断是否满足打开/关闭条件。
+     *
+     * 约束（与旧版一致）：
+     * 1. 不从最左侧起手（系统返回手势区）
+     * 2. 只认触摸（不认鼠标）
+     * 3. 不抢别的控件（data-drawer-swipe="off"）
+     */
+    const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.pointerType === 'mouse') return;
+        const state = dragState.current;
+        if (state.phase !== 'idle') return;
+
         const target = event.target as HTMLElement | null;
-        if (target?.closest('[data-drawer-swipe="off"]')) return;
-        swipe.current = {x: event.clientX, y: event.clientY, pointerId: event.pointerId};
-    };
+        /* 表单控件 / 滑块自己就是横向拖动：抽屉手势必须让路（R139）。
+           手机上「背景设置里的水平/垂直/缩放滑杆」一拖就开抽屉，就是这个原因。 */
+        if (
+            target?.closest(
+                'input, textarea, select, [contenteditable="true"], [role="slider"], [data-drawer-swipe="off"]',
+            )
+        ) {
+            return;
+        }
 
-    const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-        const start = swipe.current;
-        if (!start || start.pointerId !== event.pointerId) return;
-        const dx = event.clientX - start.x;
-        const dy = event.clientY - start.y;
-        const {distancePx, slopeRatio} = appConfig.mobile.drawerSwipe;
-        if (dx < distancePx || Math.abs(dx) < Math.abs(dy) * slopeRatio) return;
-        swipe.current = null;
-        swallowClickAt.current = Date.now();
-        setDrawerOpen(true);
-    };
+        const x = event.clientX;
+        const isOnDrawer = drawerOpen && target?.closest('[data-drawer-panel]');
 
-    const endSwipe = () => {
-        swipe.current = null;
-    };
+        /* 打开手势：必须从 ignoreEdgePx 右侧起手 */
+        if (!drawerOpen && x < appConfig.mobile.drawerSwipe.ignoreEdgePx) return;
 
-    /* 横滑打开抽屉后，手指抬起时浏览器仍可能补一次 click（落在下面的行上）。
-       capture 阶段吃掉它——**只吃 300ms 内那一下**：抽屉里紧接着的点击（导航项 / 关闭）
-       不能被一起吞掉（R137 真机踩到：滑动开抽屉后第一次点导航项没反应）。 */
-    const onClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+        /* 关闭手势：必须在抽屉面板或遮罩上起手 */
+        if (drawerOpen && !isOnDrawer) {
+            if (!target?.closest('[data-drawer-scrim]')) return;
+        }
+
+        state.pointerId = event.pointerId;
+        state.startX = x;
+        state.startY = event.clientY;
+        state.lastX = x;
+        state.lastTime = Date.now();
+        /* 先「待定」：此时还不知道用户要横滑还是纵滚，绝不能改 dragOffset，
+           否则一次普通滚动也会让抽屉进入渲染、并在抬手后吞掉下一次点击（R139）。 */
+        state.phase = 'pending';
+        state.direction = drawerOpen ? 'close' : 'open';
+        state.offset = drawerOpen ? 0 : -drawerWidth;
+    }, [drawerOpen, drawerWidth]);
+
+    /**
+     * 拖动中：实时更新抽屉位置。
+     */
+    const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        const state = dragState.current;
+        if (state.phase === 'idle' || state.pointerId !== event.pointerId) return;
+
+        const dx = event.clientX - state.startX;
+        const dy = event.clientY - state.startY;
+        const {slopeRatio} = appConfig.mobile.drawerSwipe;
+
+        /* 还没决定方向：先判定是横滑还是纵滚。
+           纵滚（或方向相反）就彻底放弃这次手势——绝不动抽屉，也绝不影响点击。 */
+        if (state.phase === 'pending') {
+            if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+            const horizontal = Math.abs(dx) >= Math.abs(dy) * slopeRatio;
+            const correctDirection = state.direction === 'open' ? dx > 0 : dx < 0;
+            if (!horizontal || !correctDirection) {
+                state.phase = 'idle';
+                state.direction = null;
+                return;
+            }
+            state.phase = 'dragging';
+        }
+        if (state.phase !== 'dragging' || state.direction === null) return;
+
+        /* 计算偏移量 */
+        let offset: number;
+        if (state.direction === 'open') {
+            offset = Math.max(-drawerWidth, Math.min(0, -drawerWidth + dx));
+        } else {
+            offset = Math.max(-drawerWidth, Math.min(0, dx));
+        }
+
+        state.offset = offset;
+        state.lastX = event.clientX;
+        state.lastTime = Date.now();
+
+        setDragOffset(offset);
+    }, [drawerWidth]);
+
+    /**
+     * 结束拖动：按位置或速度决定最终状态。
+     */
+    const onPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        const state = dragState.current;
+        if (state.pointerId !== event.pointerId) return;
+
+        if (state.phase === 'dragging' && state.direction !== null) {
+            const now = Date.now();
+            const dt = Math.max(1, now - state.lastTime);
+            const velocity = (event.clientX - state.lastX) / dt;
+            const {snapThreshold, flickVelocityPxMs} = appConfig.mobile.drawerSwipe;
+
+            const progress =
+                state.direction === 'open'
+                    ? (state.offset + drawerWidth) / drawerWidth
+                    : Math.abs(state.offset) / drawerWidth;
+            const flicked =
+                state.direction === 'open'
+                    ? velocity >= flickVelocityPxMs
+                    : velocity <= -flickVelocityPxMs;
+            const shouldCommit = progress >= snapThreshold || flicked;
+
+            setDrawerOpen(state.direction === 'open' ? shouldCommit : !shouldCommit);
+            /* 只有**真的横滑过**才吞紧随其后的合成 click；纵滚到这里 phase 已经是 idle */
+            swallowClickAt.current = Date.now();
+        }
+
+        setDragOffset(null);
+        state.phase = 'idle';
+        state.direction = null;
+    }, [drawerWidth]);
+
+    const onPointerCancel = useCallback(() => {
+        setDragOffset(null);
+        dragState.current.phase = 'idle';
+        dragState.current.direction = null;
+    }, []);
+
+    const onClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
         if (Date.now() - swallowClickAt.current > 300) return;
         swallowClickAt.current = 0;
         event.preventDefault();
         event.stopPropagation();
-    };
+    }, []);
+
+    const handleDrawerClose = useCallback(() => {
+        setDrawerOpen(false);
+        setDragOffset(null);
+    }, []);
 
     return (
-        /* 行操作的底部面板宿主：列表行尾的 ⋯ 从这里弹面板（见 components/ui/row-actions）。
-           宿主放在 `.shell` **外面一层**：面板要盖住整个屏幕（含常驻播放条），
-           放进 shell 里会被它的 `overflow: hidden` 裁掉。 */
         <RowActionsProvider>
             <div
                 className={styles.shell}
-                /* 安卓是 edge-to-edge：webview 铺到状态栏下面，顶部要自己让出状态栏高度
-                   （值来自 app.config 的 mobile.statusBarInset，不写死在 CSS 里） */
-                style={{paddingTop: appConfig.mobile.statusBarInset}}
+                /* 安卓是 edge-to-edge：webview 铺到状态栏/导航栏下面，安全区由 CSS 变量接管
+                   （--mobile-safe-top = max(env(safe-area-inset-top), app.config 的兜底值)，
+                   见 MobileShell.module.css；兜底值仍来自 app.config，不写死在样式里） */
+                style={{'--mobile-status-inset': `${appConfig.mobile.statusBarInset}px`} as React.CSSProperties}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
-                onPointerUp={endSwipe}
-                onPointerCancel={endSwipe}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerCancel}
                 onClickCapture={onClickCapture}
             >
                 <header className={styles.header}>
@@ -130,8 +257,6 @@ export function MobileShell() {
                 {onSearch && <MobileSearchBar/>}
 
                 <main className={styles.content} ref={contentRef}>
-                    {/* 换页过渡：key 换掉就重新播一次淡入（见 .pageFade）。
-                        错误边界也挂在这里：某一页渲染抛错时只坏内容区，导航与播放条继续可用（R137） */}
                     <div className={styles.pageFade} key={location.key}>
                         <RouteError key={location.pathname}>
                             <Outlet/>
@@ -141,7 +266,12 @@ export function MobileShell() {
 
                 <MobilePlayerBar/>
 
-                <MobileNavDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)}/>
+                <MobileNavDrawer
+                    open={drawerOpen}
+                    dragOffset={dragOffset}
+                    drawerWidth={drawerWidth}
+                    onClose={handleDrawerClose}
+                />
             </div>
         </RowActionsProvider>
     );

@@ -17,7 +17,7 @@
 //! - 事件名必须遵守 Tauri 字符集（只允许字母数字与 `- / : _`）；
 //! - 方向定义：**0 = 正上，顺时针**（与 Codex Pet v2 的 16 个 look 方向一致）。
 
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -68,6 +68,52 @@ const PAUSE_AFTER_TICKS: i32 = 10;
 static ROAM: AtomicBool = AtomicBool::new(false);
 /// 当前走动方向（-1 / 0 / 1），变化时才发事件
 static WALK_DIR: AtomicI32 = AtomicI32::new(0);
+/// 当前动画的位移能力（0 = none / 1 = walk / 2 = crawl），由 `lib.rs` 每次 `pet.tick`
+/// 之后写入（同进程直接读引擎，不新增命令/事件、也没有回路延迟）。
+static MOTION: AtomicI32 = AtomicI32::new(0);
+/// 被「当前动画不许位移」连续挡住的拍数：超过上限就放弃这一趟，避免饿着时永远顶着一个目标
+static BLOCKED_WALK_TICKS: AtomicU32 = AtomicU32::new(0);
+/// 被挡住多少拍后放弃（100 拍 × 60ms ≈ 6s）
+const WALK_HOLD_LIMIT_TICKS: u32 = 100;
+
+/// 宿主门控的三种结论（纯函数，便于单测）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WalkDecision {
+    /// 当前动画允许位移：可以挪窗口
+    Move,
+    /// 当前动画不许位移，但还没到放弃上限：保持目标、继续发方向（等动画切到走路）
+    Hold,
+    /// 放弃这一趟（关掉走动 / 被非位移动画挡太久）
+    GiveUp,
+}
+
+/// 由「当前动画能力 + 是否允许走动 + 已被挡拍数」决定这一步怎么走。
+fn walk_decision(motion: i32, roam: bool, blocked_ticks: u32) -> WalkDecision {
+    if !roam {
+        return WalkDecision::GiveUp;
+    }
+    if motion == 1 || motion == 2 {
+        return WalkDecision::Move;
+    }
+    if blocked_ticks >= WALK_HOLD_LIMIT_TICKS {
+        WalkDecision::GiveUp
+    } else {
+        WalkDecision::Hold
+    }
+}
+
+/// 记录当前动画的位移能力（`None` = 没有运行时 / 不许位移）。
+///
+/// 由 `lib.rs` 在每次 `pet.tick` 成功后调用；前端不参与，因此不存在「事件还没到、
+/// 窗口已经挪了」的一拍错位。
+pub fn note_motion(motion: Option<pet_core::Motion>) {
+    let code = match motion {
+        Some(pet_core::Motion::Walk) => 1,
+        Some(pet_core::Motion::Crawl) => 2,
+        _ => 0,
+    };
+    MOTION.store(code, Ordering::Relaxed);
+}
 /// 这一趟的目标 x（物理像素；None = 现在没在走）
 static WALK_TARGET: Mutex<Option<i32>> = Mutex::new(None);
 /// 60ms 计数的「时钟」（不读系统时间，方便推理）
@@ -302,12 +348,44 @@ fn walk_step(app: &tauri::AppHandle, window: &tauri::WebviewWindow, cursor_insid
 
     let dx = target - body_x;
     let step = dx.clamp(-WALK_STEP_PX, WALK_STEP_PX);
+    let dir = step.signum();
+    let decision = walk_decision(
+        MOTION.load(Ordering::Relaxed),
+        ROAM.load(Ordering::Relaxed),
+        BLOCKED_WALK_TICKS.load(Ordering::Relaxed),
+    );
+    match decision {
+        WalkDecision::Hold => {
+            /* 关键：**先发方向、不挪窗口**。核心收到 walking 条件后会切到 run 动画
+               （有 160ms 确认期），下一次 tick 的 Frame.motion 变成 walk，下一拍才真的走。
+               如果当前是「饿 / 坐下 / 点击反应」这类高优先级非位移动画，方向发了也切不过去，
+               就靠 GiveUp 的超时兜底。 */
+            BLOCKED_WALK_TICKS.fetch_add(1, Ordering::Relaxed);
+            if dir != 0 {
+                emit_walk(app, dir);
+            }
+            return;
+        }
+        WalkDecision::GiveUp => {
+            BLOCKED_WALK_TICKS.store(0, Ordering::Relaxed);
+            *target_slot = None;
+            drop(target_slot);
+            stop_walking(app);
+            let rest = REST_MIN_TICKS + (next_rand() % (REST_MAX_TICKS - REST_MIN_TICKS));
+            NEXT_WALK_AT.store(current_tick() + rest, Ordering::Relaxed);
+            tracing::debug!("宠物走动被当前动画挡住，放弃这一趟");
+            return;
+        }
+        WalkDecision::Move => {
+            BLOCKED_WALK_TICKS.store(0, Ordering::Relaxed);
+        }
+    }
+
     let next_body_x = (body_x + step).clamp(min_body_x, max_body_x);
     /* 窗口只做同样的平移：本体在窗口内的位置保持不变 */
     let next_x = position.x + (next_body_x - body_x);
     let _ = window.set_position(tauri::PhysicalPosition::new(next_x, position.y));
 
-    let dir = step.signum();
     emit_walk(app, dir);
 
     if dx.abs() <= WALK_STEP_PX {
@@ -331,6 +409,7 @@ fn emit_walk(app: &tauri::AppHandle, dir: i32) {
 
 #[cfg(windows)]
 fn stop_walking(app: &tauri::AppHandle) {
+    BLOCKED_WALK_TICKS.store(0, Ordering::Relaxed);
     emit_walk(app, 0);
 }
 
@@ -469,6 +548,7 @@ fn cursor_position() -> Option<(i32, i32)> {
 mod tests {
     use super::{
         body_screen_x, body_walk_range, inside_any, inside_rect, look_origin, should_ignore_cursor,
+        walk_decision, WalkDecision, WALK_HOLD_LIMIT_TICKS,
     };
 
     #[test]
@@ -492,8 +572,21 @@ mod tests {
     }
 
     #[test]
-    fn walking_moves_the_pet_not_the_window() {
-        /* 窗口 736×761，本体居中 (268,268)-(468,493)。
+    fn motion_gates_walking_and_gives_up_after_being_blocked() {
+        /* 只有 walk / crawl 允许挪窗口（R139） */
+        assert_eq!(walk_decision(1, true, 0), WalkDecision::Move);
+        assert_eq!(walk_decision(2, true, 0), WalkDecision::Move);
+        /* 非位移动画（坐下 / 饿 / 点击反应）：先发方向等它切跑，不挪窗口 */
+        assert_eq!(walk_decision(0, true, 0), WalkDecision::Hold);
+        assert_eq!(walk_decision(0, true, WALK_HOLD_LIMIT_TICKS - 1), WalkDecision::Hold);
+        /* 被挡太久就放弃这一趟，避免永远顶着一个目标 */
+        assert_eq!(walk_decision(0, true, WALK_HOLD_LIMIT_TICKS), WalkDecision::GiveUp);
+        /* 关掉走动时直接放弃，不管动画状态 */
+        assert_eq!(walk_decision(1, false, 0), WalkDecision::GiveUp);
+    }
+
+    #[test]
+    fn walking_moves_the_pet_not_the_window() {        /* 窗口 736×761，本体居中 (268,268)-(468,493)。
            本体屏幕 x = 窗口 x + 268；走动边界按本体宽度算，而不是整窗。 */
         let body = [268.0, 268.0, 200.0, 225.0];
         assert_eq!(body_screen_x(1000, 1.0, Some(body), 736), (1268, 200));

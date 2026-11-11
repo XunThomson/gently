@@ -153,7 +153,21 @@ fn shipped_pet_package_validates_and_installs() {
         vec!["idle", "runLeft", "runRight", "wave", "jump", "fail", "wait", "run", "inspect"],
         "动作名按素材给的 9 个顺序（改名必须同步文档与行为表）"
     );
-    assert_eq!(spec.version, "1.0.4", "内置宠物随宠物核心进到 1.0（行为表/显示适配变了要升版本，渲染器才会重装）");
+    assert_eq!(spec.version, "1.1.0", "内置宠物随行为表变化升版本（R139 位移能力），渲染器才会重装");
+    /* R139：只有跑动允许位移，其余动画一律原地（坐下/饿/点击反应不能滑行） */
+    for animation in &spec.animations {
+        let expected = if animation.name == "runLeft" || animation.name == "runRight" {
+            pet_core::Motion::Walk
+        } else {
+            pet_core::Motion::None
+        };
+        assert_eq!(
+            animation.motion.unwrap_or(pet_core::Motion::None),
+            expected,
+            "内置宠物 {} 的 motion 声明不对",
+            animation.name
+        );
+    }
     /* 内置包用了 `fit` 与 `interrupt`（都是 R105/R106 的能力）：所以它必须声明要求核心版本，
        而且本机核心必须满足它——否则内置包自己就装不上（这条断言就是那个保险丝） */
     let minimum = pet_core::Version::parse(&spec.min_pet_core_version).expect("minPetCoreVersion 要能解析");

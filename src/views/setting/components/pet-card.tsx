@@ -274,6 +274,22 @@ export function PetCard({enabled, onToggle}: {enabled: boolean; onToggle: (next:
                                             {t('page.setting.petAffection', {value: pet.profile.affection})}
                                         </TextCell>
                                         <TextCell tone="muted">
+                                            {t('pet.status.level', {level: pet.growth?.level ?? 1})}
+                                        </TextCell>
+                                        <TextCell tone="muted">
+                                            {t('pet.status.xp', {
+                                                xp: pet.growth?.xp ?? 0,
+                                                next: pet.growth?.nextLevelXp ?? 0,
+                                            })}
+                                        </TextCell>
+                                        {(pet.growth?.streakDays ?? 0) > 0 && (
+                                            <TextCell tone="muted">
+                                                {t('pet.status.streak', {
+                                                    days: pet.growth?.streakDays ?? 0,
+                                                })}
+                                            </TextCell>
+                                        )}
+                                        <TextCell tone="muted">
                                             {t(`pet.mood.${pet.mood}`)}
                                         </TextCell>
                                         {pet.hungry && (

@@ -29,7 +29,7 @@ use crate::contract::{
 use crate::events::{EventSink, NullEventSink};
 use crate::paths::AppPaths;
 use crate::plugin::{
-    apply_explicit_compat, extract_archive, is_private_host, is_valid_host, parse_index,
+    apply_explicit_compat, extract_archive, is_private_host, is_valid_host, parse_index_any,
     parse_manifest_json, parse_source_compat, sha256_hex, ArchiveShape, BlockingHttp, CatalogEntry,
     HostLimits, HttpLimits, HttpRequest, HttpTransport, InstallSource, InstalledPlugin,
     CredentialStore, MemoryCredentialStore, ParsedPlugin, PluginHost, Subscription,
@@ -1127,7 +1127,7 @@ fn refresh_subscription(ctx: &CoreContext, store: &Store, id: &str) -> Fallible<
         return Err(CoreError::new(ErrorCode::SubscriptionInvalidIndex, "索引超过体积上限"));
     }
 
-    let index = parse_index(&response.body).map_err(|err| {
+    let index = parse_index_any(&response.body).map_err(|err| {
         // 把字段级细节也带上：用户需要知道索引「哪里」非法，而不是只有一句「包含非法条目」
         let _ = store.mark_subscription_error(id, &describe_error(&err));
         err
@@ -1159,7 +1159,7 @@ fn plugin_catalog_list(ctx: &CoreContext, params: serde_json::Value) -> Fallible
         let Ok(text) = std::fs::read_to_string(index_cache_path(ctx, &subscription.id)) else {
             continue;
         };
-        let Ok(index) = parse_index(&text) else { continue };
+        let Ok(index) = parse_index_any(&text) else { continue };
 
         for entry in index.sources {
             if let Some(query) = &params.query {
@@ -1209,7 +1209,7 @@ fn download_catalog_entry(
         CoreError::new(ErrorCode::SubscriptionFetchFailed, "订阅索引尚未刷新，请先 refresh")
             .with_details(serde_json::json!({ "subscriptionId": subscription_id }))
     })?;
-    let index = parse_index(&text)?;
+    let index = parse_index_any(&text)?;
     let entry = index
         .find(file_name)
         .ok_or_else(|| CoreError::not_found(format!("索引里没有该文件：{file_name}")))?

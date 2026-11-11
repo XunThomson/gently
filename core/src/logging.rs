@@ -12,6 +12,7 @@ use std::error::Error;
 use std::path::Path;
 
 use tracing_appender::non_blocking::WorkerGuard;
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
@@ -31,9 +32,22 @@ pub fn init(level: &str, log_dir: Option<&Path>) -> Result<Option<WorkerGuard>, 
         Some(dir) => match std::fs::create_dir_all(dir) {
             Ok(()) => {
                 prune_old_logs(dir);
-                let appender = tracing_appender::rolling::daily(dir, "gently.log");
-                let (writer, guard) = tracing_appender::non_blocking(appender);
-                (Some(tracing_subscriber::fmt::layer().with_target(false).with_ansi(false).with_writer(writer)), Some(guard))
+                /* 用 Builder 而不是 `rolling::daily`：后者在无法创建当天文件时**直接 panic**
+                   （tracing-appender 0.2.5 的 `daily()` 内部 `expect`）。真机上遇到过
+                   「拒绝访问」——旧进程还握着当天的日志文件，于是 `tauri dev` 一启动就崩。
+                   这里改成可失败：先用正常文件名，失败再用带 pid 的备用名，最后退回控制台。 */
+                match build_appender(dir) {
+                    Some(appender) => {
+                        let (writer, guard) = tracing_appender::non_blocking(appender);
+                        (Some(
+                            tracing_subscriber::fmt::layer()
+                                .with_target(false)
+                                .with_ansi(false)
+                                .with_writer(writer),
+                        ), Some(guard))
+                    }
+                    None => (None, None),
+                }
             }
             Err(err) => {
                 // 目录建不出来（权限/磁盘）：只打控制台，不因此拦住启动
@@ -55,6 +69,30 @@ pub fn init(level: &str, log_dir: Option<&Path>) -> Result<Option<WorkerGuard>, 
         tracing::debug!(%err, "tracing 已初始化，跳过");
     }
     Ok(guard)
+}
+
+/// 先试正常文件名；被占用时退回带 pid 的备用文件；都失败就返回 None（只控制台）。
+fn build_appender(dir: &Path) -> Option<RollingFileAppender> {
+    let build = |prefix: &str| {
+        RollingFileAppender::builder()
+            .rotation(Rotation::DAILY)
+            .filename_prefix(prefix)
+            .build(dir)
+    };
+    match build("gently.log") {
+        Ok(appender) => return Some(appender),
+        Err(err) => {
+            eprintln!("日志文件不可用（{err}），尝试进程内备用文件");
+        }
+    }
+    let fallback = format!("gently.fallback-{}", std::process::id());
+    match build(&fallback) {
+        Ok(appender) => Some(appender),
+        Err(err) => {
+            eprintln!("备用日志文件也不可用（{err}），仅输出到控制台");
+            None
+        }
+    }
 }
 
 /// 清掉超过保留期的日志文件（按文件名里的日期判断，不依赖文件时间戳）。

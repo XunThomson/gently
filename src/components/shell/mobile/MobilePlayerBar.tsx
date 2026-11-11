@@ -4,6 +4,7 @@ import {useActions, usePlayerState} from '../../../store';
 import {useTheme} from '../../../theme';
 import {Cover} from '../../ui/cover';
 import {IconNext, IconPause, IconPlay} from '../../ui/icon';
+import {SleepTimerButton} from '../../ui/sleep-timer/SleepTimerSheet';
 import {SeekBar} from '../player-bar';
 import styles from './MobilePlayerBar.module.css';
 
@@ -33,7 +34,13 @@ export function MobilePlayerBar() {
            外壳的「横滑打开抽屉」手势必须跳过它（R137） */
         <section className={styles.bar} aria-label={t('mobile.openPlayer')} data-drawer-swipe="off">
             <div className={styles.seek}>
-                <SeekBar elapsed={elapsed} duration={duration} skin={skin} onSeek={seek}/>
+                <SeekBar
+                    elapsed={elapsed}
+                    duration={duration}
+                    skin={skin}
+                    onSeek={seek}
+                    className={styles.seekBar}
+                />
             </div>
 
             <div className={styles.row}>
@@ -55,6 +62,8 @@ export function MobilePlayerBar() {
                         <span className={styles.artist}>{current ? current.artist : t('mobile.pickSong')}</span>
                     </span>
                 </button>
+
+                <SleepTimerButton/>
 
                 <button
                     type="button"

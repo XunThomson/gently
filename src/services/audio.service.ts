@@ -36,6 +36,17 @@ class AudioEngine {
     private volume = 1;
     /** 最近一次「位置真的变了」的采样（僵死判定用） */
     private lastSample: StallSample | null = null;
+    /**
+     * 歌词页律动用的音频图（R139）。
+     *
+     * **只在 AudioContext 真的 running 时才接线**：`createMediaElementSource` 会把媒体元素
+     * 的输出永久改道进音频图——上下文若停在 suspended，声音就没了。所以先 resume，
+     * 确认 running 才建 source；建不了就什么都不做（返回 null，画面退回一条直线）。
+     */
+    private audioCtx: AudioContext | null = null;
+    private analyserNode: AnalyserNode | null = null;
+    private mediaSource: MediaElementAudioSourceNode | null = null;
+    private analyserPending: Promise<AnalyserNode | null> | null = null;
 
     setHandlers(handlers: AudioHandlers): void {
         this.handlers = handlers;
@@ -48,6 +59,10 @@ class AudioEngine {
 
         const el = new window.Audio();
         el.preload = 'metadata';
+        /* 回环媒体代理对 local / remote 都回了 `Access-Control-Allow-Origin: *`（core/src/media.rs）。
+           律动只对接了 Web Audio 的音频有效；不声明 CORS 的话 createMediaElementSource 会静音。
+           必须在设置 src 之前设，之后改会要求重新 load。 */
+        el.crossOrigin = 'anonymous';
         el.addEventListener('timeupdate', this.emitTime);
         el.addEventListener('durationchange', this.emitTime);
         el.addEventListener('loadedmetadata', this.emitTime);
@@ -264,6 +279,61 @@ class AudioEngine {
      */
     hadError(): boolean {
         return Boolean(this.el?.error);
+    }
+
+    /**
+     * 取歌词页律动用的 AnalyserNode（R139）。
+     *
+     * - 同一次会话里只建一条图；
+     * - **上下文不是 running 就返回 null**，绝不在 suspended 状态下接线（那会把正在播的声音掐掉）；
+     * - 返回 null 不是错误：歌词页退回「一条静止的直线」，用户下一次点击（手势）会再试一次。
+     */
+    async ensureAnalyser(): Promise<AnalyserNode | null> {
+        if (this.analyserNode) return this.analyserNode;
+        if (this.analyserPending) return this.analyserPending;
+
+        const el = this.ensure();
+        if (!el) return null;
+        const Ctor =
+            typeof window === 'undefined'
+                ? undefined
+                : window.AudioContext ??
+                  (window as unknown as {webkitAudioContext?: typeof AudioContext}).webkitAudioContext;
+        if (!Ctor) return null;
+
+        this.analyserPending = (async () => {
+            try {
+                if (!this.audioCtx) this.audioCtx = new Ctor();
+                const ctx = this.audioCtx;
+                if (ctx.state === 'suspended') {
+                    /* 不 await 一个可能永远挂起的 resume：和 play() 的超时守卫同理 */
+                    await Promise.race([
+                        ctx.resume().catch(() => undefined),
+                        new Promise<void>((resolve) => window.setTimeout(resolve, 800)),
+                    ]);
+                }
+                /* 关键守卫：没有 running 就不建 source（见字段注释） */
+                if (ctx.state !== 'running') return null;
+
+                if (!this.mediaSource) this.mediaSource = ctx.createMediaElementSource(el);
+                if (!this.analyserNode) {
+                    const analyser = ctx.createAnalyser();
+                    analyser.fftSize = 1024;
+                    analyser.smoothingTimeConstant = 0.8;
+                    /* 元素被改道后必须接回 destination，否则正常播放会没声音 */
+                    this.mediaSource.connect(analyser);
+                    analyser.connect(ctx.destination);
+                    this.analyserNode = analyser;
+                }
+                return this.analyserNode;
+            } catch (err) {
+                console.warn('[audio] 律动分析器创建失败，退回静态画面', err);
+                return null;
+            } finally {
+                this.analyserPending = null;
+            }
+        })();
+        return this.analyserPending;
     }
 }
 

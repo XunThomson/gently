@@ -135,7 +135,7 @@
      */
     const compatMode = envInfo.compat === true;
     if (compatMode) {
-        ALIAS_ARGS.getAlbumInfo = (args) => [itemArg(args[0])];
+        ALIAS_ARGS.getAlbumInfo = (args) => [itemArg(args[0]), args[1]];
     }
 
     globalThis.__collect = function () {
@@ -198,6 +198,12 @@
         const isAlias = (globalThis.__plugin_alias || {})[name] === true;
         const adapter = ALIAS_ARGS[name];
         if (adapter && (isAlias || (compatMode && !ALIASES[name]))) args = adapter(args);
+        /* MusicFree 的 `search(query, page, type)` 是三参数；我们的 ABI 只有两参数。
+           兼容插件常用 `if (type !== 'music') return ...`，少传第三个参数会**静默返回 0 条**
+           （R139 实测典型写法）。只在兼容模式补，且不覆盖插件自己给的值。 */
+        if (compatMode && name === 'search' && !isAlias) {
+            args = [args[0], args[1] === undefined ? 1 : args[1], args[2] === undefined ? 'music' : args[2]];
+        }
         const fail = (err) => {
             globalThis.__gentlyError = 'GENTLY_PLUGIN_ERROR: ' + (err && err.message ? err.message : String(err));
         };

@@ -82,6 +82,32 @@ impl Default for AnimationFit {
     }
 }
 
+/// 动画允许的**位移能力**（R139）。
+///
+/// 用户反馈：宠物在「坐下 / 饿 / 点击反应」这类非走路动画播放时，窗口仍会被宿主平移，
+/// 看起来像在地面上滑行。能力必须由动画自己声明——**不能靠动画名字判断**
+/// （动画名是自由字符串，第三方包可以叫任何名字）。
+///
+/// 兼容规则（写在契约里）：
+/// - 一个动画都没声明 `motion` → 整包按 legacy 处理，全部视为 `Walk`（旧包行为不变）；
+/// - 只要有任一动画声明了 → 严格模式：未声明 = `None`（作者不必逐个补）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Motion {
+    /// 不许位移（坐下 / 跳 / 失败 / 看向……）
+    None,
+    /// 可以水平走动
+    Walk,
+    /// 可以贴边爬行（预留；宿主尚未实现）
+    Crawl,
+}
+
+impl Default for Motion {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
 /// 一个动画：名字 + 帧数 + 每帧时长 + 是否循环
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +123,9 @@ pub struct Animation {
     /// 这一行的显示适配（可选）：不写就是原样画
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fit: Option<AnimationFit>,
+    /// 这一行动画允许的位移能力（R139；不写见 `Motion` 的兼容规则）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion: Option<Motion>,
 }
 
 /// 网格图集（多行 sprite sheet）：每格 `frameWidth × frameHeight`，一行一个动画。
@@ -300,6 +329,60 @@ impl PetSpec {
             ));
         }
         self.validate_atlas_layout()?;
+        self.validate_motion()?;
+        Ok(())
+    }
+
+    /// 位移能力：`index` 对应的动画**当前**允许怎么动。
+    ///
+    /// 兼容规则见 `Motion`：没声明任何 motion 的旧包全部按 `Walk`（零回归）；
+    /// 只要声明了一个，整包进入严格模式（未声明 = `None`）。
+    pub fn effective_motion(&self, index: u16) -> Motion {
+        let strict = self.animations.iter().any(|animation| animation.motion.is_some());
+        if !strict {
+            return Motion::Walk;
+        }
+        self.animations
+            .get(index as usize)
+            .and_then(|animation| animation.motion)
+            .unwrap_or(Motion::None)
+    }
+
+    /// 位移声明的自洽性（R139）。
+    ///
+    /// 两条必须在**安装时报**，而不是等真机上「坐着滑行」：
+    /// 1. 声明了 motion 却没有任何 walk/crawl 动画 —— 自相矛盾；
+    /// 2. `walking` 行为指向 `motion: none` 的动画 —— 作者写错，走动时永远动不了。
+    fn validate_motion(&self) -> PetResult<()> {
+        let strict = self.animations.iter().any(|animation| animation.motion.is_some());
+        if !strict {
+            return Ok(());
+        }
+        let has_movable = self
+            .animations
+            .iter()
+            .any(|animation| matches!(animation.motion, Some(Motion::Walk | Motion::Crawl)));
+        if !has_movable {
+            return Err(PetError::invalid_package(
+                "声明了动画 motion，但没有任何 walk / crawl 动画（宠物将永远无法移动）",
+            ));
+        }
+        for behavior in &self.behaviors {
+            if !matches!(behavior.when, Condition::Walking { .. }) {
+                continue;
+            }
+            let Action::Play { animation, .. } = &behavior.then else {
+                continue;
+            };
+            let Some(index) = self.animation_index(animation) else {
+                continue;
+            };
+            if self.effective_motion(index) == Motion::None {
+                return Err(PetError::invalid_package(format!(
+                    "walking 行为指向了 motion: none 的动画：{animation}（走动时必须播可位移动画）"
+                )));
+            }
+        }
         Ok(())
     }
 

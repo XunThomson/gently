@@ -42,6 +42,13 @@ export function BackgroundCard() {
         resetBackground,
     } = useActions().ui;
     const confirm = useConfirm();
+    const mobile = isMobilePlatform();
+
+    /* 手机形态没有网页壁纸（R128）：如果从桌面同步过来的是 web 背景，
+       这里强制落回 video，否则「导入」会打开 HTML 选择器、背景层还会是一张白 iframe。 */
+    useEffect(() => {
+        if (mobile && background.kind === 'web') setBackgroundKind('video');
+    }, [mobile, background.kind, setBackgroundKind]);
 
     const fileRef = useRef<HTMLInputElement>(null);
     const webRef = useRef<HTMLInputElement>(null);
@@ -236,10 +243,24 @@ export function BackgroundCard() {
     };
 
     const backgroundConfig = config.components.background;
+    /* 素材是图片还是视频（决定是否显示「播放速度」）：MIME 可能为空，扩展名兜底 */
+    const isImageAsset =
+        background.kind === 'video' &&
+        !!background.asset &&
+        (background.asset.type.startsWith('image/') ||
+            /\.(jpe?g|png|webp|gif|avif|bmp)$/i.test(background.asset.name));
     const opacity = background.options.opacity ?? backgroundConfig.opacity;
     const blurPx = background.options.blurPx ?? backgroundConfig.blurPx;
     const contentOpacity =
         background.options.contentOpacity ?? backgroundConfig.contentOpacity;
+    /* 手机上限 50%：超过这个值背景基本被盖住（用户反馈「透明度 10% 还是看不到背景」）。
+       未显式设置时默认 35%，比桌面主题的 66% 更透。 */
+    const effectiveContentOpacity = mobile
+        ? Math.min(
+              background.options.contentOpacity === null ? 0.35 : contentOpacity,
+              0.5,
+          )
+        : contentOpacity;
     const contentBlurPx =
         background.options.contentBlurPx ?? backgroundConfig.surfaceBlurPx;
     const drawerOpacity =
@@ -285,9 +306,8 @@ export function BackgroundCard() {
                         options={
                             /* 网页背景 = 单个 HTML 塞进 iframe：桌面端的玩法；
                                手机上素材难准备、还白白吃内存，手机形态只留视频（R128） */
-                            isMobilePlatform()
-                                ? [{value: 'video', label: t('page.background.kindVideo')}]
-                                : [
+                            mobile
+                                ? [{value: 'video', label: t('page.background.kindVideo')}]                                : [
                                       {value: 'video', label: t('page.background.kindVideo')},
                                       {value: 'web', label: t('page.background.kindWeb')},
                                   ]
@@ -377,37 +397,139 @@ export function BackgroundCard() {
                             name="background-fit"
                             value={background.options.fit}
                             onChange={(value) =>
-                                setBackgroundOptions({fit: value === 'contain' ? 'contain' : 'cover'})
+                                setBackgroundOptions({
+                                    fit:
+                                        value === 'contain'
+                                            ? 'contain'
+                                            : value === 'fill'
+                                              ? 'fill'
+                                              : value === 'free'
+                                                ? 'free'
+                                                : 'cover',
+                                })
                             }
                             options={[
                                 {value: 'cover', label: t('page.background.fitCover')},
                                 {value: 'contain', label: t('page.background.fitContain')},
+                                {value: 'fill', label: t('page.background.fitFill')},
+                                {value: 'free', label: t('page.background.fitFree')},
                             ]}
                         />
                     </div>
 
-                    <div className={styles.field}>
-                        <span className={styles.label}>{t('page.background.rate')}</span>
-                        <span className={styles.value}>
-                            <input
-                                type="range"
-                                className={styles.range}
-                                min={appConfig.background.minPlaybackRate}
-                                max={appConfig.background.maxPlaybackRate}
-                                step={0.25}
-                                value={background.options.playbackRate}
-                                aria-label={t('page.background.rate')}
-                                onChange={(event) =>
-                                    setBackgroundOptions({
-                                        playbackRate: Number(event.target.value),
-                                    })
-                                }
-                            />
-                            <span className={styles.valueText}>
-                                ×{background.options.playbackRate.toFixed(2)}
+                    {/* 自由构图（R139）：主流做法是**选「自由」才可编辑**水平/垂直/缩放/翻转；
+                        其它对齐方式下这些参数保持隐藏，避免「选了铺满却还被旧参数拉偏」。 */}
+                    {background.options.fit === 'free' && (
+                        <>
+                            <p className={styles.hint}>{t('page.background.freeHint')}</p>
+                            <div className={styles.field}>
+                                <span className={styles.label}>{t('page.background.positionX')}</span>
+                                <span className={styles.value}>
+                                    <input
+                                        type="range"
+                                        className={styles.range}
+                                        min={0}
+                                        max={100}
+                                        step={1}
+                                        value={Math.round(background.options.positionX)}
+                                        aria-label={t('page.background.positionX')}
+                                        onChange={(event) =>
+                                            setBackgroundOptions({
+                                                positionX: Number(event.target.value),
+                                            })
+                                        }
+                                    />
+                                    <span className={styles.valueText}>
+                                        {Math.round(background.options.positionX)}%
+                                    </span>
+                                </span>
+                            </div>
+
+                            <div className={styles.field}>
+                                <span className={styles.label}>{t('page.background.positionY')}</span>
+                                <span className={styles.value}>
+                                    <input
+                                        type="range"
+                                        className={styles.range}
+                                        min={0}
+                                        max={100}
+                                        step={1}
+                                        value={Math.round(background.options.positionY)}
+                                        aria-label={t('page.background.positionY')}
+                                        onChange={(event) =>
+                                            setBackgroundOptions({
+                                                positionY: Number(event.target.value),
+                                            })
+                                        }
+                                    />
+                                    <span className={styles.valueText}>
+                                        {Math.round(background.options.positionY)}%
+                                    </span>
+                                </span>
+                            </div>
+
+                            <div className={styles.field}>
+                                <span className={styles.label}>{t('page.background.scale')}</span>
+                                <span className={styles.value}>
+                                    <input
+                                        type="range"
+                                        className={styles.range}
+                                        min={1}
+                                        max={2.5}
+                                        step={0.05}
+                                        value={background.options.scale}
+                                        aria-label={t('page.background.scale')}
+                                        onChange={(event) =>
+                                            setBackgroundOptions({
+                                                scale: Number(event.target.value),
+                                            })
+                                        }
+                                    />
+                                    <span className={styles.valueText}>
+                                        ×{background.options.scale.toFixed(2)}
+                                    </span>
+                                </span>
+                            </div>
+
+                            <div className={styles.field}>
+                                <span className={styles.label}>{t('page.background.flip')}</span>
+                                <input
+                                    type="checkbox"
+                                    className={styles.checkbox}
+                                    checked={background.options.flip}
+                                    aria-label={t('page.background.flip')}
+                                    onChange={(event) =>
+                                        setBackgroundOptions({flip: event.target.checked})
+                                    }
+                                />
+                            </div>
+                        </>
+                    )}
+
+                    {!isImageAsset && (
+                        <div className={styles.field}>
+                            <span className={styles.label}>{t('page.background.rate')}</span>
+                            <span className={styles.value}>
+                                <input
+                                    type="range"
+                                    className={styles.range}
+                                    min={appConfig.background.minPlaybackRate}
+                                    max={appConfig.background.maxPlaybackRate}
+                                    step={0.25}
+                                    value={background.options.playbackRate}
+                                    aria-label={t('page.background.rate')}
+                                    onChange={(event) =>
+                                        setBackgroundOptions({
+                                            playbackRate: Number(event.target.value),
+                                        })
+                                    }
+                                />
+                                <span className={styles.valueText}>
+                                    ×{background.options.playbackRate.toFixed(2)}
+                                </span>
                             </span>
-                        </span>
-                    </div>
+                        </div>
+                    )}
                 </>
             )}
 
@@ -437,9 +559,9 @@ export function BackgroundCard() {
                         type="range"
                         className={styles.range}
                         min={Math.round(appConfig.background.minContentOpacity * 100)}
-                        max={100}
+                        max={mobile ? 50 : 100}
                         step={1}
-                        value={Math.round(contentOpacity * 100)}
+                        value={Math.round(effectiveContentOpacity * 100)}
                         aria-label={t('page.background.contentOpacity')}
                         onChange={(event) =>
                             setBackgroundOptions({
@@ -447,7 +569,9 @@ export function BackgroundCard() {
                             })
                         }
                     />
-                    <span className={styles.valueText}>{Math.round(contentOpacity * 100)}%</span>
+                    <span className={styles.valueText}>
+                        {Math.round(effectiveContentOpacity * 100)}%
+                    </span>
                 </span>
             </div>
             <p className={styles.hint}>{t('page.background.contentOpacityHint')}</p>
@@ -669,7 +793,7 @@ export function BackgroundCard() {
             <input
                 ref={fileRef}
                 type="file"
-                accept="video/mp4,video/webm,video/ogg,video/x-m4v,.mp4,.webm,.m4v,.ogv,.ogg"
+                accept="video/mp4,video/webm,video/ogg,video/x-m4v,image/jpeg,image/png,image/webp,image/gif,image/avif,.mp4,.webm,.m4v,.ogv,.ogg,.jpg,.jpeg,.png,.webp,.gif,.avif"
                 hidden
                 onChange={(event) => {
                     const file = event.currentTarget.files?.[0];

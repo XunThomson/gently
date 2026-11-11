@@ -929,3 +929,43 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
   验证口径：主窗口渲染正常、exe 里搜不到 `localhost:1420`；只看 `cargo build` 成功不算数。
 - 附带：`petEnabled` 默认关（`gently:ui` 里 `persisted.petEnabled === true`），宠物窗口 `visible:false`。
   调试前先在设置页打开，否则驱动脚本会报「没找到宠物窗口」——别误判成窗口创建失败。
+
+## 74. 安卓 `tauri android build --debug` 默认仍是 dev 包：reload 后白屏（R139）
+
+- 现象：真机上正常用，一旦退后台 / 选文件 / 亮屏回来，页面 reload 后白屏；
+  `adb logcat` 里是 `Failed to fetch dynamically imported module: http://tauri.localhost/src/views/local/index.tsx`。
+- 取证：APK 的 `assets/tauri.conf.json` 只有 `devUrl`，页面脚本是 `/@vite/client` + `/src/main.tsx`
+  （bundled 包应是 `/assets/index-*.js`）。不是 Activity 重建，是页面还依赖 Vite dev server。
+- 规避：出包必须带 `--features tauri/custom-protocol`：
+  `pnpm tauri android build --debug -t aarch64 --apk -f tauri/custom-protocol`。
+  验证口径：页面里只有 `/assets/*.js`，没有 `/@vite/client`、`/src/main.tsx`、`/node_modules/.vite`。
+- 同一轮补的两条 Android 稳定性项：
+  - `AndroidManifest` 的 `configChanges` 要含 `density|fontScale|navigation|layoutDirection`，
+    否则改显示大小/字体/导航方式会重建 Activity（Wry 在 `onCreate` 建 WebView → 整页重载）；
+  - Wry 的 `onResume` 不要自己 reload，只发 `gently:app:resume` 让页面走已有的恢复逻辑。
+- 安全区：新 WebView 的 `env(safe-area-inset-*)` 对 system bars 有效（实测 top 37 / bottom 16 CSS px），
+  旧华为 WebView 92 只给 display cutout；所以代码用 `max(env(...), app.config 兜底)`，
+  底部播放条必须自己让出 `env(safe-area-inset-bottom)`，不能只让顶部。
+
+## 75. 桌面 `tauri dev` 没有任何窗口：先怀疑 WebView2 会话，不是应用代码（R140）
+
+- 现象：终端里 `setup` 全部跑完（凭据 / SQLite / 数据库 / 宠物核心都就绪），但桌面上没有窗口；
+  没有 panic、没有错误弹窗。`get_webview_window("main")` 返回 `Some`，但
+  `main.is_visible()` 是 `false`、`outer_size()/outer_position()` 报
+  `Runtime(FailedToReceiveMessage)`——窗口对象存在，**OS 窗口从未创建**。
+- 排查：`EnumWindows` 里只有 `ConsoleWindowClass` 和 Tao 的
+  `Tao Thread Event Target`，没有 `Tauri Window`；进程里也没有 `msedgewebview2.exe` 子进程。
+  用 `WEBVIEW2_USER_DATA_FOLDER` 指向一份工作 profile 曾经成功创建三个窗口；之后同一
+  Windows 会话里换新 profile / 新路径都再次卡住——说明是 **WebView2 运行时/会话状态**
+  （本轮遇到的是 17:47 前后 Edge 更新 + 反复 `Stop-Process` 杀 `gently.exe`），不是 Tauri 配置。
+- 处理：
+  1. 关掉所有 `gently.exe`，**重启 Windows（或注销再登录）**；让 WebView2 运行时完成更新、
+     清掉会话级锁。
+  2. 仍失败：修复 Microsoft Edge WebView2 Runtime；或把
+     `%LOCALAPPDATA%\com.xun.gently\EBWebView` 改名备份，让它重建（会丢界面设置/背景素材，
+     曲库在 `%APPDATA%\com.xun.gently` 不受影响）。
+  3. `src-tauri/src/startup_guard.rs` 会在 12 秒后主窗口仍不可见时弹原生 MessageBox 说明
+     上述步骤——不再「双击后什么都没有」。
+- 另一个独立的构建坑：VS 2026（MSVC 14.51）编 rquickjs/ring 的 C 文件会报
+  `c1.dll: 未能将命令行放入调试记录中 (D8050)`；根 `Cargo.toml` 的
+  `[profile.dev] debug = 0` 已规避（APK 也从 246 MB 降到 81 MB）。要调试 Rust 时改回 `debug = 2`。

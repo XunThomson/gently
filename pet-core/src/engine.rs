@@ -227,6 +227,14 @@ impl Engine {
             .map(str::to_string)
     }
 
+    /// 当前动画允许的位移能力（R139）。
+    ///
+    /// 宿主在**同进程**里直接读它来门控窗口平移——不新增命令/事件，也没有一帧延迟。
+    /// 运行时还没装载（没 tick 过）时返回 `None`，宿主据此不移动。
+    pub fn motion(&self, id: &str) -> Option<crate::spec::Motion> {
+        self.runtimes.get(id).map(|runtime| runtime.sim.motion())
+    }
+
     /// 推进一帧（宿主按自己的节拍调用；M0 约定 20 Hz）。
     pub fn tick(&mut self, id: &str, input: &Input, now_ms: u64) -> PetResult<Frame> {
         self.runtime_mut(id, now_ms)?;
@@ -376,6 +384,12 @@ impl Engine {
             .runtimes
             .get_mut(id)
             .ok_or_else(|| PetError::new(crate::error::PetErrorCode::Internal, "运行时装载失败"))?;
+
+        /* 每天第一次进入时记一笔到访 / 连续天数（R139）。同一天重复调用是幂等的。 */
+        let day = (now_ms / crate::profile::DAY_MS) as i64;
+        if runtime.profile.visit_day(day, &limits) {
+            runtime.ticks_since_save = 0;
+        }
 
         if now_ms > runtime.profile.updated_at {
             let settled = runtime.profile.decay(now_ms, &limits).clamped(&limits);

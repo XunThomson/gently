@@ -10,6 +10,14 @@ members = ["core", "pet-core", "src-tauri"]
 exclude = ["vendor"]
 resolver = "2"
 
+# 本机 Visual Studio 2026（MSVC 14.51）在带 `/Z7` 编 rquickjs/ring 的 C 文件时会报
+# `c1.dll: 未能将命令行放入调试记录中 (D8050)`——这是编译器对长命令行/调试记录的 bug，
+# 不是代码错误。关掉 dev profile 的 debuginfo 后 C 编译不再带 `/Z7`，桌面与 Android
+# 都能正常增量构建（APK 也从 246 MB 降到 81 MB）。需要逐步调试 Rust 时把这里改回
+# `debug = 2`（或临时 `CARGO_PROFILE_DEV_DEBUG=2`）即可。
+[profile.dev]
+debug = 0
+
 # 为什么 patch：`rquickjs-sys 0.7.0` 只带了 10 个 target 的 FFI 绑定，**没有 aarch64-linux-android**，
 # Android 构建会在 `include!("bindings/<target>.rs")` 处直接失败（`build.rs` 只留一条 warning）。
 # vendor/ 里那份是逐文件上游副本，唯一改动是新增 `src/bindings/aarch64-linux-android.rs`；

@@ -1,5 +1,6 @@
 import {
     normalizeBackgroundOptions,
+    type BackgroundFit,
     type BackgroundOptions,
 } from './backgroundSettings';
 
@@ -36,10 +37,12 @@ function numberValue(value: unknown): number | null {
     return null;
 }
 
-function fitValue(value: unknown): 'cover' | 'contain' | null {
+function fitValue(value: unknown): BackgroundFit | null {
     if (typeof value !== 'string') return null;
     const normalized = value.toLowerCase();
+    if (normalized.includes('free')) return 'free';
     if (normalized.includes('contain')) return 'contain';
+    if (normalized.includes('fill') || normalized.includes('stretch')) return 'fill';
     if (normalized.includes('cover')) return 'cover';
     return null;
 }
@@ -85,7 +88,7 @@ export function parseExternalBackgroundPreset(input: unknown): PresetParseResult
     const source = isRecord(root.properties) ? root.properties : root;
     if (Object.keys(source).length === 0) return {ok: false, reason: 'empty'};
 
-    let fit: 'cover' | 'contain' | null = null;
+    let fit: BackgroundFit | null = null;
     let playbackRate = 1;
     let opacity: number | null = null;
     let contentOpacity: number | null = null;

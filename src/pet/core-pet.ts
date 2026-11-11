@@ -110,7 +110,9 @@ export function createCorePet(): PetDefinition {
             statusHeading.className = styles.statusHeading;
             const petName = document.createElement('strong');
             const mood = document.createElement('span');
-            statusHeading.append(petName, mood);
+            const level = document.createElement('span');
+            level.className = styles.statusValue;
+            statusHeading.append(petName, mood, level);
             const satietyLabel = document.createElement('span');
             satietyLabel.textContent = i18n.t('pet.status.satiety');
             const satiety = document.createElement('progress');
@@ -218,6 +220,21 @@ export function createCorePet(): PetDefinition {
             const updateStatus = () => {
                 petName.textContent = activePet?.name ?? i18n.t('pet.name');
                 mood.textContent = activePet ? i18n.t(`pet.mood.${activePet.mood}`) : '';
+                /* 养成反馈（R139）：等级 + 连续到访天数。放在悬停状态卡里，不抢主界面。 */
+                level.textContent = activePet
+                    ? [
+                          i18n.t('pet.status.level', {
+                              level: activePet.growth?.level ?? 1,
+                          }),
+                          (activePet.growth?.streakDays ?? 0) > 0
+                              ? i18n.t('pet.status.streak', {
+                                    days: activePet.growth?.streakDays ?? 0,
+                                })
+                              : '',
+                      ]
+                          .filter(Boolean)
+                          .join(' · ')
+                    : '';
                 satiety.value = activePet ? Math.max(0, Math.min(100, 100 - activePet.profile.hunger)) : 0;
                 affection.textContent = activePet ? String(Math.round(activePet.profile.affection)) : '0';
                 for (const button of sizeButtons) {

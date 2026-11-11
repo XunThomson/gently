@@ -87,17 +87,27 @@ export function SubscriptionPanel() {
     const previewEntry = async (entry: CatalogEntry) => {
         setBusy(true);
         setError(null);
-        const result = await corePlugin.preview({
-            kind: 'catalog',
+        const from = {
+            kind: 'catalog' as const,
             subscriptionId: entry.subscriptionId,
             fileName: entry.fileName,
-        });
+        };
+        const result = await corePlugin.preview(from, false);
+        if (result.ok) {
+            setBusy(false);
+            setPending({entry, preview: result.data, consent: false});
+            return;
+        }
+        /* 社区列表（如 MusicFree 格式）里的插件通常没有我们的清单头，普通预览必然失败。
+           这里**只多试一次兼容模式**（预览阶段 NoEgress，不联网），成功就把 compat 警告
+           交给用户看；安装仍需用户勾选同意（consent 模型不变）。 */
+        const compatible = await corePlugin.preview(from, true);
         setBusy(false);
-        if (!result.ok) {
+        if (!compatible.ok) {
             setError(errorText(t, result.error));
             return;
         }
-        setPending({entry, preview: result.data, consent: false});
+        setPending({entry, preview: compatible.data, consent: false});
     };
 
     const installEntry = async () => {

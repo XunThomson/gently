@@ -76,6 +76,13 @@ export const IconClock = (p: IconProps) => (
     </Svg>
 );
 
+/** 定时关闭（月亮） */
+export const IconMoon = (p: IconProps) => (
+    <Svg {...p}>
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </Svg>
+);
+
 /** 播放列表 */
 export const IconList = (p: IconProps) => (
     <Svg {...p}>
@@ -106,6 +113,12 @@ export const IconGear = (p: IconProps) => (
 export const IconChevronDown = (p: IconProps) => (
     <Svg strokeWidth={2} {...p}>
         <path d="m6 9 6 6 6-6"/>
+    </Svg>
+);
+
+export const IconChevronUp = (p: IconProps) => (
+    <Svg strokeWidth={2} {...p}>
+        <path d="m6 15 6-6 6 6"/>
     </Svg>
 );
 

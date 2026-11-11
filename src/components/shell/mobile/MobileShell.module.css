@@ -2,10 +2,17 @@
    尺寸与配色全部来自 theme.config.json 的 `mobile` 段与语义色板，不写死数值。 */
 
 .shell {
+    /* 旧机兜底值：由组件按 app.config 注入（内联 style 覆盖）；
+       这里先声明 0，保证 CSS token 守卫与「没有 JS 注入」时都有定义。 */
+    --mobile-status-inset: 0px;
+    /* 真实安全区优先：WebView 能报 env() 就用它，报不了（多数安卓 WebView 只报 0）
+       才退回 app.config 的设备近似值。原生精确值（WindowInsets）由宿主桥后续补——见 STATE。 */
+    --mobile-safe-top: max(env(safe-area-inset-top, 0px), var(--mobile-status-inset, 0px));
     display: flex;
     flex-direction: column;
     width: 100%;
     height: 100%;
+    padding-top: var(--mobile-safe-top);
     overflow: hidden;
     background: var(--surface-chrome);
     backdrop-filter: var(--surface-blur);
@@ -100,9 +107,10 @@
     inset: 0;
     z-index: var(--z-overlay);
     display: flex;
-    /* 压暗内容放在**这一层 div** 上：真机上「铺满屏幕的 button 当遮罩」不涂背景
-       （见 GOTCHAS §55），按钮只留作点击热区。抽屉本身不透明，压不到它。 */
-    background: var(--modal-scrim);
+    /* 背景透明：压暗效果由 .drawerScrim 的内联 opacity 控制（跟手拖动时实时变化） */
+    background: transparent;
+    /* 抽屉根容器不拦截点击，让事件落到子元素（scrim / panel） */
+    pointer-events: auto;
 }
 
 .drawerScrim {
@@ -112,17 +120,7 @@
     padding: 0;
     background: var(--modal-scrim);
     cursor: pointer;
-    /* 遮罩先淡入，抽屉再滑出来：两层同时硬切会「闪」一下（R123） */
-    animation: scrimIn var(--motion-fast);
-}
-
-@keyframes scrimIn {
-    from {
-        opacity: 0;
-    }
-    to {
-        opacity: 1;
-    }
+    /* 遮罩的 opacity 由内联 style 控制（跟手拖动时实时变化），不再用 animation */
 }
 
 .drawer {
@@ -140,24 +138,16 @@
     overflow-y: auto;
     background: var(--bg-elevated);
     box-shadow: var(--shadow-panel);
-    /* 从左侧滑出来（R123）：抽屉是挂载即显示，所以只做入场；
-       出场不做——`open=false` 时组件直接卸载，硬做退场要额外维护状态。 */
-    animation: drawerIn var(--motion-base);
-}
-
-@keyframes drawerIn {
-    from {
-        transform: translateX(-100%);
-    }
-    to {
-        transform: translateX(0);
-    }
+    /* 抽屉的 translateX 由内联 style 控制（跟手拖动时实时变化），
+       transition 也在内联 style 里按「拖动中/松手」切换 */
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .drawer,
+    .drawer {
+        transition: none !important;
+    }
     .drawerScrim {
-        animation: none;
+        transition: none !important;
     }
 }
 

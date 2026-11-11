@@ -53,23 +53,39 @@ export function RowActionsProvider({children}: { children: ReactNode }) {
 
     /* 面板下拉收起（R125，#1 的手势补齐）：底部面板的常规手势是「往下拖走」。
        左边缘横滑那条路走不通（被系统返回吞掉，见 GOTCHAS §67），但下拉不冲突。
-       拖动时只跟位移、不打断点击：位移小于阈值松手就弹回原处。 */
+       **只在抓手/标题上拖，且移动超过 6px 才捕获指针**：整块面板捕获会把动作列表的
+       触摸滚动一起吃掉，长列表下面的动作永远点不到（R139）。 */
     const [dragY, setDragY] = useState(0);
-    const dragStart = useRef<number | null>(null);
+    const dragStart = useRef<{y: number; id: number; captured: boolean} | null>(null);
     const onSheetPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-        dragStart.current = event.clientY;
-        event.currentTarget.setPointerCapture(event.pointerId);
+        if (!event.isPrimary) return;
+        dragStart.current = {y: event.clientY, id: event.pointerId, captured: false};
     };
     const onSheetPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-        if (dragStart.current === null) return;
-        setDragY(Math.max(0, event.clientY - dragStart.current));
+        const start = dragStart.current;
+        if (!start || start.id !== event.pointerId) return;
+        const dy = event.clientY - start.y;
+        if (!start.captured) {
+            if (Math.abs(dy) < 6) return;
+            start.captured = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+        }
+        setDragY(Math.max(0, dy));
     };
-    const onSheetPointerUp = () => {
-        if (dragStart.current === null) return;
-        const moved = dragY;
+    const onSheetPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+        const start = dragStart.current;
+        if (!start) return;
         dragStart.current = null;
+        if (start.captured) {
+            try {
+                event.currentTarget.releasePointerCapture(start.id);
+            } catch {
+                /* 指针已经不存在：忽略 */
+            }
+        }
+        const moved = dragY;
         setDragY(0);
-        if (moved > 48) api.close();
+        if (start.captured && moved > 48) api.close();
     };
 
     return (
@@ -97,13 +113,18 @@ export function RowActionsProvider({children}: { children: ReactNode }) {
                         className={styles.sheet}
                         style={dragY > 0 ? {transform: `translateY(${dragY}px)`} : undefined}
                         onClick={(event) => event.stopPropagation()}
-                        onPointerDown={onSheetPointerDown}
-                        onPointerMove={onSheetPointerMove}
-                        onPointerUp={onSheetPointerUp}
-                        onPointerCancel={onSheetPointerUp}
                     >
-                        <span className={styles.grabber} aria-hidden="true"/>
-                        <p className={styles.title}>{request.title}</p>
+                        {/* 只有抓手/标题是拖动区：动作列表要能正常触摸滚动 */}
+                        <div
+                            className={styles.dragHandle}
+                            onPointerDown={onSheetPointerDown}
+                            onPointerMove={onSheetPointerMove}
+                            onPointerUp={onSheetPointerUp}
+                            onPointerCancel={onSheetPointerUp}
+                        >
+                            <span className={styles.grabber} aria-hidden="true"/>
+                            <p className={styles.title}>{request.title}</p>
+                        </div>
 
                         <div className={styles.actions}>
                             {request.actions.map((action) => (

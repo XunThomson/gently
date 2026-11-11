@@ -80,6 +80,9 @@ interface StoredPage {
 /** 视频扩展名兜底：某些系统的 `File.type` 为空，只能靠文件名判断。 */
 const VIDEO_EXT = /\.(mp4|webm|m4v|ogv|ogg)$/i;
 
+/** 图片扩展名兜底（R139）：静态背景与视频共用同一个 IndexedDB store。 */
+const IMAGE_EXT = /\.(jpe?g|png|webp|gif|avif|bmp)$/i;
+
 /** 网页扩展名兜底，作用同上。 */
 const WEB_EXT = /\.(html?|xhtml)$/i;
 
@@ -136,12 +139,17 @@ function newId(): string {
 }
 
 /**
- * 判断文件是否为受支持的视频。
+ * 判断文件是否为受支持的背景素材（视频或图片，R139）。
  *
  * @remarks MIME 与扩展名任一命中即可，兼容 `file.type` 为空的场景。
  */
-function isVideo(file: File): boolean {
-    return file.type.startsWith('video/') || VIDEO_EXT.test(file.name);
+function isMedia(file: File): boolean {
+    return (
+        file.type.startsWith('video/') ||
+        file.type.startsWith('image/') ||
+        VIDEO_EXT.test(file.name) ||
+        IMAGE_EXT.test(file.name)
+    );
 }
 
 /**
@@ -249,7 +257,7 @@ export const backgroundService = {
         if (file.size > appConfig.background.maxVideoBytes) {
             return {ok: false, reason: 'too-large'};
         }
-        if (!isVideo(file)) return {ok: false, reason: 'unsupported-type'};
+        if (!isMedia(file)) return {ok: false, reason: 'unsupported-type'};
 
         const asset: BackgroundAsset = {
             /* 显式 id 用于**主题包**：一套皮肤一份背景，换素材时覆盖同一个键，

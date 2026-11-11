@@ -2,7 +2,7 @@ import {useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Button} from '../../../components/ui/button';
 import {IconChevronDown, IconFolder} from '../../../components/ui/icon';
-import {coreAvailable, importAudioFiles, importProgress, importedMusicDir, type ImportProgress} from '../../../services';
+import {coreAvailable, importAudioDirectory, importAudioFiles, importProgress, importedMusicDir, type ImportProgress} from '../../../services';
 import {useActions, useLibraryState} from '../../../store';
 import {errorText} from '../../../i18n/errors';
 import {importNoteText, importProgressText, importedTracksOf} from '../../../utils/importNote';
@@ -104,10 +104,10 @@ export function ScanPanel() {
      * 安卓上没有「粘贴路径」这条路（普通用户拿不到绝对路径），所以给一个真按钮：
      * 选文件 → Kotlin 拷进应用私有目录 → 这里拿目录去 `library.local.scan` 入库。
      */
-    const pickFromDevice = async () => {
+    const pickFromDevice = async (directory: boolean) => {
         setImporting(true);
         setImportNote('');
-        const result = await importAudioFiles();
+        const result = directory ? await importAudioDirectory() : await importAudioFiles();
         setImporting(false);
 
         setImportNote(importNoteText(result, t));
@@ -187,12 +187,21 @@ export function ScanPanel() {
                                 <Button
                                     variant="primary"
                                     size="sm"
-                                    onClick={() => void pickFromDevice()}
+                                    onClick={() => void pickFromDevice(false)}
                                     disabled={importing || scanning}
                                 >
                                     {importing
                                         ? t('page.local.importing')
                                         : t('page.local.importFromDevice')}
+                                </Button>
+                                {/* 文件多时一个个勾太累：选一个目录，原生递归扫描后整批导入（R139） */}
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => void pickFromDevice(true)}
+                                    disabled={importing || scanning}
+                                >
+                                    {t('page.local.importDirectory')}
                                 </Button>
                                 {/* 导入是拷一份：占双份空间，得让用户能把副本清掉（R119） */}
                                 {importedCopies.length > 0 && (

@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 use crate::contract::is_known_command;
 use crate::engine::Engine;
 use crate::error::{PetError, PetResult};
+use crate::profile::{PetProfile, PetProfileLimits};
 use crate::sim::Input;
 use crate::PlaybackHint;
 
@@ -52,6 +53,7 @@ fn state(engine: &mut Engine, now_ms: u64) -> PetResult<Value> {
     let mut pets = Vec::with_capacity(installed.len());
     for (spec, _) in installed {
         let profile = engine.profile(&spec.id, now_ms)?;
+        let growth = growth_json(&profile, &limits);
         let pet = json!({
             "id": spec.id,
             "name": spec.name,
@@ -61,6 +63,7 @@ fn state(engine: &mut Engine, now_ms: u64) -> PetResult<Value> {
             // 心情与「饿」都是**派生值**：库里只存好感与饿，避免两套状态互相矛盾
             "mood": profile.mood(&limits).as_str(),
             "hungry": profile.is_hungry(&limits),
+            "growth": growth,
             "profile": profile,
         });
         pets.push(pet);
@@ -243,12 +246,32 @@ fn interact(engine: &mut Engine, params: Value, now_ms: u64) -> PetResult<Value>
             )))
         }
     };
+    let growth = growth_json(&profile, &limits);
     Ok(json!({
         "profile": profile,
         // 互动后立刻带回派生心情，界面不必再问一次
         "mood": profile.mood(&limits).as_str(),
         "hungry": profile.is_hungry(&limits),
+        "growth": growth,
     }))
+}
+
+/// 养成账本的对外形状（等级/下一级经验是派生值，不落库）。
+fn growth_json(profile: &PetProfile, limits: &PetProfileLimits) -> Value {
+    let growth = profile.growth();
+    json!({
+        "xp": growth.xp,
+        "level": profile.level(limits),
+        "nextLevelXp": profile.next_level_xp(limits),
+        "feeds": growth.feeds,
+        "touches": growth.touches,
+        "bestAffection": growth.best_affection,
+        "streakDays": growth.streak_days,
+        "daysVisited": growth.days_visited,
+        "todayFed": growth.today_fed,
+        "todayTouched": growth.today_touched,
+        "unlocked": growth.unlocked,
+    })
 }
 
 fn remove(engine: &mut Engine, params: Value) -> PetResult<Value> {

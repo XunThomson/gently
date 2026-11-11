@@ -118,6 +118,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-3);
+    /* 手机上「从手机导入 / 扫描目录导入 / 清理副本」可能同时出现：窄屏必须能换行 */
+    flex-wrap: wrap;
     padding-top: var(--space-1);
 }
 

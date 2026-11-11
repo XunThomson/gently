@@ -12,6 +12,8 @@ export interface SeekBarProps {
     /** 焦点皮肤：default | glow | ring（来自 theme.config.json） */
     skin?: string;
     onSeek: (seconds: number) => void;
+    /** 额外类名（手机播放条用它把进度条从屏幕边缘缩进到内容区） */
+    className?: string;
 }
 
 /**
@@ -22,7 +24,7 @@ export interface SeekBarProps {
  * - 焦点皮肤由主题配置 `components.playerBar.progressThumbSkin` 决定；
  * - 悬浮或拖拽时在指针位置显示时间预览。
  */
-export function SeekBar({elapsed, duration, skin = 'default', onSeek}: SeekBarProps) {
+export function SeekBar({elapsed, duration, skin = 'default', onSeek, className}: SeekBarProps) {
     const {t} = useTranslation();
     const barRef = useRef<HTMLDivElement>(null);
     const [dragRatio, setDragRatio] = useState<number | null>(null);
@@ -74,7 +76,7 @@ export function SeekBar({elapsed, duration, skin = 'default', onSeek}: SeekBarPr
     return (
         <div
             ref={barRef}
-            className={[styles.root, dragRatio !== null ? styles.dragging : '']
+            className={[styles.root, className, dragRatio !== null ? styles.dragging : '']
                 .filter(Boolean)
                 .join(' ')}
             data-skin={skin}
@@ -95,7 +97,7 @@ export function SeekBar({elapsed, duration, skin = 'default', onSeek}: SeekBarPr
                 <i className={styles.fill} style={{width: `${percent}%`}}/>
             </div>
 
-            <span className={styles.thumb} style={{left: `${percent}%`}}/>
+            <span className={styles.thumb} style={{left: `${percent}%`}} hidden={duration <= 0}/>
 
             {previewTime !== null && (
                 <span className={styles.preview} style={{left: `${(ratio ?? 0) * 100}%`}}>

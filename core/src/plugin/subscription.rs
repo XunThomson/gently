@@ -73,13 +73,183 @@ impl SubscriptionIndex {
     }
 }
 
-/// 解析并校验索引。任何非法条目都会让整份索引被拒（避免「安静地少了一半条目」）。
+/// 解析并校验索引（自有 `repository.json` 格式）。任何非法条目都会让整份索引被拒
+/// （避免「安静地少了一半条目」）。
 pub fn parse_index(json: &str) -> Fallible<SubscriptionIndex> {
     let index: SubscriptionIndex = serde_json::from_str(json).map_err(|err| {
         CoreError::new(ErrorCode::SubscriptionInvalidIndex, format!("索引不是合法 JSON：{err}"))
             .with_details(serde_json::json!({ "reason": err.to_string() }))
     })?;
 
+    validate_index(&index)?;
+    Ok(index)
+}
+
+/// 解析**任意受支持格式**的索引（R139）。
+///
+/// 先按自有 `repository.json` 解析；失败时再尝试 MusicFree 风格的
+/// `{desc?, plugins:[{name,url,version?}]}`。这样「用户自己填一个社区列表」不必先转格式，
+/// 也不必在仓库里预置任何第三方地址（ADR-0005）。
+///
+/// MusicFree 列表没有 `fileName` / `hosts` / `sha256`：
+/// - `fileName` 从 URL 的 basename 确定性派生（冲突时加序号），刷新前后保持稳定；
+/// - `hosts` 留空 → 安装后走兼容模式，由实际观测到的域名收敛（TOFU，见 host.rs）；
+/// - `sha256` 留空 → 现有逻辑会提示「无校验和」，不阻断用户。
+pub fn parse_index_any(json: &str) -> Fallible<SubscriptionIndex> {
+    match parse_index(json) {
+        Ok(index) => Ok(index),
+        Err(primary) => match parse_plugin_list_index(json) {
+            Ok(Some(index)) => Ok(index),
+            Ok(None) => Err(primary),
+            Err(err) => Err(err),
+        },
+    }
+}
+
+/// MusicFree 风格的插件列表；不是该形状时返回 `Ok(None)`（让调用方回原始错误）。
+fn parse_plugin_list_index(json: &str) -> Fallible<Option<SubscriptionIndex>> {
+    #[derive(Deserialize)]
+    struct RawList {
+        #[serde(default)]
+        desc: String,
+        #[serde(default)]
+        plugins: Vec<RawPlugin>,
+    }
+
+    #[derive(Deserialize)]
+    struct RawPlugin {
+        #[serde(default)]
+        name: String,
+        #[serde(default)]
+        url: String,
+        #[serde(default)]
+        version: String,
+    }
+
+    let Ok(raw) = serde_json::from_str::<RawList>(json) else {
+        return Ok(None);
+    };
+    if raw.plugins.is_empty() {
+        return Ok(None);
+    }
+
+    let name = if raw.desc.trim().is_empty() {
+        "插件列表".to_string()
+    } else {
+        raw.desc.trim().to_string()
+    };
+
+    let mut sources = Vec::with_capacity(raw.plugins.len());
+    let mut problems: Vec<serde_json::Value> = Vec::new();
+    let mut used_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for (position, plugin) in raw.plugins.iter().enumerate() {
+        if plugin.name.trim().is_empty() {
+            problems.push(serde_json::json!({ "index": position, "field": "name" }));
+        }
+        match host_of(&plugin.url) {
+            None => problems.push(serde_json::json!({
+                "index": position, "field": "url", "value": plugin.url,
+                "expect": "https:// 开头的绝对地址"
+            })),
+            Some(_) if !plugin.url.starts_with("https://") => problems.push(serde_json::json!({
+                "index": position, "field": "url", "value": plugin.url,
+                "expect": "必须是 HTTPS"
+            })),
+            Some(host) if is_private_host(&host) => problems.push(serde_json::json!({
+                "index": position, "field": "url", "value": plugin.url,
+                "expect": "不得指向回环/内网地址"
+            })),
+            Some(_) => {}
+        }
+
+        let mut file_name = plugin_file_name(&plugin.url, position);
+        while used_names.contains(&file_name) {
+            let stem = file_name.strip_suffix(".js").unwrap_or(&file_name);
+            file_name = format!("{stem}-{}.js", position + 1);
+        }
+        used_names.insert(file_name.clone());
+
+        sources.push(SubscriptionSourceEntry {
+            name: if plugin.name.trim().is_empty() {
+                format!("插件 {}", position + 1)
+            } else {
+                plugin.name.trim().to_string()
+            },
+            file_name,
+            download_url: plugin.url.clone(),
+            /* 版本只用于「有没有更新」的展示；不是语义化版本时退回 0.0.0（不阻断安装） */
+            version: normalize_list_version(&plugin.version),
+            author: String::new(),
+            url: String::new(),
+            group: String::new(),
+            logo: String::new(),
+            description: String::new(),
+            tags: Vec::new(),
+            enabled: true,
+            file_size: 0,
+            updated_at: String::new(),
+            sha256: None,
+            hosts: Vec::new(),
+            qualities: Vec::new(),
+        });
+    }
+
+    if !problems.is_empty() {
+        return Err(invalid(
+            "插件列表包含非法条目",
+            serde_json::json!({ "format": "plugin-list", "problems": problems }),
+        ));
+    }
+
+    Ok(Some(SubscriptionIndex {
+        name,
+        version: String::new(),
+        updated_at: String::new(),
+        url: None,
+        sources,
+    }))
+}
+
+/// 从插件 URL 派生一个**稳定、纯粹**的文件名（不含路径 / `..` / 协议）。
+fn plugin_file_name(url: &str, position: usize) -> String {
+    let without_query = url.split(['?', '#']).next().unwrap_or(url);
+    let base = without_query.rsplit('/').next().unwrap_or_default();
+    let sanitized: String = base
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '.' || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = sanitized.trim_start_matches('.').to_string();
+    if is_plain_file_name(&trimmed)
+        && (trimmed.ends_with(".js") || trimmed.ends_with(".mjs"))
+    {
+        trimmed
+    } else {
+        format!("plugin-{}.js", position + 1)
+    }
+}
+
+/// 列表里的版本可能为空 / 不是 semver：空或明显非版本号的给 `0.0.0`。
+fn normalize_list_version(value: &str) -> String {
+    let trimmed = value.trim();
+    let looks_like_version = !trimmed.is_empty()
+        && trimmed
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '-' || ch == '+');
+    if looks_like_version {
+        trimmed.to_string()
+    } else {
+        "0.0.0".to_string()
+    }
+}
+
+fn validate_index(index: &SubscriptionIndex) -> Fallible<()> {
     if index.name.trim().is_empty() {
         return Err(invalid("索引缺少 name", serde_json::json!({ "field": "name" })));
     }
@@ -126,7 +296,7 @@ pub fn parse_index(json: &str) -> Fallible<SubscriptionIndex> {
         return Err(invalid("索引包含非法条目", serde_json::json!({ "problems": problems })));
     }
 
-    Ok(index)
+    Ok(())
 }
 
 fn invalid(message: &str, details: serde_json::Value) -> CoreError {
@@ -268,6 +438,47 @@ mod tests {
     #[test]
     fn malformed_json_is_invalid_index() {
         let err = parse_index("{ nope").unwrap_err();
+        assert_eq!(err.code, ErrorCode::SubscriptionInvalidIndex);
+    }
+
+    #[test]
+    fn musicfree_plugin_list_is_normalized() {
+        let json = r#"{
+            "desc": "示例插件列表",
+            "plugins": [
+                {"name": "A", "url": "https://example.com/a.js", "version": "1.2.0"},
+                {"name": "B", "url": "https://example.com/a.js?v=2"},
+                {"name": "C", "url": "https://example.com/path/c.js"}
+            ]
+        }"#;
+        let index = parse_index_any(json).expect("MusicFree 列表应能识别");
+        assert_eq!(index.name, "示例插件列表");
+        assert_eq!(index.sources.len(), 3);
+        /* fileName 从 URL 派生且去重（刷新前后稳定） */
+        assert_eq!(index.sources[0].file_name, "a.js");
+        assert_eq!(index.sources[1].file_name, "a-2.js");
+        assert_eq!(index.sources[2].file_name, "c.js");
+        /* 没有版本 → 0.0.0，不阻断安装 */
+        assert_eq!(index.sources[2].version, "0.0.0");
+        /* 列表不声明 hosts：安装后走兼容模式（TOFU 收敛） */
+        assert!(index.sources[0].hosts.is_empty());
+        assert!(index.sources[0].sha256.is_none());
+    }
+
+    #[test]
+    fn musicfree_list_still_rejects_private_and_plain_http_urls() {
+        for bad in ["http://example.com/a.js", "https://127.0.0.1/a.js"] {
+            let json = format!(
+                r#"{{"name": "x", "plugins": [{{"name": "A", "url": "{bad}"}}]}}"#
+            );
+            let err = parse_index_any(&json).unwrap_err();
+            assert_eq!(err.code, ErrorCode::SubscriptionInvalidIndex, "{bad}");
+        }
+    }
+
+    #[test]
+    fn arbitrary_json_is_not_mistaken_for_a_plugin_list() {
+        let err = parse_index_any(r#"{"hello": "world"}"#).unwrap_err();
         assert_eq!(err.code, ErrorCode::SubscriptionInvalidIndex);
     }
 }

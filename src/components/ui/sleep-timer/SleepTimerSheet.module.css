@@ -1,0 +1,219 @@
+/* 定时关闭面板：底部浮层，与行操作面板共享视觉语言（圆角 / 阴影 / 遮罩）。 */
+
+.sheetRoot {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: var(--modal-scrim);
+    animation: scrimIn var(--motion-fast);
+}
+
+@keyframes scrimIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.sheet {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 480px;
+    max-height: var(--mobile-sheet-max-height, 70%);
+    padding: var(--mobile-sheet-padding, 8px) var(--mobile-sheet-padding, 8px) calc(var(--mobile-sheet-padding, 8px) + env(safe-area-inset-bottom, 0));
+    box-sizing: border-box;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: var(--shadow-panel);
+    animation: sheetSlideUp var(--motion-base);
+    overflow-y: auto;
+}
+
+@keyframes sheetSlideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sheet {
+        animation: none;
+    }
+}
+
+.grabber {
+    display: flex;
+    justify-content: center;
+    padding: var(--space-2) 0;
+}
+
+.grabberBar {
+    width: var(--mobile-sheet-grabber-width, 36px);
+    height: var(--mobile-sheet-grabber-height, 4px);
+    border-radius: 2px;
+    background: var(--divider);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) var(--space-3);
+}
+
+.title {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+
+.closeBtn {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.closeBtn:active {
+    background: var(--bg-active);
+}
+
+.content {
+    padding: 0 var(--space-3) var(--space-3);
+}
+
+/* 预设时长列表 */
+.options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.option {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    min-height: var(--mobile-sheet-item-height, 48px);
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    text-align: left;
+    cursor: pointer;
+}
+
+.option:active {
+    background: var(--bg-active);
+}
+
+.optionActive {
+    composes: option;
+    color: var(--brand);
+    font-weight: var(--font-weight-semibold);
+}
+
+.optionIcon {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    color: var(--text-secondary);
+}
+
+.optionActive .optionIcon {
+    color: var(--brand);
+}
+
+/* 活跃定时：剩余时间展示 */
+.activeInfo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    margin-top: var(--space-2);
+    background: var(--bg-active);
+    border-radius: var(--radius-md);
+}
+
+.activeLabel {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+.activeTime {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* 取消按钮 */
+.cancelBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: var(--mobile-sheet-item-height, 48px);
+    margin-top: var(--space-3);
+    padding: var(--space-2);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--danger, #e53935);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+}
+
+.cancelBtn:active {
+    background: var(--bg-active);
+}
+
+/* 触发按钮（嵌入播放条） */
+.triggerBtn {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: var(--mobile-control-size, 34px);
+    height: var(--mobile-control-size, 34px);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.triggerBtn:active {
+    background: var(--bg-active);
+}
+
+.triggerBtn[data-active] {
+    color: var(--brand);
+}
+
+.badge {
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    min-width: 16px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: var(--brand);
+    color: var(--surface-chrome);
+    font-size: 9px;
+    font-weight: var(--font-weight-semibold);
+    line-height: 14px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}

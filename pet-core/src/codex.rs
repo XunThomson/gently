@@ -15,7 +15,7 @@
 use serde::Deserialize;
 
 use crate::error::{PetError, PetResult};
-use crate::spec::{Animation, AtlasLayout, Behavior, Condition, Action, PetSpec};
+use crate::spec::{Animation, AtlasLayout, Behavior, Condition, Action, Motion, PetSpec};
 
 /// Codex Pet v1 的图集几何：8 列 × 9 行，每格 192×208
 pub const CODEX_CELL_WIDTH: u32 = 192;
@@ -112,6 +112,13 @@ impl CodexManifest {
                 r#loop: true,
                 row: Some(row as u32),
                 fit: None,
+                /* Codex 的 9 个动作里只有向左/向右跑能位移；其余（待机/挥手/跳/失败/
+                   等待/播放/查看）一律不许平移（R139）。 */
+                motion: Some(if *name == "runLeft" || *name == "runRight" {
+                    Motion::Walk
+                } else {
+                    Motion::None
+                }),
             })
             .collect();
 

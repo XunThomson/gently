@@ -44,6 +44,11 @@ export interface PetAnimationDto {
     row?: number | null;
     /** 该行的显示适配（可选） */
     fit?: PetAnimationFitDto | null;
+    /**
+     * 该行动画允许的位移能力（R139）：`walk` 才能平移窗口，`none`（坐下/跳/失败）
+     * 必须原地播放。不声明时遵循旧包兼容规则（整包全 walk）。
+     */
+    motion?: 'none' | 'walk' | 'crawl' | null;
 }
 
 export interface PetSpecDto {
@@ -72,6 +77,21 @@ export interface PetProfileDto {
     updatedAt: number;
 }
 
+/** 养成账本（R139）：等级/经验/次数/连续天数/解锁 */
+export interface PetGrowthDto {
+    xp: number;
+    level: number;
+    nextLevelXp: number;
+    feeds: number;
+    touches: number;
+    bestAffection: number;
+    streakDays: number;
+    daysVisited: number;
+    todayFed: number;
+    todayTouched: number;
+    unlocked: string[];
+}
+
 /** 一帧（渲染层只读它） */
 export interface PetFrameDto {
     animation: number;
@@ -82,6 +102,8 @@ export interface PetFrameDto {
     bubble: number | null;
     /** 看向哪边（原样回传 lookDir；没有就是 null） */
     look: number | null;
+    /** 当前动画允许的位移能力（R139；宿主据此决定能不能平移窗口） */
+    motion?: 'none' | 'walk' | 'crawl';
     hitArea: {x: number; y: number; w: number; h: number} | null;
 }
 
@@ -103,6 +125,8 @@ export interface PetStateDto {
         hungry: boolean;
         spec: PetSpecDto;
         profile: PetProfileDto;
+        /** 养成账本（等级/经验/连续天数/解锁） */
+        growth: PetGrowthDto;
     }[];
     dataDir: string;
     dbPath: string;
@@ -207,7 +231,12 @@ export const petService = {
 
     /** 喂食（冷却内报错）/ 触摸（冷却内静默） */
     interact: (id: string, kind: 'feed' | 'touch') =>
-        petInvoke<{profile: PetProfileDto; mood: PetMoodDto; hungry: boolean}>('pet.interact', {
+        petInvoke<{
+            profile: PetProfileDto;
+            mood: PetMoodDto;
+            hungry: boolean;
+            growth: PetGrowthDto;
+        }>('pet.interact', {
             id,
             kind,
         }),

@@ -1,6 +1,7 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
     <style name="Theme.gently" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <!-- Customize your theme here. -->
+        <!-- R139：WebView 首帧之前露出的原生窗口底色，跟品牌启动屏同色，避免白闪 -->
+        <item name="android:windowBackground">@color/boot_background</item>
     </style>
 </resources>

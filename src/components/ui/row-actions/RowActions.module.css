@@ -48,8 +48,8 @@
 }
 
 .sheet {
-    /* 下拉收起（R125）：面板自己接管纵向拖拽，别让浏览器的滚动/回弹先把 pointermove 吃掉 */
-    touch-action: none;
+    /* 动作列表要能触摸滚动（长面板下面的动作必须点得到）；只有抓手区禁用滚动 */
+    touch-action: pan-y;
     position: relative;
     display: flex;
     flex-direction: column;
@@ -64,6 +64,15 @@
     border-top-right-radius: var(--radius-lg);
     box-shadow: var(--shadow-panel);
     animation: sheetIn var(--motion-base) var(--ease);
+}
+
+/* 拖动区：抓手 + 标题。单独一层，避免「整块面板捕获指针」把列表滚动吃掉 */
+.dragHandle {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    touch-action: none;
+    cursor: grab;
 }
 
 .grabber {

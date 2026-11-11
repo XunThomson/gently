@@ -179,6 +179,16 @@
     border-radius: var(--radius-xl);
 }
 
+/* 音频律动：只作歌词页的补充，36px 高、半透明，静音时是一条细直线（R139） */
+.oscillogram {
+    display: block;
+    flex: none;
+    width: 100%;
+    height: 36px;
+    opacity: 0.55;
+    pointer-events: none;
+}
+
 .lyricsTitle {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);

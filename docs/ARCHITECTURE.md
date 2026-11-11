@@ -375,6 +375,11 @@ URL 是 `index.html?window=desktop-lyrics`；`main.tsx` 按 query 决定挂载�
   屏幕里，也永远不超出窗口画布，面板放不下不会反过来限制宠物能站哪。
 - `edgeOverhang` 预留「贴边爬行」的越界距离（默认 0 = 本体整只可见）；宿主走动的边界
   按**本体**算，窗口只做同样的平移。
+- **位移能力由动画声明**（R139）：`Frame.motion`（`none/walk/crawl`）来自 `animations[].motion`；
+  宿主在 `pet.tick` 后同进程读 `Engine::motion`，`none` 时只发方向、不平移窗口，
+  连续 6s 切不到可位移动画就放弃这一趟。旧包不声明 = 全部可走（零回归）。
+- **养成账本**存在 `PetProfile.state_json`（xp/次数/连续天数/解锁），等级由只增的 xp 派生；
+  不饿时喂食不加好感，每日有收益次数上限。
 - 拖动 / 隐藏持久化的是**本体脚底锚点**（物理像素），不是窗口坐标。
 
 ### 第三方授权（OAuth 2.0，端点由插件声明）
@@ -604,6 +609,8 @@ ABI 为 9 个顶层函数——`search` / `getMediaSource` 必选，`getTrackInf
 **订阅分发**：订阅 = 一个 `repository.json`（与 Legado 社区书源仓库规范同构：`name`/`version`/
 `updatedAt`/`url` + `sources[]`，字段只增不改），命令 `plugin.subscriptions.list/add/remove/refresh`
 + `plugin.catalog.list`，`ImportSource{kind:'catalog'}` 实现一键安装——**分发不依赖我方服务器**。
+R139 起同一入口也接受 MusicFree 风格的 `{desc,plugins:[{name,url,version}]}`（核心归一化成
+`sources[]`，fileName 从 URL 派生；列表没有 hosts/sha256，安装后走兼容模式 TOFU 收敛）。
 安装仍需 `plugin.preview`：一键安装 + 一个权限摘要确认框（沙箱与同意流程的摩擦不能大到让社区绕开）。
 
 **媒体传输**：必须由核心提供**本地流代理**，因为 WebView 的 `<audio>` 无法设置 `Referer` /

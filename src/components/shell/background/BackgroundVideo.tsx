@@ -5,6 +5,7 @@ import {useSelect} from '../../../store';
 import {useTheme} from '../../../theme';
 import {wrapWebWallpaper} from '../../../utils/backgroundWeb';
 import {isMobilePlatform} from '../../../utils/platform';
+import {useShellMode} from '../../../hooks/useShellMode';
 import styles from './BackgroundVideo.module.css';
 
 /**
@@ -43,6 +44,14 @@ export function BackgroundVideo() {
        毛玻璃盖在会动的视频上既贵（每帧重绘整屏）又会让滚动中的文字压色块（用户反馈 #9「字体重叠」）。
        这是**默认值**，用户在设置里显式调过的仍然生效。 */
     const mobile = isMobilePlatform();
+    const shellMode = useShellMode();
+    /* 小尺寸外壳（手机 / 迷你播放器）的**视觉中心是封面与当前曲目**，不是壁纸。
+       但两者的取舍不同（R139 用户反馈「手机导入背景还是白屏」）：
+       - **迷你播放器**：表面不透明度给下限，否则一张人像照片会把封面和按钮淹没；
+       - **手机**：不能用 0.92 的硬下限——那等于把背景盖成白板（默认 0.66 才看得到），
+         文字可读性交给用户可调的「内容透明度」与背景自身的 scrim/opacity。
+       两边的毛玻璃都默认关掉（滚动时省 GPU，也避免字压色块）。 */
+    const mini = shellMode === 'mini';
     const MOBILE_CONTENT_OPACITY = 0.92;
 
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -50,7 +59,14 @@ export function BackgroundVideo() {
     const [webHtml, setWebHtml] = useState<string | null>(null);
     const [loadFailed, setLoadFailed] = useState(false);
 
-    const isWeb = background.kind === 'web';
+    const isWeb = background.kind === 'web' && !mobile;
+    /* 背景素材既可以是视频，也可以是图片（R139）：两者都存 IndexedDB `videos` store，
+       靠 MIME / 扩展名区分渲染成 `<video>` 还是 `<img>`。 */
+    const IMAGE_EXT = /\.(jpe?g|png|webp|gif|avif|bmp)$/i;
+    const isImage =
+        !isWeb &&
+        !!background.asset &&
+        (background.asset.type.startsWith('image/') || IMAGE_EXT.test(background.asset.name));
     const reduceMotion =
         typeof window !== 'undefined' &&
         typeof window.matchMedia === 'function' &&
@@ -107,17 +123,45 @@ export function BackgroundVideo() {
        没有导入素材时干脆不激活背景：外壳保持不透明，列表文字也不会压在彩色视频上（#9）。 */
     const videoSrc = isWeb ? null : background.asset ? objectUrl : mobile ? null : bgVideoUrl;
     const mediaReady = isWeb ? !!webHtml : !!videoSrc;
-    /* 系统偏好只作默认：用户可以在设置里显式允许「减少动态效果时仍播放」 */
+    /* 系统偏好只作默认：用户可以在设置里显式允许「减少动态效果时仍播放」。
+       静态图片不受 reduced-motion 影响（它本来就不动）。 */
     const motionAllowed = !reduceMotion || background.playWhenReducedMotion;
     const active =
-        enabled && background.enabled && motionAllowed && mediaReady && !loadFailed;
+        enabled && background.enabled && (isImage || motionAllowed) && mediaReady && !loadFailed;
+
+    /* 构图：`自由` 才启用锚点 / 缩放 / 翻转；其余对齐方式用标准 object-fit，
+       避免「选了铺满却还被旧参数拉偏」。 */
+    const free = background.options.fit === 'free';
+    const transforms: string[] = [];
+    if (free && background.options.scale !== 1) {
+        transforms.push(`scale(${background.options.scale})`);
+    }
+    if (free && background.options.flip) {
+        transforms.push('scaleX(-1)');
+    }
+    const mediaStyle: CSSProperties = {
+        objectFit:
+            background.options.fit === 'free' ? 'cover' : background.options.fit,
+        objectPosition: free
+            ? `${background.options.positionX}% ${background.options.positionY}%`
+            : '50% 50%',
+        transform: transforms.length > 0 ? transforms.join(' ') : undefined,
+        transformOrigin: 'center center',
+    };
 
     /* 用户预设只覆盖自己改过的值；null 继续跟随主题 token */
     const layerStyle: CSSProperties & Record<string, string> = {};
     if (background.options.opacity !== null) {
         layerStyle['--bg-video-opacity'] = String(background.options.opacity);
+    } else if (mobile) {
+        /* 手机默认把壁纸本体放到 0.75：内容面板已经压了一层，背景本体再暗就真的看不见 */
+        layerStyle['--bg-video-opacity'] = '0.75';
     }
-    if (background.options.blurPx !== null) {
+    /* 手机关掉壁纸自身的模糊：用户反馈「背景仍然是模糊」——移动端优先看清内容，
+       模糊在桌面端仍可按预设调。 */
+    if (mobile) {
+        layerStyle['--bg-video-blur'] = '0px';
+    } else if (background.options.blurPx !== null) {
         layerStyle['--bg-video-blur'] = `${background.options.blurPx}px`;
     }
 
@@ -156,18 +200,36 @@ export function BackgroundVideo() {
         const root = document.documentElement;
         const rawOpacity =
             background.options.contentOpacity ?? config.components.background.contentOpacity;
-        const opacity = mobile ? Math.max(rawOpacity, MOBILE_CONTENT_OPACITY) : rawOpacity;
+        /* 手机默认用 0.35（而不是主题的 0.66）：只有用户显式调过才用他的值。
+           之前 0.92 的下限把背景盖成白板，用户反馈「导入背景仍然白屏」就是它。 */
+        const mobileDefaultOpacity = 0.35;
+        const mobileCap = 0.5;
+        const opacity = mini
+            ? Math.max(rawOpacity, MOBILE_CONTENT_OPACITY)
+            : mobile
+              ? Math.min(
+                    background.options.contentOpacity === null
+                        ? mobileDefaultOpacity
+                        : rawOpacity,
+                    mobileCap,
+                )
+              : rawOpacity;
+        /* 手机强制关掉内容毛玻璃：背景被 backdrop-filter 模糊也是「看不清背景」的原因之一 */
         const blur =
-            background.options.contentBlurPx ??
-            (mobile ? 0 : config.components.background.surfaceBlurPx);
+            mobile || mini
+                ? 0
+                : background.options.contentBlurPx ??
+                  config.components.background.surfaceBlurPx;
         const rawDrawerOpacity =
             background.options.drawerOpacity ?? config.components.background.drawerOpacity;
-        const drawerOpacity = mobile
+        const drawerOpacity = mini
             ? Math.max(rawDrawerOpacity, MOBILE_CONTENT_OPACITY)
             : rawDrawerOpacity;
         const drawerBlur =
-            background.options.drawerBlurPx ??
-            (mobile ? 0 : config.components.background.drawerBlurPx);
+            mobile || mini
+                ? 0
+                : background.options.drawerBlurPx ??
+                  config.components.background.drawerBlurPx;
         const mix = (base: string, value: number) => {
             const percent = Math.round(value * 100);
             return percent >= 100
@@ -209,6 +271,7 @@ export function BackgroundVideo() {
     }, [
         active,
         mobile,
+        mini,
         background.options.contentOpacity,
         background.options.contentBlurPx,
         background.options.drawerOpacity,
@@ -251,6 +314,15 @@ export function BackgroundVideo() {
                     referrerPolicy="no-referrer"
                     srcDoc={wrapWebWallpaper(webHtml)}
                 />
+            ) : isImage && objectUrl ? (
+                <img
+                    key={objectUrl}
+                    className={styles.video}
+                    src={objectUrl}
+                    alt=""
+                    style={mediaStyle}
+                    onError={() => setLoadFailed(true)}
+                />
             ) : (
                 videoSrc && (
                     <video
@@ -258,7 +330,7 @@ export function BackgroundVideo() {
                         ref={videoRef}
                         className={styles.video}
                         src={videoSrc}
-                        style={{objectFit: background.options.fit}}
+                        style={mediaStyle}
                         autoPlay
                         muted
                         loop

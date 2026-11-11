@@ -8,18 +8,29 @@
     display: flex;
     flex-direction: column;
     flex: none;
-    height: var(--mobile-player-bar-height);
-    /* 顶部给进度条让出一条带（见 SeekBar 的触屏热区）：不带这层内边距，行会从播放条
-       最顶上开始，热区就把按钮的上半截盖住了（R120 真机 `elementFromPoint` 实测：
-       点「打开播放页」上半部分返回的是「进度」）。 */
+    /* 不锁死高度：新机型/大字号下两行文本会变高，固定 62px 会把第二行裁掉
+       （R139 真机截图：副标题被屏幕底部裁掉）。min-height 保住常态密度，
+       内容更高时由外壳的 flex 布局让位。 */
+    height: auto;
+    min-height: var(--mobile-player-bar-height);
     padding-top: var(--space-3);
+    /* 导航栏（手势条 / 三键）让位；env() 报 0 时至少留 4px 呼吸 */
+    padding-bottom: max(var(--space-1), env(safe-area-inset-bottom, 0px));
     border-top: 1px solid var(--divider);
     background: var(--surface-chrome);
     backdrop-filter: var(--surface-blur);
 }
 
+/* 进度条是绝对定位的，**包含块仍是 `.bar`**（`.seek` 不能是定位祖先，否则 top:0
+   会落到 padding-top 下面、压到按钮行上）。横向缩进通过子选择器作用在进度条自身，
+   0% 的焦点圆点才不会被屏幕左边缘裁掉（R139 截图左边缘的紫色残点）。 */
 .seek {
-    padding: 0 var(--mobile-padding-x);
+    padding: 0;
+}
+
+.seek > .seekBar {
+    left: var(--mobile-padding-x);
+    right: var(--mobile-padding-x);
 }
 
 .row {
@@ -27,7 +38,7 @@
     align-items: center;
     gap: var(--space-2);
     flex: 1;
-    min-height: 0;
+    min-height: calc(var(--mobile-player-bar-height) - var(--space-3));
     padding: 0 var(--mobile-padding-x);
 }
 
@@ -66,6 +77,7 @@
     color: var(--text-primary);
     font-size: var(--mobile-title-font-size);
     font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-tight);
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -74,6 +86,7 @@
     overflow: hidden;
     color: var(--text-tertiary);
     font-size: var(--mobile-meta-font-size);
+    line-height: var(--line-height-tight);
     text-overflow: ellipsis;
     white-space: nowrap;
 }

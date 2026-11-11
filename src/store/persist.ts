@@ -38,6 +38,8 @@ export interface PersistedUi {
     discoverAutoPreview?: boolean;
     /** 宠物实验开关（默认关；2.x 形态，1.x 阶段只用于预开发验证） */
     petEnabled?: boolean;
+    /** 移动端「主页」路径（启动后根路径重定向到这里） */
+    homePath?: string;
 }
 
 export function readPersistedUi(): PersistedUi {
@@ -58,5 +60,22 @@ export function writePersistedUi(ui: PersistedUi): void {
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(ui));
     } catch {
         /* 忽略隐私模式 / 配额限制 */
+    }
+}
+
+/**
+ * 清空全部 UI 设置（设置页「恢复默认设置」）。
+ *
+ * 只删 `gently:ui`：本地音乐、插件、下载文件、凭据都在核心的数据库/文件里，
+ * 不在这里。清完由调用方 reload，让主题/背景/音源等全部回到默认值。
+ */
+export function resetPersistedUi(): void {
+    if (typeof window === 'undefined') return;
+    try {
+        window.localStorage.removeItem(STORAGE_KEY);
+        /* 语言由 i18next 单独持久化（键名 `lang`），也属于界面设置 */
+        window.localStorage.removeItem('lang');
+    } catch {
+        /* 清不掉就保持现状，由设置页的二次确认兜底 */
     }
 }

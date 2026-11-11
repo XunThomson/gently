@@ -45,12 +45,12 @@ tldr: pet-core **Beta 1.0.0**：独立引擎（ADR 0010），因此有独立的�
 
 | 命令 | 参数 | 返回 |
 |---|---|---|
-| `pet.state` | — | `{active, pets:[{id,name,version,active,mood,hungry,spec,profile}], dataDir, dbPath, schemaVersion, coreVersion}`：出战宠物 + 全部已安装（**单宠物展示、多宠物存储**）。`mood`（shy/friendly/close/devoted）与 `hungry` 是**派生值**，库里只存好感与饿；读之前会先结算一次时间流逝（否则「关掉一夜」的宠物在面板上仍显示不饿） |
+| `pet.state` | — | `{active, pets:[{id,name,version,active,mood,hungry,spec,profile,growth}], dataDir, dbPath, schemaVersion, coreVersion}`：出战宠物 + 全部已安装（**单宠物展示、多宠物存储**）。`mood`（shy/friendly/close/devoted）与 `hungry` 是**派生值**，库里只存好感与饿；`growth` 是养成账本（经验/等级/次数/连续天数/解锁，R139），等级由只增的 `xp` 派生。读之前会先结算一次时间流逝（否则「关掉一夜」的宠物在面板上仍显示不饿） |
 | `pet.install{spec, atlas?}` | `pet.json` **原文**（字符串；解析与校验都在核心）。**两种格式都收**：我们自己的格式，或 **Codex Pet v1**（`{id, displayName, spritesheetPath}`——核心补齐 8×9 网格、9 个动作与默认行为表；v2 明确报错）。`atlas` 可选 `{file, dataBase64}`：素材只收 **png/webp**、**纯文件名**、≤ 8 MiB，落在 `<data>/pet/packages/<id>/`，库里只记文件名（搬家后仍有效） | `{spec, active, hasAtlas}`；覆盖安装**保留**好感度/饱食度；坏包 → `pet.invalid_package` / `pet.limit_exceeded` |
 | `pet.atlas{id}` | — | `{file, dataBase64}` 或 `null`（没有图集）；走 base64 而不是回环 URL，是因为宠物引擎**不依赖**音乐核心的媒体代理。装的时候记过 FNV-1a 64 校验和：文件被改坏/换掉 → `pet.io_error`（渲染层据此退回程序化渲染）；文件整个丢了 → `null`（当没有图集） |
-| `pet.tick{petId, dtMs, playing?, elapsedMs?, lyricActive?, trackHash?, pointerX?, pointerY?, clicked?, lookDir?, walkDir?}` | 一帧的输入（只读播放快照 + 指针 + 点击 + 看向哪边 + 往哪边走）。`lookDir` 是 0..15（0 = 正上、顺时针），越界按 16 取模；`walkDir` 是 -1 左 / 1 右（宿主走动时给） | `{frame:{animation,frame,x,y,flip,bubble,hitArea,look}, bubble:{index,key}\|null}`：气泡只给**文案键**；`look` 是 `lookDir` 的原样回传，渲染层据此在两行 look 格里挑一格（只在待机时生效） |
+| `pet.tick{petId, dtMs, playing?, elapsedMs?, lyricActive?, trackHash?, pointerX?, pointerY?, clicked?, lookDir?, walkDir?}` | 一帧的输入（只读播放快照 + 指针 + 点击 + 看向哪边 + 往哪边走）。`lookDir` 是 0..15（0 = 正上、顺时针），越界按 16 取模；`walkDir` 是 -1 左 / 1 右（宿主走动时给） | `{frame:{animation,frame,x,y,flip,bubble,hitArea,look,motion}, bubble:{index,key}\|null}`：气泡只给**文案键**；`look` 是 `lookDir` 的原样回传，渲染层据此在两行 look 格里挑一格（只在待机时生效）；`motion` 是当前动画允许的位移能力（`none/walk/crawl`，R139）——宿主据此决定**能不能平移窗口** |
 | `pet.setActive{id}` | 切换出战宠物（**单宠物**：换一只就换掉前一只） | `{active}`；未安装 → `pet.not_found` |
-| `pet.interact{id, kind}` | `kind` = `feed` / `touch` | `{profile, mood, hungry}`：喂食在冷却内 → `pet.invalid_argument`（消息里带剩余毫秒）；触摸在冷却内**静默忽略** |
+| `pet.interact{id, kind}` | `kind` = `feed` / `touch` | `{profile, mood, hungry, growth}`：喂食在冷却内 → `pet.invalid_argument`（消息里带剩余毫秒）；触摸在冷却内**静默忽略**。养成（R139）：**不饿时喂食不加好感**；每天有收益的喂食/触摸次数有上限，超出后仍演动画、只不加分 |
 | `pet.remove{id}` | — | `{removed:true, active}`：连带资料与 `packages/<id>/` 素材一起删；删的正是出战宠物时 `active` 变 `null` |
 
 ### 行为表能写什么（宠物包作者看这里）
@@ -107,6 +107,44 @@ tldr: pet-core **Beta 1.0.0**：独立引擎（ADR 0010），因此有独立的�
   **连续满 160ms** 才真的切（防「跑 → 待机 → 跑」抖动）；
 - `play` 带 `"interrupt": true` 的行为（点击、换歌）当拍就切；
 - 换动画时帧游标归零；`Frame` 的结构不变（渲染层只按 `animation` / `frame` 画）。
+
+### 位移能力 `motion`（R139）
+
+用户报过「坐下的动画还在平移」。修法不是让宿主猜动画名字（名字是自由字符串），而是由动画
+**自己声明**位移能力：
+
+| 值 | 含义 |
+|---|---|
+| `none` | 不许平移（坐下 / 跳 / 失败 / 点击反应 / 播放在原地……） |
+| `walk` | 可以水平走动（`runLeft` / `runRight`） |
+| `crawl` | 可以贴边爬行（预留；宿主尚未实现竖向/贴边移动） |
+
+兼容规则（**必须保留**）：
+
+- 一个动画都没写 `motion` → 整包按 legacy 处理，全部视为 `walk`（旧包行为不变）；
+- 只要有任一动画写了 → 严格模式：未写的动画 = `none`（作者不必逐个补）。
+
+校验：严格模式下 `walking` 行为指向 `motion: none` 的动画、或声明了 `motion` 但没有任何
+`walk`/`crawl` 动画，安装时直接 `pet.invalid_package`（不让它到真机上才「坐着滑行」）。
+宿主在**同进程**里读 `Engine::motion(id)` 门控窗口平移（不新增命令/事件，也没有一帧延迟）；
+门控期间仍会把方向事件发给渲染层，让核心有机会先切到走路动画。
+
+### 养成账本（R139）
+
+`PetGrowth` 存在 `PetProfile.state_json`（不改表结构，坏 JSON / 超长自动退回空账本）：
+
+```json
+{"xp": 36, "feeds": 3, "touches": 6, "bestAffection": 15,
+ "streakDays": 4, "daysVisited": 4, "lastDay": 20371,
+ "todayDay": 20371, "todayFed": 1, "todayTouched": 6,
+ "unlocked": ["first-feed"]}
+```
+
+- `xp` **只增**；`level = 1 + xp / levelStepXp`（封顶 `maxLevel`），所以好感自然衰减不会掉级；
+- 每天第一次进入（`Engine::runtime_mut` 结算）记一次到访：连续天数 +1（断档归 1）；
+- 喂食：**不饿时不加好感**；每天有收益次数上限；触摸同理（动作照旧、只是不加分）；
+- 解锁：`first-feed` / `feeds-50` / `bond-friendly` / `bond-close` / `bond-devoted` / `streak-7`，
+  一次性写入、不回收；`growth` 随 `pet.state` / `pet.interact` 返回。
 
 ## 3. 与音乐核心的边界
 

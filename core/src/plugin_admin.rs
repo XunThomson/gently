@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 
 use crate::commands::{parse_params, CoreContext};
 use crate::contract::{CoreError, ErrorCode, Fallible};
-use crate::plugin::{parse_index, parse_source, sha256_hex, PluginPermission};
+use crate::plugin::{parse_index_any, parse_source, sha256_hex, PluginPermission};
 
 /// 配置值的体积上限：插件配置是「几个开关和账号名」，不该拿来存数据。
 const MAX_CONFIG_BYTES: usize = 64 * 1024;
@@ -190,7 +190,7 @@ pub fn check_update(ctx: &CoreContext, params: Value) -> Fallible<Value> {
                 )
                 .with_details(json!({ "subscriptionId": subscription_id })));
             };
-            let index = parse_index(&text)?;
+            let index = parse_index_any(&text)?;
             let entry = index
                 .sources
                 .iter()

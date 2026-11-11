@@ -34,7 +34,7 @@ pub use profile::{PetMood, PetProfile, PetProfileLimits};
 pub use sim::{Frame, Input, Sim};
 pub use error::PetErrorCode as PetCode;
 pub use spec::{
-    Action, Animation, AtlasLayout, Behavior, Condition, PetSpec, SpecLimits, MAX_ANIMATIONS,
+    Action, Animation, AtlasLayout, Behavior, Condition, Motion, PetSpec, SpecLimits, MAX_ANIMATIONS,
     MAX_ATLAS_COLUMNS, MAX_ATLAS_ROWS, MAX_FRAMES_PER_ANIMATION, MAX_PACKAGE_BYTES,
     MAX_TEXT_KEY_LEN,
 };

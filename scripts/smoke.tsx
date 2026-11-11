@@ -1856,7 +1856,9 @@ async function main(): Promise<void> {
             }
         ).atlasLayout;
         const builtinAnimations = (
-            JSON.parse(BUILTIN_PET_SPEC) as {animations: {name: string; frames: number; row?: number}[]}
+            JSON.parse(BUILTIN_PET_SPEC) as {
+                animations: {name: string; frames: number; row?: number; motion?: string}[];
+            }
         ).animations;
         check(
             'pet: 内置宠物用网格图集且每个动画都落在图里',
@@ -1874,6 +1876,15 @@ async function main(): Promise<void> {
             builtinAnimations.map((animation) => animation.name).join(',') ===
                 'idle,runLeft,runRight,wave,jump,fail,wait,run,inspect',
             builtinAnimations.map((animation) => animation.name).join(','),
+        );
+        check(
+            'pet: 只有 runLeft/runRight 可位移，其余动作必须原地（R139）',
+            builtinAnimations.every((animation) =>
+                animation.name === 'runLeft' || animation.name === 'runRight'
+                    ? animation.motion === 'walk'
+                    : animation.motion === 'none',
+            ),
+            builtinAnimations.map((animation) => `${animation.name}:${animation.motion}`).join(','),
         );
 
         check(
@@ -2672,14 +2683,14 @@ async function main(): Promise<void> {
         const drawerHtml = renderToString(
             <MemoryRouter initialEntries={['/local']}>
                 <ThemeProvider>
-                    <MobileNavDrawer open onClose={() => undefined}/>
+                    <MobileNavDrawer open dragOffset={null} drawerWidth={280} onClose={() => undefined}/>
                 </ThemeProvider>
             </MemoryRouter>,
         );
         check(
-            '移动外壳：抽屉面板顶部叠加了状态栏让位',
+            '移动外壳：抽屉面板顶部使用安全区变量（不再各算一遍 app.config 的近似值）',
             drawerHtml.includes(
-                `padding-top:calc(var(--space-3) + ${appConfig.mobile.statusBarInset}px)`,
+                'padding-top:calc(var(--space-3) + var(--mobile-safe-top, 0px))',
             ),
             drawerHtml.slice(0, 200),
         );
@@ -2697,9 +2708,10 @@ async function main(): Promise<void> {
             );
             const shellSrc = readFileSync('src/components/shell/mobile/MobileShell.tsx', 'utf8');
             check(
-                '移动外壳：外壳挂了横滑手势，播放条被排除在外（进度条自己就是横向拖动）',
+                '移动外壳：外壳挂了横滑手势，播放条与表单控件被排除在外',
                 shellSrc.includes('onPointerMove={onPointerMove}') &&
-                    shellSrc.includes("closest('[data-drawer-swipe=\"off\"]')") &&
+                    shellSrc.includes('input, textarea, select') &&
+                    shellSrc.includes('[data-drawer-swipe="off"]') &&
                     shellSrc.includes('appConfig.mobile.drawerSwipe.ignoreEdgePx'),
             );
             const barSrc = readFileSync('src/components/shell/mobile/MobilePlayerBar.tsx', 'utf8');

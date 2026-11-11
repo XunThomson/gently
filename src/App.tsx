@@ -16,6 +16,7 @@ import {useAudioEngine} from "./hooks/useAudioEngine";
 import {useDownloadEngine} from "./hooks/useDownloadEngine";
 import {useDesktopLyricsBridge} from "./hooks/useDesktopLyricsBridge";
 import {usePetWindowBridge} from "./hooks/usePetWindowBridge";
+import {useSleepTimer} from "./hooks/useSleepTimer";
 import {useShellMode} from "./hooks/useShellMode";
 import {useClampedShell} from "./hooks/useClampedShell";
 import {useActions, useSelect} from "./store";
@@ -46,6 +47,12 @@ export default function App() {
     /* 外壳本身永远不该被滚动：被浏览器滚走就是「白屏 + 回不来」（R137，见 hook 注释） */
     const shellRef = useClampedShell();
 
+    /* 首次成功挂载后打标记（R139）：白屏看门狗据此区分「启动中」与「真的白屏」。
+       之前看门狗在启动空档里也可能判定，退后台回来时更容易误报。 */
+    useEffect(() => {
+        document.documentElement.dataset.ready = '1';
+    }, []);
+
     /* 浏览器预览没有原生窗口可 resize：展开后先用本地开关回到完整界面；
        形态变化（如再次跨过断点）才清除，避免每个像素的 resize 都重渲染外壳。 */
     const [forceRegular, setForceRegular] = useState(false);
@@ -56,6 +63,8 @@ export default function App() {
     useAudioEngine();
     usePlayerEngine();
     useDownloadEngine();
+    /* 定时关闭引擎：监测计时状态，到点暂停播放 */
+    useSleepTimer();
     /* 主窗口 → 桌面歌词窗口的状态桥（仅 Tauri 宿主；浏览器下是空操作） */
     useDesktopLyricsBridge();
 

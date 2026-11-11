@@ -4,10 +4,94 @@ last_verified: 2026-11-08
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R138（桌宠几何第二轮）：宠物要能贴到屏幕四边，控制面板要能摆到左右两侧。做法：窗口改成以本体为中心、四边各留 260+8 的**画布**并允许越界，**只夹本体**；HUD 槽位独立摆放（贴边时放内侧，否则上→下→左右，永远整块在屏内、也不出画布），卡片再也不能反过来限制宠物；`edgeOverhang` 给将来的贴边爬行留出探出量。打包版实测：本体 207×225 → 窗口 743×761、四角可达、右下角菜单在左完整、拖动 1:1、大小切换 640×648/743×761/847×873、喂食/隐藏正常。smoke 588，契约 76 命令 / 9 事件。
+tldr: 当前 R140（R139 真机反馈修复）：① `tauri dev` 启动时日志文件被占用不再 panic——改用 `RollingFileAppender::builder()`，失败退 pid 备用名，再失败只控制台（真机锁文件实测进程不再退出）；② 背景「对齐方式」选**自由**才显示并允许编辑水平/垂直/缩放/翻转，其余对齐方式隐藏这些控件；③ 手机设置页的 range/表单控件不再触发抽屉手势（否则拖滑杆就开侧栏）；④ 手机背景「导入仍白屏/模糊」修了三处：从桌面继承的 `kind:web` 在手机强制回 video、内容表面默认 0.35（上限 0.50）、内容与壁纸毛玻璃在手机强制关闭；⑤ 设置页新增「恢复默认设置」（清 `gently:ui` + 语言，二次确认后重载，不动曲库/插件/下载）。另：桌面 `tauri dev` 无窗口已定位为 WebView2 会话状态（setup 完成、窗口对象存在但 OS 窗口未创建），profile 已备份，需重启会话/修复 WebView2。R139 的 smoke 589 / 契约 76 命令 / 9 事件仍全绿。
 ---
 
 # STATE
+
+## 本轮目标（第一百四十轮）
+
+> 用户对 R139 的 5 条反馈：`tauri dev` 日志初始化 panic / 背景自由构图只在「自由」模式下可编辑 /
+> 手机拖动配置项会触发侧边栏 / 手机导入背景仍白屏 / 补一个恢复默认设置项。
+
+### 1. 逐条处理
+
+| 反馈 | 结论与改动 |
+|---|---|
+| **`tauri dev` 启动 panic** | 根因是 `tracing_appender::rolling::daily()` 在当天日志文件被旧进程占用时**直接 `expect` panic**（`failed to create log file: 拒绝访问`）。改为 `RollingFileAppender::builder().build()`：正常文件名失败 → `gently.fallback-<pid>` → 再失败只输出控制台；启动不再因日志失败退出。实测：用 `FileShare.None` 锁住当天日志后启动 `gently.exe`，进程保持运行，stderr 显示「日志文件不可用…仅输出到控制台」 |
+| **背景自由构图** | `BackgroundFit` 增加 `free`；设置页「对齐方式」= 铺满裁切 / 完整显示 / 拉伸铺满 / 自由。**只有选「自由」才渲染**水平、垂直、缩放、翻转四个控件；其它对齐方式隐藏，避免选了铺满仍被旧坐标拉偏。`flip` 是新增持久化字段，媒体层用 `scaleX(-1)` 应用 |
+| **手机拖配置项触发侧边栏** | `MobileShell` 的抽屉手势在 `pointerdown` 排除 `input / textarea / select / [contenteditable] / [role=slider] / [data-drawer-swipe=off]`；设置页的 range 滑杆再也不会被当成横滑开抽屉。滑杆自身 `touch-action: pan-y`（纵向让页面滚动，横向归滑杆） |
+| **手机背景空壳/白屏** | 两处根因一起修：① 从桌面同步来的 `background.kind: 'web'` 在手机上会渲染一张白 iframe，且「导入」打开的是 HTML 选择器——`BackgroundCard` 在手机强制回 `video`，`BackgroundVideo` 在手机也忽略 web；② 手机内容表面被 0.92 不透明度下限盖成白板——**改为默认 0.35、上限 0.50**（用户可调），并**强制关闭内容/壁纸毛玻璃**；只对迷你播放器保留 0.92 的视觉中心保护。设置项改名为「内容不透明度」，越低越能看见背景 |
+| **恢复默认设置** | 设置页底部新增「恢复默认」卡片：二次确认后清 `gently:ui` 与 `lang`，重载页面；**不删除**本地音乐、插件、下载文件、凭据。背景素材的 IndexedDB 孤儿记录暂不清理（不影响使用） |
+
+### 2. 验证
+
+| 项 | 结果 |
+|---|---|
+| `pnpm typecheck` | 通过 |
+| `pnpm smoke` | **589 项全过**（更新了「手势排除表单控件」断言） |
+| `pnpm verify` | **全绿**（含 core/宿主/pet 单测） |
+| 日志锁文件实测 | 锁住当天 `gently.log` 后启动 `gently.exe`：进程未退出，stderr 走「备用文件/仅控制台」分支 |
+| 移动构建 | 本轮重新出 bundled APK（删除旧 APK 后重建，避免 Gradle 追加导致 ZIP 尾部冗余） |
+
+### 3. 未做 / 下一步
+
+- **桌面 `tauri dev` 无窗口（WebView2 环境）**：代码侧已确认 `setup` 完整走完、主窗口对象存在（`has_main=true`），但 OS 窗口从未创建（`visible=false`、`outer_size` 返回 `FailedToReceiveMessage`）。用 `WEBVIEW2_USER_DATA_FOLDER` 指向一份工作 profile 曾经成功创建三个窗口；之后同一会话里新 profile / 新路径都再次卡住。判断是 WebView2 运行时/会话状态（17:47 前后 Edge 更新）而不是应用逻辑。已把原 profile 备份为 `%LOCALAPPDATA%\com.xun.gently\EBWebView.corrupt-<时间>`，当前 `EBWebView` 是保留 Local Storage/IndexedDB 的修复副本。**需要重启 Windows 会话（或修复 WebView2 Runtime）后再启动**；重启后若仍无窗口，再删 `EBWebView` 让 WebView2 重建（会丢界面设置/背景素材，曲库在 `%APPDATA%\com.xun.gently` 不受影响）。
+- `gently.fallback-<pid>` 备用日志也不会被 `prune_old_logs` 清理（只在极端锁文件场景出现，量很小；下次可纳入 7 天清理）。
+- 手机背景仍只支持视频/图片，网页壁纸继续只在桌面端。
+- 恢复默认不清 IndexedDB 里的背景素材与皮肤素材（只清元数据），孤儿数据可在「清缓存」里统一处理。
+
+## 本轮目标（第一百三十九轮）
+
+> 用户 2026-11-08 清单：移动端适配（移除首页模块 / 新机型差异 / 按钮渲染错乱 / 退后台重载）、
+> 启动提速与品牌启动屏、目录扫描导入、背景坐标自由调整、宠物行为=动画、概率性点击无响应、
+> 封面背景占比、歌词页音频律动、MusicFree 插件适配、完善宠物养成。
+> 本轮把「明确是 bug 的」先收口，扩展项按「契约不变、可回滚」的方式落地。
+
+### 1. 逐条处理
+
+| 用户问题 | 结论与改动 |
+|---|---|
+| **移动端首页模块（概念混淆）** | 删除 `src/components/mobile-home/**` 与 `views/setting/components/home-modules-card.tsx`，store 里 `homeModules` 全链路移除；改为设置页「主页」选择（`ui.homePath`，`config/mobileNav.ts` 是路径/文案唯一来源），根路由 `/` 按它重定向。搜索页空闲态恢复为普通 `EmptyState` |
+| **新机型 UI 差异** | `MobileShell` 顶部改成 `max(env(safe-area-inset-top), 30px)`（旧机兜底仍来自 `app.config`），抽屉同步；播放条 `height:auto` + `min-height` + 底部 `env(safe-area-inset-bottom)`，标题/歌手 `line-height: tight`（font_scale 1.17 不再把第二行裁掉）；`.seek` 成为定位包含块，进度条不再铺到屏幕边缘；无曲目时不画焦点圆点（左边缘紫点消失） |
+| **按钮/渲染错乱** | 抽屉跟手手势重写：`pointerdown` 只记「待定」，横滑超过 6px 且明显大于纵向才进入 dragging，**纵滚不再改 dragOffset / 不再吞 click**（这正是「概率性点击没反应」的根因）；`swallowClickAt` 只在真正横滑后置位。行操作面板改成「抓手/标题拖动 + 6px 后才捕获指针」，`touch-action: pan-y`，长动作列表可以滚动。睡眠定时面板 `createPortal` 到 body，避免被带 `backdrop-filter` 的播放条当成 fixed 包含块 |
+| **退后台 / 选文件 / 亮屏白屏重载** | 分析真机现场：安装包 `assets/` 只有 `devUrl`，页面脚本是 `/@vite/client` + `/src/main.tsx`，`navigation.type=reload` 后拉不到 `src/views/local/index.tsx` → Router 默认错误页。**先出 bundled `--debug` APK**；代码侧：看门狗去掉 10s 自动 `location.reload()`（改为只提示 + 手动重载）、加 `data-ready` 与「构建形态/导航类型/页面地址」诊断；根路由加 `errorElement`（chunk 失败不再白屏）；Manifest 补 `density/fontScale/navigation/layoutDirection/colorMode/mcc/mnc/touchscreen` + `alwaysRetainTaskState`；`MainActivity` 设 `RENDERER_PRIORITY_IMPORTANT`、主题底色、`onResume` 只发 `gently:app:resume` 事件（不 reload） |
+| **启动白屏 / 品牌 logo** | `index.html` 内联品牌启动屏（`/logo.svg` 居中、不写项目名、深色跟随 `prefers-color-scheme`），React 双 rAF 后淡出；Android 启动窗口底色同步（`boot_background`，浅/深两套）。移动 bundle 6.7 MB、主 JS 553 kB（gzip 183 kB），启动屏覆盖解析空档 |
+| **本地音乐目录扫描** | 新增 `import_audio_dir` 宿主命令 + Kotlin `pickDirectory`（`ACTION_OPEN_DOCUMENT_TREE` + `DocumentsContract` 递归，深度 ≤12、文件 ≤5000），复用同一套 `importUris` 拷贝/进度/扩展名筛选；本地页加「扫描目录导入」 |
+| **背景图/视频铺满与坐标** | `BackgroundOptions` 加 `fit: cover/contain/fill`、`positionX/positionY`（0–100）、`scale`（1–2.5）；`BackgroundVideo` 同时支持 `<video>` 与 `<img>`（MIME/扩展名判断），内联 `object-fit/object-position/transform`；设置页三项滑杆；导入接受 jpg/png/webp/gif/avif |
+| **宠物行为=动画** | pet-core 新增 `Motion{none,walk,crawl}` + `Animation.motion` + `Frame.motion`，旧包不声明仍全 `walk`（零回归）；`walking` 指向 `motion:none` 或没有任何可位移动画 → 安装期 `pet.invalid_package`；`Engine::motion(id)` 同进程给宿主门控，`pet_watch` 被挡时先发方向等动画切换、连续 6s 给不出可位移动画才放弃；内置包 9 个动作声明 motion，walking 行为提到 hungry 之前，版本 1.1.0 |
+| **宠物养成** | `PetGrowth` 落 `state_json`（零 schema 迁移）：xp/feeds/touches/bestAffection/streakDays/daysVisited/today*；等级由只增 xp 派生；不饿时喂食不加好感；触摸/喂食每日收益上限；到档/里程碑解锁；`pet.state`/`pet.interact` 返回 `growth`；悬停状态卡与设置宠物行显示 Lv/经验/连续天数 |
+| **概率性点击无响应** | 见上：抽屉纵滚误吞 click（已修）、行操作 pointer capture（已修）、睡眠面板被困在播放条（已 portal）。`data-overlay` 共用标记仍留作下一轮排查项 |
+| **封面背景占比** | 迷你播放器（`shellMode=mini`）与手机共用内容表面不透明度下限 0.92、内容虚化 0：壁纸还在，但不再把人像照片铺满整个播放器 |
+| **歌词页音频律动** | 重写 `AudioOscillogram`：从 `audioEngine.ensureAnalyser()` 取当前媒体元素的 `AnalyserNode`（**只在 AudioContext running 时接线**，suspended 就退回一条直线，绝不把正在播的声音改道到静音图里）；颜色读 `--brand/--divider`；36px 高、半透明、reduced-motion 不跑。`examples/test.html` 的波形/静音判定/增益保留 |
+| **MusicFree 插件适配** | `parse_index_any` 识别 `{desc,plugins:[{name,url,version}]}` 并归一化为自有索引（fileName 从 URL 派生、冲突去重）；订阅面板预览失败后**自动多试一次 compat**（仍需用户勾选安装）；沙箱 compat 模式下 `search` 补第三参数 `type=music`、`getAlbumInfo` 补页码。**不内置任何列表地址**（用户自己粘贴） |
+| **完善宠物养成**（扩展） | 本轮只做「最小档 + 每日/连续 + 解锁展示」；道具/库存/每日任务/成就/作息/多宠物 UI 未做，明确留在下一轮 |
+
+### 2. 验证
+
+| 项 | 结果 |
+|---|---|
+| `pnpm typecheck` | 通过（修掉了用户原有的 `AudioOscillogram` 空壳报错） |
+| `pnpm smoke` | **589 项全过**（R137 的 578 → +11：目录导入、背景选项、宠物 motion/成长、主页配置等） |
+| `pnpm check:contract` | 76 命令 / 9 事件 / 26 错误码 / 7 宠物命令 全一致 |
+| `pnpm check:reachability` | 230 服务节点 / 99 动作节点，全部可达 |
+| `cargo test -p pet-core` | 16 个测试目标全过（新增 `motion.rs` 6 条、`growth.rs` 7 条） |
+| `cargo test -p gently` | 9/9（含 `walk_decision` 门控） |
+| `cargo test -p gently-core -j 2` | 全过（并行度太高时本机链接会出 E0463，`-j 2` 稳定） |
+| `pnpm verify` | **全绿**（typecheck / smoke / 契约 / 可达性 / core / 宠物独立性 / pet-core / 宿主单测） |
+| Kotlin | `:app:compileArmDebugKotlin` BUILD SUCCESSFUL（新版 ImportPlugin / MainActivity） |
+| 移动构建 | `TAURI_ENV_PLATFORM=android pnpm build` 成功；`dist` 6.7 MB、无 dev 脚本、无 100 MB 演示视频 |
+| bundled APK | `CARGO_PROFILE_DEV_DEBUG=0 pnpm tauri android build --debug -t aarch64 --apk -f tauri/custom-protocol` 成功；`release/gently-0.1.0-android-debug.apk`（81.2 MB debug，关 debuginfo；embedded `.so` 里有 `assets/index-*.js`、0 处 `src/main.tsx`、0 处 `bgc-`） |
+| 真机 | **本轮无设备连接**（`adb devices` 为空）；「重载」真因来自上一轮真机现场证据，修复后必须装新 bundled APK 复测 |
+
+### 3. 未做 / 下一步
+
+- **必须装 bundled 包**：`CARGO_PROFILE_DEV_DEBUG=0 pnpm tauri android build --debug -t aarch64 --apk -f tauri/custom-protocol`，装 `src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`（本轮已产出 `release/gently-0.1.0-android-debug.apk`，SHA256 `993fecab…`）。验收：页面脚本里不能出现 `/@vite/client` / `/src/main.tsx`。旧 dev 包无论怎么改代码都会在 reload 后白屏。
+- **旧华为（WebView 92）的精确安全区**：`env()` 只给 display cutout；下一步加 Kotlin WindowInsets 命令 + `useSafeAreaInsets`（契约「桌面层命令」表 + Rust `window_insets` + 前端 `--safe-*`）。
+- **MusicFree 完整兼容**：`cheerio` / AES / `big-integer` / `qs` 垫片、`getArtistWorks` / 评论 / 歌单导入都未做；现在只能跑「无清单外 require」的插件，预览会如实报缺少模块。
+- **宠物爬行**：`crawl` 枚举与 `edgeOverhang` 几何口子已留，宿主的 `WALK_TARGET` 还是一维、事件 payload 仍是 ±1，贴边爬行未实装。
+- **养成的「每日」按 UTC 日结算**（核心拿不到时区；UTC 0 点 = 北京时间 08:00）：本地日序号需要从前端 `pet.tick/state/interact` 传入，下一轮补。
+- **点击问题**：`data-overlay` 仍是单一全局标记；抽屉面板空白处不关闭、`useBackToClose` 与导航抢历史仍会在极端时序下出问题，留待真机长测。
 
 ## 本轮目标（第一百三十八轮）
 

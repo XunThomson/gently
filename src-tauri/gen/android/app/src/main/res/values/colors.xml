@@ -7,4 +7,6 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <!-- 启动窗口底色（R139）：与 index.html 的品牌启动屏同色，避免「白 → 品牌屏」闪一下 -->
+    <color name="boot_background">#FFF6F6FA</color>
 </resources>

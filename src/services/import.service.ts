@@ -115,7 +115,9 @@ export async function importedMusicDir(): Promise<string | null> {
  * 浏览器 / 桌面端：直接返回空结果（`cancelled: true`）——桌面端用「填目录 + 扫描」，
  * 没必要为了统一而编一条假成功。
  */
-export async function importAudioFiles(): Promise<ImportAudioResult> {
+async function invokeImport(
+    command: 'import_audio' | 'import_audio_dir',
+): Promise<ImportAudioResult> {
     if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return EMPTY;
 
     try {
@@ -126,7 +128,7 @@ export async function importAudioFiles(): Promise<ImportAudioResult> {
             skipped?: number;
             cancelled: boolean;
             dir: string;
-        }>('import_audio');
+        }>(command);
         return {
             imported: Number(result.imported ?? 0),
             failed: Number(result.failed ?? 0),
@@ -138,4 +140,19 @@ export async function importAudioFiles(): Promise<ImportAudioResult> {
         // 如实把原因带出去（界面按 i18n 文案显示，不显示开发者字符串）
         return {...EMPTY, error: err instanceof Error ? err.message : String(err)};
     }
+}
+
+/** 选文件导入（单个 / 多选）。 */
+export function importAudioFiles(): Promise<ImportAudioResult> {
+    return invokeImport('import_audio');
+}
+
+/**
+ * 选**目录**并递归导入音频（R139）。
+ *
+ * 文件多时（一张专辑、一个下载目录）让用户一个个勾选不现实；原生递归扫描后
+ * 走与「多选文件」完全相同的拷贝/进度流程。
+ */
+export function importAudioDirectory(): Promise<ImportAudioResult> {
+    return invokeImport('import_audio_dir');
 }

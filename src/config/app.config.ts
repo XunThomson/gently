@@ -57,6 +57,10 @@ export const appConfig = {
             distancePx: 72,
             /** 横向位移必须是纵向的这么多倍：斜着划多半是想滚动列表 */
             slopeRatio: 1.5,
+            /** 松手时抽屉已过宽度的这个比例就 commit 打开，否则弹回 */
+            snapThreshold: 0.4,
+            /** 快速轻扫（px/ms）直接 commit 方向，不看位置 */
+            flickVelocityPxMs: 0.35,
         },
     },
 

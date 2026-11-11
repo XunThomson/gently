@@ -3,6 +3,7 @@ package com.xun.gently
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.activity.result.ActivityResult
 import app.tauri.annotation.ActivityCallback
@@ -106,20 +107,28 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
         })
     }
 
+    /** 选一个**目录**（R139）：音频多时不应让用户一个个勾选，递归扫描整个目录再导入。 */
+    @Command
+    fun pickDirectory(invoke: Invoke) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+            )
+        }
+        try {
+            startActivityForResult(invoke, intent, "onPickDirectory")
+        } catch (err: Exception) {
+            invoke.reject("打不开系统的目录选择器：${err.message}", err)
+        }
+    }
+
     /** 选择器返回：拷文件可能很慢，**放到后台线程**，拷完再回调（不卡 UI）。 */
     @ActivityCallback
     fun onPickAudio(invoke: Invoke, result: ActivityResult) {
         val data = result.data
         if (result.resultCode != Activity.RESULT_OK || data == null) {
-            // 取消也要把进度收掉：否则界面上会留一条「上次导入到 62%」的假进度
-            setProgress(Progress(false, "", 0, 0, 0, 0, 0, 0, 0))
-            invoke.resolve(JSObject().apply {
-                put("imported", 0)
-                put("failed", 0)
-                put("skipped", 0)
-                put("cancelled", true)
-                put("dir", "")
-            })
+            resolveCancelled(invoke)
             return
         }
 
@@ -131,6 +140,51 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
         }
         data.data?.let { single -> if (uris.isEmpty()) uris.add(single) }
 
+        importUris(invoke, uris)
+    }
+
+    /** 目录选择返回：递归收集音频文件，再走和「多选文件」完全相同的导入流程。 */
+    @ActivityCallback
+    fun onPickDirectory(invoke: Invoke, result: ActivityResult) {
+        val tree = result.data?.data
+        if (result.resultCode != Activity.RESULT_OK || tree == null) {
+            resolveCancelled(invoke)
+            return
+        }
+        try {
+            activity.contentResolver.takePersistableUriPermission(
+                tree,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        } catch (err: Exception) {
+            /* 拿不到持久授权也能读这一轮（临时授权还在）；失败只记日志，不阻断 */
+            android.util.Log.w("GentlyImport", "目录持久授权失败", err)
+        }
+        thread(name = "gently-import-scan") {
+            val uris = collectAudioUris(tree)
+            importUris(invoke, uris)
+        }
+    }
+
+    /** 取消：进度收掉，返回明确字段（别让界面留一条「上次导入到 62%」的假进度）。 */
+    private fun resolveCancelled(invoke: Invoke) {
+        setProgress(Progress(false, "", 0, 0, 0, 0, 0, 0, 0))
+        invoke.resolve(JSObject().apply {
+            put("imported", 0)
+            put("failed", 0)
+            put("skipped", 0)
+            put("cancelled", true)
+            put("dir", "")
+        })
+    }
+
+    /**
+     * 把一批 `content://` 音频拷进应用私有目录，并回报进度。
+     *
+     * 抽出来是因为「多选文件」与「扫描目录」只差**怎么拿到 URI**：
+     * 拷贝、扩展名筛选、进度、去重必须只有一份实现（两条路各写一份迟早会漂）。
+     */
+    private fun importUris(invoke: Invoke, uris: List<Uri>) {
         thread(name = "gently-import") {
             val dir = File(activity.filesDir, "music").apply { mkdirs() }
             var imported = 0
@@ -199,6 +253,52 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
                 put("cancelled", false)
                 put("dir", dir.absolutePath)
             })
+        }
+    }
+
+    /**
+     * 递归收集目录里的音频（SAF `DocumentsContract`）。
+     *
+     * 不用 `DocumentFile`（少一个 androidx 依赖）：直接按 `COLUMN_MIME_TYPE` 判断目录，
+     * 子文档 URI 由 `buildChildDocumentsUriUsingTree` 拼。层数/数量都有上限，
+     * 防止用户误选根目录时一次性收集几万个文件。
+     */
+    private fun collectAudioUris(tree: Uri): List<Uri> {
+        val out = mutableListOf<Uri>()
+        val rootId = try {
+            DocumentsContract.getTreeDocumentId(tree)
+        } catch (err: Exception) {
+            /* 不是文档树 URI（个别文件管理器会回普通 content://）：当作没找到音频 */
+            android.util.Log.w("GentlyImport", "不是目录树 URI", err)
+            return out
+        }
+        walkTree(tree, rootId, out, 0)
+        return out
+    }
+
+    private fun walkTree(tree: Uri, documentId: String, out: MutableList<Uri>, depth: Int) {
+        if (depth > MAX_SCAN_DEPTH || out.size >= MAX_SCAN_FILES) return
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, documentId)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+        )
+        try {
+            activity.contentResolver.query(children, projection, null, null, null)?.use { cursor ->
+                while (cursor.moveToNext() && out.size < MAX_SCAN_FILES) {
+                    val id = cursor.getString(0) ?: continue
+                    val name = cursor.getString(1) ?: ""
+                    val mime = cursor.getString(2) ?: ""
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        walkTree(tree, id, out, depth + 1)
+                    } else if (isAudioName(name)) {
+                        out.add(DocumentsContract.buildDocumentUriUsingTree(tree, id))
+                    }
+                }
+            }
+        } catch (err: Exception) {
+            android.util.Log.w("GentlyImport", "扫描目录失败：$documentId", err)
         }
     }
 
@@ -309,5 +409,11 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
         private val AUDIO_EXTENSIONS = setOf(
             "mp3", "flac", "m4a", "m4b", "m4r", "m4s", "mp4", "aac", "ogg", "oga", "opus", "wav",
         )
+
+        /** 目录扫描的最深层数：防用户误选根目录时无限递归 */
+        private const val MAX_SCAN_DEPTH = 12
+
+        /** 目录扫描的最多文件数：一次导入几千首已经超出「手机本地音乐」的合理规模 */
+        private const val MAX_SCAN_FILES = 5000
     }
 }

@@ -56,6 +56,15 @@ mod android {
             .map_err(|err| format!("打开文件选择器失败：{err}"))
     }
 
+    /// 选一个目录并递归扫描音频（R139）：文件多时不该让用户一个个勾。
+    pub async fn pick_directory() -> Result<ImportOutcome, String> {
+        let handle = HANDLE.get().ok_or_else(|| "导入插件尚未注册".to_string())?;
+        handle
+            .run_mobile_plugin_async::<ImportOutcome>("pickDirectory", serde_json::json!({}))
+            .await
+            .map_err(|err| format!("打开目录选择器失败：{err}"))
+    }
+
     /// 导入的落点目录（`<filesDir>/music`）：判断「哪些曲目是导入进来的副本」要用它。
     pub fn import_dir() -> Result<String, String> {
         let handle = HANDLE.get().ok_or_else(|| "导入插件尚未注册".to_string())?;
@@ -132,6 +141,18 @@ pub async fn pick_audio() -> Result<ImportOutcome, String> {
     #[cfg(not(target_os = "android"))]
     {
         Err("这台设备上没有系统文件选择器（桌面端请直接填目录后扫描）".to_string())
+    }
+}
+
+/// 选目录并递归导入音频（R139）；桌面端没有这条路。
+pub async fn pick_directory() -> Result<ImportOutcome, String> {
+    #[cfg(target_os = "android")]
+    {
+        android::pick_directory().await
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Err("这台设备上没有系统目录选择器（桌面端请直接填目录后扫描）".to_string())
     }
 }
 

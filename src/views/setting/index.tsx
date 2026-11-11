@@ -17,6 +17,7 @@ import {
 } from '../../utils/lyricsWindowSettings';
 import {useActions, usePluginState, useSelect} from '../../store';
 import {getThemePreset, useTheme} from '../../theme';
+import {resetPersistedUi} from '../../store/persist';
 import type {ThemeMode} from '../../theme';
 import type {DownloadQualityFallback, SourceDisplayMode, SourceFilterStyle, TrackQuality} from '../../types';
 import {formatBytes} from '../../utils/helpers';
@@ -42,6 +43,7 @@ import {BackgroundCard} from './components/background-card';
 import {DataDirCard} from './components/data-dir-card';
 import {PetCard} from './components/pet-card';
 import {WallpaperAssistant} from './components/wallpaper-assistant';
+import {HomePageCard} from './components/home-page-card';
 import styles from './setting.module.css';
 
 const THEME_MODES: ThemeMode[] = ['light', 'dark', 'system'];
@@ -258,6 +260,10 @@ export default function SettingView() {
                     </>
                 )}
             </section>
+
+            {/* ---------- 主页配置：仅移动端 ----------
+                选的是「启动后先打开哪一页」，不是首页模块网格（那版概念已移除） */}
+            {mobile && <HomePageCard/>}
 
             {/* ---------- 宠物（Beta 1.0）：独立置顶窗口 + 独立引擎 pet-core，默认关 ----------
                 手机上还没有宠物渲染器（见 ANDROID-PLAN），所以整块隐藏，不给假入口 */}
@@ -609,6 +615,32 @@ export default function SettingView() {
             {/* 数据目录：默认在用户目录，可迁到别的盘（便携版默认跟着 exe 走）——
                 手机上由系统分配、不能在应用内迁移，所以只显示一句说明 */}
             <DataDirCard mobile={mobile}/>
+
+            {/* ---------- 恢复默认设置 ----------
+                只清 UI 偏好（`gently:ui`），不动曲库 / 插件 / 下载 / 凭据；二次确认后重载。 */}
+            <section className={styles.card}>
+                <h2 className={styles.cardTitle}>{t('page.setting.resetSection')}</h2>
+                <p className={styles.hint}>{t('page.setting.resetHint')}</p>
+                <div className={styles.cacheActions}>
+                    <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() =>
+                            requestConfirm({
+                                titleKey: 'page.setting.resetConfirmTitle',
+                                descKey: 'page.setting.resetConfirmDesc',
+                                tone: 'danger',
+                                onConfirm: () => {
+                                    resetPersistedUi();
+                                    window.location.reload();
+                                },
+                            })
+                        }
+                    >
+                        {t('page.setting.resetSettings')}
+                    </Button>
+                </div>
+            </section>
 
             <section className={styles.card}>
                 <h2 className={styles.cardTitle}>{t('page.setting.about')}</h2>

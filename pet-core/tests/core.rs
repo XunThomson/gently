@@ -92,12 +92,17 @@ fn cross_session_profile_survives_reopen_and_is_clamped() {
         let mut engine = Engine::open(&dir).unwrap();
         engine.install(&spec, 1_000).unwrap();
         engine.set_active("pet-persist").unwrap();
-        // 喂食：好感 +5、饥饿归零
-        let profile = engine.feed("pet-persist", 10_000).unwrap();
-        assert_eq!(profile.affection, PetProfileLimits::default().feed_affection_gain);
-        assert_eq!(profile.hunger, 0);
+        /* R139：不饿时喂食不再加好感（防刷）。先让时间过去 5 小时把饥饿抬到阈值以上。 */
+        let later = 1_000 + 5 * 3_600_000;
+        let profile = engine.feed("pet-persist", later).unwrap();
+        let limits = PetProfileLimits::default();
+        assert_eq!(profile.affection, limits.feed_affection_gain);
+        assert!(
+            profile.hunger < limits.hunger_hungry_at,
+            "喂食后应该不再处于「饿」的状态"
+        );
         // 连点第二下：冷却内被拒绝（不是静默）
-        let error = engine.feed("pet-persist", 10_500).unwrap_err();
+        let error = engine.feed("pet-persist", later + 500).unwrap_err();
         assert_eq!(error.code.as_str(), "pet.invalid_argument");
         engine.flush().unwrap();
     }
@@ -105,7 +110,7 @@ fn cross_session_profile_survives_reopen_and_is_clamped() {
     {
         // 重开：资料必须还在（跨会话）
         let mut engine = Engine::open(&dir).unwrap();
-        let profile = engine.profile("pet-persist", 10_600).unwrap();
+        let profile = engine.profile("pet-persist", 1_000 + 5 * 3_600_000 + 600).unwrap();
         assert!(profile.affection >= PetProfileLimits::default().feed_affection_gain);
         assert_eq!(engine.active_pet(), Some("pet-persist"));
         let listed = engine.list().unwrap();
@@ -194,6 +199,7 @@ fn invalid_specs_are_rejected_with_readable_reasons() {
             r#loop: true,
             row: None,
             fit: None,
+            motion: None,
         });
     }
     assert_eq!(spec.validate().unwrap_err().code.as_str(), "pet.limit_exceeded");

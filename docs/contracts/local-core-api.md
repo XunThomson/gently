@@ -328,6 +328,7 @@ Tauri 适配层另外注册了几条命令：它们需要**宿主能力**（读 
 |---|---|
 | `web_login{source}` | 按 `catalog.loginWeb` 给出的计划打开登录页窗口，轮询**这个窗口**的 Cookie 罐；`cookieNames` 全部到齐后调 `plugin.credentials.set` 落库，返回 `{ok, data:{source, state, credentialKey?}}`，`state ∈ confirmed / canceled`（关窗或 300s 超时都算 canceled，**凭据不动**）。会话值**不经过前端**。前端只经 `services/core.bridge.ts` 的 `coreWebLogin` 调它 |
 | `import_audio` | Android：打开系统文件选择器（SAF），把选中的音频**拷进**应用私有目录，返回 `{imported, failed, skipped, cancelled, dir}`。桌面端回「这台设备上没有系统文件选择器」。前端经 `services/import.service.ts` 调它，拿到 `dir` 后用核心的 `library.local.scan` 入库 |
+| `import_audio_dir` | Android：打开系统**目录**选择器（SAF `ACTION_OPEN_DOCUMENT_TREE`），递归收集音频后走与 `import_audio` **完全相同**的拷贝 / 扩展名筛选 / 进度流程，返回同样的字段。文件多时用户不必逐个勾选（R139）。桌面端回「这台设备上没有系统目录选择器」 |
 | `imported_dir` | Android：导入副本的落点目录（`<filesDir>/music`，一次安装内不变，前端缓存）。桌面端回空串，界面因此不显示「清理副本」 |
 | `import_progress` | Android：一次导入的**进度快照** `{active, fileName, fileIndex, fileCount, bytesDone, bytesTotal, imported, failed, skipped}`。Kotlin → Rust 没有回调通道，所以由原生维护快照、前端在导入期间**轮询**（250ms）；桌面端回 `{active:false}`。拷大文件时界面靠它说「到哪了」（R136） |
 
@@ -584,6 +585,20 @@ async function pollLoginQr(key) {}                 // 可选 → 登录状态 {s
   （对应 Legado 的 `prepare_public_repository.py`），并做发布前校验；
 - **安装期展示**：来自订阅的插件在 `plugin.preview` 中展示 `hosts`/`permissions`/`credentials`
   与来源仓库，用户确认后才落盘。
+
+**兼容格式（R139）**：同一个 `plugin.subscriptions.add / refresh` 也接受 MusicFree 风格的
+插件列表 —— `{"desc": "...", "plugins": [{"name": "...", "url": "https://.../x.js", "version": "1.0.0"}]}`。
+核心把每条归一化成上面的 `sources[]`：
+
+- `fileName` 从 URL 的 basename 确定性派生（冲突加序号），刷新前后稳定；
+- 列表没有 `hosts` / `sha256`：安装后走**兼容模式**（TOFU 观测域名后再收敛），
+  安装页如实显示「无校验和 / 无域名声明」；
+- 列表里的插件没有我们的清单头，订阅面板的预览会在普通预览失败后**只多试一次兼容模式**
+  （预览阶段 NoEgress），安装仍需用户显式勾选同意；
+- 兼容插件调用 `search` 时会补上 MusicFree 的第三个参数 `type = "music"`（否则常见写法
+  `if (type !== 'music') return ...` 会静默返回 0 条）。
+
+仍然**不预置任何列表地址**：用户自己粘贴/导入的索引才解析（ADR-0005）。
 
 ### 中立立场（必须遵守，见 `docs/adr/0005-neutral-third-party.md`）
 

@@ -10,13 +10,75 @@
     -->
     <meta name="referrer" content="no-referrer" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <title>Gently</title>
+    <style>
+      /*
+       * 启动屏（R139）：JS 包解析 / WebView 首帧之前先给品牌一个位置。
+       * 之前这里是纯白 body —— 手机上冷启动、或退后台回来时，白屏会持续一段时间，
+       * 看起来像「程序重新加载了」。
+       *
+       * 只用**品牌图形**（/logo.svg 的紫色圆角方 + 白色 G），不放项目名字；
+       * 颜色写死不依赖主题（此时主题变量还没注入）。
+       */
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: grid;
+        place-items: center;
+        background: #f6f6fa;
+        transition: opacity 0.3s ease;
+      }
+
+      #boot-splash img {
+        width: min(22vw, 96px);
+        height: min(22vw, 96px);
+        border-radius: 24%;
+        box-shadow: 0 20px 56px rgba(92, 63, 232, 0.28);
+        animation: boot-breathe 1.6s ease-in-out infinite;
+      }
+
+      #boot-splash.is-hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      @keyframes boot-breathe {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(0.96); opacity: 0.86; }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        #boot-splash { background: #0f0f14; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #boot-splash { transition: none; }
+        #boot-splash img { animation: none; }
+      }
+    </style>
   </head>
 
   <body>
+    <!-- 品牌启动屏：主窗口显示，歌词 / 宠物窗口（?window=…）由下面的脚本立即移除 -->
+    <div id="boot-splash" role="status" aria-label="Gently">
+      <img src="/logo.svg" width="96" height="96" alt="" />
+    </div>
+
     <div id="root"></div>
+
+    <script>
+      /* 独立窗口本来就是小块透明区域：启动屏留在里面会遮住歌词/宠物。 */
+      (function () {
+        var mode = new URLSearchParams(location.search).get('window');
+        if (!mode) return;
+        var splash = document.getElementById('boot-splash');
+        if (splash) splash.remove();
+      })();
+    </script>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -41,8 +41,8 @@ pub use manifest::{
 };
 pub use shape::list_items;
 pub use subscription::{
-    is_plain_file_name, is_private_host, parse_index, CatalogEntry, Subscription, SubscriptionIndex,
-    SubscriptionSourceEntry,
+    is_plain_file_name, is_private_host, parse_index, parse_index_any, CatalogEntry, Subscription,
+    SubscriptionIndex, SubscriptionSourceEntry,
 };
 pub use transport::{
     host_allowed, host_of, outgoing_headers, require_public_https, BlockingHttp, DownloadEvent,

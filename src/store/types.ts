@@ -85,6 +85,17 @@ export interface UiState {
      * 用计数器而不是把幂等逻辑塞进组件里，是为了让「什么时候需要重挂」只有一个来源。
      */
     petRevision: number;
+    /** 定时关闭的目标时间戳（ms）；null 表示未启用 */
+    sleepTimerUntil: number | null;
+    /** 定时关闭模式：固定时长 / 播完当前歌曲 */
+    sleepTimerMode: 'duration' | 'endOfTrack' | null;
+    /**
+     * 移动端「主页」路径：启动后根路径重定向到这里（用户可在设置页改）。
+     *
+     * 只存路径本身，**不存图标/标题**：导航表是唯一数据源（`config/mobileNav.ts`），
+     * 文案随语言切换，存进 localStorage 只会变成过期副本。
+     */
+    homePath: string;
 }
 
 /** 一份歌词的来路（自动加载 / 用户从搜索结果里挑的） */
@@ -347,6 +358,14 @@ export interface UiActions {
     removeSkin: (skinId: string) => void;
     /** 从本机核心读取已安装的用户皮肤（浏览器预览是空操作，沿用本地持久化的那份） */
     loadSkins: () => Promise<void>;
+    /** 设置定时关闭（分钟数，null 取消） */
+    setSleepTimer: (minutes: number | null) => void;
+    /** 设置定时关闭为播完当前歌曲 */
+    setSleepTimerEndOfTrack: () => void;
+    /** 取消定时关闭 */
+    cancelSleepTimer: () => void;
+    /** 设置移动端主页（启动后打开的页面；路径必须来自导航表） */
+    setHomePath: (path: string) => void;
 }
 
 export interface DialogActions {

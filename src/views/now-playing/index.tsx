@@ -5,6 +5,7 @@ import {Button} from '../../components/ui/button';
 import {EmptyState} from '../../components/ui/empty-state';
 import {IconChevronDown, IconChevronLeft, IconMusic, IconPause, IconPlay} from '../../components/ui/icon';
 import {Lyrics} from '../../components/ui/lyrics';
+import {AudioOscillogram} from '../../components/ui/loaders/AudioOscillogram';
 import {useActions, useSelect} from '../../store';
 import {useShellMode} from '../../hooks/useShellMode';
 import {Cover} from '../../components/ui/cover';
@@ -167,6 +168,8 @@ export default function NowPlayingView() {
                 )}
 
                 <section className={styles.lyricsPanel}>
+                    {/* 律动是补充信息，不抢歌词：细、半透明、静音时是一条线 */}
+                    <AudioOscillogram className={styles.oscillogram}/>
                     <div className={styles.lyricsHeader}>
                         <h2 className={styles.lyricsTitle}>{t('page.nowPlaying.lyrics')}</h2>
                         <Button

@@ -9,7 +9,7 @@
 
 use serde::Serialize;
 
-use crate::spec::{Action, Animation, Condition};
+use crate::spec::{Action, Animation, Condition, Motion};
 use crate::{PetProfile, PetSpec, PlaybackHint};
 
 /// 宿主每帧喂进来的输入（只读）。
@@ -59,6 +59,9 @@ pub struct Frame {
     pub hit_area: Option<Rect>,
     /// 看向哪边（原样回传 Input.look_dir；渲染层据此决定要不要画 look 格）
     pub look: Option<u8>,
+    /// 当前动画允许的位移能力（R139）：宿主据此决定「能不能挪窗口」。
+    /// `none` = 不许平移（坐下 / 跳 / 失败 / 点击反应……）。
+    pub motion: Motion,
 }
 
 /// 宠物默认锚点（M0：宠物总在容器左上角，以后由行为里的 `moveTo` 扩展）
@@ -209,7 +212,13 @@ impl Sim {
             hit_area: Some(Rect { x: self.x, y: self.y, w: HIT_SIZE, h: HIT_SIZE }),
             /* 方向按 16 取模：宿主给角度/越界值也能落回 0..15 */
             look: input.look_dir.map(|dir| dir % 16),
+            motion: self.spec.effective_motion(self.animation),
         }
+    }
+
+    /// 当前动画允许的位移能力（供宿主门控窗口平移；不新增命令/事件）
+    pub fn motion(&self) -> Motion {
+        self.spec.effective_motion(self.animation)
     }
 
     /// 找到第一条「条件成立且冷却已过」的行为
@@ -372,6 +381,7 @@ impl Sim {
             r#loop: true,
             row: None,
             fit: None,
+            motion: None,
         };
         let animation = self
             .spec
