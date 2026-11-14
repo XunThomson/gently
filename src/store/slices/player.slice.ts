@@ -2,6 +2,8 @@ import {appConfig} from '../../config/app.config';
 import {audioEngine, catalogService, coreAvailable, libraryService} from '../../services';
 import type {GroupedTrack, NowPlaying, Track, TrackCandidate} from '../../types';
 import {pickQuality} from '../../utils/quality';
+import {shouldRefreshStreamOnResume} from '../../utils/playbackResume';
+import {pickShuffleIndex} from '../../utils/shuffle';
 import {clampLyricsOffset, readLyricsOffset, writeLyricsOffset} from '../../utils/lyricsOffset';
 import {
     appliedLyricsRef,
@@ -39,6 +41,24 @@ let reportedPlayId = 0;
 
 /** 已经上报过**推荐反馈**的 `playId`（与历史上的去重分开：暂停会先消费掉历史那一次） */
 let feedbackPlayId = 0;
+
+/**
+ * 用户按下暂停的时间戳（ms）。
+ *
+ * 为什么需要：安卓把应用放后台很久之后，媒体管道往往已经被系统回收，
+ * 但 store 里还留着旧 `audioUrl` 与 `playable:true`。此时直接 `playing:true`
+ * 只会让界面切到播放态、媒体元素却永远起不来（R141 真机反馈：「暂停 UI 变播放 UI，
+ * 进度却一动不动」）。恢复时如果这次暂停已经很久，就先让核心重新解析一次地址。
+ */
+let pausedAt: number | null = null;
+
+/**
+ * 随机播放走过的下标（仅本次会话）。
+ *
+ * `prev` 在随机模式下先回退到这里，而不是再随机一次：用户按「上一首」时
+ * 期待的是刚才那一首，而不是另一首随机的歌。
+ */
+let shuffleHistory: number[] = [];
 
 /**
  * 用户手动挑过歌词的 `playId`。
@@ -91,6 +111,7 @@ export function createPlayerSlice(
         queue: [],
         index: -1,
         repeat: 'off',
+        shuffle: false,
         volume: appConfig.player.defaultVolume,
         elapsed: restored?.position ?? 0,
         duration: restored?.track.durationSec ?? 0,
@@ -366,6 +387,7 @@ export function createPlayerSlice(
     const start = (track: Track, index: number, queue: Track[]) => {
         // 先结算上一首，再开新的一首（切歌 = 上一首的一次播放真的结束了）
         reportPlayback({final: true});
+        pausedAt = null;
 
         const current: NowPlaying = {...track, playId: ++playSeq};
         const candidates = candidatesOf(track);
@@ -451,6 +473,7 @@ export function createPlayerSlice(
 
     const actions: PlayerActions = {
         play(track, queue) {
+            shuffleHistory = [];
             const list = queue ?? ctx.getState().player.queue;
             const index = list.findIndex((t) => t.id === track.id);
             start(track, index, list);
@@ -458,33 +481,69 @@ export function createPlayerSlice(
 
         /** 列表点击：当前曲目 → 播放/暂停；其他曲目 → 切歌 */
         playOrToggle(track, queue) {
-            const {current, playing} = ctx.getState().player;
+            const {current} = ctx.getState().player;
             if (current && current.id === track.id) {
-                patch({playing: !playing});
+                /* 必须走 `toggle()`：它会判断「长时间暂停后旧地址是否还能用」并决定
+                   要不要重新解析。以前这里直接 `patch({playing})`，正好绕开了那条恢复逻辑。 */
+                actions.toggle();
                 return;
             }
             actions.play(track, queue);
         },
 
         toggle() {
-            const {playing, current, audioUrl} = ctx.getState().player;
+            const {playing, current, audioUrl, playbackError} = ctx.getState().player;
             if (!current) return;
             /* 还没有音频地址（刚恢复上次的曲目 / 上一次被判播不了）：点播放要**先解析地址**，
                否则界面翻成「在播」却一点声音都没有。`recoverPlayback` 会保留当前进度。 */
-            if (!playing && !audioUrl) {
+            const needsFreshStream = shouldRefreshStreamOnResume({
+                pausedForMs: pausedAt === null ? null : Date.now() - pausedAt,
+                hasAudioUrl: Boolean(audioUrl),
+                hadError: audioEngine.hadError(),
+                stalled: audioEngine.isStalledNow(),
+            });
+            /* 「被系统中断」不是源的问题，但旧地址/管道已经不可用：恢复也必须重新解析，
+               不能只把 `playing` 翻成 true。 */
+            const wasInterrupted = playbackError?.kind === 'interrupted';
+            if (!playing && (needsFreshStream || wasInterrupted)) {
                 actions.recoverPlayback();
                 return;
             }
             // 暂停即一次播放结束（恢复播放算新的一次）：历史里记到的是真实听过的秒数
-            if (playing) reportPlayback();
+            if (playing) {
+                pausedAt = Date.now();
+                reportPlayback();
+            } else {
+                pausedAt = null;
+            }
             patch({playing: !playing});
             // 暂停/恢复都是一次「用户离开前的状态」，立刻落盘
             rememberPlayback(true);
         },
 
         next() {
-            const {repeat, current, index, queue} = ctx.getState().player;
+            const {repeat, current, index, queue, shuffle} = ctx.getState().player;
             if (!current) return;
+
+            /* 随机播放优先于单曲循环：两者同时打开时，`next` 仍然换一首，
+               否则「随机」会被 repeat=one 永远按住同一首（用户打开随机就没意义了）。 */
+            if (shuffle) {
+                const target = pickShuffleIndex(queue.length, index);
+                if (target >= 0 && queue[target]) {
+                    shuffleHistory.push(index);
+                    start(queue[target], target, queue);
+                    return;
+                }
+                // 队列里没有别的歌：单曲循环仍然生效，否则走「播完」流程
+                if (repeat === 'one') {
+                    start(current, index, queue);
+                    return;
+                }
+                reportPlayback({final: true});
+                patch({playing: false, elapsed: 0});
+                return;
+            }
+
             if (repeat === 'one') {
                 start(current, index, queue);
                 return;
@@ -504,17 +563,33 @@ export function createPlayerSlice(
         },
 
         prev() {
-            const {elapsed, current} = ctx.getState().player;
+            const {elapsed, current, queue, shuffle} = ctx.getState().player;
             if (!current) return;
             // 播放超过阈值时先回到开头
             if (elapsed > appConfig.player.restartThresholdSec) {
                 actions.seek(0);
                 return;
             }
+            /* 随机模式：回到刚才真实播过的那一首；没有历史就回到开头，
+               不要再随机一首（「上一首」变另一首歌是反直觉的）。 */
+            if (shuffle) {
+                const previous = shuffleHistory.pop();
+                if (previous !== undefined && queue[previous]) {
+                    start(queue[previous], previous, queue);
+                } else {
+                    actions.seek(0);
+                }
+                return;
+            }
             if (!moveTo(-1)) actions.seek(0);
         },
         setRepeat(repeat) {
             patch({repeat});
+        },
+        setShuffle(shuffle) {
+            if (ctx.getState().player.shuffle === shuffle) return;
+            shuffleHistory = [];
+            patch({shuffle});
         },
 
         setVolume(volume) {
@@ -619,6 +694,7 @@ export function createPlayerSlice(
         retryPlayback() {
             const {current, candidates} = ctx.getState().player;
             if (!current) return;
+            pausedAt = null;
             // 用户显式重试：媒体重试额度也重置一次（不然第二次点击会直接判死）
             mediaRetryPlayId = null;
             patch({
@@ -634,6 +710,7 @@ export function createPlayerSlice(
         recoverPlayback() {
             const {current, candidates, elapsed} = ctx.getState().player;
             if (!current) return;
+            pausedAt = null;
             // 与「点重试」不同：这里是用户没做任何操作时的自动恢复，必须**接着原进度**播
             mediaRetryPlayId = null;
             patch({
@@ -719,6 +796,8 @@ export function createPlayerSlice(
 
         stop() {
             reportPlayback({final: true});
+            pausedAt = null;
+            shuffleHistory = [];
             manualLyricsPlayId = null;
             patch({
                 current: null,

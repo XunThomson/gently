@@ -111,7 +111,7 @@ const QueueRow = forwardRef<HTMLLIElement, QueueRowProps>(function QueueRow(
  * - 打开时把正在播放的行滚到列表中部；
  * - onClose 仅由右上角关闭按钮触发。
  */
-export function QueuePanel({onClose}: { onClose: () => void }) {
+export function QueuePanel({onClose, inline = false}: { onClose: () => void; inline?: boolean }) {
     const {t} = useTranslation();
     const {queue, index, current} = usePlayerState();
     const {play, playOrToggle, removeFromQueue, moveInQueue, clearQueue} = useActions().player;
@@ -148,7 +148,11 @@ export function QueuePanel({onClose}: { onClose: () => void }) {
     const total = queue.length || (nowPlaying ? 1 : 0);
 
     return (
-        <div className={styles.panel} role="dialog" aria-label={t('player.queue')}>
+        <div
+            className={`${styles.panel}${inline ? ` ${styles.panelInline}` : ''}`}
+            role="dialog"
+            aria-label={t('player.queue')}
+        >
             <div className={styles.head}>
                 <span className={styles.title}>{t('player.queue')}</span>
                 <span className={styles.count}>{total}</span>

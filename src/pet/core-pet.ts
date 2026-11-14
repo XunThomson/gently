@@ -19,7 +19,15 @@ import {
     PET_WALK_EVENT,
     windowService,
 } from '../services/window.service';
-import {PET_DISPLAY_HEIGHT, parsePetSize, petMonitorRects, type PetSize} from '../utils/petPresentation';
+import {
+    PET_SIZE_MAX,
+    PET_SIZE_MIN,
+    PET_SIZE_PRESETS,
+    clampPetSize,
+    parsePetSize,
+    petMonitorRects,
+    type PetSize,
+} from '../utils/petPresentation';
 import {
     PET_HUD_GAP,
     PET_HUD_RESERVE,
@@ -149,16 +157,37 @@ export function createCorePet(): PetDefinition {
             sizeLabel.textContent = i18n.t('pet.action.size');
             const sizeGroup = document.createElement('div');
             sizeGroup.className = styles.sizeGroup;
-            const sizeButtons = (['small', 'medium', 'large'] as const).map((petSize) => {
+            const sizeButtons = PET_SIZE_PRESETS.map((preset, index) => {
+                const petSize = (['small', 'medium', 'large'] as const)[index];
                 const button = makeMenuButton(`pet.size.${petSize}`);
                 button.className = styles.sizeButton;
-                button.dataset.size = petSize;
+                button.dataset.size = String(preset);
                 sizeGroup.append(button);
                 return button;
             });
+
+            /* 用户拖动 / 直接输入任意尺寸：菜单里就给入口，不用进设置页（R141）。
+               拖动过程中只在本地应用，松手才持久化——避免往 localStorage 写几十次。 */
+            const sizeSlider = document.createElement('input');
+            sizeSlider.type = 'range';
+            sizeSlider.className = styles.sizeSlider;
+            sizeSlider.min = String(PET_SIZE_MIN);
+            sizeSlider.max = String(PET_SIZE_MAX);
+            sizeSlider.step = '1';
+            sizeSlider.setAttribute('aria-label', i18n.t('pet.action.size'));
+            const sizeNumber = document.createElement('input');
+            sizeNumber.type = 'number';
+            sizeNumber.className = styles.sizeInput;
+            sizeNumber.min = String(PET_SIZE_MIN);
+            sizeNumber.max = String(PET_SIZE_MAX);
+            sizeNumber.step = '1';
+            sizeNumber.setAttribute('aria-label', i18n.t('pet.action.size'));
+            const sizeCustom = document.createElement('div');
+            sizeCustom.className = styles.sizeCustom;
+            sizeCustom.append(sizeSlider, sizeNumber);
             const roamButton = makeMenuButton('pet.action.roamStart');
             const hideButton = makeMenuButton('pet.action.hide');
-            menu.append(feedButton, touchButton, sizeLabel, sizeGroup, roamButton, hideButton);
+            menu.append(feedButton, touchButton, sizeLabel, sizeGroup, sizeCustom, roamButton, hideButton);
 
             const hud = document.createElement('div');
             hud.className = styles.hud;
@@ -170,6 +199,10 @@ export function createCorePet(): PetDefinition {
             body.className = styles.body;
             body.setAttribute('aria-label', i18n.t('pet.name'));
             body.textContent = '◕';
+            /* 启动时先藏起来：状态与图集是异步读的，先显示兜底圆形会让用户看到
+               「默认宠物闪一下再切成自己的宠物」（R141 反馈）。第一次真正画出
+               图集（或确认没有图集、退回程序化本体）时才显示。 */
+            body.style.visibility = 'hidden';
             const motion = document.createElement('div');
             motion.className = styles.motionLayer;
             motion.hidden = true;
@@ -238,10 +271,12 @@ export function createCorePet(): PetDefinition {
                 satiety.value = activePet ? Math.max(0, Math.min(100, 100 - activePet.profile.hunger)) : 0;
                 affection.textContent = activePet ? String(Math.round(activePet.profile.affection)) : '0';
                 for (const button of sizeButtons) {
-                    const selected = button.dataset.size === size;
+                    const selected = Number(button.dataset.size) === size;
                     button.classList.toggle(styles.selected, selected);
                     button.setAttribute('aria-pressed', String(selected));
                 }
+                sizeSlider.value = String(size);
+                if (document.activeElement !== sizeNumber) sizeNumber.value = String(size);
                 roamButton.textContent = i18n.t(roam ? 'pet.action.roamStop' : 'pet.action.roamStart');
             };
 
@@ -319,7 +354,7 @@ export function createCorePet(): PetDefinition {
                 void (async () => {
                     while (resizeRequested && !disposed) {
                         resizeRequested = false;
-                        const height = PET_DISPLAY_HEIGHT[size];
+                        const height = size;
                         const content = {
                             width: atlas?.plan.width ?? height,
                             height: atlas?.plan.height ?? Math.round(height * 1.08),
@@ -342,14 +377,15 @@ export function createCorePet(): PetDefinition {
             };
 
             const applySize = (next: PetSize) => {
-                if (size === next) return;
-                size = next;
+                const clamped = clampPetSize(next);
+                if (size === clamped) return;
+                size = clamped;
                 if (atlas) {
                     atlas.plan = planAtlas(
                         {animations: atlas.animations, atlasLayout: atlas.layout, lookRows: atlas.lookRows},
                         atlas.plan.imageWidth,
                         atlas.plan.imageHeight,
-                        PET_DISPLAY_HEIGHT[size],
+                        size,
                     ) ?? atlas.plan;
                 }
                 lastPoseKey = '';
@@ -452,7 +488,7 @@ export function createCorePet(): PetDefinition {
                     }
                 } else if (lastBodyKey !== 'fallback') {
                     lastBodyKey = 'fallback';
-                    const fallbackSize = Math.round(PET_DISPLAY_HEIGHT[size] / 2);
+                    const fallbackSize = Math.round(size / 2);
                     body.style.width = `${fallbackSize}px`;
                     body.style.height = `${fallbackSize}px`;
                     motion.hidden = true;
@@ -463,6 +499,8 @@ export function createCorePet(): PetDefinition {
                     lastPoseKey = poseKey;
                     body.dataset.animation = String(animation);
                 }
+                /* 第一帧就绪后再显示：宁可晚几十毫秒出现，也不要先闪一个默认宠物 */
+                if (body.style.visibility === 'hidden') body.style.visibility = 'visible';
             };
 
             const scheduleTick = (delay: number = TICK_MS) => {
@@ -561,7 +599,7 @@ export function createCorePet(): PetDefinition {
                         active.spec.animations,
                         active.spec.atlasLayout ?? null,
                         active.spec.lookRows ?? null,
-                        PET_DISPLAY_HEIGHT[size],
+                        size,
                     );
                 }
                 if (disposed) return;
@@ -832,6 +870,19 @@ export function createCorePet(): PetDefinition {
                     applySize(next);
                 });
             }
+            /* 拖动只改本地（每帧写 localStorage 太贵）；松手才持久化并通知设置页 */
+            sizeSlider.addEventListener('input', () => applySize(Number(sizeSlider.value)));
+            sizeSlider.addEventListener('change', () => {
+                const next = clampPetSize(Number(sizeSlider.value));
+                windowService.setPetSize(next);
+                applySize(next);
+            });
+            sizeNumber.addEventListener('change', () => {
+                const next = clampPetSize(Number(sizeNumber.value));
+                sizeNumber.value = String(next);
+                windowService.setPetSize(next);
+                applySize(next);
+            });
             roamButton.addEventListener('click', () => {
                 roam = !roam;
                 windowService.setPetRoam(roam);

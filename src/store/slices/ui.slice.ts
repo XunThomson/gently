@@ -33,6 +33,12 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         return Math.min(max, Math.max(min, Math.round(value)));
     };
 
+    /** 夜间柔光：0–30（百分比），坏值回默认 8 */
+    const clampScreenDim = (value: number | undefined): number => {
+        if (value === undefined || !Number.isFinite(value)) return 8;
+        return Math.min(30, Math.max(0, Math.round(value)));
+    };
+
     const state: UiState = {
         themeMode: mode,
         themePresetId: validPreset ? (persisted.themePresetId as string) : DEFAULT_PRESET_ID,
@@ -45,6 +51,7 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         preferredSource: persisted.preferredSource ?? null,
         preferredQuality: persisted.preferredQuality ?? 'high',
         confirmDestructive: persisted.confirmDestructive ?? true,
+        screenDim: clampScreenDim(persisted.screenDim),
         downloadDir: persisted.downloadDir ?? '',
         downloadQuality: persisted.downloadQuality ?? appConfig.download.defaultQuality,
         downloadQualityFallback:
@@ -120,6 +127,9 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         },
         setConfirmDestructive(confirmDestructive) {
             patch({confirmDestructive});
+        },
+        setScreenDim(screenDim) {
+            patch({screenDim: clampScreenDim(screenDim)});
         },
         setDownloadDir(downloadDir) {
             patch({downloadDir});

@@ -52,6 +52,13 @@ export interface UiState {
     preferredQuality: TrackQuality;
     /** 危险操作前是否二次确认 */
     confirmDestructive: boolean;
+    /**
+     * 「夜间柔光」：屏幕压暗比例（0–30，百分比）。
+     *
+     * 浅色主题的白色面积大，长时间观看会刺眼；这是**用户可调**的柔光层，
+     * 不是强制主题规则。0 = 关闭。
+     */
+    screenDim: number;
     /** 下载目录；空串表示用核心默认目录（`<data>/downloads`） */
     downloadDir: string;
     /** 默认下载音质 */
@@ -130,6 +137,8 @@ export interface PlayerState {
     queue: Track[];
     index: number;
     repeat: RepeatMode;
+    /** 随机播放：`next` 从队列中挑一首非当前曲目（会话级，不持久化） */
+    shuffle: boolean;
     /** 0 ~ 1 */
     volume: number;
     /** 已播放秒数 */
@@ -318,6 +327,8 @@ export interface UiActions {
     setPreferredSource: (sourceId: string | null) => void;
     setPreferredQuality: (quality: TrackQuality) => void;
     setConfirmDestructive: (enabled: boolean) => void;
+    /** 夜间柔光压暗比例（0–30%） */
+    setScreenDim: (value: number) => void;
     /** 下载目录（空串 = 核心默认目录） */
     setDownloadDir: (dir: string) => void;
     setDownloadQuality: (quality: TrackQuality) => void;
@@ -401,6 +412,8 @@ export interface PlayerActions {
     next: () => void;
     prev: () => void;
     setRepeat: (mode: RepeatMode) => void;
+    /** 随机播放开关（与会话同生命周期；队列本身不变） */
+    setShuffle: (enabled: boolean) => void;
     setVolume: (volume: number) => void;
     /** 播放进度 +1s，由播放引擎驱动（无真实音源时的回退时钟） */
     tick: () => void;

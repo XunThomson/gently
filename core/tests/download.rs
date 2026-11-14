@@ -279,6 +279,46 @@ fn create_downloads_to_a_safe_file_name_and_renames_part() {
 }
 
 #[test]
+fn duplicate_titles_get_unique_files() {
+    let transport = FakeTransport::new(64 * 1024);
+    let (ctx, _sink, dir) = setup("duplicates", transport);
+    install(&ctx);
+
+    /* 两个音源给出同一首歌（标题 / 歌手完全一致）是常态：落盘名必须唯一，
+       否则后完成的下载会把先完成的文件覆盖掉。 */
+    let first = call(
+        &ctx,
+        "download.create",
+        json!({ "ref": "dl-source:dup-1", "track": track("dup-1") }),
+    );
+    let second = call(
+        &ctx,
+        "download.create",
+        json!({ "ref": "dl-source:dup-2", "track": track("dup-2") }),
+    );
+    assert_eq!(first["ok"], json!(true), "{first}");
+    assert_eq!(second["ok"], json!(true), "{second}");
+
+    let first_id = first["data"]["id"].as_str().unwrap().to_string();
+    let second_id = second["data"]["id"].as_str().unwrap().to_string();
+    let first_done = wait_status(&ctx, &first_id, "done", 5_000);
+    let second_done = wait_status(&ctx, &second_id, "done", 5_000);
+
+    let first_path = std::path::PathBuf::from(first_done["path"].as_str().unwrap());
+    let second_path = std::path::PathBuf::from(second_done["path"].as_str().unwrap());
+    assert_ne!(first_path, second_path, "同名下载不能指向同一个文件");
+    assert!(first_path.is_file() && second_path.is_file(), "两个文件都要存在");
+    assert_eq!(std::fs::read(&first_path).unwrap().len(), 64 * 1024);
+    assert_eq!(std::fs::read(&second_path).unwrap().len(), 64 * 1024);
+
+    /* 显示名仍然是曲目原名：唯一化只发生在文件树里 */
+    assert_eq!(first_done["track"]["title"], json!("标题/带:非法*字符"));
+    assert_eq!(second_done["track"]["title"], json!("标题/带:非法*字符"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn pause_and_resume_continue_from_the_partial_file() {
     // 慢上游（每 1KiB 停 3ms）→ 有足够时间在「下载中途」暂停
     let transport = FakeTransport::slow(512 * 1024, 3);

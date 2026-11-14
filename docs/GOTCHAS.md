@@ -1,6 +1,6 @@
 ---
 status: active
-last_verified: 2026-11-01
+last_verified: 2026-11-14
 owner: gently
 scope: 非显然的坑与规避方式（从历史轮次中提炼）
 token_budget: 1500
@@ -969,3 +969,51 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
 - 另一个独立的构建坑：VS 2026（MSVC 14.51）编 rquickjs/ring 的 C 文件会报
   `c1.dll: 未能将命令行放入调试记录中 (D8050)`；根 `Cargo.toml` 的
   `[profile.dev] debug = 0` 已规避（APK 也从 246 MB 降到 81 MB）。要调试 Rust 时改回 `debug = 2`。
+
+## 76. Windows「管理员也写不进去」：先查文件完整性级别，不是 ACL（R141）
+
+- 现象：`pnpm dev` / `pnpm tauri dev` 构建时报
+  `Failed to write to output file: ... Access is denied`；
+  用管理员终端在同一个 `.vite` 目录手动写文件却成功。
+- 根因：`esbuild.exe` 的文件完整性级别是 **`Mandatory Label\Low Mandatory Level`**。
+  Windows 强制完整性控制（MIC）规定 **Low IL 进程不能写 Medium IL 及以上的对象，即使 DACL 给了完全控制**。
+  esbuild 启动后继承这个低完整性令牌，从内核层就被挡住，和「是不是管理员」无关。
+- 一分钟确诊（顺序不要反）：
+  1. 在**高完整性终端**手动往 `node_modules/.vite` 写一个文件：能写 → 排除 ACL / 目录权限 / 文件锁；
+  2. `icacls "<项目>\node_modules\...\@esbuild\win32-x64\esbuild.exe"`：
+     输出里有 `Mandatory Label\Low Mandatory Level` 就是它；
+  3. 看父目录：父目录没有 Low 标签，说明标记是直接落在文件上的，不是继承来的。
+- 修复（高完整性终端）：
+
+  ```powershell
+  icacls "<项目>\node_modules\.pnpm\@esbuild+win32-x64@<版本>\node_modules\@esbuild\win32-x64\esbuild.exe" /setintegritylevel Medium
+  icacls "<同上路径>"   # 应变成 Medium Mandatory Level，Low 消失
+  ```
+
+  然后重跑 `pnpm dev` / `pnpm tauri dev`。
+- 为什么「清理重装依赖」没用：文件的安全属性（含完整性标签）与文件内容分开存储；
+  pnpm 创建硬链接 / 覆盖文件时**不会主动清除已有的 MIC 标签**。Low 标签一旦落在文件上，
+  重装后仍在。
+- 预防：遇到「管理员也写不进去」，**先查 `icacls` 的 `Mandatory Label`，再查 ACL 与杀软**。
+  低完整性标签可能由沙箱、安装器或安全软件留下，具体是谁取决于环境——判据是标签本身，
+  不必先归因给某个工具。
+- 验证：改完后 `esbuild.exe` 的标签为 Medium，Vite 能正常写 `.vite`，dev 启动不再报错。
+
+## 77. Tauri `setup` 的 `os error 5`：WebView2 数据目录与降权（R141）
+
+- 现象：Windows 上启动即 `Failed to setup app: 拒绝访问 (os error 5)`，还没走到窗口显示。
+- 已知根因方向：Windows「管理员保护」场景下，进程拿到的 `%LOCALAPPDATA%` 是**临时管理员账户**的路径，
+  Tauri 把它当作 WebView2 数据目录；而 WebView2 会主动降权为普通用户，降权后无权访问那个目录。
+- 这不是 Vite 的问题：前端 `Access is denied`（§76）与后端 `setup` 失败是**两条独立链路**，
+  分开排查，不要互相归因。
+- 处理方向（按优先级，按现场验证）：
+  1. **显式指定 WebView2 数据目录**：在 `setup` 里用
+     `WebviewWindowBuilder::data_directory()` 指向降权后仍可写的路径
+     （例如 `%PROGRAMDATA%\gently\webview` 或当前用户目录）；
+     若窗口在 `tauri.conf.json` 里自动创建，需要改到 `setup` 里建，才能先定数据目录。
+  2. **把项目移出 `Program Files`**：安装路径本身会放大权限问题，开发时放到用户可写目录即可。
+  3. **确认是否真的需要管理员运行**：不需要时用普通权限启动，直接避开这条冲突。
+- 诊断口径：在 `setup` 各阶段打日志，记录实际使用的数据目录与当前用户；对该目录做一次写测试。
+  不要只看 ACL——先确认「当前进程实际用的是哪个账户的 `%LOCALAPPDATA%`」。
+- 预防：应用默认按普通权限运行；确实需要提权时，把 WebView2 数据目录放到**降权后仍可写**的公共路径，
+  并在启动日志里打印最终路径。

@@ -94,6 +94,8 @@ export default function App() {
     const petEnabled = useSelect((s) => s.ui.petEnabled);
     /** 设置页改过宠物（安装/切换/卸载）后 +1 → 宠物窗口据此重挂渲染器 */
     const petRevision = useSelect((s) => s.ui.petRevision);
+    /** 夜间柔光：浅色主题白色面积大，按用户偏好把整屏压暗一点（0 = 关闭） */
+    const screenDim = useSelect((s) => s.ui.screenDim);
     /* 手机端没有「独立宠物窗口」这种东西（P4 才谈替代方案），所以桥直接不启用 */
     usePetWindowBridge(petEnabled && mode !== "mobile", petRevision);
 
@@ -111,6 +113,7 @@ export default function App() {
                     <MobileShell/>
                 </div>
                 <ConfirmHost/>
+                <div className="app__screen-dim" style={{opacity: screenDim / 100}} aria-hidden="true"/>
             </div>
         );
     }
@@ -123,6 +126,7 @@ export default function App() {
                     <MiniPlayer onExpand={restoreFull}/>
                 </div>
                 <ConfirmHost/>
+                <div className="app__screen-dim" style={{opacity: screenDim / 100}} aria-hidden="true"/>
             </div>
         );
     }
@@ -174,6 +178,9 @@ export default function App() {
             {/* 宠物宿主：内置宠物住在独立窗口（`pet`），主窗口这里默认什么都不注册，
                 所以渲染 null；保留它是给「第三方宠物定义想画在应用里」留的口子 */}
             <PetHost/>
+
+            {/* 夜间柔光覆盖层：pointer-events: none，只压暗不挡操作 */}
+            <div className="app__screen-dim" style={{opacity: screenDim / 100}} aria-hidden="true"/>
         </div>
     );
 }

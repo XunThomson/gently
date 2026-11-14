@@ -22,6 +22,8 @@ export interface PersistedUi {
     preferredSource?: string | null;
     preferredQuality?: TrackQuality;
     confirmDestructive?: boolean;
+    /** 夜间柔光：屏幕压暗比例（0–30，百分比） */
+    screenDim?: number;
     /** 下载目录（空串 = 核心默认目录） */
     downloadDir?: string;
     downloadQuality?: TrackQuality;

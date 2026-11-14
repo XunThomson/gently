@@ -552,8 +552,8 @@ Rust 本机核心（**已实现**：契约里的 70 条命令 / 9 类事件，`c
 
 契约两处，且只有两处：
 
-1. `docs/contracts/local-core-api.md`——规范正文：70 条命令 + 9 类事件、错误码表、
-   多音源策略、插件与皮肤模型、本机存储布局、安全与信任模型；
+1. `docs/contracts/local-core-api.md`——规范正文：76 条命令 + 9 类事件、错误码表、
+   多音源策略、插件与皮肤模型、本机存储布局、权限边界与资源模型；
 2. `src/api/index.ts`——上述契约的前端类型（只有类型，无实现）。
 
 三条硬规则：
@@ -562,7 +562,7 @@ Rust 本机核心（**已实现**：契约里的 70 条命令 / 9 类事件，`c
    只有 IPC 反序列化失败/panic 才 reject，由前端薄封装转成 `common.internal`；
 2. **UI/store 不得直接 `invoke`**：一律经 `src/services/**` 封装（与第 4 条数据门面同源），
    接入时只改这一层；
-3. **社区资源是不可信代码**：插件安装走 `plugin.preview` → 用户显式同意 → `plugin.import`；
+3. **社区资源按外部输入处理**：插件安装走 `plugin.preview` → 用户确认 → `plugin.import`；
    不执行安装脚本；插件 JS 只在 QuickJS 沙箱内运行，网络限于清单 `hosts`；
    第三方凭据只进 OS keyring，日志与 SQLite 不出现明文。
 

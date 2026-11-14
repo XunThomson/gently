@@ -13,3 +13,13 @@
     width: 100%;
     height: 100%;
 }
+
+/* 夜间柔光：整屏压暗，不拦截任何点击；不透明度来自用户的 ui.screenDim */
+.app__screen-dim {
+    position: fixed;
+    inset: 0;
+    /* 压住内容与抽屉，但**不压模态框**（对话框/确认面板仍在它上面，保持可读） */
+    z-index: var(--z-overlay);
+    background: var(--screen-dim-color);
+    pointer-events: none;
+}

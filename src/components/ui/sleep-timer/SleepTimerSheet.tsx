@@ -7,8 +7,10 @@ import {useSleepTimerRemaining} from '../../../hooks/useSleepTimer';
 import {IconClose, IconMoon} from '../icon';
 import styles from './SleepTimerSheet.module.css';
 
-/** 预设时长选项（分钟） */
-const PRESET_MINUTES = [15, 30, 45, 60, 90] as const;
+/** 预设时长选项（分钟）：保留短档，用户也可以直接输入任意 1–720 分钟 */
+const PRESET_MINUTES = [3, 5, 10, 15, 30, 45, 60, 90] as const;
+const CUSTOM_MIN_MINUTES = 1;
+const CUSTOM_MAX_MINUTES = 720;
 
 export interface SleepTimerSheetProps {
     onClose: () => void;
@@ -25,6 +27,7 @@ export function SleepTimerSheet({onClose}: SleepTimerSheetProps) {
     const sleepTimerMode = useSelect((s) => s.ui.sleepTimerMode);
     const {setSleepTimer, setSleepTimerEndOfTrack, cancelSleepTimer} = useActions().ui;
     const remaining = useSleepTimerRemaining();
+    const [customMinutes, setCustomMinutes] = useState('10');
 
     /* 安卓系统返回 = 关闭面板 */
     useBackToClose(true, onClose);
@@ -43,6 +46,15 @@ export function SleepTimerSheet({onClose}: SleepTimerSheetProps) {
         cancelSleepTimer();
         onClose();
     }, [cancelSleepTimer, onClose]);
+
+    /** 自定义时长：预设之外的分钟数（钳进 1–720） */
+    const handleCustom = useCallback(() => {
+        const parsed = Number(customMinutes.replace(',', '.'));
+        if (!Number.isFinite(parsed)) return;
+        const minutes = Math.min(CUSTOM_MAX_MINUTES, Math.max(CUSTOM_MIN_MINUTES, Math.round(parsed)));
+        setSleepTimer(minutes);
+        onClose();
+    }, [customMinutes, setSleepTimer, onClose]);
 
     /* 格式化剩余时间 */
     const formatRemaining = useCallback((seconds: number): string => {
@@ -108,6 +120,31 @@ export function SleepTimerSheet({onClose}: SleepTimerSheetProps) {
                         </button>
                     </div>
 
+                    {/* 预设不可能覆盖所有人的需求：给出 1–720 分钟的任意值（R141） */}
+                    <div className={styles.customRow}>
+                        <label className={styles.customLabel} htmlFor="sleep-timer-custom">
+                            {t('sleepTimer.customLabel')}
+                        </label>
+                        <input
+                            id="sleep-timer-custom"
+                            className={styles.customInput}
+                            type="number"
+                            inputMode="numeric"
+                            min={CUSTOM_MIN_MINUTES}
+                            max={CUSTOM_MAX_MINUTES}
+                            step={1}
+                            value={customMinutes}
+                            aria-label={t('sleepTimer.customLabel')}
+                            onChange={(event) => setCustomMinutes(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') handleCustom();
+                            }}
+                        />
+                        <button type="button" className={styles.customStart} onClick={handleCustom}>
+                            {t('sleepTimer.customStart')}
+                        </button>
+                    </div>
+
                     {/* 活跃定时：显示剩余时间 */}
                     {sleepTimerMode && remaining !== null && (
                         <div className={styles.activeInfo}>
@@ -137,7 +174,7 @@ export function SleepTimerSheet({onClose}: SleepTimerSheetProps) {
  * 定时关闭按钮：显示在播放条上，点击打开定时面板。
  * 定时活跃时显示剩余时间徽标。
  */
-export function SleepTimerButton() {
+export function SleepTimerButton({withLabel = false}: {withLabel?: boolean} = {}) {
     const [open, setOpen] = useState(false);
     const sleepTimerMode = useSelect((s) => s.ui.sleepTimerMode);
     const remaining = useSleepTimerRemaining();
@@ -164,12 +201,14 @@ export function SleepTimerButton() {
         <>
             <button
                 type="button"
-                className={styles.triggerBtn}
+                className={`${styles.triggerBtn}${withLabel ? ` ${styles.triggerWithLabel}` : ''}`}
                 aria-label={t('sleepTimer.title')}
+                title={t('sleepTimer.title')}
                 data-active={isActive || undefined}
                 onClick={() => setOpen(true)}
             >
                 <IconMoon size={18}/>
+                {withLabel && <span className={styles.triggerText}>{t('sleepTimer.title')}</span>}
                 {isActive && remaining !== null && (
                     <span className={styles.badge}>{formatShort(remaining)}</span>
                 )}

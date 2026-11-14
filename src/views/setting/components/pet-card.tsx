@@ -9,10 +9,28 @@ import {errorText} from '../../../i18n/errors';
 import {petService, windowService} from '../../../services';
 import {PET_PROFILE_EVENT, PET_ROAM_EVENT, PET_SIZE_EVENT} from '../../../services/window.service';
 import type {PetSize} from '../../../utils/petPresentation';
+import {
+    PET_SIZE_MAX,
+    PET_SIZE_MIN,
+    PET_SIZE_PRESETS,
+    clampPetSize,
+} from '../../../utils/petPresentation';
 import {useActions} from '../../../store';
 import styles from '../setting.module.css';
 import {PetPreview} from './pet-preview';
 import {PetDebugPanel} from './pet-debug';
+
+/**
+ * 三档快捷尺寸的文案键。
+ *
+ * 写成显式映射而不是模板字符串：i18n 死键守卫按字面量检索，
+ * `pet.size.${...}` 会被误判成没人使用的键。
+ */
+const PET_SIZE_LABELS: Record<number, string> = {
+    104: 'pet.size.small',
+    208: 'pet.size.medium',
+    312: 'pet.size.large',
+};
 
 /**
  * 宠物管理（实验，M2）：列表 / 切换 / 卸载 / 导入宠物包。
@@ -41,6 +59,8 @@ export function PetCard({enabled, onToggle}: {enabled: boolean; onToggle: (next:
     /** 是否允许宠物在屏幕上走动（默认关：它会自己挪窗口） */
     const [roam, setRoam] = useState<boolean>(() => windowService.petRoam());
     const [petSize, setPetSize] = useState<PetSize>(() => windowService.petSize());
+    /** 数字输入的草稿：直接绑 number 会让空值 / 中间态立刻被抹掉 */
+    const [sizeDraft, setSizeDraft] = useState(() => String(windowService.petSize()));
     const [specText, setSpecText] = useState('');
     const [atlasFile, setAtlasFile] = useState<File | null>(null);
 
@@ -65,7 +85,11 @@ export function PetCard({enabled, onToggle}: {enabled: boolean; onToggle: (next:
         void (async () => {
             try {
                 const {listen} = await import('@tauri-apps/api/event');
-                const offSize = await listen<{size: PetSize}>(PET_SIZE_EVENT, (event) => setPetSize(event.payload.size));
+                const offSize = await listen<{size: PetSize}>(PET_SIZE_EVENT, (event) => {
+                    const next = clampPetSize(event.payload.size);
+                    setPetSize(next);
+                    setSizeDraft(String(next));
+                });
                 const offRoam = await listen<{enabled: boolean}>(PET_ROAM_EVENT, (event) => setRoam(event.payload.enabled));
                 const offProfile = await listen(PET_PROFILE_EVENT, () => void refresh());
                 if (disposed) {
@@ -115,6 +139,14 @@ export function PetCard({enabled, onToggle}: {enabled: boolean; onToggle: (next:
     const toggleRoam = (next: boolean) => {
         windowService.setPetRoam(next);
         setRoam(next);
+    };
+
+    /** 改尺寸：滑杆 / 数字框 / 三档快捷键都走这一条（值先钳进 min–max） */
+    const changePetSize = (next: number) => {
+        const size = clampPetSize(next);
+        windowService.setPetSize(size);
+        setPetSize(size);
+        setSizeDraft(String(size));
     };
 
     /** 拖进来的文件：`.json` 当规格文本，`.png/.webp` 当图集；其它类型忽略 */
@@ -209,22 +241,50 @@ export function PetCard({enabled, onToggle}: {enabled: boolean; onToggle: (next:
                     <div className={styles.field}>
                         <span className={styles.label}>{t('page.setting.petSize')}</span>
                         <span className={styles.value}>
-                            <UnderlineRadioGroup
-                                name="pet-size"
+                            <input
+                                className={styles.range}
+                                type="range"
+                                min={PET_SIZE_MIN}
+                                max={PET_SIZE_MAX}
+                                step={1}
                                 value={petSize}
-                                onChange={(value) => {
-                                    const next = value as PetSize;
-                                    windowService.setPetSize(next);
-                                    setPetSize(next);
-                                }}
-                                options={[
-                                    {value: 'small', label: t('pet.size.small')},
-                                    {value: 'medium', label: t('pet.size.medium')},
-                                    {value: 'large', label: t('pet.size.large')},
-                                ]}
+                                aria-label={t('page.setting.petSize')}
+                                onChange={(event) => changePetSize(Number(event.target.value))}
                             />
+                            <input
+                                className={styles.numberInput}
+                                type="number"
+                                inputMode="numeric"
+                                min={PET_SIZE_MIN}
+                                max={PET_SIZE_MAX}
+                                step={1}
+                                value={sizeDraft}
+                                aria-label={t('page.setting.petSizeExact')}
+                                onChange={(event) => setSizeDraft(event.target.value)}
+                                onBlur={() => {
+                                    const parsed = Number(sizeDraft.replace(',', '.'));
+                                    changePetSize(Number.isFinite(parsed) ? parsed : petSize);
+                                }}
+                                onKeyDown={(event) => {
+                                    if (event.key !== 'Enter') return;
+                                    const parsed = Number(sizeDraft.replace(',', '.'));
+                                    changePetSize(Number.isFinite(parsed) ? parsed : petSize);
+                                }}
+                            />
+                            <span className={styles.valueText}>{t('page.setting.petSizeUnit', {value: petSize})}</span>
+                            {PET_SIZE_PRESETS.map((preset) => (
+                                <Button
+                                    key={preset}
+                                    size="sm"
+                                    variant={petSize === preset ? 'primary' : 'ghost'}
+                                    onClick={() => changePetSize(preset)}
+                                >
+                                    {t(PET_SIZE_LABELS[preset])}
+                                </Button>
+                            ))}
                         </span>
                     </div>
+                    <p className={styles.hint}>{t('page.setting.petSizeHint', {min: PET_SIZE_MIN, max: PET_SIZE_MAX})}</p>
 
                     <div className={styles.field}>
                         <span className={styles.label}>{t('page.setting.petRoam')}</span>

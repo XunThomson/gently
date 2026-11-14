@@ -117,6 +117,7 @@ export async function importedMusicDir(): Promise<string | null> {
  */
 async function invokeImport(
     command: 'import_audio' | 'import_audio_dir',
+    args: Record<string, unknown> = {},
 ): Promise<ImportAudioResult> {
     if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return EMPTY;
 
@@ -128,7 +129,7 @@ async function invokeImport(
             skipped?: number;
             cancelled: boolean;
             dir: string;
-        }>(command);
+        }>(command, args);
         return {
             imported: Number(result.imported ?? 0),
             failed: Number(result.failed ?? 0),
@@ -148,11 +149,12 @@ export function importAudioFiles(): Promise<ImportAudioResult> {
 }
 
 /**
- * 选**目录**并递归导入音频（R139）。
+ * 选**目录**并导入音频（R139 / R141）。
  *
- * 文件多时（一张专辑、一个下载目录）让用户一个个勾选不现实；原生递归扫描后
- * 走与「多选文件」完全相同的拷贝/进度流程。
+ * `recursive` 决定「整个目录」还是「只这一层」：大多数时候用户想整批收进来，
+ * 但「一个文件夹里只有几首试听、子目录是别的专辑」时，递归反而会导入不想要的文件。
+ * 两个选项都摆在按钮旁边，由用户决定。
  */
-export function importAudioDirectory(): Promise<ImportAudioResult> {
-    return invokeImport('import_audio_dir');
+export function importAudioDirectory(recursive = true): Promise<ImportAudioResult> {
+    return invokeImport('import_audio_dir', {recursive});
 }

@@ -37,6 +37,9 @@ import {
 import {
     DEFAULT_PET_SIZE,
     PET_DISPLAY_HEIGHT,
+    PET_SIZE_MAX,
+    PET_SIZE_MIN,
+    clampPetSize,
     nextPetSize,
     parsePetSize,
     petWindowDimensions,
@@ -45,6 +48,8 @@ import {filterGroupsBySource, groupTracks} from '../src/utils/track';
 import {currentLyricLine, toLyricLines} from '../src/utils/lyrics';
 import {errorText} from '../src/i18n/errors';
 import {coverStyle, trackCoverStyle} from '../src/utils/cover';
+import {pickShuffleIndex} from '../src/utils/shuffle';
+import {shouldRefreshStreamOnResume} from '../src/utils/playbackResume';
 import type {Track, TrackQuality} from '../src/types';
 import type {PluginSummary} from '../src/api';
 import {rememberCoreSources as rememberCoreSourceList, isCoreSource} from '../src/services/core.sources';
@@ -548,6 +553,11 @@ async function main(): Promise<void> {
 
     check('theme: light/dark 变量数量一致', Object.keys(light).length === Object.keys(dark).length);
     check('theme: 浅色应用底色较亮', light['--bg-app'] !== dark['--bg-app']);
+    check(
+        'theme: 浅色表面不再是纯白（降低长时间观看的亮度）',
+        light['--bg-surface'] !== '#ffffff' && light['--bg-app'] === themeConfig.scheme.light.app,
+        light['--bg-surface'],
+    );
     check('theme: 未解析的语义引用已全部展开', !Object.values(light).some((v) => v.startsWith('{')), 'still has {ref}');
     check('theme: 搜索框高度由配置驱动', light['--search-box-height'] === `${themeConfig.components.searchBox.height}px`);
     check('theme: 间距 token 已生成', light['--space-4'] === '16px');
@@ -861,6 +871,38 @@ async function main(): Promise<void> {
     check('store: 再点当前曲目恢复播放', s().player.playing);
     actions.player.playOrToggle(queue[2], queue);
     check('store: 点其他曲目切歌播放', s().player.current?.id === queue[2].id && s().player.playing);
+
+    /* 随机播放：next 不留在当前曲目；prev 回到刚才实际播过的那一首 */
+    actions.player.play(queue[0], queue);
+    actions.player.setShuffle(true);
+    actions.player.next();
+    check(
+        'store: 随机播放的下一首不是当前曲目',
+        s().player.current?.id !== queue[0].id && queue.some((track) => track.id === s().player.current?.id),
+    );
+    actions.player.prev();
+    check('store: 随机播放的上一首回到刚播过的那一首', s().player.current?.id === queue[0].id);
+    actions.player.setShuffle(false);
+    check('store: 关闭随机后状态复位', s().player.shuffle === false);
+
+    check(
+        'shuffle: 空队列 / 单曲队列不选曲，随机到当前时取下一首',
+        pickShuffleIndex(0, 0) === -1 &&
+            pickShuffleIndex(1, 0) === -1 &&
+            pickShuffleIndex(3, 1, () => 0) === 0 &&
+            pickShuffleIndex(3, 2, () => 0.99) === 0 &&
+            pickShuffleIndex(2, 1, () => 0.5) === 0,
+    );
+
+    check(
+        'resume: 长时间暂停 / 错误态 / 僵死 / 没地址时才重新解析',
+        shouldRefreshStreamOnResume({pausedForMs: null, hasAudioUrl: true, hadError: false, stalled: false}) === false &&
+            shouldRefreshStreamOnResume({pausedForMs: 29_000, hasAudioUrl: true, hadError: false, stalled: false}) === false &&
+            shouldRefreshStreamOnResume({pausedForMs: 30_000, hasAudioUrl: true, hadError: false, stalled: false}) === true &&
+            shouldRefreshStreamOnResume({pausedForMs: null, hasAudioUrl: false, hadError: false, stalled: false}) === true &&
+            shouldRefreshStreamOnResume({pausedForMs: null, hasAudioUrl: true, hadError: true, stalled: false}) === true &&
+            shouldRefreshStreamOnResume({pausedForMs: null, hasAudioUrl: true, hadError: false, stalled: true}) === true,
+    );
 
     /* 歌词：随播放异步加载，切歌后不串词 */
     await new Promise((resolve) => setTimeout(resolve, 220));
@@ -1888,14 +1930,18 @@ async function main(): Promise<void> {
         );
 
         check(
-            'pet: 三档尺寸与非法持久化值回退',
-            DEFAULT_PET_SIZE === 'medium' &&
+            'pet: 尺寸是 min–max 的连续值（旧三档仍能读回）',
+            DEFAULT_PET_SIZE === 208 &&
                 PET_DISPLAY_HEIGHT.small === 104 &&
                 PET_DISPLAY_HEIGHT.medium === 208 &&
                 PET_DISPLAY_HEIGHT.large === 312 &&
-                parsePetSize('large') === 'large' &&
+                parsePetSize('large') === 312 &&
+                parsePetSize('120') === 120 &&
                 parsePetSize('broken') === DEFAULT_PET_SIZE &&
-                nextPetSize('large') === 'small',
+                parsePetSize(9999) === PET_SIZE_MAX &&
+                parsePetSize(1) === PET_SIZE_MIN &&
+                clampPetSize(160.4) === 160 &&
+                nextPetSize(312) === 104,
         );
         const petPad = PET_HUD_RESERVE + PET_HUD_GAP;
         const petLargeWindow = petWindowDimensions({width: 288, height: 312});
@@ -2718,6 +2764,16 @@ async function main(): Promise<void> {
             check(
                 '移动播放条：标记了 data-drawer-swipe="off"（否则拖进度会拉出抽屉）',
                 barSrc.includes('data-drawer-swipe="off"'),
+            );
+
+            /* R141：播放条在歌词页常驻，已在歌词页时再 navigate 会多压一条同路径历史 */
+            check(
+                '移动播放条：已在歌词页时不再重复压入历史',
+                barSrc.includes('shouldOpenNowPlaying'),
+            );
+            check(
+                '移动播放条：功能位不超过 4 个（其余进抽屉）',
+                (barSrc.match(/className=\{styles\.control\}/g) ?? []).length === 4,
             );
         }
 

@@ -81,6 +81,8 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--border-strong': s.borderStrong,
         '--divider': s.divider,
         '--scrollbar-thumb': s.scrollbarThumb,
+        /* 用户可调的「夜间柔光」覆盖色（不透明度在 App 里按偏好设置） */
+        '--screen-dim-color': s.dimColor,
         /* 浮层遮罩（抽屉 / 面板压住内容时用）：与背景视频遮罩同源，跟随明暗方案 */
         '--overlay-scrim': s.videoScrim,
         /* 模态浮层遮罩：对话框 / 手机底部操作面板 —— 明暗两种方案都**压暗**，
@@ -432,6 +434,7 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--now-playing-mobile-cover-opacity': String(c.nowPlaying.mobileCoverOpacity),
         '--now-playing-mobile-cover-blur': px(c.nowPlaying.mobileCoverBlur),
         '--now-playing-mobile-lyrics-height': c.nowPlaying.mobileLyricsPanelHeight,
+        '--now-playing-offset-input-width': px(c.nowPlaying.offsetInputWidth),
 
         /* ---------- 组件：业务列表（表格） ---------- */
         '--table-cover-size': px(c.table.coverSize),

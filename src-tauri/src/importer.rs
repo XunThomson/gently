@@ -56,11 +56,14 @@ mod android {
             .map_err(|err| format!("打开文件选择器失败：{err}"))
     }
 
-    /// 选一个目录并递归扫描音频（R139）：文件多时不该让用户一个个勾。
-    pub async fn pick_directory() -> Result<ImportOutcome, String> {
+    /// 选一个目录并扫描音频（R139）：`recursive` 决定是否进入子目录。
+    pub async fn pick_directory(recursive: bool) -> Result<ImportOutcome, String> {
         let handle = HANDLE.get().ok_or_else(|| "导入插件尚未注册".to_string())?;
         handle
-            .run_mobile_plugin_async::<ImportOutcome>("pickDirectory", serde_json::json!({}))
+            .run_mobile_plugin_async::<ImportOutcome>(
+                "pickDirectory",
+                serde_json::json!({ "recursive": recursive }),
+            )
             .await
             .map_err(|err| format!("打开目录选择器失败：{err}"))
     }
@@ -144,14 +147,15 @@ pub async fn pick_audio() -> Result<ImportOutcome, String> {
     }
 }
 
-/// 选目录并递归导入音频（R139）；桌面端没有这条路。
-pub async fn pick_directory() -> Result<ImportOutcome, String> {
+/// 选目录并导入音频（R139 / R141）；桌面端没有这条路。
+pub async fn pick_directory(recursive: bool) -> Result<ImportOutcome, String> {
     #[cfg(target_os = "android")]
     {
-        android::pick_directory().await
+        android::pick_directory(recursive).await
     }
     #[cfg(not(target_os = "android"))]
     {
+        let _ = recursive;
         Err("这台设备上没有系统目录选择器（桌面端请直接填目录后扫描）".to_string())
     }
 }

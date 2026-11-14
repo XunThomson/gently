@@ -207,6 +207,16 @@ export const IconRepeatOne = (p: IconProps) => (
     </Svg>
 );
 
+/** 随机播放：两条交叉箭头（与循环区分开） */
+export const IconShuffle = (p: IconProps) => (
+    <Svg strokeWidth={1.9} {...p}>
+        <path d="M3 6h3.5c1.5 0 2.5.7 3.5 2l4 8c1 1.3 2 2 3.5 2H21"/>
+        <path d="M3 18h3.5c1.5 0 2.5-.7 3.5-2l4-8c1-1.3 2-2 3.5-2H21"/>
+        <path d="M18 3l3 3-3 3"/>
+        <path d="M18 15l3 3-3 3"/>
+    </Svg>
+);
+
 export const IconVolume = (p: IconProps) => (
     <Svg strokeWidth={1.8} {...p}>
         <path d="M4 9v6h4l5 4V5L8 9H4z"/>

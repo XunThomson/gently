@@ -107,7 +107,9 @@ export function ScanPanel() {
     const pickFromDevice = async (directory: boolean) => {
         setImporting(true);
         setImportNote('');
-        const result = directory ? await importAudioDirectory() : await importAudioFiles();
+        const result = directory
+            ? await importAudioDirectory(recursive)
+            : await importAudioFiles();
         setImporting(false);
 
         setImportNote(importNoteText(result, t));
@@ -183,25 +185,35 @@ export function ScanPanel() {
                     {/* 手机：系统的文件选择器才是正常路径（安卓上「粘贴绝对路径」普通用户做不到） */}
                     {mobile && (
                         <div className={styles.scanRow}>
+                            {/* 大多数情况是「把整个目录收进来」，所以目录是主按钮、
+                                单文件是次按钮；是否进入子目录也在这里选（R141）。 */}
                             <div className={styles.scanControls}>
                                 <Button
                                     variant="primary"
                                     size="sm"
-                                    onClick={() => void pickFromDevice(false)}
+                                    onClick={() => void pickFromDevice(true)}
                                     disabled={importing || scanning}
                                 >
                                     {importing
                                         ? t('page.local.importing')
-                                        : t('page.local.importFromDevice')}
+                                        : t('page.local.importDirectory')}
                                 </Button>
-                                {/* 文件多时一个个勾太累：选一个目录，原生递归扫描后整批导入（R139） */}
+                                <label className={styles.scanToggle}>
+                                    <input
+                                        type="checkbox"
+                                        checked={recursive}
+                                        onChange={(event) => setRecursive(event.target.checked)}
+                                        disabled={importing || scanning}
+                                    />
+                                    {t('page.local.importRecursive')}
+                                </label>
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => void pickFromDevice(true)}
+                                    onClick={() => void pickFromDevice(false)}
                                     disabled={importing || scanning}
                                 >
-                                    {t('page.local.importDirectory')}
+                                    {t('page.local.importFromDevice')}
                                 </Button>
                                 {/* 导入是拷一份：占双份空间，得让用户能把副本清掉（R119） */}
                                 {importedCopies.length > 0 && (

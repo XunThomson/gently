@@ -433,6 +433,39 @@
     color: var(--text-tertiary);
 }
 
+/* 大跨度校正：滑杆 + 数字输入，极端偏移不用连点几十次 */
+.offsetRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+}
+
+.offsetSlider {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--brand);
+}
+
+.offsetInput {
+    flex: none;
+    width: var(--now-playing-offset-input-width);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    text-align: right;
+}
+
+.offsetUnit {
+    flex: none;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+}
+
 .sourceLine {
     font-size: var(--font-size-sm);
     color: var(--text-primary);

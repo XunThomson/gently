@@ -54,6 +54,8 @@ export interface SchemeTokens {
     borderStrong: string;
     divider: string;
     scrollbarThumb: string;
+    /** 「夜间柔光」覆盖层颜色（两种方案都用黑色，由用户调不透明度） */
+    dimColor: string;
 }
 
 export interface TypographyTokens {
@@ -449,6 +451,8 @@ export interface ComponentTokens {
         mobileCoverBlur: string;
         /** 手机端（默认不看封面）时的歌词卡片高度：把封面省下来的高度还给歌词 */
         mobileLyricsPanelHeight: string;
+        /** 时间轴偏移的数字输入框宽度（px） */
+        offsetInputWidth: number;
     };
 
     /** 业务列表（数据表格）：标题列左边的封面缩略图 */

@@ -19,9 +19,10 @@
 //! # 落盘
 //!
 //! 先写 `<file>.part`，完成后 rename 成最终名：下载目录里不该出现「看起来完整、
-//! 其实是半截」的文件。文件名来自曲目（`歌手 - 标题.<ext>`），非法字符替换掉。
+//! 其实是半截」的文件。文件名来自曲目（`歌手 - 标题.<ext>`），非法字符替换掉；
+//! 同名时在**落盘名**后加 ` (2)` 等编号，界面显示的曲目原名不变。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -203,7 +204,10 @@ pub fn create(ctx: &CoreContext, params: Value) -> Fallible<Value> {
     };
 
     let id = ctx.downloads.next_id();
-    let final_path = target_dir.join(file_name_for(&track, &reference));
+    /* 同名文件不能互相覆盖：两个音源给出同一个「歌手 - 标题」是常态
+       （甚至 raw id 都可能相同）。真正落盘的字符串必须唯一，界面显示的仍是曲目原名。 */
+    let reserved = reserved_download_paths(store, None);
+    let final_path = unique_path_for_track(&target_dir, &track, &reference, &reserved);
     let part_path = part_path_of(&final_path);
 
     let row = store.insert_download(&NewDownload {
@@ -477,16 +481,25 @@ impl Worker {
         // 完成：`.part` → 最终文件（下载目录里不该有「看着完整其实是半截」的文件）。
         // 真实扩展名只有解析出媒体地址才知道：建任务时只能猜，这里按实际地址改写
         // （代理按扩展名给 Content-Type，猜错会让回放失败），并把新路径写回库。
-        let final_path = match known_extension(&media.url) {
-            Some(ext) if final_path.extension().and_then(|value| value.to_str()) != Some(ext.as_str()) => {
-                let corrected = final_path.with_extension(&ext);
+        let mut final_path = final_path.to_path_buf();
+        if let Some(ext) = known_extension(&media.url) {
+            if final_path.extension().and_then(|value| value.to_str()) != Some(ext.as_str()) {
+                let reserved = self
+                    .store
+                    .as_ref()
+                    .map(|store| reserved_download_paths(store, Some(&self.id)))
+                    .unwrap_or_default();
+                let stem = final_path
+                    .file_stem()
+                    .map(|value| value.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "download".to_string());
+                let dir = final_path.parent().unwrap_or_else(|| Path::new("."));
+                final_path = unique_download_path(dir, &stem, &ext, &reserved);
                 if let Some(store) = &self.store {
-                    let _ = store.set_download_path(&self.id, &corrected.to_string_lossy().replace('\\', "/"));
+                    let _ = store.set_download_path(&self.id, &final_path.to_string_lossy().replace('\\', "/"));
                 }
-                corrected
             }
-            _ => final_path.to_path_buf(),
-        };
+        }
         std::fs::rename(part_path, &final_path).map_err(|err| {
             CoreError::new(ErrorCode::LibraryIoError, format!("重命名下载文件失败：{err}"))
                 .with_details(json!({ "path": final_path.to_string_lossy() }))
@@ -590,6 +603,80 @@ fn part_path_of(final_path: &Path) -> PathBuf {
     let mut name = final_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     name.push_str(".part");
     final_path.with_file_name(name)
+}
+
+/// 路径比较用的键：大小写不敏感（Windows / macOS 常见），分隔符统一成正斜杠。
+fn path_key(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
+/// 已经有下载任务占用的路径（含还没落盘的 pending / downloading）。
+///
+/// 只看文件系统不够：两个任务在同一瞬间创建时，`.part` 都还没出现，
+/// 两边会算出同一个名字，后完成的那个把先完成的覆盖掉。
+fn reserved_download_paths(
+    store: &crate::store::Store,
+    except_id: Option<&str>,
+) -> HashSet<String> {
+    let mut reserved = HashSet::new();
+    let Ok(rows) = store.list_downloads() else {
+        return reserved;
+    };
+    for row in rows {
+        if let Some(id) = except_id {
+            if row.id == id {
+                continue;
+            }
+        }
+        if let Some(path) = row.path.as_deref() {
+            reserved.insert(path_key(Path::new(path)));
+        }
+    }
+    reserved
+}
+
+/// 在目录里找一个**落盘唯一**的名字：`歌手 - 标题.flac` → `歌手 - 标题 (2).flac`。
+///
+/// 界面显示的是曲目原名（`track.title`），这个加工只影响文件树里的名字。
+fn unique_download_path(
+    dir: &Path,
+    stem: &str,
+    ext: &str,
+    reserved: &HashSet<String>,
+) -> PathBuf {
+    let base = if stem.trim().is_empty() { "download" } else { stem.trim() };
+    for index in 0..10_000 {
+        let name = if index == 0 {
+            format!("{base}.{ext}")
+        } else {
+            format!("{base} ({index}).{ext}")
+        };
+        let path = dir.join(name);
+        if reserved.contains(&path_key(&path)) {
+            continue;
+        }
+        // 历史遗留的最终文件 / 半成品都算占用：宁可多一个编号，也不要覆盖用户资产
+        if path.exists() || part_path_of(&path).exists() {
+            continue;
+        }
+        return path;
+    }
+    dir.join(format!("{base}-{}.{ext}", now_millis()))
+}
+
+/// 由曲目快照算出唯一落盘路径（建任务时调用）。
+fn unique_path_for_track(
+    dir: &Path,
+    track: &Value,
+    reference: &str,
+    reserved: &HashSet<String>,
+) -> PathBuf {
+    let name = file_name_for(track, reference);
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((stem, ext)) => (stem.to_string(), ext.to_string()),
+        None => (name, extension_of(track, reference)),
+    };
+    unique_download_path(dir, &stem, &ext, reserved)
 }
 
 /// 文件名：`歌手 - 标题.<ext>`，非法字符替换成 `_`。

@@ -30,6 +30,20 @@
     }
 }
 
+/* 嵌进手机底部面板时：不再是「贴在播放条上方」的浮层，而是面板里的一段内容 */
+.panelInline {
+    position: static;
+    width: 100%;
+    max-height: none;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    animation: none;
+}
+
 .head {
     display: flex;
     align-items: center;

@@ -328,7 +328,7 @@ Tauri 适配层另外注册了几条命令：它们需要**宿主能力**（读 
 |---|---|
 | `web_login{source}` | 按 `catalog.loginWeb` 给出的计划打开登录页窗口，轮询**这个窗口**的 Cookie 罐；`cookieNames` 全部到齐后调 `plugin.credentials.set` 落库，返回 `{ok, data:{source, state, credentialKey?}}`，`state ∈ confirmed / canceled`（关窗或 300s 超时都算 canceled，**凭据不动**）。会话值**不经过前端**。前端只经 `services/core.bridge.ts` 的 `coreWebLogin` 调它 |
 | `import_audio` | Android：打开系统文件选择器（SAF），把选中的音频**拷进**应用私有目录，返回 `{imported, failed, skipped, cancelled, dir}`。桌面端回「这台设备上没有系统文件选择器」。前端经 `services/import.service.ts` 调它，拿到 `dir` 后用核心的 `library.local.scan` 入库 |
-| `import_audio_dir` | Android：打开系统**目录**选择器（SAF `ACTION_OPEN_DOCUMENT_TREE`），递归收集音频后走与 `import_audio` **完全相同**的拷贝 / 扩展名筛选 / 进度流程，返回同样的字段。文件多时用户不必逐个勾选（R139）。桌面端回「这台设备上没有系统目录选择器」 |
+| `import_audio_dir` | Android：打开系统**目录**选择器（SAF `ACTION_OPEN_DOCUMENT_TREE`），按 `recursive`（缺省 `true`）决定是否进入子目录，再走与 `import_audio` **完全相同**的拷贝 / 扩展名筛选 / 进度流程，返回同样的字段。文件多时用户不必逐个勾选（R139 / R141）。桌面端回「这台设备上没有系统目录选择器」 |
 | `imported_dir` | Android：导入副本的落点目录（`<filesDir>/music`，一次安装内不变，前端缓存）。桌面端回空串，界面因此不显示「清理副本」 |
 | `import_progress` | Android：一次导入的**进度快照** `{active, fileName, fileIndex, fileCount, bytesDone, bytesTotal, imported, failed, skipped}`。Kotlin → Rust 没有回调通道，所以由原生维护快照、前端在导入期间**轮询**（250ms）；桌面端回 `{active:false}`。拷大文件时界面靠它说「到哪了」（R136） |
 
@@ -349,7 +349,7 @@ type PluginOrigin =
     | {kind:'paste'};
 ```
 
-**压缩包是唯一需要防「解压攻击」的来源**，所以它的限制写死在契约里：条目数 ≤ 512、
+**压缩包需要明确的安全边界**，所以限制写死在契约里：条目数 ≤ 512、
 解压后总大小 ≤ 8 MiB（与插件体积上限一致）、拒绝对路径穿越（`..`/绝对路径）与符号链接、
 包内只认「根下有 `plugin.json`」或「根下恰好一个 `.js`」两种形态（多套一层目录会被拍平）。
 不满足时返回 `plugin.invalid_source` 并在 `details` 里说明原因（多入口会列出候选）。
@@ -482,7 +482,7 @@ async function pollLoginQr(key) {}                 // 可选 → 登录状态 {s
 - **尚未提供**：摘要算法目前只经 §5.4 的 `crypto-js` 垫片（MD5 / SHA256）暴露给兼容插件，
   自有 ABI 侧还没有原生 `crypto` 入口——需要签名的自有插件先按兼容插件写，或等它落地。
 
-### 5.3 信任模型（社区资源 = 不可信代码）
+### 5.3 权限边界（社区资源按外部输入处理）
 
 - 安装必须 `plugin.preview` → 展示权限与凭据需求 → `plugin.import({consent:true})`；
 - **自有 ABI 绝不执行安装脚本**，只解析元数据 + 复制文件；唯一的例外是用户显式开启的

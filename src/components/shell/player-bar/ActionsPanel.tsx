@@ -1,19 +1,21 @@
 import {useState} from 'react';
 import {useTranslation} from 'react-i18next';
-import {useNavigate} from 'react-router';
+import {useLocation, useNavigate} from 'react-router';
 import {Button} from '../../ui/button';
 import {IconDownload, IconHeart, IconPlus} from '../../ui/icon';
 import {useActions, usePlayerState, useSelect} from '../../../store';
 import {downloadQueueKeyString, isQueued, parseQueueKeyString} from '../../../utils/downloadQueue';
+import {shouldOpenNowPlaying} from '../../../utils/nowPlayingRoute';
 import styles from './Panel.module.css';
 
 /**
  * 功能抽屉：播放相关的功能性操作都收敛在这里
  * （收藏 / 下载 / 加入歌单 / 打开歌词页），避免占用歌词页与列表空间。
  */
-export function ActionsPanel({onClose}: { onClose: () => void }) {
+export function ActionsPanel({onClose, inline = false}: { onClose: () => void; inline?: boolean }) {
     const {t} = useTranslation();
     const navigate = useNavigate();
+    const {pathname} = useLocation();
     const {current} = usePlayerState();
     const {toggleFavorite, createPlaylist, addToPlaylist} = useActions().collection;
     const {add: addDownload} = useActions().download;
@@ -36,7 +38,11 @@ export function ActionsPanel({onClose}: { onClose: () => void }) {
     };
 
     return (
-        <div className={styles.panel} role="dialog" aria-label={t('player.actions')}>
+        <div
+            className={`${styles.panel}${inline ? ` ${styles.panelInline}` : ''}`}
+            role="dialog"
+            aria-label={t('player.actions')}
+        >
             <div className={styles.head}>
                 <span className={styles.title}>{t('player.actions')}</span>
             </div>
@@ -68,7 +74,7 @@ export function ActionsPanel({onClose}: { onClose: () => void }) {
                     disabled={!current}
                     onClick={() => {
                         onClose();
-                        navigate('/now-playing');
+                        if (shouldOpenNowPlaying(pathname)) navigate('/now-playing');
                     }}
                 >
                     {t('player.openDetail')}

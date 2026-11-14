@@ -8,6 +8,7 @@ import android.provider.OpenableColumns
 import androidx.activity.result.ActivityResult
 import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
+import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
@@ -107,9 +108,20 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
         })
     }
 
-    /** 选一个**目录**（R139）：音频多时不应让用户一个个勾选，递归扫描整个目录再导入。 */
+    /** 选目录的参数（R141）：是否进入子目录由用户决定，而不是永远递归。 */
+    @InvokeArg
+    class PickDirectoryArgs {
+        var recursive: Boolean = true
+    }
+
+    /** 当前这次目录选择是否递归（选择器返回的 ActivityResult 不带请求参数，先记在实例上）。 */
+    private var directoryRecursive = true
+
+    /** 选一个**目录**（R139 / R141）：默认递归，也可只收当前这一层。 */
     @Command
     fun pickDirectory(invoke: Invoke) {
+        val args = invoke.parseArgs(PickDirectoryArgs::class.java)
+        directoryRecursive = args.recursive
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
@@ -143,7 +155,7 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
         importUris(invoke, uris)
     }
 
-    /** 目录选择返回：递归收集音频文件，再走和「多选文件」完全相同的导入流程。 */
+    /** 目录选择返回：按用户选择递归 / 只扫当前层，再走「多选文件」相同的导入流程。 */
     @ActivityCallback
     fun onPickDirectory(invoke: Invoke, result: ActivityResult) {
         val tree = result.data?.data
@@ -161,7 +173,7 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
             android.util.Log.w("GentlyImport", "目录持久授权失败", err)
         }
         thread(name = "gently-import-scan") {
-            val uris = collectAudioUris(tree)
+            val uris = collectAudioUris(tree, directoryRecursive)
             importUris(invoke, uris)
         }
     }
@@ -257,13 +269,12 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     /**
-     * 递归收集目录里的音频（SAF `DocumentsContract`）。
+     * 收集目录里的音频（SAF `DocumentsContract`）。
      *
-     * 不用 `DocumentFile`（少一个 androidx 依赖）：直接按 `COLUMN_MIME_TYPE` 判断目录，
-     * 子文档 URI 由 `buildChildDocumentsUriUsingTree` 拼。层数/数量都有上限，
-     * 防止用户误选根目录时一次性收集几万个文件。
+     * `recursive = false` 时只看当前这一层：用户选了一个「里面还有子目录」的目录时，
+     * 递归会把不想要的整棵子树都拷进来。层数/数量仍设上限，防止误选根目录。
      */
-    private fun collectAudioUris(tree: Uri): List<Uri> {
+    private fun collectAudioUris(tree: Uri, recursive: Boolean): List<Uri> {
         val out = mutableListOf<Uri>()
         val rootId = try {
             DocumentsContract.getTreeDocumentId(tree)
@@ -272,11 +283,17 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
             android.util.Log.w("GentlyImport", "不是目录树 URI", err)
             return out
         }
-        walkTree(tree, rootId, out, 0)
+        walkTree(tree, rootId, out, 0, recursive)
         return out
     }
 
-    private fun walkTree(tree: Uri, documentId: String, out: MutableList<Uri>, depth: Int) {
+    private fun walkTree(
+        tree: Uri,
+        documentId: String,
+        out: MutableList<Uri>,
+        depth: Int,
+        recursive: Boolean,
+    ) {
         if (depth > MAX_SCAN_DEPTH || out.size >= MAX_SCAN_FILES) return
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, documentId)
         val projection = arrayOf(
@@ -291,7 +308,7 @@ class ImportPlugin(private val activity: Activity) : Plugin(activity) {
                     val name = cursor.getString(1) ?: ""
                     val mime = cursor.getString(2) ?: ""
                     if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                        walkTree(tree, id, out, depth + 1)
+                        if (recursive) walkTree(tree, id, out, depth + 1, recursive)
                     } else if (isAudioName(name)) {
                         out.add(DocumentsContract.buildDocumentUriUsingTree(tree, id))
                     }

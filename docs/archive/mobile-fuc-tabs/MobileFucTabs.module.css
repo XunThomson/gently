@@ -1,0 +1,126 @@
+/* NavTabs.module.css */
+
+.wrapper {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    /* 透明背景，不遮挡内容，只让图标可点 */
+    background: transparent;
+    pointer-events: none;
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+.tabs {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 640px;
+    padding: 8px 16px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    pointer-events: auto;
+}
+
+.tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 0;
+    height: 48px;
+    padding: 0;
+    color: #4b5563;
+    border: none;
+    border-radius: 9999px;
+    background: transparent;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+            color 200ms ease,
+            transform 200ms ease;
+}
+
+.tab:active {
+    transform: scale(0.92);
+}
+
+/* 选中态：不要背景、不要边框，只靠颜色 + 放大 */
+.tabActive {
+    color: #2563eb;
+}
+
+.input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.icon {
+    display: block;
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    fill: currentColor;
+    color: inherit;
+    /* 轻微投影，保证叠在任意内容上都看得清；不需要可删 */
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+    transition:
+            transform 200ms ease,
+            color 200ms ease,
+            fill 200ms ease;
+}
+
+.tabActive .icon {
+    transform: scale(1.2);
+    color: #2563eb;
+    fill: #2563eb;
+}
+
+/* 仅在支持 hover 的设备上做悬停，避免移动端粘滞 */
+@media (hover: hover) and (pointer: fine) {
+    .tab:hover {
+        color: #2563eb;
+    }
+
+    .tab:hover .icon {
+        transform: scale(1.12);
+    }
+}
+
+/* 键盘聚焦 */
+.input:focus-visible + .icon {
+    outline: 2px solid #2563eb;
+    outline-offset: 4px;
+    border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tab,
+    .icon {
+        transition-duration: 1ms;
+    }
+
+    .tab:active {
+        transform: none;
+    }
+
+    .tabActive .icon,
+    .tab:hover .icon {
+        transform: none;
+    }
+}

@@ -9,6 +9,7 @@ import type {RepeatMode} from '../../../types';
 import {Cover} from '../../ui/cover';
 import {fmt} from '../../../utils/helpers';
 import {playbackFailureText} from '../../../utils/playbackFailure';
+import {NOW_PLAYING_PATH, shouldOpenNowPlaying} from '../../../utils/nowPlayingRoute';
 import {
     IconHeart,
     IconList,
@@ -19,6 +20,7 @@ import {
     IconPrev,
     IconRepeat,
     IconRepeatOne,
+    IconShuffle,
     IconVolume,
 } from '../../ui/icon';
 import {ActionsPanel} from './ActionsPanel';
@@ -52,18 +54,7 @@ function PlayerTime() {
 }
 
 /** 歌词页路径（路由表里同一个字面量） */
-const NOW_PLAYING_PATH = '/now-playing';
-
-/**
- * 点击播放条封面 / 标题是否应该**新压入**一条歌词页历史。
- *
- * 已经在歌词页时为 `false`：播放条在歌词页里仍然可见，每点一次都 `navigate()`
- * 就会往历史栈里塞一条重复的 `/now-playing`，用户得点同样多次「返回」才回得去
- * （这是一个真实报上来的 bug）。纯函数，冒烟能直接钉住它。
- */
-export function shouldOpenNowPlaying(pathname: string): boolean {
-    return pathname !== NOW_PLAYING_PATH;
-}
+export {shouldOpenNowPlaying} from '../../../utils/nowPlayingRoute';
 
 /**
  * 底部播放条。
@@ -84,10 +75,11 @@ export function PlayerBar({compact = false}: {compact?: boolean}) {
     const detail = useSelect((s) => s.player.detail);
     const playing = useSelect((s) => s.player.playing);
     const repeat = useSelect((s) => s.player.repeat);
+    const shuffle = useSelect((s) => s.player.shuffle);
     const volume = useSelect((s) => s.player.volume);
     const playbackError = useSelect((s) => s.player.playbackError);
     const resolving = useSelect((s) => s.player.resolving);
-    const {toggle, next, prev, setRepeat, setVolume, retryPlayback, findAlternatives} =
+    const {toggle, next, prev, setRepeat, setShuffle, setVolume, retryPlayback, findAlternatives} =
         useActions().player;
     const {toggleFavorite} = useActions().collection;
     const isFavorite = useSelect(
@@ -282,6 +274,17 @@ export function PlayerBar({compact = false}: {compact?: boolean}) {
                 <div className={styles.right}>
                     <SourcePicker/>
                     <QualityPicker/>
+
+                    <button
+                        type="button"
+                        className={styles.iconBtn}
+                        title={shuffle ? t('player.shuffleOn') : t('player.shuffleOff')}
+                        aria-label={shuffle ? t('player.shuffleOn') : t('player.shuffleOff')}
+                        aria-pressed={shuffle}
+                        onClick={() => setShuffle(!shuffle)}
+                    >
+                        <IconShuffle size={16}/>
+                    </button>
 
                     <button
                         type="button"

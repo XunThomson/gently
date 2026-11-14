@@ -18,8 +18,7 @@ import {
     type Rect,
 } from '../utils/petWindowPosition';
 import {
-    DEFAULT_PET_SIZE,
-    PET_DISPLAY_HEIGHT,
+    clampPetSize,
     parsePetSize,
     petMonitorRects,
     petWindowDimensions,
@@ -319,13 +318,14 @@ export const windowService = {
     petSize: (): PetSize => parsePetSize(storage()?.getItem(PET_SIZE_KEY)),
 
     setPetSize: (size: PetSize): void => {
+        const clamped = parsePetSize(size);
         try {
-            storage()?.setItem(PET_SIZE_KEY, size);
+            storage()?.setItem(PET_SIZE_KEY, String(clamped));
         } catch {
             /* 存储被禁用：本次生效，重启后不记忆 */
         }
         void import('@tauri-apps/api/event')
-            .then(({emit}) => emit(PET_SIZE_EVENT, {size}))
+            .then(({emit}) => emit(PET_SIZE_EVENT, {size: clamped}))
             .catch(() => undefined);
     },
 
@@ -485,7 +485,7 @@ function physicalSize(size: {width: number; height: number}, scale: number): {wi
 
 /** 摆放前的本体尺寸：内置图集没读到时用档位高度估一个（宽度=高度，高度×1.08） */
 function petBodyForSize(size: PetSize): {width: number; height: number} {
-    const height = PET_DISPLAY_HEIGHT[size] ?? PET_DISPLAY_HEIGHT[DEFAULT_PET_SIZE];
+    const height = clampPetSize(size);
     return {width: height, height: Math.round(height * 1.08)};
 }
 

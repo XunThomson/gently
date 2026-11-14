@@ -396,6 +396,8 @@ pnpm tauri android build --debug -t aarch64 --apk
 
 | R137 | 移动端反馈批次（后台播放 / 滑动开抽屉 / 导航项 / 歌词页返回 / 列表去卡片 / 白屏兜底） | 后台播放抓到现场：华为 WebView 页面不可见时拒绝 `play()`（`hbs_autoplay_=0`），且第一版后台恢复走 `resume()→reload()` 每 5s 清零进度（熄屏 150s 只走 13s）→ 改成只 `nudge()`、看门狗隐藏时不判失败；抽屉支持从内容区横滑打开（避开屏幕左边缘的系统返回、播放条排除、时间戳只吃紧接的 click）；`useBackToClose` 的 `history.back()` 与异步 `navigate` 抢历史导致「点导航项没反应」→ 换页用 `replace` 顶掉标记；设置页白屏本机未复现，加 `RouteError` 错误边界；手机歌词页去掉「返回」；手机列表拆外层卡片改连续列表 | 真机：横滑 `250→800` 开抽屉、播放条横滑不开；冷启动第一次导航即成功、连续 8 次 0 失败且历史每次只 +1；系统返回 `/now-playing` → `/setting` → `/search`；`r137-mobile-list-flat.png`；smoke 575；GOTCHAS §70 |
 
+| R141 | 手机返回栈 / 宠物首帧 / 长暂停恢复 + 移动端功能补齐 | 手机播放条复用 `shouldOpenNowPlaying`（不再重复 push 歌词页）；宠物窗口首帧隐藏到图集就绪；`playOrToggle` 统一走 `toggle`，长暂停 / 错误 / 僵死后先重新解析地址（保留进度）；手机播放条 4 功能位 + 更多抽屉（随机 / 循环 / 队列 / 音源 / 音质 / 下载 / 歌单 / 定时关闭）；本地导入主按钮改「扫描目录」并可选是否含子目录（Kotlin `pickDirectory(recursive)` 全链路）；歌词偏移加滑杆/数字输入；宠物 64–480px 连续尺寸 | `pnpm typecheck`；`pnpm smoke` **597**；`cargo test -p gently-core --test download` 7/7；`:app:compileArmDebugKotlin` BUILD SUCCESSFUL。**待真机**：返回栈、宠物首帧、≥30 秒暂停后恢复；待出 bundled APK |
+
 **下一步（P3 余项 / P2-2 余项）**：P2-2 只差两件——`ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度，
 要先确认能真机验到才接）、`POST_NOTIFICATIONS` 运行时授权入口（API 33+ 才需要；本机 API 29 验不了）。
 注意本机 ROM（EMUI 10 / Android 10）的通知、控制中心、锁屏卡片**都不画进度条**，位置数据的可见面要等

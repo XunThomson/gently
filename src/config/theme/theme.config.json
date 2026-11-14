@@ -19,25 +19,26 @@
 
   "scheme": {
     "light": {
-      "app": "#f0f0f0",
-      "surface": "#ffffff",
-      "surfaceAlt": "#f3f4f6",
-      "subtle": "#f7f8fa",
-      "elevated": "#ffffff",
-      "surfaceTranslucent": "rgba(255, 255, 255, 0.66)",
-      "videoScrim": "rgba(244, 246, 250, 0.62)",
+      "app": "#e5e7ea",
+      "surface": "#f6f7f9",
+      "surfaceAlt": "#eef0f3",
+      "subtle": "#eef1f4",
+      "elevated": "#fbfcfd",
+      "surfaceTranslucent": "rgba(246, 247, 249, 0.72)",
+      "videoScrim": "rgba(229, 231, 234, 0.62)",
       "modalScrim": "rgba(0, 0, 0, 0.45)",
       "hover": "rgba(0, 0, 0, 0.04)",
       "active": "rgba(0, 0, 0, 0.08)",
-      "textPrimary": "#1a1a1a",
-      "textSecondary": "#6b7280",
-      "textTertiary": "#9ca3af",
+      "textPrimary": "#1f2329",
+      "textSecondary": "#5b6572",
+      "textTertiary": "#8a94a3",
       "textInverse": "#ffffff",
-      "borderSubtle": "#e5e7eb",
-      "borderDefault": "#d1d5db",
-      "borderStrong": "#9ca3af",
-      "divider": "rgba(0, 0, 0, 0.08)",
-      "scrollbarThumb": "#d9dde3"
+      "borderSubtle": "#dde1e7",
+      "borderDefault": "#cbd1d9",
+      "borderStrong": "#98a2b3",
+      "divider": "rgba(0, 0, 0, 0.07)",
+      "scrollbarThumb": "#cfd4db",
+      "dimColor": "#000000"
     },
     "dark": {
       "app": "#121212",
@@ -58,7 +59,8 @@
       "borderDefault": "#4a4a4a",
       "borderStrong": "#6b7280",
       "divider": "rgba(255, 255, 255, 0.08)",
-      "scrollbarThumb": "#3a3f46"
+      "scrollbarThumb": "#3a3f46",
+      "dimColor": "#000000"
     }
   },
 
@@ -441,7 +443,8 @@
       "lyricsPanelHeight": "min(58vh, 580px)",
       "mobileCoverOpacity": 0.22,
       "mobileLyricsPanelHeight": "min(72vh, 720px)",
-      "mobileCoverBlur": "26px"
+      "mobileCoverBlur": "26px",
+      "offsetInputWidth": 88
     },
 
     "table": {

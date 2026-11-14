@@ -127,6 +127,19 @@
     white-space: nowrap;
 }
 
+/* 精确数字输入：滑杆旁边的窄框（宽度由间距 token 组合，不写死像素） */
+.numberInput {
+    width: calc(var(--space-12) + var(--space-2));
+    padding: var(--space-1);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--surface-content-alt);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    text-align: right;
+}
+
 .blockDivider {
     height: 1px;
     background: var(--border-subtle);

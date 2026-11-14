@@ -150,13 +150,13 @@ async fn import_audio() -> Result<importer::ImportOutcome, String> {
     importer::pick_audio().await
 }
 
-/// 宿主命令：**选择目录并递归导入音频**（Android，R139）。
+/// 宿主命令：**选择目录并导入音频**（Android，R139 / R141）。
 ///
-/// 与 `import_audio` 的区别只在「怎么拿到 URI」：目录选择后递归收集音频，
-/// 拷贝/进度/扩展名筛选复用同一个 Kotlin `importUris`。
+/// 与 `import_audio` 的区别只在「怎么拿到 URI」：目录选择后按 `recursive`
+/// 决定是否进入子目录，再收集音频；拷贝/进度/扩展名筛选复用同一个 Kotlin `importUris`。
 #[tauri::command]
-async fn import_audio_dir() -> Result<importer::ImportOutcome, String> {
-    importer::pick_directory().await
+async fn import_audio_dir(recursive: Option<bool>) -> Result<importer::ImportOutcome, String> {
+    importer::pick_directory(recursive.unwrap_or(true)).await
 }
 
 /// 宿主命令：**导入副本的落点目录**（Android，P3 余项 · R119）。

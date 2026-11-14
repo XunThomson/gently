@@ -5,11 +5,16 @@ import {Button} from '../../../components/ui/button';
 import {errorText} from '../../../i18n/errors';
 import {catalogService} from '../../../services';
 import {useActions, usePlayerState} from '../../../store';
+import {useShellMode} from '../../../hooks/useShellMode';
+import {PlaybackModes} from '../../../components/shell/mobile/PlaybackModes';
+import {PlaybackOptions} from '../../../components/shell/mobile/PlaybackOptions';
 import type {Track} from '../../../types';
 import {toLyricLines} from '../../../utils/lyrics';
 import {
     LYRICS_OFFSET_FINE_STEP_SEC,
+    LYRICS_OFFSET_LIMIT_SEC,
     LYRICS_OFFSET_STEP_SEC,
+    clampLyricsOffset,
     lyricsOffsetForKey,
 } from '../../../utils/lyricsOffset';
 import {readLyricsSync, rawTrackIdOf, saveLyricsQuery} from '../../../utils/lyricsSyncCache';
@@ -37,7 +42,7 @@ export function initialSearchState(track: Track): {query: string; result: LyricS
     return {query: querySeedFor(track), result: readCachedLyricSearch(track.id)};
 }
 
-const TABS = ['sync', 'source', 'search'] as const;
+const TABS = ['sync', 'source', 'search', 'playback'] as const;
 type Tab = (typeof TABS)[number];
 
 /**
@@ -59,6 +64,9 @@ export function LyricsToolsDrawer({open}: {open: boolean}) {
     const {t} = useTranslation();
     const {current, lyricsSource, lyricsOffset} = usePlayerState();
     const {applyLyrics, nudgeLyricsOffset, setLyricsOffset, restoreAutoLyrics} = useActions().player;
+    const isMobile = useShellMode() === 'mobile';
+    /* 手机播放条只放 4 个功能位，其余功能在歌曲详情页也要有入口（R141） */
+    const tabs: readonly Tab[] = isMobile ? TABS : TABS.filter((tab) => tab !== 'playback');
 
     const trackId = current?.id ?? '';
     /* 首次挂载就带上这一首的关键词与上次的搜索结果：切走再回来不该重新搜一遍 */
@@ -71,6 +79,23 @@ export function LyricsToolsDrawer({open}: {open: boolean}) {
     const [searchError, setSearchError] = useState<CoreError | null>(null);
     const [noCore, setNoCore] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
+    /** 数字输入框的草稿：直接受控于 number 会让「-」这种中间态立刻被抹掉 */
+    const [offsetDraft, setOffsetDraft] = useState(() => lyricsOffset.toFixed(1));
+
+    useEffect(() => {
+        setOffsetDraft(lyricsOffset.toFixed(1));
+    }, [lyricsOffset]);
+
+    const commitOffsetDraft = () => {
+        const parsed = Number(offsetDraft.replace(',', '.'));
+        if (!Number.isFinite(parsed)) {
+            setOffsetDraft(lyricsOffset.toFixed(1));
+            return;
+        }
+        const next = clampLyricsOffset(parsed);
+        setLyricsOffset(next);
+        setOffsetDraft(next.toFixed(1));
+    };
 
     /* 应用成功的提示自己消失 */
     useEffect(() => {
@@ -119,6 +144,7 @@ export function LyricsToolsDrawer({open}: {open: boolean}) {
     const tabLabel = (id: Tab) => {
         if (id === 'sync') return t('page.nowPlaying.syncTitle');
         if (id === 'source') return t('page.nowPlaying.sourceTitle');
+        if (id === 'playback') return t('page.nowPlaying.playbackTitle');
         return t('page.nowPlaying.searchLyrics');
     };
 
@@ -172,7 +198,7 @@ export function LyricsToolsDrawer({open}: {open: boolean}) {
             {notice && <p className={styles.notice}>{notice}</p>}
 
             <div className={styles.tabs} role="tablist">
-                {TABS.map((id) => (
+                {tabs.map((id) => (
                     <button
                         key={id}
                         type="button"
@@ -245,6 +271,37 @@ export function LyricsToolsDrawer({open}: {open: boolean}) {
                         </Button>
                     </div>
 
+                    {/* 大跨度校正：极端偏移时不必连点几十次；滑杆免费搭一根，
+                        数字框可以一次输入到任意合法值（±30 秒内，0.1 秒精度）。 */}
+                    <div className={styles.offsetRow}>
+                        <input
+                            className={styles.offsetSlider}
+                            type="range"
+                            min={-LYRICS_OFFSET_LIMIT_SEC}
+                            max={LYRICS_OFFSET_LIMIT_SEC}
+                            step={LYRICS_OFFSET_FINE_STEP_SEC}
+                            value={lyricsOffset}
+                            aria-label={t('page.nowPlaying.lyricsOffsetSlider')}
+                            onChange={(event) => setLyricsOffset(Number(event.target.value))}
+                        />
+                        <input
+                            className={styles.offsetInput}
+                            type="number"
+                            inputMode="decimal"
+                            min={-LYRICS_OFFSET_LIMIT_SEC}
+                            max={LYRICS_OFFSET_LIMIT_SEC}
+                            step={LYRICS_OFFSET_FINE_STEP_SEC}
+                            value={offsetDraft}
+                            aria-label={t('page.nowPlaying.lyricsOffsetInput')}
+                            onChange={(event) => setOffsetDraft(event.target.value)}
+                            onBlur={commitOffsetDraft}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') commitOffsetDraft();
+                            }}
+                        />
+                        <span className={styles.offsetUnit}>{t('page.nowPlaying.lyricsOffsetUnit')}</span>
+                    </div>
+
                     <div className={styles.syncLegend}>
                         <span>{t('page.nowPlaying.syncEarlier')}</span>
                         <span className={styles.syncKeys}>{t('page.nowPlaying.syncKeys')}</span>
@@ -271,6 +328,13 @@ export function LyricsToolsDrawer({open}: {open: boolean}) {
                             {t('page.nowPlaying.sourceAutoHint')}
                         </span>
                     )}
+                </section>
+            )}
+
+            {visited.includes('playback') && (
+                <section className={styles.block} role="tabpanel" hidden={tab !== 'playback'}>
+                    <PlaybackModes showTransport/>
+                    <PlaybackOptions/>
                 </section>
             )}
 

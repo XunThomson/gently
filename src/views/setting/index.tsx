@@ -63,6 +63,7 @@ export default function SettingView() {
     const preferredSource = useSelect((s) => s.ui.preferredSource);
     const preferredQuality = useSelect((s) => s.ui.preferredQuality);
     const confirmDestructive = useSelect((s) => s.ui.confirmDestructive);
+    const screenDim = useSelect((s) => s.ui.screenDim);
     const downloadDir = useSelect((s) => s.ui.downloadDir);
     const downloadQuality = useSelect((s) => s.ui.downloadQuality);
     const downloadQualityFallback = useSelect((s) => s.ui.downloadQualityFallback);
@@ -75,6 +76,7 @@ export default function SettingView() {
         setPreferredSource,
         setPreferredQuality,
         setConfirmDestructive,
+        setScreenDim,
         setDiscoverAutoPreview,
         setPetEnabled,
         setDownloadDir,
@@ -209,6 +211,24 @@ export default function SettingView() {
                         </Button>
                     </span>
                 </div>
+
+                <div className={styles.field}>
+                    <span className={styles.label}>{t('page.setting.screenDim')}</span>
+                    <span className={styles.value}>
+                        <input
+                            className={styles.range}
+                            type="range"
+                            min={0}
+                            max={30}
+                            step={1}
+                            value={screenDim}
+                            aria-label={t('page.setting.screenDim')}
+                            onChange={(event) => setScreenDim(Number(event.target.value))}
+                        />
+                        <span className={styles.valueText}>{screenDim}%</span>
+                    </span>
+                </div>
+                <p className={styles.hint}>{t('page.setting.screenDimHint')}</p>
 
                 <div className={styles.field}>
                     <span className={styles.label}>{t('page.setting.language')}</span>
