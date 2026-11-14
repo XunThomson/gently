@@ -10,6 +10,7 @@
 //! `core_invoke` → `gently_core::dispatch`，`pet_invoke` → `pet_core::dispatch`。
 
 pub mod importer;
+pub mod integrity;
 pub mod pet_watch;
 pub mod playback;
 pub mod startup_guard;
@@ -225,6 +226,19 @@ pub fn run() {
                 tracing::debug!(dir, "日志已初始化");
             }
 
+            /* 进程完整性级别（Windows MIC）：这是「WebView2 起不来」和「日志不落盘」
+               的常见根因。标准令牌带 `NEW_PROCESS_MIN`，Low 的 exe 即使用普通终端
+               启动也会是 Low——只修 esbuild 不够，必须同时修工作区/构建产物的标签。 */
+            let integrity = integrity::current();
+            tracing::info!(integrity = integrity.label(), rid = ?integrity.rid(), "进程完整性级别");
+            if integrity.is_low() {
+                tracing::error!(
+                    "进程以 Low 完整性级别运行：WebView2 无法初始化，日志与配置也可能无法落盘。\
+                     请从普通 PowerShell 启动，并在管理员终端修复工作区与构建产物的完整性标签\
+                     （参见 scripts/check-integrity.ps1）。"
+                );
+            }
+
             let sink = Arc::new(TauriEventSink::new(app.handle().clone()));
             // 凭据落**系统凭据库**（Windows Credential Manager）；不可用时 `open_store()`
             // 会退回内存实现并留一条 warn——界面上的凭据提示据此说明「重启后是否还在」。
@@ -272,8 +286,9 @@ pub fn run() {
             /* 宠物「看向鼠标」：宿主轮询全局光标（Windows），方向变了才发事件给宠物窗口。
                非 Windows 平台这里什么都不做（宠物退化成像素动画，不报错）。 */
             pet_watch::install(app.handle().clone());
-            /* 启动看门狗：WebView2 环境坏掉时主窗口可能永远不出现，至少给用户一条可执行的提示 */
-            startup_guard::install(app.handle().clone());
+            /* 启动看门狗：WebView2 环境坏掉时主窗口可能永远不出现，至少给用户一条可执行的提示。
+               Low 完整性直接给出专门提示——那比「修复 WebView2 Runtime」更准确。 */
+            startup_guard::install(app.handle().clone(), integrity);
 
             /* 主窗口关掉 = 应用退出。
                为什么需要特意接：桌面歌词窗口与宠物窗口是**在同一进程里的独立窗口**，

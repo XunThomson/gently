@@ -84,6 +84,8 @@ node scripts/android-cdp.mjs ping|eval|tap|shot|net
                                # 真机 WebView 的 CDP 驱动（debug 包）：求值 / 按文本点中心点 / 截整屏 / 收网络事件
 pwsh -File scripts/pet-window.ps1 -Drag -Output release/screenshots/pet.png
                                # （仅 Windows）驱动宠物窗口：-Drag 注入拖动 / -Walk 等它自己走 / 截图
+pwsh -File scripts/check-integrity.ps1 [-Fix]
+                               # 检查/修复 Windows 完整性标签；WebView2 起不来、日志不落盘时先跑
 ```
 
 离线构建约定：crate 缓存只放一处，由 `CARGO_HOME` 指向（本机路径写在 shell 环境变量里，**仓库不记录**）；

@@ -4,10 +4,46 @@ last_verified: 2026-11-14
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R141（用户反馈批次）：① 手机播放条重复 push 歌词页导致「返回要点 x 次」；② 宠物窗口启动先闪默认本体再切自定义；③ 长时间暂停后点当前歌 UI 切播放态但不出声（改为走 toggle + 长暂停重新解析）；④ 手机播放条收敛到 4 个功能位，随机/循环/队列/音源/音质等进抽屉与歌词页；⑤ 歌词偏移可滑杆/直接输入；⑥ 宠物尺寸改为 64–480px 连续可调；⑦ 下载同名文件落盘唯一化；⑧ 手机导入以目录为主、可选是否含子目录；⑨ 浅色主题降亮 + 「夜间柔光」可调；⑩ 定时关闭支持 1–720 分钟自定义。typecheck / smoke 597 / cargo 下载 7 条通过。
+tldr: 当前 R142：定位「主窗口 12 秒仍不可见」真因 = **进程 Low 完整性级别**（exe/工作区标签），Low 进程写不了 Medium 的 WebView2 profile，浏览器进程不启动；新增 `integrity` 检测、Low 专用提示与 `scripts/check-integrity.ps1`。R141 的 3 bug + 9 优化仍保留（手机返回栈 / 宠物首帧 / 长暂停恢复、移动端 4 功能位 + 抽屉、歌词偏移滑杆、宠物 64–480px、下载落盘唯一化、目录导入可选递归、浅色降亮、定时关闭 1–720 分钟）。typecheck / smoke 597 / cargo 下载 7 条通过。
 ---
 
 # STATE
+
+## 本轮目标（第一百四十二轮）
+
+> 「主窗口 12 秒内仍不可见」的深入调查：不是 WebView2 Runtime 坏了，而是进程以 **Low 完整性级别**
+> 运行；只修 esbuild 的教训没有覆盖到 `gently.exe` / `WebView2Loader.dll` / `release`。
+
+### 1. 定位与改动
+
+| 层 | 改动 |
+|---|---|
+| 现场证据 | 运行中的 `gently.exe` 令牌是 `S-1-16-4096`（Low）；工作区根 Low；`tasklist` 无 `msedgewebview2.exe`；`EBWebView` 停在 11-12；当天 `logs` 不存在、`gently.db` 时间未变。WebView2 Runtime `157.0.4341.46` 已安装，`msedge.exe` 正常——**不先重装 WebView2** |
+| 根因 | 标准登录令牌带 `TOKEN_MANDATORY_POLICY_NEW_PROCESS_MIN`：子进程 IL = min(父进程 IL, exe 文件 IL)。Low 的 exe 即使从 Medium 终端启动仍是 Low；Low 进程不能写 Medium 的 `%LOCALAPPDATA%\...\EBWebView` 与 `%APPDATA%`，WebView2 浏览器进程根本不启动 |
+| `src-tauri/src/integrity.rs` | 新增只读检测：`GetTokenInformation(TokenIntegrityLevel)` → Low/Medium/High/System/Unknown；含纯函数映射与 Windows FFI 单测 |
+| `src-tauri/src/lib.rs` | setup 里记录「进程完整性级别」；Low 时写明确 error（并提示从普通终端启动 + 修复标签） |
+| `src-tauri/src/startup_guard.rs` | Low：1 秒后弹**专门** MessageBox 并 `exit(1)`，不再留下隐藏进程；Medium 但 12 秒不可见：日志补 `visible` / `outer_size` / IL，保留通用 WebView2 提示 |
+| `scripts/check-integrity.ps1` | 检查工作区根 / `target` / `debug\gently.exe` / `release` 与当前终端 IL；`-Fix` 在管理员终端递归设为 Medium 并复查 |
+| 文档 | GOTCHAS §78（Low IL → WebView2/日志失败）、§75/§76 交叉引用；明确「只修 esbuild 不够」 |
+
+### 2. 验证
+
+| 项 | 结果 |
+|---|---|
+| `cargo check -p gently` | 通过 |
+| `cargo test -p gently --lib` | **13/13 通过**（含 `integrity` 映射与真实令牌读取） |
+| Low 令牌实测 | 把测试二进制设为 Low 后运行：`current integrity = Low`，读取成功——Low 分支不是猜的 |
+| `scripts/check-integrity.ps1` | 可运行；修复前快照：工作区根 **Low**，`target` / `debug\gently.exe` / `release` **Medium** |
+| 真实启动 | **成功**：`cargo build -p gently` 后以 Medium 进程启动，日志 `进程完整性级别 integrity="Medium" rid=Some(8192)`；出现 WebView2 子进程，`EBWebView` 时间更新，主窗口 1280×800 可见，当天日志已生成；截图 `release/screenshots/r142-desktop.png` |
+
+### 3. 下一步（用户侧）
+
+- 当前工作区**根目录仍是 Low**；`target` / `gently.exe` / `release` 已是 Medium，所以本次能从普通进程启动。
+  若要 `cargo clean` 后重建、或继续用 DSH workspace-write 终端，建议先在**管理员** PowerShell 执行
+  `pwsh -File scripts/check-integrity.ps1 -Fix`（完成编辑后再做，目录会变成 Medium）。
+- 用**普通 PowerShell**启动 `pnpm tauri dev` 或直接双击 `release\...\gently.exe`；若再出现无窗口，
+  先看日志里的「进程完整性级别」与 `scripts/check-integrity.ps1`，不要先重装 WebView2。
+- 若 Medium + Medium 仍无窗口，再查 WebView2 Runtime / profile；目前证据不支持先走那一步。
 
 ## 本轮目标（第一百四十一轮）
 
@@ -338,6 +374,7 @@ tldr: 当前 R141（用户反馈批次）：① 手机播放条重复 push 歌�
 
 | 轮次 | 主题 | 结论 | 详情 |
 |---|---|---|---|
+| R142 | 主窗口 12 秒不可见：Low 完整性级别的真因 | 运行中 `gently.exe` 令牌 `S-1-16-4096`（Low）；工作区/exe Low；无 `msedgewebview2.exe`；`EBWebView` 未更新；当天日志缺失。根因是 `NEW_PROCESS_MIN` 把 Low exe 的子进程保持 Low，Low 写不了 Medium 的 WebView2 profile/AppData。新增 `integrity.rs`、Low 专用启动提示、`scripts/check-integrity.ps1`；GOTCHAS §78。**待用户从普通 PowerShell 启动验收** | [本轮](#本轮目标第一百四十二轮) |
 | R141 | 用户反馈批次：手机返回栈 / 宠物首帧 / 长暂停恢复 + 9 条优化 | 手机播放条复用 `shouldOpenNowPlaying`；宠物首帧隐藏到图集就绪；`playOrToggle` 统一走 `toggle` 并在长暂停后重解析；随机播放、手机 4 功能位 + 抽屉；歌词偏移滑杆/输入；宠物 64–480px；下载落盘唯一化；目录导入可选递归；浅色降亮 + 夜间柔光；定时关闭 1–720 分钟。typecheck / smoke 597 / 下载测试 7 通过 | [本轮](#本轮目标第一百四十一轮) |
 | R137 | 移动端反馈批次：后台播放、滑动开抽屉、导航项点不动、歌词页返回、列表去卡片、白屏兜底 | ① 后台播放：抓到现场是华为 WebView 在页面不可见时拒绝 `play()`（`Hbs autoplay=0`）；修掉「后台 resume()→reload() 每 5s 清零进度」（熄屏 150s 只走 13s）改成只 `nudge()`，看门狗在隐藏时不判失败。② 抽屉横滑打开：起手离左边 ≥48px、位移 ≥72px、播放条排除、只吃紧接的 click。③ 抽屉导航偶发没反应：`history.back()` 与异步 `navigate` 抢历史 → 换页用 replace 顶掉标记 + hook 返回「别动历史」句柄；冷启动首次即成功、8 次 0 失败。④ 白屏本机未复现，加 `RouteError` 错误边界（出错只坏内容区 + 可反馈的出错信息）。⑤ 手机歌词页去掉「返回」，靠系统返回。⑥ 手机列表拆外层卡片改连续列表。smoke 575 | [本轮](#本轮目标第一百三十七轮) |
 | R136 | ANDROID-PLAN §8：导入进度条 | 原生维护进度快照（`ImportPlugin.Progress`，64 KiB 分块累加 bytesDone、按 SAF SIZE 算总字节、跳过/截断都补差额）+ 宿主 `import_progress` 命令 + `ScanPanel` 导入期间 250ms 轮询，显示「正在导入 1/1 · 文件 · 45%」。轮询而非事件：Kotlin → Rust 没有回调通道（GOTCHAS §69）。真机导入 1.3 GB：16 个不同快照、bytesDone 194MB→1.32GB、结束 bytesDone==bytesTotal；导入后曲库 4→5、清理副本回到 1。smoke 566 | [本轮](#本轮目标第一百三十六轮) |

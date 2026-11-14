@@ -969,6 +969,47 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
 - 另一个独立的构建坑：VS 2026（MSVC 14.51）编 rquickjs/ring 的 C 文件会报
   `c1.dll: 未能将命令行放入调试记录中 (D8050)`；根 `Cargo.toml` 的
   `[profile.dev] debug = 0` 已规避（APK 也从 246 MB 降到 81 MB）。要调试 Rust 时改回 `debug = 2`。
+- **补充（R142）**：同类「窗口不出现」也可能是 **Low 完整性级别**造成的，不是 WebView2 会话。
+  先看日志里的「进程完整性级别」与 `scripts/check-integrity.ps1`，再决定是否修 WebView2；见 §78。
+
+## 78. Low 完整性进程会让 WebView2 起不来，而且日志也不落盘（R142）
+
+- 现象：`tauri dev` 启动后终端停在 `宠物核心就绪`，12 秒后报
+  `主窗口 12 秒内仍不可见：WebView2 初始化失败`；`EBWebView` 目录时间不更新、
+  `%APPDATA%\com.xun.gently\logs` 没有当天的日志、`gently.db` 也不更新。
+- 现场证据（顺序照做）：
+  1. `whoami /groups`：当前终端是 `Mandatory Label\Low Mandatory Level`；
+  2. `icacls "src-tauri\target\debug\gently.exe"`：文件也是 `Low Mandatory Level:(NW)`；
+  3. 运行中的 `gently.exe` 进程令牌（`GetTokenInformation(TokenIntegrityLevel)`）是
+     `S-1-16-4096`（Low）；
+  4. `tasklist /fi "imagename eq msedgewebview2.exe"` 为空——WebView2 浏览器进程根本没启动。
+- 根因：Windows 标准登录令牌带 `TOKEN_MANDATORY_POLICY_NEW_PROCESS_MIN`，新进程的完整性级别取
+  **「父进程 IL」与「exe 文件 IL」的较小值**。所以即使从普通 Medium 终端启动，Low 的
+  `gently.exe` 仍会变成 Low；从 DSH 等受限终端（本身 Low）启动更是 Low。
+  MIC 规定 Low 进程不能写 Medium 对象：`%LOCALAPPDATA%\com.xun.gently\EBWebView` 与
+  `%APPDATA%\...` 都是 Medium，WebView2 因此无法初始化，日志也无法落盘。
+- 修复（**必须从“以管理员身份运行”的 PowerShell（High IL）执行**）：
+  ```powershell
+  # 先关闭所有 gently.exe
+  pwsh -File scripts/check-integrity.ps1          # 只检查
+  pwsh -File scripts/check-integrity.ps1 -Fix     # 递归设为 Medium（含 target/release）
+  ```
+  手工命令等价于：
+  ```powershell
+  icacls "<仓库路径>" /setintegritylevel "(OI)(CI)Medium" /T
+  ```
+  然后用**普通 PowerShell**（不是 DSH/受限终端）启动；启动后确认 `whoami /groups` 是 Medium。
+- 为什么只修 esbuild 不够：上次只把 `node_modules\...\esbuild.exe` 改成 Medium；之后
+  `cargo build` 生成的 `gently.exe`、`WebView2Loader.dll`、`release` 里的 exe 又继承了
+  工作区的 Low。**根目录/构建产物/交付物要一起修**，否则问题只是从 Vite 转移到 WebView2。
+- 验证：`icacls` 显示 Medium；进程令牌 `S-1-16-8192`；启动后出现 `msedgewebview2.exe`；
+  `EBWebView` 时间更新；主窗口 12 秒内可见；`logs` 出现当天文件。
+  R142 本地复测：`cargo build -p gently` 后以 Medium 进程启动，日志
+  `进程完整性级别 integrity="Medium" rid=Some(8192)`，WebView2 子进程出现，主窗口 1280×800
+  可见（`release/screenshots/r142-desktop.png`）。
+- 运行侧注意：修复根目录后，DSH 的 workspace-write 终端（Low）可能无法再写 Medium 的
+  工作区；建议在编辑完成后修复，或把项目复制到普通用户目录构建/运行。不要为了绕开问题
+  长期用管理员权限跑播放器。
 
 ## 76. Windows「管理员也写不进去」：先查文件完整性级别，不是 ACL（R141）
 
@@ -997,6 +1038,8 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
 - 预防：遇到「管理员也写不进去」，**先查 `icacls` 的 `Mandatory Label`，再查 ACL 与杀软**。
   低完整性标签可能由沙箱、安装器或安全软件留下，具体是谁取决于环境——判据是标签本身，
   不必先归因给某个工具。
+- 同一机制也会落在 `gently.exe` / `WebView2Loader.dll` 上，表现为「WebView2 起不来 + 日志不落盘」，
+  见 §78；只修 `esbuild.exe` 不够。
 - 验证：改完后 `esbuild.exe` 的标签为 Medium，Vite 能正常写 `.vite`，dev 启动不再报错。
 
 ## 77. Tauri `setup` 的 `os error 5`：WebView2 数据目录与降权（R141）
