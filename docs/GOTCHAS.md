@@ -1060,3 +1060,142 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
   不要只看 ACL——先确认「当前进程实际用的是哪个账户的 `%LOCALAPPDATA%`」。
 - 预防：应用默认按普通权限运行；确实需要提权时，把 WebView2 数据目录放到**降权后仍可写**的公共路径，
   并在启动日志里打印最终路径。
+
+## 79. 安卓 WebView 的 tap highlight 是一条纯蓝横条，不是布局 Bug（R143）
+
+- 现象（真机照片）：播放器界面底部/进度条位置在长按或点击时浮出一条**无圆角、无过渡的纯蓝色横向色带**；
+  松手即消失。看起来像「View 层级错乱」或「蓝色背景被拉伸」。
+- 根因：那是 Chromium/WebView 的**默认 tap highlight**（`-webkit-tap-highlight-color`）。
+  它铺在**被点元素自己的 border-box** 上，所以点全宽的进度条 / 播放条时就是一条全宽色带；
+  与主题的 `--brand`（紫色）也不是同一个色值，因此尤其突兀。
+- 修法：在 `assets/css/global.css` 的 `html` 上设 `-webkit-tap-highlight-color: transparent`，
+  按压反馈一律用组件自己的 `:active`（按钮/标签都有）。不要只给某一个页面关——同一套色带会出现在所有全宽控件上。
+- 顺带：触屏点过按钮会留下 `:focus`，全局 `:focus-visible` 的描边会被误认为「焦点跑错地方」。
+  在 `@media (hover: none)` 里对 `:focus:not(:focus-visible)` 清掉 outline，键盘导航仍然保留焦点环。
+- 验收：真机上点进度条中段长按 → 进度条只按设计放大，不出现蓝色色带；点 tab / 按钮只看到 `:active` 底色。
+
+## 80. 歌词页要占满手机内容区：`height: 100%` 不够，得把 flex 链补齐（R143）
+
+- 现象：歌词页改「整页不滚、只有歌词滚」之后，手机上页面高度塌成内容高度，
+  歌词要么只露几行，要么把工具 tabs / 播放条顶出屏幕。
+- 原因链：`MobileShell` 的 `.content` 是 `flex: 1` + `overflow-y: auto`；它下面还有一层带动画的
+  `.pageFade`（`display: block`、高度 auto）。子元素写 `height: 100%` 时父级高度不是「确定值」，
+  百分比高度按 auto 处理。`overflow: hidden` 只负责裁切，不会把高度算出来。
+- 修法：`MobileShell` 在 `/now-playing` 给 `<main>` 打 `data-immersive="true"`，CSS 里把
+  `.content` 改成 `display: flex; flex-direction: column; overflow: hidden`，
+  并让 `.pageFade` `flex: 1; min-height: 0`；歌词页自己再 `flex: 1; min-height: 0`。
+  `min-height: 0` 是关键——少了它，flex 子项不会收缩，内部滚动区会把父级撑开。
+- 同类页面（任何「整屏舞台 + 内部滚动」的移动端视图）照这条链检查，不要用
+  `calc(100vh - 头部 - 播放条)` 硬算：安全区、字号、播放条两行都会让算出来的值过期。
+
+## 81. 最小化几分钟后「软件自己刷新了」：WebView 会冻结/丢弃后台页面（R144）
+
+- 现象：窗口放后台/最小化一段时间再回来，页面重新加载、路由回首页、播放与宠物位置状态重置，
+  严重时界面卡住；不是应用自己调了 `location.reload()`（代码里只有白屏横幅/错误页的手动重载）。
+- 根因：Chromium / WebView2 的 background throttling 策略会在页面隐藏约 5 分钟后
+  **freeze 甚至 discard** 整个页面；Tauri 的 `backgroundThrottling` 配置在 Windows / Android
+  上不生效（官方文档明确写了，并提示用 pending WebLock 绕过）。
+- 修法（两层一起）：
+  1. `utils/backgroundKeepAlive.ts`：首帧前 `navigator.locks.request('gently:background-keepalive', () => new Promise(() => {}))`
+     ——页面持有未完成的锁，Chromium 就不能冻结/丢弃它；不支持 Web Locks 的旧 WebView 静默跳过。
+  2. `tauri.conf.json` 三个窗口统一带 `--disable-background-timer-throttling
+     --disable-backgrounding-occluded-windows --disable-renderer-backgrounding`；必须同时保留
+     wry 默认的 `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`，否则会打开
+     一堆 Edge 的 UI 组件。
+- 恢复兜底（不能只靠保活）：
+  - `sessionStorage` 记最后路由 + 启动标记，同一会话再次加载时回到原页（冷启动仍回首页）；
+  - 宠物窗口在 `onMoved` 停稳后落盘锚点（走动也更新），`showPetWindow` 对已可见窗口不重摆位；
+  - 播放曲目/进度本来就有 `gently:last-playback`（R113）。
+- 验收：`navigator.locks.query()` 里能看到 `gently:background-keepalive`；最小化 ≥10 分钟回来
+  路由、播放条、宠物位置都在；不再出现首页闪一下。
+
+## 82. 宠物「位置重置」不是状态丢失，是锚点只在拖拽结束时存（R144）
+
+- 现象：宠物自己走动后，页面被重载 / 主窗口重开桥，宠物突然回到上次拖拽的位置（甚至另一角）。
+- 根因：`rememberPetAnchor` 只在拖拽结束和点「隐藏」时调用；`pet_watch` 走动时直接搬窗口，
+  从不更新锚点。主窗口重载后 `showPetWindow` 又无条件 `placePetWindow`，于是按旧锚点重摆。
+- 修法：宠物窗口监听 `win.onMoved`（400ms 防抖）把当前脚底锚点写 localStorage（两个窗口同源），
+  `visibilitychange` 隐藏前再记一次；`showPetWindow` 先 `isVisible()`，已可见就只 `show()`，
+  不再 resize/place。宠物数值本来就在 `pet-core` 的 SQLite（200 tick 落盘），不需要跟着页面走。
+
+## 83. `tauri android build` 先卡「Tauri 包版本不一致」，不是 NDK/签名（R144）
+
+- 现象：`pnpm build:android` 环境检查全 OK、前端也构建成功，但 `tauri android build`
+  第一屏就报 `Found version mismatched Tauri packages`（tauri v2.12.5 : @tauri-apps/api v2.11.1、
+  tauri-plugin-opener v2.7.3 : @tauri-apps/plugin-opener v2.5.5），退出 1。
+- 原因：CLI 要求 Rust crate 与 npm 包的 **major/minor 一致**；`Cargo.lock` 被更新到 tauri 2.12.5
+  时 `package.json` 的 `^2` 仍解析到 2.11.1，桌面端能跑、Android 构建直接被拦。
+- 修法：把 JS 对齐到同一 minor（本机可用版本：`@tauri-apps/api@2.12.4`、`@tauri-apps/plugin-opener@2.7.2`；
+  Rust 的 2.12.5 / 2.7.3 与它们 minor 相同即可）。不要反过来把 Rust crate 降到旧 minor——
+  `Cargo.lock` 与 vendored 依赖会一起回退，风险更大。
+- 注意离线：`pnpm add --offline` 可能因镜像缺某个可选包元数据失败；这一步允许联网装两个小包。
+- 验收：`pnpm build:android -Check` 只检查环境，不查这个版本关系；真正跑一次构建到出现
+  Gradle 编译输出才算过。
+
+
+## 84. 底部面板下拉关闭：只能绑抓手/标题，不能整块面板捕获（R145）
+
+- 需求「所有下方抽屉下滑关闭」很容易写成 `onPointerDown` 挂在整个 sheet 上；结果动作列表
+  不能滚、输入框点不到（指针被面板抢走）。R139 的行操作面板已经踩过一次。
+- 现在抽成 `hooks/useSwipeDownClose`：只绑抓手 / 标题这类没有滚动语义的区域；按钮 /
+  输入 / `[role=slider]` 上直接 return，移动超过 4px 才进入拖动，松手超过 80px 关闭。
+- 关闭按钮从底部面板移除（R145 用户要求），关闭只剩三条：下拉、遮罩、系统返回。
+- 歌词页「上划打开侧边抽屉」绑在底部控制区空白处（按钮上不抢）与顶栏；底部工具面板仍由按钮打开。
+
+## 85. 宠物窗口「可见但空窗」：visible 不代表尺寸对（R145）
+
+- 现象：设置里宠物开关是开的，宠物窗口也在，但只有一块透明区域（宠物像消失了）。
+- 根因不止一种：WebView 初始化失败时窗口停在 200×160 的错误页；DPI / 显示器变化后旧尺寸
+  与新内容不匹配；`showPetWindow` 旧实现只要 `isVisible()` 为真就跳过 resize，`show()`
+  不会把空窗变成正常尺寸。
+- 修法：`showPetWindow` 比较 `innerSize` 与 `petWindowDimensions(petBodyForSize(size)) * scale`，
+  不对就重设并重新摆位；最小化先 `unminimize`；再 `setAlwaysOnTop(true)` + `show`。
+  宠物窗口另有 6 秒空窗看门狗：`active=true` 但没有 `[data-pet-host]` 时只重载一次。
+- 验证：WebView2 里把宠物窗口手动改成 200×160，再 reload 主窗口，窗口会自动回到 920×937；
+  正常尺寸下 reload 不改变窗口坐标（不再「位置重置」）。
+
+## 86. Android 杀进程后 sessionStorage 也没了：恢复要落 localStorage（R145）
+
+- R144 只用 sessionStorage 记最后路由：同会话 reload 能恢复，但 Android 内存紧张时整个
+  WebView 进程被杀，sessionStorage 一起丢，重开就是冷启动首页。
+- 现在 `rememberLastRoute` 同时写一份带 `{path, at}` 的 localStorage 快照；`readRecentRoute`
+  接受 **30 分钟内**的快照，`router` 在非 reload 启动时也用它。`App` 每 20s 刷新一次时间戳，
+  页面隐藏 / `pagehide` 时再写播放进度。
+- 代价：关闭应用后 30 分钟内重开会回到最后页面（而不是首页）——这是为了「后台回来不从头
+  加载」做的取舍；超过 30 分钟仍是冷启动。
+- 真正被系统杀进程时无法保证不重载；这层保证的是**重载后回到原状态**，而不是阻止系统杀进程。
+
+
+## 87. 宠物 HUD 的透明画布会吃掉主窗口点击（R145）
+
+- 现象：桌面歌词页右上角图标、播放条、标题栏按钮「点不动」；点一下宠物就恢复。
+- 真因：宠物窗口是 920×937 的透明 HUD 画布。菜单/卡片打开时，Rust 的
+  `should_ignore_cursor(locked, menu_open, inside)` 旧逻辑是 `locked || (!menu_open && !inside)`
+  ——**菜单一开，整窗都不穿透**，透明区域变成一块盖住主窗口的玻璃；主窗口的点击
+  全被它接住，点宠物本体才会关菜单/改状态。
+- 修法：`locked || !inside`，只认真实热区（本体 / 状态卡 / 卡片 / 面板）；
+  `showPetWindow` 显示时先 `setIgnoreCursorEvents(true)`，由 `pet_watch` 按热区放开；
+  `HITBOX` 还没到时只把窗口中心 30% 当本体，不再「整窗可点」。
+- 验收：宠物卡片/面板打开时，主窗口标题栏主题按钮、歌词页图标、播放条仍可点。
+
+## 88. 歌词页「返回」不能 navigate('/')：会被最近路由快照弹回来（R145）
+
+- 现象：从路由恢复/深链直接进歌词页，点「收起」或下滑返回没反应，像手势失效。
+- 真因：R145 给根路由加了「30 分钟内回最近页面」的快照；歌词页 `useNowPlayingBack`
+  在无历史时调 `navigate('/')`，根路由又按快照（正是 `/now-playing`）重定向回来。
+- 修法：栈底时直接去具体页面——手机用配置的主页（默认 `/search`），桌面回 `/ranking`；
+  只有 `history.idx > 0` 才 `navigate(-1)`。
+- 验收：直接打开 `/now-playing`，点收起 → `/search`（手机）/ `/ranking`（桌面）；
+  正常从列表进入时后退仍回列表。
+
+## 89. StrictMode 复用 canvas → 3D demo 整块空白（R145）
+
+- 现象：发现页 Three.js demo 在浏览器正常，桌面 Tauri 里只剩标题/提示与渐变，看不到唱机。
+- 真因：`StrictMode` 在开发构建会 setup → cleanup → setup；第一次 cleanup 的
+  `renderer.forceContextLoss()` 把同一个 `<canvas>` 的 context 弄丢，第二次
+  `new WebGLRenderer` 在 `getShaderPrecisionFormat` 读到 `null`，抛
+  `Cannot read properties of null (reading 'precision')`；抓到的 catch 把整块标成
+  `data-webgl='unavailable'`（生产构建通常不双跑，但用户看到的就是这个分支的视觉结果）。
+- 修法：effect 里每次 `document.createElement('canvas')` 插到 stage 里，cleanup 移除；
+  不再复用 React 的 canvas。WebGL 初始化失败仍保留 CSS 文案，不白屏。
+- 验收：Tauri dev 打开发现页 `data-webgl='ready'`，实图有唱机/封套；`pnpm typecheck` / smoke 通过。

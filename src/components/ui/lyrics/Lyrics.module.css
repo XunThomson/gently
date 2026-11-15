@@ -64,6 +64,16 @@
     opacity: 1;
 }
 
+/* 舞台语境（歌词页）：居中对齐。悬停不高亮整行底色——居中的歌词行
+   铺一条横贯整列的底色会像一条分隔线，只保留文字提亮。 */
+.root[data-align='center'] .line {
+    text-align: center;
+}
+
+.root[data-align='center'] .line:hover {
+    background: transparent;
+}
+
 /* 译文：比原文小一号、颜色更弱，仍与原文一起被居中 */
 .translation {
     display: block;

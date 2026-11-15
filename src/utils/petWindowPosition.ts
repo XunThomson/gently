@@ -61,12 +61,14 @@ export const PET_WINDOW_MARGIN = 32;
 /**
  * HUD 槽位的一边长。
  *
- * 必须放得下「菜单 + 一小段气泡」：菜单有 6 行，气泡再占一行。
+ * 必须放得下**完整控制面板**（标题 + 快捷 / 外观 / 行为三节，含尺寸滑杆与开关），
+ * 而不是只放得下旧版那 6 行菜单：面板比旧菜单高，槽位不够就会被窗口上沿裁掉。
+ * 卡片比面板窄，由 CSS 再收窄（`--menu-width`），槽位仍按面板的尺寸预留。
  */
-export const PET_HUD_RESERVE = 260;
+export const PET_HUD_RESERVE = 340;
 
 /** 本体与 HUD 之间的呼吸距离 */
-export const PET_HUD_GAP = 8;
+export const PET_HUD_GAP = 16;
 
 function clampNumber(value: number, min: number, max: number): number {
     /* 显示器比内容还小时 max < min：退回 min（至少不会算出 NaN / 屏幕外） */
@@ -273,4 +275,33 @@ export function placePet(
         y: primary.y + primary.height - PET_WINDOW_MARGIN,
     };
     return layoutPetWindow(saved ?? fallback, body, hud, size, monitors, options);
+}
+
+/** 气泡尾巴离气泡圆角至少这么远（CSS 像素）：否则尾巴会切进圆角里 */
+export const PET_BUBBLE_TAIL_INSET = 18;
+
+/**
+ * 气泡尾巴在气泡边缘上的落点（**纯函数**，相对气泡左上角的 CSS 像素）。
+ *
+ * 气泡挂在 HUD 槽位贴着本体的那一边；槽位会被夹进屏幕，所以气泡未必正对本体
+ * （贴边时会被推开）。尾巴要指向**本体中心**，并夹在气泡圆角以内——
+ * CSS 按 `data-side` 取 `x`（上/下边）或 `y`（左/右边）。
+ */
+export function bubbleTailOffset(
+    body: Rect,
+    bubble: Rect,
+    inset: number = PET_BUBBLE_TAIL_INSET,
+): Point {
+    const horizontal = Math.min(Math.max(inset, 0), bubble.width / 2);
+    const vertical = Math.min(Math.max(inset, 0), bubble.height / 2);
+    const bodyCenterX = body.x + body.width / 2;
+    const bodyCenterY = body.y + body.height / 2;
+    return {
+        x: Math.round(
+            Math.min(Math.max(bodyCenterX - bubble.x, horizontal), bubble.width - horizontal),
+        ),
+        y: Math.round(
+            Math.min(Math.max(bodyCenterY - bubble.y, vertical), bubble.height - vertical),
+        ),
+    };
 }

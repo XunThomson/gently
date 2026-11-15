@@ -30,6 +30,11 @@
     border-bottom: 1px solid var(--divider);
 }
 
+/* 歌词页自带顶栏：外壳这条不再叠一层（hidden 属性会被上面的 display:flex 盖掉） */
+.header[hidden] {
+    display: none;
+}
+
 .brand {
     color: var(--text-tertiary);
     font-size: var(--font-size-xs);
@@ -81,6 +86,21 @@
    只做 6px 的轻微上浮 + 淡入，别做整屏滑动——滚动列表进来的动画最容易掉帧。 */
 .pageFade {
     animation: pageIn var(--motion-base);
+}
+
+/* 歌词页（R143）：占满内容区，页面自己滚会跟歌词的跟随滚动打架，
+   所以这里改成 flex 容器，把「剩余高度」整块交给歌词页。 */
+.content[data-immersive='true'] {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.content[data-immersive='true'] .pageFade {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
 }
 
 @keyframes pageIn {

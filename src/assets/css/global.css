@@ -34,6 +34,10 @@ ul:not([class]) {
 html {
     font-size: 16px;
     -webkit-text-size-adjust: 100%;
+    /* 触屏反馈统一（R143）：安卓 WebView 默认的 tap highlight 是一条无圆角、
+       无过渡的蓝色色带，压在全宽控件（进度条 / 播放条）上非常突兀。
+       关掉系统色块，按压反馈一律由各组件的 `:active` 状态给出。 */
+    -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -173,6 +177,14 @@ button {
 :focus-visible {
     outline: 2px solid var(--brand);
     outline-offset: 2px;
+}
+
+/* 触屏上「点一下」也会给按钮留下焦点，但键盘焦点框不该出现在手指点过的地方
+   （它会被误认成布局错位；键盘导航仍然命中上面的 :focus-visible）。 */
+@media (hover: none) {
+    :focus:not(:focus-visible) {
+        outline: none;
+    }
 }
 
 /* ----- 媒体元素 ----- */

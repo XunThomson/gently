@@ -439,18 +439,48 @@ export interface ComponentTokens {
     nowPlaying: {
         coverMinWidth: number;
         coverMaxWidth: number;
-        /** 首列占内容宽度的比例（如 44%），窄窗口按它收缩但不少于最小值 */
+        /** 首列占内容宽度的比例（如 30%），窄窗口按它收缩但不少于最小值 */
         coverWidthRatio: string;
         /** 强制展开成单列时的封面上限 */
         coverStackMaxWidth: number;
-        /** 歌词卡片高度表达式（固定高度才能把当前行滚到中间） */
+        /** 歌词栏的最大宽度：太宽会让长句一行扫不完 */
+        lyricsMaxWidth: number;
+        /** 歌词卡片高度表达式（独立窗口/旧布局仍用；歌词页已改为占满整列） */
         lyricsPanelHeight: string;
-        /** 手机端「封面作为背景」时的不透明度（默认不显示封面） */
+        /** 封面垫底的不透明度（只给氛围，不参与布局） */
+        backdropOpacity: number;
+        /** 封面垫底的虚化半径 */
+        backdropBlur: number;
+        /** 垫底上压的一层应用底色不透明度（保证歌词可读） */
+        backdropScrimOpacity: number;
+        /** 底部渐深的不透明度（让工具条与文字有落点） */
+        backdropGroundOpacity: number;
+        /** 垫底放大倍数：模糊到边缘时不会露透明边 */
+        backdropScale: number;
+        /** 非当前行歌词的不透明度：比桌面歌词窗口高一点，封面垫底时也读得清 */
+        lyricsInactiveOpacity: number;
+        /** 手机端封面的不透明度：歌词页里封面只做氛围 */
         mobileCoverOpacity: number;
-        /** 手机端「封面作为背景」时的虚化半径 */
+        /** 手机端封面的虚化半径 */
         mobileCoverBlur: string;
-        /** 手机端（默认不看封面）时的歌词卡片高度：把封面省下来的高度还给歌词 */
+        /** 手机端歌词面板高度（兼容旧布局；当前由 flex 占满） */
         mobileLyricsPanelHeight: string;
+        /** 手机端歌词字号：比桌面大一档，站着看也清楚 */
+        mobileLyricsFontSize: number;
+        /** 歌词页 tool tabs 的行高 */
+        toolTabHeight: number;
+        /** tool tabs 面板的最大高度（桌面） */
+        toolPanelMaxHeight: string;
+        /** tool tabs 面板的最大高度（手机） */
+        toolPanelMobileMaxHeight: string;
+        /** 桌面顶栏的小封面尺寸 */
+        coverThumbSize: number;
+        /** 桌面右上角功能栏的图标按钮尺寸 */
+        railButtonSize: number;
+        /** 桌面功能侧栏宽度 */
+        sidePanelWidth: number;
+        /** 桌面功能侧栏最大高度 */
+        sidePanelMaxHeight: string;
         /** 时间轴偏移的数字输入框宽度（px） */
         offsetInputWidth: number;
     };

@@ -1,10 +1,11 @@
-import {useCallback, useEffect, useState} from 'react';
+import {useCallback, useEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
 import {useTranslation} from 'react-i18next';
 import {useBackToClose} from '../../../hooks/useBackToClose';
+import {useSwipeDownClose} from '../../../hooks/useSwipeDownClose';
 import {useActions, useSelect} from '../../../store';
 import {useSleepTimerRemaining} from '../../../hooks/useSleepTimer';
-import {IconClose, IconMoon} from '../icon';
+import {IconMoon} from '../icon';
 import styles from './SleepTimerSheet.module.css';
 
 /** 预设时长选项（分钟）：保留短档，用户也可以直接输入任意 1–720 分钟 */
@@ -31,6 +32,8 @@ export function SleepTimerSheet({onClose}: SleepTimerSheetProps) {
 
     /* 安卓系统返回 = 关闭面板 */
     useBackToClose(true, onClose);
+    const sheetRef = useRef<HTMLDivElement | null>(null);
+    const {dragY, dragging, bind} = useSwipeDownClose(onClose, 80, sheetRef);
 
     const handlePreset = useCallback((minutes: number) => {
         setSleepTimer(minutes);
@@ -70,21 +73,19 @@ export function SleepTimerSheet({onClose}: SleepTimerSheetProps) {
 
     return createPortal(
         <div className={styles.sheetRoot} onClick={onClose}>
-            <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
-                <div className={styles.grabber}>
+            <div
+                className={styles.sheet}
+                ref={sheetRef}
+                data-dragging={dragging}
+                style={dragY > 0 ? {transform: `translateY(${dragY}px)`} : undefined}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className={styles.grabber} aria-hidden="true" {...bind}>
                     <div className={styles.grabberBar}/>
                 </div>
 
-                <div className={styles.header}>
+                <div className={styles.header} {...bind}>
                     <span className={styles.title}>{t('sleepTimer.title')}</span>
-                    <button
-                        type="button"
-                        className={styles.closeBtn}
-                        aria-label={t('common.cancel')}
-                        onClick={onClose}
-                    >
-                        <IconClose size={16}/>
-                    </button>
                 </div>
 
                 <div className={styles.content}>

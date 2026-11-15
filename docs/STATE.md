@@ -1,13 +1,148 @@
 ---
 status: active
-last_verified: 2026-11-14
+last_verified: 2026-11-15
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R142：定位「主窗口 12 秒仍不可见」真因 = **进程 Low 完整性级别**（exe/工作区标签），Low 进程写不了 Medium 的 WebView2 profile，浏览器进程不启动；新增 `integrity` 检测、Low 专用提示与 `scripts/check-integrity.ps1`。R141 的 3 bug + 9 优化仍保留（手机返回栈 / 宠物首帧 / 长暂停恢复、移动端 4 功能位 + 抽屉、歌词偏移滑杆、宠物 64–480px、下载落盘唯一化、目录导入可选递归、浅色降亮、定时关闭 1–720 分钟）。typecheck / smoke 597 / cargo 下载 7 条通过。
+tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低机位、当前曲目封面铺底、仅播放时旋转）；两端歌词页改半透明，用户自定义背景可透出；设置里的宠物只留启用开关；歌词自动搜索改为候选 id + 聚合搜索取第一份带词结果；标题栏与启动屏换用 `src-tauri/icons/icon.png`，内置背景换成提供的 wallpaper.mp4；桌面歌词返回/更多功能/宠物 HUD 点击穿透已修；移动底部面板支持内容区下拉。typecheck / smoke 623 / verify 通过；后台重载、宠物独立面板窗口、小尺寸 UI 仍未收口。
 ---
 
 # STATE
+
+## 本轮目标（第一百四十五轮）
+
+> 用户 2026-11-15 补充：所有底部抽屉下滑关闭；歌词页上划打开抽屉、抽屉去关闭按钮；
+> 歌词页底部优先收藏 / 播放模式 / 音质；两端歌词页功能去重、移除封面背景；
+> 歌词自动搜索默认关闭、设置可启用、按 id 取置顶结果；发现页清空并做 Three.js 3D demo；
+> 宠物启用后从窗口消失；后台回前台仍会重载/卡死。
+
+### 1. 逐条处理
+
+| 反馈 | 结论与改动 |
+|---|---|
+| **所有下方抽屉下滑关闭** | 新增 `useSwipeDownClose`，应用到歌词工具面板 / 定时关闭 / 设置单选面板 / 行操作面板（行操作原有）；关闭按钮从底部面板移除，改用下拉、遮罩、系统返回 |
+| **歌词页上划打开抽屉** | 歌词页底部控制区上划（或顶栏上划）打开**左侧导航抽屉**；工具面板由「更多 / 音质」按钮打开，面板下拉关闭，不再放 ✕ |
+| **歌词页底部优先常用项** | 手机底部只留 **收藏 / 播放顺序 / 音质 / 更多**；下载、队列、歌单、定时等收进底部工具面板；播放顺序按钮循环 顺序→列表→单曲→随机 |
+| **两端功能重复** | 桌面功能栏收成 3 个：**歌词工具 / 更多功能 / 定时关闭**；「更多」面板放歌曲操作与队列，不丢功能也不挤一排。手机播放条只留上一首/播放/下一首，歌词页补常用项 |
+| **R145 回归修复** | ① 热门推荐 / 发现 / 排行榜在手机上重定向回手机主页；② 歌词页返回在「无历史」时不再 `navigate('/')`（会被最近路由快照弹回歌词页），改为直接去手机主页 / 桌面排行榜；③ 宠物窗口显示时先整窗穿透，只在真实热区放开；`menu_open` 不再让整块 HUD 画布吃点击（这是歌词页/播放条点不动的真因）；④ 宠物 5s 可见性心跳 |
+| **发现页合并推荐** | `/hot` 去掉「热门推荐 / 发现」双 tab，整页只保留发现 3D demo；侧栏入口文案改为「发现」；手机的 `/hot`、`/ranking` 仍重定向 |
+| **歌词页背景通透** | 桌面/手机歌词页去掉不透明底色，改为半透明 `--bg-app` + 轻模糊，用户自定义视频/图片背景能透出来；桌面播放条/面板仍保持可读表面 |
+| **宠物设置收敛** | 设置页宠物组只留「启用」一个开关；锁定 / 大小 / 走动 / 安装包配置全部移到宠物控制面板（本轮先完成移除，独立面板窗口见未做） |
+| **歌词自动搜索聚合** | 开启开关后先按候选源 id 找词；仍没有时调用 `catalog.searchLyrics(标题 歌手)`，按核心返回顺序取第一份**真正带歌词**的结果；手动选词仍可覆盖 |
+| **3D 背景/旋转** | demo 用当前曲目封面铺底（模糊压暗，`backgroundUrl` 为后续背景仓库预留）；唱片只在 `player.playing=true` 时旋转，暂停即停 |
+| **品牌与背景** | 标题栏/启动屏 favicon 改为 `src-tauri/icons/icon.png`；内置背景视频换为 `D:\Xun\Videos\3375392695_extracted\wallpaper.mp4`（复制到 `src/assets/bgc.mp4`） |
+| **移动抽屉手势** | `useSwipeDownClose` 增加原生 touch 监听：除抓手外，面板内容滚到顶部时也可下滑关闭；按钮/输入/滑杆不抢手势 |
+| **移除封面背景** | 桌面/手机歌词页删除模糊封面垫底与顶栏大封面，只保留主题色轻微渐变；桌面顶栏保留 44px 缩略图 |
+| **歌词自动搜索** | 新增 `ui.lyricsAutoSearch`（默认 **false**）；设置新增「歌词」组（桌面/手机都可见）；开启后当前源无词时按候选源曲目 id 顺序取第一份可用歌词，全空显示「暂无歌词」；`ensureLyrics(true)` 让开关立即生效 |
+| **发现页 3D demo** | 发现 tab 清空原书架内容，改为 Three.js 唱片/专辑场景（程序化封面纹理、黑胶、唱臂、暖光、拖拽环绕、自动旋转、reduced-motion 停止）；新增 `three` 依赖。**StrictMode/重挂时每次新建 canvas**，避免第一次 `forceContextLoss` 让第二次 WebGLRenderer 读到 null precision 而整块空白；相机改为低机位（`basePhi=1.48`、视线压到唱片上沿），贴近参考照片 |
+| **宠物消失** | `showPetWindow` 检查窗口尺寸（可见但 200×160 / DPI 变化也会重设并重新摆位）、最小化恢复、置顶；宠物窗口加空窗看门狗（6 秒无渲染器只重载一次） |
+| **后台重载/卡死** | 路由快照从 sessionStorage 扩到 localStorage（30 分钟内进程被杀也回原页）；每 20s 刷新快照，`pagehide`/隐藏时写播放进度；回前台主动 `show + setFocus` 唤醒主窗口；Web Locks/反节流参数/宠物锚点保留 |
+
+### 2. 验证
+
+| 项 | 结果 |
+|---|---|
+| `pnpm typecheck` | 通过 |
+| `pnpm smoke` | **623 项全过** |
+| `pnpm verify` | **通过**（typecheck + smoke 623 + 契约 / 可达性 + cargo 两 core/宿主 + check:pet） |
+| `pnpm build:android` | 通过：`release/gently-0.1.0-android-debug.apk` 156.7 MB，SHA256 `6308b0351bfa99be79a6cce2ab24f88156fc8dc5a8886910d106b3df8db0eb3b`，已安装真机 |
+| 实图 | `release/screenshots/r145-desktop-lyrics.png`、`r145-desktop-demo-low.png`、`r145-mobile-lyrics.png`、`r145-mobile-quality.png`、`r145-mobile-drawer.png`、`r145-discover-demo.png`、`r145-discover-demo-mobile.png`、`r145-android-demo.png`、`r145-android-drawer.png`、`r145-android-setting.png`、`r145-android-lyrics.png`、`r145-pet.png` |
+| 手势 | 浏览器 CDP 拖动：歌词工具/音质面板下拉后 `dialogs=0`；底部控制区上划后左侧抽屉打开（`x=0`），系统返回关闭；真机同样 |
+| 真机 | R145 APK 安装：路由恢复 `/hot?tab=discover`、Three.js demo 正常渲染；底部只 4 个动作图标；设置「歌词」组与自动搜索开关可见；底部上划打开左侧抽屉、面板下拉关；暂停后按 Home 15 分钟回来 `window.__r145long` 仍在、点收起立即回 `/search`（页面未重载且可交互） |
+| 回归修复验证 | 直接打开歌词页点收起 → `/search`（手机）/ `/ranking`（桌面）；手机打开 `/hot` 被重定向 `/search`；桌面「更多功能」面板含收藏/下载/加入歌单/队列；宠物卡片打开时点主窗口主题按钮仍生效（宠物 HUD 透明区不再吃点击）；Tauri dev 实图 3D demo 显示黑胶/封套 |
+| 发现页合并 | `?tab=discover` 不再存在双 tab；桌面 `/hot` 标题「发现」，只有 3D demo；侧栏入口「发现」 |
+| 启动屏 | 同一会话 reload 时 `html.is-resuming` 直接隐藏 `#boot-splash`，至少不再闪启动页（底层重载仍未根治） |
+| 3D 低机位 | `data-webgl='ready'`；实图 `r145-desktop-demo-low.png` 为唱片前景/封套直立的低机位视角 |
+| 移动面板 | 真机从音质面板**内容区**（不是抓手）下滑，`dialogs` 从 1 → 0，关闭生效 |
+| 宠物 | WebView2 实跑：窗口从 200×160 被主窗口 reload 自动校回 920×937；宠物可见、位置不因 reload 重摆 |
+| 路由恢复 | 从 `/setting` 直接导航到 `/`（冷启动路径），30 分钟内快照生效回到 `/setting` |
+| 未做 | 30 分钟以上后台长测；**任务栏恢复仍会重载**（本轮只隐藏了 reload 启动屏，未根治）；宠物控制面板仍是宠物窗口 HUD（未拆成独立窗口）；小尺寸窗口 UI 未系统重做；demo 在低端 Android 上的帧率/发热 |
+
+## 本轮目标（第一百四十四轮）
+
+> 用户 2026-11-15 清单：移动/桌面 UI 隔离；长时间后台后整页重载、状态重置与卡死；
+> 桌面歌词页功能收右上角竖排 icon、歌词居中；移动歌词页参考主流播放器；
+> 宠物右键卡片 + 控制面板入口、尺寸只留滑杆；新增移动端一键构建脚本。
+
+### 1. 逐条处理
+
+| 反馈 | 结论与改动 |
+|---|---|
+| **移动/桌面 UI 没有隔离** | 歌词页拆成 `desktop.tsx` / `mobile.tsx` + 两份 CSS（`index.tsx` 只按 shell 分叉），共用 `NowPlayingLyrics` / 工具内容 / store；手机导航**统一在左侧抽屉**（8 项，不另加底部 tab）；主题页手机改 2 列紧凑卡，隐藏描述/作者/标签与「粘贴本机路径」导入；AGENTS #17 固化「两端分文件」 |
+| **后台久了软件刷新/状态重置/卡死** | 根因是 Chromium/WebView2 隐藏约 5 分钟后 freeze/discard 页面。四层：① `utils/backgroundKeepAlive.ts` 持有一个永不完成的 Web Lock；② `tauri.conf.json` 三窗口统一反节流参数（`--disable-background-timer-throttling` / `-backgrounding-occluded-windows` / `-renderer-backgrounding`，并保留 wry 默认 features）；③ `sessionStorage` 记最后路由，同一会话再次加载时回原页（冷启动仍回首页）；④ 宠物窗口 `onMoved` 400ms 防抖落盘脚底锚点（走动也更新），`showPetWindow` 对已可见窗口不再重摆位 |
+| **桌面歌词页功能收右上角 icon、歌词居中** | 桌面删除左封面栏，改为顶栏 44px 缩略图 + 居中歌词；右上角竖排 6 个纯图标（收藏/下载/歌单/播放设置/歌词工具/队列），点击在右侧展开面板，再点/Esc/点舞台/✕ 收起；`Lyrics` 新增 `centered`（`data-align='center'`），桌面歌词窗口仍左对齐 |
+| **移动歌词页参考主流** | 全屏播放页：顶部「收起 + 标题/歌手」；居中歌词；底部 4 个 44px 操作图标（收藏/下载/队列/更多）→ 进度（时间 + SeekBar）→ 大号 上一首/播放/下一首；导航仍在左侧抽屉。队列/更多打开同一个底部工具面板（播放/歌词/队列三个 tab）。**顶栏向下拖可关闭**（固定 96px / 视口 18% 阈值，`utils/nowPlayingGesture.ts`） |
+| **设置页移动适配** | 手机端每组一张卡、行 = 标签 + 当前值 + 箭头；单选改为底部选择面板（`ChoiceField`），布尔改为开关行（`ToggleField`，`role=switch`）；缓存上限 / 主页 / 音源 / 下载等长选项不再挤进行尾。桌面仍是行内单选 + 页内锚点导航 |
+| **导航统一到侧边** | 试过底部 4 项后按用户要求撤回：手机主导航只保留左侧抽屉 8 项，底部只留常驻播放条；歌词页隐藏顶栏与播放条，但抽屉仍可横滑拉出 |
+| **宠物右键卡片 + 控制面板** | 右键打开快捷卡片（名字/心情/等级 + 喂食/摸摸 + 「控制面板」入口），单值 `surface` 状态保证卡片与面板互斥；面板分「快捷/外观/行为」，**删除 small/medium/large 三个预设按钮**，尺寸只留滑杆 + 数字输入 + 当前 px；HUD 预留 260→340（面板不被窗口裁切），指针焦点不再留紫框 |
+| **移动端一键构建** | 新增 `scripts/build-android.ps1` + `pnpm build:android`：默认 debug aarch64 APK → `release/` + SHA256；支持 `-Release` / `-SkipWeb` / `-Check` / `-Target`；缺 SDK/NDK/JDK/rust target 会给单条修复建议，release 无签名直接拦截 |
+
+### 2. 验证
+
+| 项 | 结果 |
+|---|---|
+| `pnpm typecheck` | 通过 |
+| `pnpm smoke` | **619 项全过**（新增重载路由、宠物卡片状态机、尺寸只有滑杆、平台布局、下滑关闭阈值断言） |
+| `pnpm check:pet` | 通过 |
+| `pnpm build` | 通过 |
+| `pnpm verify` | **通过**（typecheck + smoke 619 + 契约 76/9 + 可达性 + cargo：gently-core 95 / pet-core 9+7+6+2+10+9+4+6 / 宿主 + check:pet） |
+| `pnpm build:android` | **真实构建通过**：debug/aarch64 → `release/gently-0.1.0-android-debug.apk`（163.9 MB，universal flavor，SHA256 已写）；已 `adb install -r` 到真机（HUAWEI CDY-AN00 / Android 10） |
+| 真 WebView2 手测（debug 宿主 + CDP） | `navigator.locks.query()` 能看到 `gently:background-keepalive`；宠物右键卡片/控制面板实图；`/setting` → 替换 URL 为 `/` 后 reload → 自动回到 `/setting` |
+| 真机手测 | 抽屉 8 项、无底部 tab；设置页卡片行 + 开关/选择面板；歌词页居中、无底部 tab；**顶栏下滑关闭回 `/setting`**；暂停播放后按 Home、约 15 分钟回来 `window.__r144_paused` 仍是数字（页面未重载） |
+| 实图 | `release/screenshots/r144-desktop-lyrics.png` / `-light.png`、`r144-desktop-panel.png`、`r144-mobile-lyrics.png`、`r144-mobile-sheet.png`、`r144-mobile-home.png`、`r144-mobile-setting.png` / `-background.png`、`r144-mobile-theme.png`、`r144-android-home-final.png`、`r144-android-drawer.png`、`r144-android-setting.png`、`r144-android-lyrics-final.png`、`r144-pet-card-page.png`、`r144-pet-panel-page.png` |
+| 未做 | release APK 签名（脚本已拦截）；桌面「最小化 ≥10 分钟」长测；宠物浅色主题实图 |
+
+### 3. 未做 / 下一步
+
+- **真机复核已完成的部分**：抽屉 8 项、设置页卡片行、歌词页下滑关闭、暂停后后台约 15 分钟页面未重载（`window.__r144_paused` 仍在）。仍需补：① 播放中后台 30 分钟以上；② 浅色主题下宠物卡片/面板。
+- **桌面长测**：最小化/锁屏 10 分钟以上，确认反节流参数 + WebLock 生效；若 WebView 仍被丢弃，再看 Windows 进程 EcoQoS（下一层：`SetProcessInformation` 关掉 power throttling）。
+- **宠物**：卡片/面板真窗口（透明背景叠在桌面）观感已用 WebView2 页面截图确认；`PET_HUD_RESERVE=340` 让窗口画布更大，若觉得挡屏幕可再调。
+- **主题页**：手机 2 列卡片已改；导入面板在手机隐藏「路径」来源，桌面保持不变。
+- **构建**：`pnpm build:android` 已真跑并安装；release 包仍需签名配置（脚本会提前拦截，不会产不可安装的包）。
+
+## 本轮目标（第一百四十三轮）
+
+> 用户 2026-11-15 清单：移动端功能项从播放条迁到歌词页；设置页与歌词页重构；
+> 移动端 bug（功能抽屉打不开、触摸蓝条）；宠物 bug（紫底、气泡高低、热区误判）；
+> 移动端数据目录与「拷贝两份」的存储方案。
+
+### 1. 逐条处理
+
+| 反馈 | 结论与改动 |
+|---|---|
+| **功能项迁到歌词 view** | 新增 `NowPlayingTools`（播放 / 歌词 / 队列三格，惰性挂载，再点当前格可收起）；「播放」格组合 `PlaybackModes` + `ActionsPanel inline` + `PlaybackOptions`；「歌词」格把原 `LyricsToolsDrawer` 的三段竖排；「队列」格用 `QueuePanel inline`。删除 `MobilePlayerSheet` 与播放条上的「收藏 / 更多」位；手机播放条只剩 主体（点进歌词页）/ 上一首 / 播放暂停 / 下一首。AGENTS #9 重写 |
+| **歌词页不符合审美** | 桌面：封面 ≤300px + 右栏歌词 + tabs 在歌词下方，封面只做模糊垫底；手机：隐藏外壳顶栏（`data-immersive`），封面只做整页模糊背景，歌词 17px 占主视觉。歌词不再套卡片（无底色 / 边框），只保留当前行加粗与上下渐隐。新增 `nowPlaying.*` token（`lyricsMaxWidth` / `backdrop*` / `toolTab*` / `mobileLyricsFontSize` / `lyricsInactiveOpacity`）；删除「封面已省略 / 作为背景」开关与 `utils/nowPlayingCover.ts` |
+| **设置页混杂** | 8 个语义组（外观 / 播放与歌词 / 音源 / 下载 / 宠物 / 背景与主页 / 存储 / 关于），桌面左侧 sticky 锚点导航（IntersectionObserver 高亮），窄屏吸顶 chips；`Section` + `Field` 统一「组标题 + 一句话 + 行」，子卡拆成 h3 子块；缓存 / 歌词逻辑拆成 `CacheSettings` / `LyricsSettings`；手机去卡片、用分隔线 |
+| **移动端功能抽屉打不开** | 该抽屉不再存在（功能进 tabs）。同批修掉真实根因级问题：`QueuePanel` 的 `scrollIntoView` 会把 immersive 内容区一起滚走，导致打开队列后「收起 + 标题」消失 → 改成只滚自己的列表；`MobileShell` 在沉浸式下钳住 `scrollTop = 0` |
+| **触摸出现纯蓝横条** | WebView 默认 `-webkit-tap-highlight-color` 铺在被点元素的 border-box 上；全局关掉，按压反馈统一走组件 `:active`；触屏上清掉 `:focus:not(:focus-visible)` 的描边 |
+| **宠物紫色背景 / 白框** | `.body` 基础样式原来直接写 `--brand` 紫底，靠 `.body.sprite` 覆盖（同为 0,2,0，只靠源码顺序）；改为 `data-kind=pending|sprite|fallback`：只有 fallback 才画品牌圆，sprite 只有几何；根链 `html/body/#root/[data-pet-window]` 全透明；焦点框只在键盘模态出现 |
+| **宠物气泡高低不稳** | 气泡原来在 HUD 列中间，状态卡 / 菜单显隐会把它推远；改为 HUD 内独立层（贴本体那条边）+ 指向本体的尾巴（`bubbleTailOffset`）+ 固定 `PET_HUD_GAP`；显隐优先级 菜单 > 气泡 > 状态卡；出现 / 消失用 opacity + 8px 上浮 |
+| **没碰到宠物也能交互** | 原来上报整个图集格子（208 档 207×225）；改为解码时降采样 512 长边、逐帧扫 alpha 得到包围盒，命中只报当前动画 ∪ look 的包围盒（+4px padding）；隐藏 / 卸载 / 窗口消失一律发空列表并清宿主热区（Rust `clear_hitboxes`） |
+| **移动端数据目录 / 两份资源** | 新增 `docs/ANDROID-STORAGE.md`：数据在 `/data/user/0/com.xun.gently`（不在 `Android/data`，非 root 不可见），导入副本另在 `<filesDir>/music`，当前无任何导出出口；「只引用」会在 scan / publish / 封面 / 删除四处断，推荐 C 混合（拷贝默认 + 引用可选）+ SQLite `imported_files` 登记表保护删除。**本轮只给方案，不含实现** |
+| **（顺带）恢复的曲目没歌词** | 冷启动恢复只恢复曲目 / 进度，不恢复歌词（启动不该联网）；新增 `player.lyricsDeferred` + `ensureLyrics()`，歌词页第一次打开时补一次 |
+
+### 2. 验证
+
+| 项 | 结果 |
+|---|---|
+| `pnpm typecheck` | 通过 |
+| `pnpm smoke` | **610 项全过**（新增命中矩形 / 气泡尾巴 / 歌词挂起 / 队列滚动 / 沉浸式守卫） |
+| `pnpm check:contract` | 通过（76 命令 / 9 事件 / 错误码一致） |
+| `pnpm check:reachability` | 通过（230 服务节点 / 102 动作节点） |
+| `pnpm check:pet` | 通过 |
+| `cargo test -p gently pet_watch::tests` | **7/7 通过**（含空热区 = 穿透、隐藏窗口清热区） |
+| `pnpm verify` | **全绿**（typecheck / smoke 610 / 契约 / 可达性 / gently-core 95+ / pet-core / 宿主 14，离线模式） |
+| `pnpm build` | 通过（dist 566 KB / gzip 187 KB） |
+| 实图 | `release/screenshots/r143-desktop-lyrics.png` / `-light.png`、`r143-mobile-lyrics.png`、`r143-mobile-lyrics-playback.png`、`r143-mobile-lyrics-queue.png`、`r143-mobile-lyrics-tools-light.png`、`r143-desktop-setting.png` / `-light.png`、`r143-mobile-setting.png`、`r143-desktop-queue.png`（浏览器预览，1280×820 / 390×844，浅色 + 深色） |
+| 未做 | 真机（Android WebView 蓝条 / tabs 触摸 / 宠物窗口透明与气泡）与带图形会话的打包版截图；`pnpm ui:capture` 未跑 |
+
+### 3. 未做 / 下一步
+
+- **真机复核**：① 歌词页 tab 打开 / 收起、播放条三键；② 长按进度条不再出现蓝条；③ 宠物窗口紫底 / 白框消失、气泡贴本体、宠物外 30–50px 不再能点开菜单。
+- **宠物命中精度**：现在是「包围盒级」；若仍嫌大，下一步可把 12×12 占用栅格合成多矩形。
+- **存储方案**：先落 `imported_files` 登记表（P0），`content://` 引用要等真机验证 provider 的持久授权与可 seek 能力（`docs/ANDROID-STORAGE.md` §5）。
+- **桌面歌词页对齐**：目前仍是左对齐（项目既有 Netodia 风格）；若要像参考图一样居中，需要同时改桌面歌词窗口（共用 `Lyrics`），留给用户决定。
+- **恢复曲目的歌词**：现在只在打开歌词页时补；直接看播放条不受影响。
 
 ## 本轮目标（第一百四十二轮）
 

@@ -2,9 +2,11 @@ import {appConfig} from '../../config/app.config';
 import {audioEngine, catalogService, coreAvailable, libraryService} from '../../services';
 import type {GroupedTrack, NowPlaying, Track, TrackCandidate} from '../../types';
 import {pickQuality} from '../../utils/quality';
+import {trackReference} from '../../utils/downloadQueue';
 import {shouldRefreshStreamOnResume} from '../../utils/playbackResume';
 import {pickShuffleIndex} from '../../utils/shuffle';
 import {clampLyricsOffset, readLyricsOffset, writeLyricsOffset} from '../../utils/lyricsOffset';
+import {toLyricLines} from '../../utils/lyrics';
 import {
     appliedLyricsRef,
     clearLyricsChoice,
@@ -118,6 +120,8 @@ export function createPlayerSlice(
         seekSeq: 0,
         lyrics: [],
         lyricsSource: null,
+        /* 冷启动恢复的曲目先不取词：等用户真的打开歌词页再补（见 ensureLyrics） */
+        lyricsDeferred: Boolean(restored),
         lyricsOffset: 0,
         audioUrl: null,
         playable: false,
@@ -204,6 +208,54 @@ export function createPlayerSlice(
         try {
             const lyrics = await libraryService.loadLyrics(track);
             if (!stillWanted()) return;
+
+            /* 自动搜索（R145，默认关）：当前源没词时，按候选源里的曲目 id 依次查，
+               取**第一份可用**的（候选顺序就是音源优先级），没有就保持空。
+               这是用户显式开启的行为，不在启动阶段偷偷发请求。 */
+            if (lyrics.length === 0 && ctx.getState().ui.lyricsAutoSearch) {
+                const seen = new Set<string>([trackReference(track)]);
+                const candidates =
+                    (track as GroupedTrack).candidates ??
+                    ctx.getState().player.candidates;
+                for (const candidate of candidates) {
+                    const candidateTrack = candidate.track;
+                    const reference = trackReference(candidateTrack);
+                    if (seen.has(reference)) continue;
+                    seen.add(reference);
+                    const alternate = await libraryService.loadLyricsFrom(reference);
+                    if (!stillWanted()) return;
+                    if (alternate && alternate.length > 0) {
+                        patch({
+                            lyrics: alternate,
+                            lyricsSource: autoLyricSource(candidateTrack),
+                        });
+                        return;
+                    }
+                }
+
+                /* 候选源都没有词（B 站测试源 / 本地音乐很常见）：做一次**聚合歌词搜索**，
+                   按核心返回的置顶顺序取第一份真正带词的。用户手动挑过之后
+                   manualLyricsPlayId 会挡住自动结果；手动再选即可覆盖。 */
+                const keyword = `${track.title} ${track.artist}`.trim();
+                const outcome = await catalogService.searchLyrics(keyword);
+                if (!stillWanted()) return;
+                const top = (outcome.data?.items ?? []).find(
+                    (item) => toLyricLines(item.lyrics).length > 0,
+                );
+                if (top) {
+                    patch({
+                        lyrics: toLyricLines(top.lyrics),
+                        lyricsSource: {
+                            source: top.source,
+                            sourceName: top.sourceName,
+                            title: top.track.title,
+                            artist: top.track.artist,
+                        },
+                    });
+                    return;
+                }
+            }
+
             patch({
                 lyrics,
                 lyricsSource: lyrics.length > 0 ? autoLyricSource(track) : null,
@@ -404,6 +456,7 @@ export function createPlayerSlice(
             duration: track.durationSec,
             lyrics: [],
             lyricsSource: null,
+            lyricsDeferred: false,
             // 这首曲子上次校正过的偏移还记得（逐曲目持久化）
             lyricsOffset: readLyricsOffset(track.id),
             audioUrl: null,
@@ -808,6 +861,7 @@ export function createPlayerSlice(
                 index: -1,
                 lyrics: [],
                 lyricsSource: null,
+                lyricsDeferred: false,
                 lyricsOffset: 0,
                 audioUrl: null,
                 playable: false,
@@ -822,11 +876,20 @@ export function createPlayerSlice(
             clearLastPlayback();
         },
 
+        ensureLyrics(force = false) {
+            const {current, lyrics, lyricsDeferred} = ctx.getState().player;
+            /* 默认只在「冷启动恢复且还没请求过」时补：正常播放已经在 play() 里发起了。
+               force=true 是用户刚打开自动搜索 / 主动重试时，允许对空歌词再查一次。 */
+            if (!current || lyrics.length > 0 || (!force && !lyricsDeferred)) return;
+            patch({lyricsDeferred: false});
+            void loadLyrics(current, current.playId);
+        },
+
         applyLyrics(lines, source) {
             const {current} = ctx.getState().player;
             if (!current) return;
             manualLyricsPlayId = current.playId;
-            patch({lyrics: lines, lyricsSource: source});
+            patch({lyrics: lines, lyricsSource: source, lyricsDeferred: false});
             /* 记住「这首曲目的词是从哪挑来的」：下次播放同一首先按这条来路取词，
                否则用户校准好的偏移会跟着源给的词一起失效 */
             if (source.trackId) {
@@ -845,7 +908,7 @@ export function createPlayerSlice(
             if (!current) return;
             clearLyricsChoice(current.id);
             manualLyricsPlayId = null;
-            patch({lyrics: [], lyricsSource: null});
+            patch({lyrics: [], lyricsSource: null, lyricsDeferred: false});
             void loadLyrics(current, current.playId);
         },
 

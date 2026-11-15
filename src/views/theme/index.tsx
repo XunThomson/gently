@@ -15,6 +15,7 @@ import type {ThemeSkin} from '../../theme';
 import {copyText} from '../../utils/clipboard';
 import {matchesQuery} from '../../utils/helpers';
 import {backgroundKindOfFile, pickSkinPackageFiles} from '../../utils/skinPackage';
+import {isMobilePlatform} from '../../utils/platform';
 import styles from './theme.module.css';
 
 /** 导入 / 删除后的提示停留时长 */
@@ -36,6 +37,9 @@ export default function ThemeView() {
     const [activeTag, setActiveTag] = useState<string | null>(null);
     const [status, setStatus] = useState<string | null>(null);
     const fileRef = useRef<HTMLInputElement>(null);
+    /* 手机上「粘贴本机路径」不成立（没有可访问的绝对路径），导入只保留
+       粘贴 JSON 与原生文件选择器——这也是移动端与桌面端隔离的一部分。 */
+    const mobile = isMobilePlatform();
     /**
      * 导入面板：**粘贴 JSON / 粘贴本机路径 / 原生文件选择器**三条来源。
      *
@@ -276,21 +280,23 @@ export default function ThemeView() {
             {importing && (
                 <section className={styles.importPanel}>
                     <div className={styles.importTabs}>
-                        <UnderlineRadioGroup
-                            name="skin-source"
-                            value={sourceMode}
-                            onChange={(value) => setSourceMode(value as 'json' | 'path')}
-                            options={[
-                                {value: 'json', label: t('skin.sourceJson')},
-                                {value: 'path', label: t('skin.sourcePath')},
-                            ]}
-                        />
+                        {!mobile && (
+                            <UnderlineRadioGroup
+                                name="skin-source"
+                                value={sourceMode}
+                                onChange={(value) => setSourceMode(value as 'json' | 'path')}
+                                options={[
+                                    {value: 'json', label: t('skin.sourceJson')},
+                                    {value: 'path', label: t('skin.sourcePath')},
+                                ]}
+                            />
+                        )}
                         <Button size="sm" variant="ghost" onClick={() => fileRef.current?.click()}>
                             {t('skin.fromFile')}
                         </Button>
                     </div>
 
-                    {sourceMode === 'json' ? (
+                    {mobile || sourceMode === 'json' ? (
                         <div className={styles.importField}>
                             <span className={styles.importLabel}>{t('skin.jsonLabel')}</span>
                             <textarea

@@ -1,0 +1,142 @@
+/* 手机上设置单选行的底部选择面板（R144）。 */
+
+.scrim {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: var(--modal-scrim);
+    animation: fade var(--motion-fast);
+}
+
+@keyframes fade {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.sheet {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 520px;
+    max-height: 76%;
+    padding: var(--mobile-sheet-padding) var(--mobile-sheet-padding)
+        calc(var(--mobile-sheet-padding) + env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+    overflow: hidden;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-panel);
+    transition: transform var(--motion-fast);
+    animation: up var(--motion-base);
+}
+
+@keyframes up {
+    from {
+        transform: translateY(100%);
+    }
+    to {
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .scrim,
+    .sheet {
+        animation: none;
+    }
+}
+
+.grabber {
+    display: flex;
+    justify-content: center;
+    flex: none;
+    padding: var(--space-2) 0;
+    touch-action: none;
+    cursor: grab;
+}
+
+.grabberBar {
+    width: var(--mobile-sheet-grabber-width);
+    height: var(--mobile-sheet-grabber-height);
+    border-radius: var(--radius-full);
+    background: var(--divider);
+}
+
+.head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    flex: none;
+    padding: 0 var(--space-2) var(--space-2);
+    touch-action: none;
+}
+
+.title {
+    color: var(--text-primary);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+}
+
+.options {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: var(--mobile-sheet-item-height);
+    padding: 0 var(--space-3);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    text-align: left;
+    cursor: pointer;
+}
+
+.option:active {
+    background: var(--bg-active);
+}
+
+.option[data-active='true'] {
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-weight: var(--font-weight-semibold);
+}
+
+.optionLabel {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mark {
+    flex: none;
+    width: var(--space-2);
+    height: var(--space-2);
+    border-radius: var(--radius-full);
+    background: transparent;
+}
+
+.option[data-active='true'] .mark {
+    background: var(--brand);
+}

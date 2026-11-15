@@ -9,7 +9,7 @@
       这里只影响页面自己发起的图片请求；媒体走核心回环代理，与这里无关。
     -->
     <meta name="referrer" content="no-referrer" />
-    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="icon" type="image/svg+xml" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <title>Gently</title>
@@ -19,9 +19,12 @@
        * 之前这里是纯白 body —— 手机上冷启动、或退后台回来时，白屏会持续一段时间，
        * 看起来像「程序重新加载了」。
        *
-       * 只用**品牌图形**（/logo.svg 的紫色圆角方 + 白色 G），不放项目名字；
+       * 只用**品牌图形**（/logo.png 的应用图标），不放项目名字；
        * 颜色写死不依赖主题（此时主题变量还没注入）。
        */
+      html.is-resuming #boot-splash {
+        display: none;
+      }
       #boot-splash {
         position: fixed;
         inset: 0;
@@ -62,9 +65,18 @@
   </head>
 
   <body>
+    <script>
+      /* R145：同一 WebView 会话里的重载 = 用户看到的「后台回来又启动一次」。
+         启动屏只在真正的冷启动出现；reload / 恢复时直接不画，减少闪一下的启动页。 */
+      try {
+        if (sessionStorage.getItem('gently:route-boot') === '1') {
+          document.documentElement.classList.add('is-resuming');
+        }
+      } catch {}
+    </script>
     <!-- 品牌启动屏：主窗口显示，歌词 / 宠物窗口（?window=…）由下面的脚本立即移除 -->
     <div id="boot-splash" role="status" aria-label="Gently">
-      <img src="/logo.svg" width="96" height="96" alt="" />
+      <img src="/logo.png" width="96" height="96" alt="" />
     </div>
 
     <div id="root"></div>

@@ -70,6 +70,9 @@ export interface FrameBox {
     frameHeight: number;
     /** `background-size`：整张图在该动画缩放下的尺寸 */
     backgroundSize: string;
+    /** 上面那个尺寸的数值形式（命中包围盒换算要用它，避免再解析一次字符串） */
+    backgroundWidth: number;
+    backgroundHeight: number;
     /** `background-position` 的绝对值（调用方取负；相对这一格的左上角） */
     offsetX: number;
     offsetY: number;
@@ -341,6 +344,8 @@ export function lookBox(plan: AtlasPlan, look: number): FrameBox | null {
         frameWidth: window.size,
         frameHeight: rows.size,
         backgroundSize: `${cell.background.width}px ${cell.background.height}px`,
+        backgroundWidth: cell.background.width,
+        backgroundHeight: cell.background.height,
         offsetX: window.offset,
         offsetY: rows.offset,
     };
@@ -368,6 +373,8 @@ export function frameBox(plan: AtlasPlan, animation: number, frame: number): Fra
         frameWidth: window.size,
         frameHeight: rows.size,
         backgroundSize: `${cell.background.width}px ${cell.background.height}px`,
+        backgroundWidth: cell.background.width,
+        backgroundHeight: cell.background.height,
         offsetX: window.offset,
         offsetY: rows.offset,
     };

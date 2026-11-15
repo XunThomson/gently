@@ -4,6 +4,16 @@
   },
   "pet": {
     "name": "Gently 小助",
+    "card": {
+      "title": "宠物快捷卡片"
+    },
+    "panel": {
+      "title": "宠物控制面板",
+      "open": "控制面板",
+      "quick": "快捷",
+      "appearance": "外观",
+      "behavior": "行为"
+    },
     "bubble": {
       "idle": "在听什么呀？",
       "petted": "嗯～",
@@ -22,8 +32,7 @@
       "satiety": "饱食",
       "affection": "好感",
       "level": "Lv.{{level}}",
-      "streak": "连续 {{days}} 天",
-      "xp": "经验 {{xp}}/{{next}}"
+      "streak": "连续 {{days}} 天"
     },
     "action": {
       "feed": "喂食",
@@ -33,11 +42,7 @@
       "roamStop": "停止游走",
       "hide": "隐藏宠物"
     },
-    "size": {
-      "small": "小",
-      "medium": "标准",
-      "large": "大"
-    }
+    "size": {}
   },
   "routeError": {
     "title": "这个页面出错了",
@@ -47,13 +52,13 @@
     "reload": "重新加载"
   },
   "errors": {
-      "pet_invalid_argument": "这个操作需要的信息不对，请检查后重试",
-      "pet_not_found": "找不到这只宠物（可能已被移除），刷新设置页再试",
-      "pet_invalid_package": "宠物包不合法：缺少必需字段，或行为引用了不存在的动画",
-      "pet_incompatible": "这个宠物包要求的宠物核心版本比当前高，先升级应用再安装",
-      "pet_limit_exceeded": "宠物包超出限制（体积 / 动画数 / 帧数）",
-      "pet_io_error": "宠物数据读写失败，检查数据目录是否可写",
-      "pet_internal": "宠物核心内部错误（理论上不该发生），重开应用再试",
+    "pet_invalid_argument": "这个操作需要的信息不对，请检查后重试",
+    "pet_not_found": "找不到这只宠物（可能已被移除），刷新设置页再试",
+    "pet_invalid_package": "宠物包不合法：缺少必需字段，或行为引用了不存在的动画",
+    "pet_incompatible": "这个宠物包要求的宠物核心版本比当前高，先升级应用再安装",
+    "pet_limit_exceeded": "宠物包超出限制（体积 / 动画数 / 帧数）",
+    "pet_io_error": "宠物数据读写失败，检查数据目录是否可写",
+    "pet_internal": "宠物核心内部错误（理论上不该发生），重开应用再试",
     "common_invalid_argument": "参数不合法",
     "common_not_found": "找不到对应的资源",
     "common_conflict": "数据已被其它操作改动，请刷新后重试",
@@ -83,7 +88,7 @@
   },
   "nav": {
     "ranking": "排行榜",
-    "hot": "热门推荐",
+    "hot": "发现",
     "download": "下载管理",
     "local": "本地音乐",
     "plugin": "插件管理",
@@ -186,22 +191,13 @@
     "none": "该歌曲在所有已启用音源中均不可播放"
   },
   "recommend": {
-    "tracksTitle": "为你推荐",
-    "tracksSubtitle": "根据你的口味排序",
-    "albumsTitle": "推荐专辑",
-    "albumsSubtitle": "整张听下来",
-    "playlistsTitle": "推荐歌单",
-    "playlistsSubtitle": "按风格挑选",
     "reasonArtist": "因为你听过 {{name}}",
     "reasonTag": "因为你喜欢「{{name}}」",
     "reasonTrending": "近期热门",
     "reasonSimilar": "与「{{name}}」相似",
-    "profile": "口味画像",
     "profileEmpty": "多听几首，这里会出现你的口味画像",
     "trackCount": "{{count}} 首",
-    "dislike": "不感兴趣",
-    "sourceTitle": "来自当前音源",
-    "sourceSubtitle": "{{source}} 自己给的推荐（不是本机画像算的）"
+    "dislike": "不感兴趣"
   },
   "confirm": {
     "clearQueueTitle": "清空播放列表",
@@ -226,8 +222,6 @@
     "deleteSkinDesc": "「{{name}}」将被移除。",
     "removeSubscriptionTitle": "移除订阅源",
     "removeSubscriptionDesc": "将移除订阅「{{name}}」及其缓存的索引；已安装的插件不受影响。",
-    "removePetTitle": "移除宠物",
-    "removePetDesc": "将移除「{{name}}」以及它的好感度记录与素材；此操作不可撤销。",
     "dataDirMoveTitle": "迁移数据目录",
     "dataDirMoveDesc": "将把数据拷贝到 {{path}}，重启后生效；原目录的数据会保留（不会自动删除）。"
   },
@@ -277,8 +271,6 @@
     "repeatOne": "单曲循环",
     "shuffleOn": "随机播放：开",
     "shuffleOff": "随机播放：关",
-    "moreFunctions": "更多功能",
-    "playbackSettings": "播放设置",
     "volume": "音量",
     "openDetail": "打开歌曲详情",
     "queue": "播放列表",
@@ -322,17 +314,17 @@
       "sourceErrorTitle": "这个音源出错了",
       "loadMore": "加载更多"
     },
+    "discoverDemo": {
+      "title": "黑胶 · 3D 演示",
+      "subtitle": "用 Three.js 复现参考图里的唱机与专辑：暖光、黑胶、唱臂与直立封面",
+      "hint": "拖拽环绕 · 唱片自动旋转",
+      "drag": "拖拽环绕"
+    },
     "hot": {
-      "title": "热门推荐",
-      "recommendSub": "基于最近收听",
-      "emptyTitle": "还没有足够的收听记录",
-      "emptyHint": "播放几首歌、收藏几张专辑，或到「本地音乐」扫描一下，这里就会按你的口味排序",
+      "discoverTitle": "发现",
+      "discoverSubtitle": "黑胶、封套与播放状态；后续会作为播放器背景与视觉主题的试验页",
       "searchEmptyTitle": "没有找到匹配的歌曲",
       "searchEmptyHint": "试试其他关键词",
-      "tabRecommend": "热门推荐",
-      "tabDiscover": "发现",
-      "discoverTitle": "发现",
-      "discoverSubtitle": "唱片架：竖着插在架上的是每首歌的包装，聚焦即试听高潮片段",
       "discoverShelf": "唱片架",
       "discoverEmpty": "还没有可陈列的歌曲：先去听几首，或者接上音源",
       "discoverPickHint": "从架上挑一张包装，或点右侧列表",
@@ -606,7 +598,6 @@
       "similarSubtitle": "按你本机库里的口味找的邻居"
     },
     "nowPlaying": {
-      "lyrics": "歌词",
       "noLyrics": "暂无歌词",
       "addedToPlaylist": "已加入「{{name}}」",
       "searchLyrics": "搜索歌词",
@@ -629,9 +620,9 @@
       "lyricsOffsetUnit": "秒",
       "lyricsApplied": "已使用「{{title}}」的歌词",
       "toolsToggle": "歌词工具",
+      "toolTabs": "歌词页工具",
+      "collapse": "收起",
       "playbackTitle": "播放",
-      "coverHidden": "封面已省略",
-      "coverBackground": "封面作为背景",
       "syncTitle": "时间轴校正",
       "syncRemembered": "只对这一首生效，已记住",
       "syncEarlier": "− 更早",
@@ -646,8 +637,6 @@
       "title": "动态背景",
       "hint": "视频/图片在本机处理，不上传；视频支持 mp4 / webm / m4v，图片支持 jpg / png / webp / gif。预设只保存展示参数，不会解析专有壁纸包。",
       "enabled": "启用背景",
-      "on": "开",
-      "off": "关",
       "kind": "背景类型",
       "kindVideo": "视频 / 图片",
       "kindWeb": "网页（静态单文件）",
@@ -765,7 +754,25 @@
     },
     "setting": {
       "title": "设置",
-      "subtitle": "外观、语言与数据源",
+      "subtitle": "外观、播放、存储与本机信息",
+      "appearanceGroup": "外观与语言",
+      "appearanceGroupHint": "明暗、主题与语言；改动立即生效。",
+      "lyricsGroup": "歌词",
+      "lyricsGroupHint": "歌词从哪里来；自动搜索默认关闭，避免启动时替用户联网。",
+      "lyricsAutoSearch": "自动搜索歌词",
+      "lyricsAutoSearchHint": "当前音源没有歌词时，按候选音源的曲目 id 取第一份可用的歌词；都没有就显示「暂无歌词」。",
+      "playbackGroup": "播放与歌词",
+      "playbackGroupHint": "桌面歌词窗口的锁定与观感，只在桌面端生效。",
+      "sourceGroupHint": "列表怎么展示、优先用哪个音源和音质；当前生效的音源也在这里。",
+      "downloadGroupHint": "文件存到哪里、同时下载几首、缺档时怎么办。",
+      "petGroupHint": "独立置顶小窗里的宠物，默认关闭。",
+      "backgroundGroup": "背景与主页",
+      "backgroundGroupHint": "动态背景；桌面端另有壁纸准备，手机端另有启动页。",
+      "storageGroup": "存储与缓存",
+      "storageGroupHint": "缓存占用与上限、数据目录的位置；桌面端可迁移数据目录。",
+      "aboutGroup": "关于与诊断",
+      "aboutGroupHint": "版本信息与恢复默认设置；桌面端另有本机核心诊断。",
+      "sectionNav": "设置分组",
       "homePage": "主页",
       "homePageHint": "启动应用后首先打开哪一页（下次启动生效）。",
       "homePageLabel": "启动页",
@@ -774,7 +781,6 @@
       "resetHint": "把外观、音源、下载、背景、主页等界面设置恢复为默认值；不会删除本地音乐、插件、下载文件或账号凭据。",
       "resetConfirmTitle": "恢复默认设置",
       "resetConfirmDesc": "将清除全部界面设置并在重新加载后恢复默认值。本地音乐、插件与下载文件不会删除。继续？",
-      "appearance": "外观",
       "openThemeMarket": "打开主题市场",
       "themeMode": "主题模式",
       "themeLight": "浅色",
@@ -783,7 +789,6 @@
       "screenDim": "夜间柔光",
       "screenDimHint": "把整屏压暗一点，减轻浅色主题长时间观看的刺眼感；0% 即关闭。",
       "language": "语言",
-      "dataSource": "数据源",
       "activeSource": "当前音源",
       "sourceSection": "音源与音质",
       "sourceDisplay": "列表展示方式",
@@ -799,63 +804,10 @@
       "discoverPreview": "发现页自动试听",
       "discoverPreviewHint": "开启时，在「发现」里聚焦一张包装就会试听 20 秒（压低音量、不影响正在播放的歌曲）。起播位置按歌曲中段估计（源里没有高潮时间戳）；没有取到可播地址或时长时不发声。",
       "petSection": "宠物（Beta）",
-      "petBeta": "Beta 1.0",
       "petToggle": "宠物",
       "petHint": "打开后宠物会出现在独立置顶小窗里：左键摸头、拖动本体搬位置、悬停查看状态，右键打开喂食与大小菜单。透明区域点击穿透；宠物走独立引擎与独立数据库，默认关闭。",
-      "petSize": "宠物大小",
       "petSizeExact": "宠物大小（像素）",
       "petSizeUnit": "{{value}} px",
-      "petSizeHint": "拖动滑杆或直接输入 {{min}}–{{max}} 之间的像素高度；三个快捷档只是常用值，不是限制。",
-      "petNeedsDesktop": "宠物需要桌面端本机核心；浏览器预览里没有宠物引擎，因此不可用。",
-      "petInstalled": "已安装",
-      "petNone": "还没有宠物（打开开关时会自动装一只内置的）",
-      "petCount": "共 {{count}} 只（同一时刻只展示一只）",
-      "petActive": "出战",
-      "petIdle": "休息",
-      "petAffection": "好感 {{value}}",
-      "petSwitch": "换成这只",
-      "petRemove": "移除",
-      "petImport": "导入宠物包",
-      "petImportClose": "收起导入",
-      "petLock": "点击穿透（锁定宠物窗口）",
-      "petLockHint": "打开后鼠标点击会穿过宠物窗口，宠物不会被点到；宠物窗口也拖不动了——解锁入口只在这里。",
-      "petDebug": "调试面板（开发）",
-      "petDebugOpen": "展开",
-      "petDebugPet": "出战宠物",
-      "petDebugWindow": "宠物窗口",
-      "petDebugVisible": "可见",
-      "petDebugHidden": "隐藏",
-      "petDebugOff": "关",
-      "petDebugOn": "开",
-      "petDebugRequires": "包要求 ≥",
-      "petDebugCore": "宠物核心",
-      "petDebugAnyCore": "包没写版本要求",
-      "petDebugSwitches": "窗口开关",
-      "petDebugSaved": "记住的位置",
-      "petDebugAtlas": "图集",
-      "petDebugNoAtlas": "没有图集（程序化渲染）",
-      "petDebugFrame": "最近一帧",
-      "petDebugNoProbe": "还没读到（点「探测一帧」重试）",
-      "petDebugProbe": "探测一帧",
-      "petDebugTouch": "摸一下",
-      "petDebugReset": "重置窗口位置",
-      "petDebugNone": "—",
-      "petDebugOk": "完成",
-      "petDebugFailed": "失败",
-      "petDebugHint": "只读信息来自三处：核心资料、宿主窗口、渲染层的最近一帧。「探测一帧」是调一次 pet.tick（dtMs = 0），不会推进动画。",      "petRoam": "在屏幕上走动",
-      "petRoamHint": "打开后宠物会每隔十几秒自己走到桌面底部的另一个位置（优先用 runLeft / runRight 两个动作）；光标放在它身上时会停住。",
-      "petDropHint": "把 pet.json 和 spritesheet.webp 拖到这里（也可以直接粘贴 JSON、点下面选图集）",
-      "petImportTitle": "宠物包（pet.json + 可选图集；也支持 Codex Pet v1）",
-      "petSpecPlaceholder": "把 pet.json 的内容粘贴到这里（我们的格式，或 Codex Pet v1 的 {id, displayName, spritesheetPath}）",
-      "petAtlasLabel": "选择图集图片（png / webp，可选）",
-      "petAtlasHint": "图集可选：横向帧条或 sprite sheet（帧数由 animations / Codex 约定决定）；白底图会自动去底，没有图集时用程序化渲染。",
-      "petAtlasPicked": "已选择 {{name}}",
-      "petInstall": "安装",
-      "petImported": "宠物包已安装",
-      "petNeedSpec": "请先粘贴 pet.json 的内容",
-      "petFeed": "喂食",
-      "petHungry": "饿了",
-      "lyricsSection": "桌面歌词",
       "lyricsLock": "锁定歌词窗口（鼠标点击穿透）",
       "lyricsLockOff": "不锁定",
       "lyricsLockOn": "锁定",
@@ -868,7 +820,6 @@
       "lyricsSweepOff": "关闭",
       "lyricsSweepOn": "开启",
       "lyricsSweepHint": "开启后当前行会按进度从左到右点亮；进度由歌词窗口自己按时间插值，主窗口每秒同步一次位置。",
-      "about": "关于",
       "version": "版本 {{version}}",
       "diagnostics": "本机核心",
       "diagRuntime": "运行环境",
@@ -959,20 +910,3 @@
     "en": "English"
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

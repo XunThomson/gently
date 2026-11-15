@@ -107,6 +107,16 @@ async function applyWindowSize(
 
 export const windowService = {
     minimize: () => runDesktop((w) => w.minimize()),
+    /**
+     * 回到前台时把主窗口重新拉回前台并请求一次焦点（R145）。
+     * 部分 Windows/WebView2 组合在长时间后台后，首个输入事件才会唤醒渲染进程；
+     * 回来时主动 show + setFocus，比等用户点一下更稳。手机上 no-op。
+     */
+    wakeMainWindow: () =>
+        runDesktop(async (w) => {
+            await w.show();
+            await w.setFocus();
+        }),
     toggleMaximize: () => runDesktop((w) => w.toggleMaximize()),
     close: () => run((w) => w.close()),
 
@@ -269,17 +279,61 @@ export const windowService = {
         try {
             const win = await petWindow();
             if (!win) return false;
-            await resizePetWindowForSize(win, windowService.petSize());
-            await placePetWindow(win, windowService.petSize());
+            /* 已经显示时**不要重摆位**（R144）：主窗口重载 / 重开桥会再调一次
+               showPetWindow；旧实现每次都按「上次拖拽的锚点」重新摆窗口，
+               宠物的当前走动位置会被瞬间拉回去，看起来就是「位置重置了」。 */
+            const visible = await win.isVisible().catch(() => false);
+            const size = windowService.petSize();
+            const expected = petWindowDimensions(petBodyForSize(size));
+            const [scale, inner, minimized] = await Promise.all([
+                win.scaleFactor().catch(() => 1),
+                win.innerSize().catch(() => ({width: 0, height: 0})),
+                win.isMinimized().catch(() => false),
+            ]);
+            /* 位置在屏幕外（拔掉副屏 / 改分辨率）时也重摆。Tauri 的 WebviewWindow
+               没有 currentMonitor，这里用 outerPosition 与 availableMonitors 判断。 */
+            const {availableMonitors} = await import('@tauri-apps/api/window');
+            const [position, monitors] = await Promise.all([
+                win.outerPosition().catch(() => null),
+                availableMonitors().catch(() => []),
+            ]);
+            const onScreen =
+                !position ||
+                monitors.length === 0 ||
+                monitors.some(
+                    (monitor) =>
+                        position.x < monitor.position.x + monitor.size.width &&
+                        position.x + inner.width > monitor.position.x &&
+                        position.y < monitor.position.y + monitor.size.height &&
+                        position.y + inner.height > monitor.position.y,
+                );
+            /* R145：可见但尺寸不对（窗口初始化失败 / DPI 变化 / 上次是错误页）
+               也必须重设；否则 show() 只会把一个 200×160 的空窗摆出来，宠物「消失」。 */
+            const wrongSize =
+                inner.width < Math.round(expected.width * scale) - 4 ||
+                inner.height < Math.round(expected.height * scale) - 4;
+            if (!visible || wrongSize || minimized || !onScreen) {
+                await resizePetWindowForSize(win, size);
+                await placePetWindow(win, size);
+            }
+            if (minimized) await win.unminimize().catch(() => undefined);
+            await win.setAlwaysOnTop(true).catch(() => undefined);
+            /* R145：先让整窗穿透，再由 pet_watch 根据真实热区放开。
+               否则 HUD 的大块透明画布会在主窗口上方吃掉点击（表现为「点不动」，
+               点一下宠物才恢复）。 */
+            await win.setIgnoreCursorEvents(true).catch(() => undefined);
             await win.show();
             /* 锁定状态是持久化的：每次显示都重新同步一次（窗口重建后不会「自己解锁」） */
             const locked = windowService.petLocked();
-            await win.setIgnoreCursorEvents(locked);
+            await win.setIgnoreCursorEvents(true);
             void import('@tauri-apps/api/event').then(({emit}) => emit(PET_LOCK_EVENT, {locked}));
             /* 走动开关也要同步：宿主那边是常驻轮询，不知道前端存了什么 */
             void import('@tauri-apps/api/event').then(({emit}) =>
                 emit(PET_ROAM_EVENT, {enabled: windowService.petRoam()}),
             );
+            /* 宠物总是置顶窗口，show() 后可能抢走焦点；把主窗口重新拿回来，
+               避免「进入软件先得点一下宠物才能操作」的锁死感（R145）。 */
+            await (await currentWindow()).setFocus().catch(() => undefined);
             return true;
         } catch (err) {
             console.warn('[window] 显示宠物窗口失败', err);
@@ -303,7 +357,7 @@ export const windowService = {
         }
     },
 
-    /** 宠物窗口当前是否可见 */
+    /** 宠物窗口当前是否可见（读取失败按「可见」处理，避免心跳每 5s 重摆窗口） */
     petWindowVisible: async (): Promise<boolean> => {
         if (!isTauri()) return false;
         try {
@@ -311,7 +365,7 @@ export const windowService = {
             return win ? await win.isVisible() : false;
         } catch (err) {
             console.warn('[window] 读取宠物窗口状态失败', err);
-            return false;
+            return true;
         }
     },
 

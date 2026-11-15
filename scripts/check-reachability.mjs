@@ -42,6 +42,8 @@ const STORE = join(root, 'src', 'store');
 const DELIBERATE = {
     corePushHistory:
         '写历史统一走 `playback.report`（R10 决定：它多带「实际播成的源 + 真实秒数」）；`library.history.push` 是核心里同一份实现的等价入口，前端**不该双写**（会重复计一次播放）',
+    'catalogService.fetchRecommendFrom':
+        'R145 把「热门推荐」合并成「发现」页，推荐列表与源侧推荐不再有界面入口；服务层保留给测试与未来恢复推荐页，不在 UI 硬留一个假入口',
 };
 
 /**
@@ -59,13 +61,17 @@ const DELIBERATE_ACTIONS = {
 /* ---------------- 宠物域（独立命名空间，ADR 0010） ---------------- */
 
 /**
- * 有意暂时没有界面入口的宠物命令：键是命令名，值是理由（当前为空）。
+ * 有意暂时没有界面入口的宠物命令。
  *
- * M2 起 7 条命令都有界面入口：`pet.state` / `pet.install` / `pet.setActive` / `pet.remove`
- * 在设置页的宠物面板，`pet.tick` / `pet.atlas` 在渲染适配器，`pet.interact` 在点击处理里。
- * 以后真有取舍时往这里加，并写清理由。
+ * R145 按用户要求把设置页宠物组收敛为「只保留启用开关」，安装 / 切换 / 卸载入口
+ * 暂时移出设置；内置宠物不需要它们，未来由独立的宠物控制面板窗口接回。
+ * `pet.state` / `pet.tick` / `pet.atlas` / `pet.interact` 仍在渲染器里。
  */
-const DELIBERATE_PET = {};
+const DELIBERATE_PET = {
+    'pet.install': 'R145 设置页宠物组只留启用；安装自定义宠物包后续由独立控制面板接回',
+    'pet.setActive': 'R145 设置页宠物组只留启用；多宠物切换后续由独立控制面板接回',
+    'pet.remove': 'R145 设置页宠物组只留启用；卸载自定义宠物后续由独立控制面板接回',
+};
 
 /** 递归收集源码文件 */
 function sourceFiles(dir, {exclude = []} = {}) {
@@ -460,7 +466,6 @@ const PET_METHODS = {
     'pet.atlas': 'atlas',
     'pet.state': 'state',
     'pet.tick': 'tick',
-    'pet.install': 'install',
     'pet.setActive': 'setActive',
     'pet.interact': 'interact',
     'pet.remove': 'remove',

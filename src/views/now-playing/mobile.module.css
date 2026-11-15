@@ -1,0 +1,237 @@
+/* 手机歌词页 / 全屏播放页（R144）：居中歌词 + 底部操作 / 进度 / 传输。
+   与桌面（`desktop.module.css`）是两份独立布局，只在歌词区与工具内容上共用组件。 */
+
+.page {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 0 var(--mobile-padding-x)
+        max(var(--space-3), env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+    overflow: hidden;
+    /* R145：不再用封面做背景；半透明 + 轻模糊让自定义动态背景透出来 */
+    background:
+        radial-gradient(120% 70% at 50% 0%, var(--brand-soft), transparent 62%),
+        color-mix(in srgb, var(--bg-app) 68%, transparent);
+    backdrop-filter: blur(8px);
+    /* 歌词比桌面大一档；非当前行在封面上也读得清 */
+    --lyrics-font-size: var(--now-playing-mobile-lyrics-font-size);
+    --lyrics-padding-y: var(--space-8);
+    --lyrics-padding-x: var(--space-2);
+    --lyrics-inactive-opacity: var(--now-playing-lyrics-inactive-opacity);
+    /* 下滑关闭：松手后弹回 / 关闭的过渡；拖动中由 data-dragging 关掉 */
+    transition: transform var(--motion-base), opacity var(--motion-fast);
+}
+
+.page[data-dragging='true'] {
+    transition: none;
+}
+
+/* ---------- 顶栏：收起 + 标题 / 歌手 ---------- */
+
+.topbar {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: none;
+    min-height: var(--mobile-header-height);
+    /* 顶栏没有滚动语义：把垂直手势留给「下滑关闭」 */
+    touch-action: none;
+    cursor: grab;
+}
+
+.topbar:active {
+    cursor: grabbing;
+}
+
+.iconButton {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: var(--mobile-control-size);
+    height: var(--mobile-control-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.iconButton:active {
+    background: var(--bg-active);
+}
+
+.heading {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+}
+
+.title {
+    overflow: hidden;
+    max-width: 100%;
+    color: var(--text-primary);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.artist {
+    overflow: hidden;
+    max-width: 100%;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.topbarSpacer {
+    flex: none;
+    width: var(--mobile-control-size);
+}
+
+/* ---------- 歌词舞台 ---------- */
+
+.stage {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+.lyrics {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
+/* ---------- 底部：操作 / 进度 / 传输 ---------- */
+
+.controls {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    flex: none;
+    padding-top: var(--space-2);
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 var(--space-3);
+}
+
+.action {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: var(--mobile-row-action-size);
+    height: var(--mobile-row-action-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.action:active {
+    background: var(--bg-active);
+}
+
+.action[data-active='true'] {
+    color: var(--brand);
+}
+
+.action:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.seekRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-2);
+}
+
+.time {
+    flex: none;
+    min-width: calc(var(--space-12) - var(--space-2));
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+/* SeekBar 自身是 absolute（贴父级顶边），这里给它一个有高度的包含块 */
+.seekHit {
+    position: relative;
+    flex: 1;
+    height: var(--player-progress-hover-height);
+    min-width: 0;
+}
+
+.transport {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-10);
+    padding: var(--space-1) 0 var(--space-2);
+}
+
+.transportButton {
+    display: grid;
+    place-items: center;
+    width: var(--mobile-control-size);
+    height: var(--mobile-control-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.transportButton:active {
+    background: var(--bg-active);
+}
+
+.transportMain {
+    display: grid;
+    place-items: center;
+    width: calc(var(--mobile-control-size) + var(--space-6));
+    height: calc(var(--mobile-control-size) + var(--space-6));
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: var(--brand);
+    color: var(--brand-contrast);
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+    transition: transform var(--motion-fast);
+}
+
+.transportMain:active {
+    transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .transportMain {
+        transition: none;
+    }
+}

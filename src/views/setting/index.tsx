@@ -1,43 +1,26 @@
-import {useCallback, useEffect, useState} from 'react';
+import {useMemo} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
-import type {CacheClearKind, CacheStatusDto} from '../../api';
 import {Page} from '../../components/ui/page';
 import {Button} from '../../components/ui/button';
-import {UnderlineRadioGroup} from '../../components/ui/radio-group';
 import {BadgeCell, TextCell} from '../../components/ui/data-table';
 import {appConfig} from '../../config/app.config';
 import {SUPPORTED_LANGS} from '../../i18n';
-import {errorText} from '../../i18n/errors';
-import {catalogService, coreAvailable, coreSystem, windowService} from '../../services';
-import {
-    readLyricsWindowSettings,
-    writeLyricsWindowSettings,
-    type LyricsBackground,
-} from '../../utils/lyricsWindowSettings';
+import {catalogService} from '../../services';
 import {useActions, usePluginState, useSelect} from '../../store';
 import {getThemePreset, useTheme} from '../../theme';
 import {resetPersistedUi} from '../../store/persist';
 import type {ThemeMode} from '../../theme';
 import type {DownloadQualityFallback, SourceDisplayMode, SourceFilterStyle, TrackQuality} from '../../types';
-import {formatBytes} from '../../utils/helpers';
-
-/**
- * 缓存上限的几档固定值（256 MiB ~ 8 GiB）。
- *
- * 为什么不做「任意输入」：一个手滑填成 0 或 100 GB 的设置，用户自己很难判断影响；
- * 给几档够用且都在核心的合法区间（`minBytes`~`maxBytes`）内。
- */
-const CACHE_LIMIT_OPTIONS = [
-    256 * 1024 * 1024,
-    512 * 1024 * 1024,
-    1024 * 1024 * 1024,
-    2 * 1024 * 1024 * 1024,
-    4 * 1024 * 1024 * 1024,
-    8 * 1024 * 1024 * 1024,
-];
 import {QUALITIES_DESC, qualityLabelKey} from '../../utils/quality';
 import {isMobilePlatform} from '../../utils/platform';
+import {AnchorNav, type AnchorItem} from './components/anchor-nav';
+import {ChoiceField} from './components/choice-field';
+import {ToggleField} from './components/toggle-field';
+import {Section} from './components/section';
+import {Field} from './components/field';
+import {CacheSettings} from './components/cache-settings';
+import {LyricsSettings} from './components/lyrics-settings';
 import {DiagnosticsCard} from './components/diagnostics-card';
 import {BackgroundCard} from './components/background-card';
 import {DataDirCard} from './components/data-dir-card';
@@ -50,7 +33,16 @@ const THEME_MODES: ThemeMode[] = ['light', 'dark', 'system'];
 const DISPLAY_MODES: SourceDisplayMode[] = ['aggregate', 'perSource'];
 const FILTER_STYLES: SourceFilterStyle[] = ['tabs', 'drawer'];
 
-/** 设置视图：外观（明暗 / 主题市场 / 语言）、音源与音质、数据源与版本。 */
+/**
+ * 设置视图：按语义分组的设置页。
+ *
+ * 分组顺序是固定的（外观与语言 → 播放与歌词 → 音源与音质 → 下载 → 宠物 →
+ * 背景与主页 → 存储与缓存 → 关于与诊断），桌面左侧有分组锚点导航，
+ * 窄窗口 / 手机退化成单列（手机上桌面专属的组整组隐藏）。
+ *
+ * 每个分组是一张卡片（`Section`），组内只有「行」（`Field`）；子块用
+ * subTitle + 分隔线，不再套第二层卡片。
+ */
 export default function SettingView() {
     const {t, i18n} = useTranslation();
     const navigate = useNavigate();
@@ -62,6 +54,7 @@ export default function SettingView() {
     const filterStyle = useSelect((s) => s.ui.sourceFilterStyle);
     const preferredSource = useSelect((s) => s.ui.preferredSource);
     const preferredQuality = useSelect((s) => s.ui.preferredQuality);
+    const lyricsAutoSearch = useSelect((s) => s.ui.lyricsAutoSearch);
     const confirmDestructive = useSelect((s) => s.ui.confirmDestructive);
     const screenDim = useSelect((s) => s.ui.screenDim);
     const downloadDir = useSelect((s) => s.ui.downloadDir);
@@ -69,21 +62,21 @@ export default function SettingView() {
     const downloadQualityFallback = useSelect((s) => s.ui.downloadQualityFallback);
     const downloadMaxConcurrent = useSelect((s) => s.ui.downloadMaxConcurrent);
     const discoverAutoPreview = useSelect((s) => s.ui.discoverAutoPreview);
-    const petEnabled = useSelect((s) => s.ui.petEnabled);
     const {
         setSourceDisplay,
         setSourceFilterStyle,
         setPreferredSource,
         setPreferredQuality,
+        setLyricsAutoSearch,
         setConfirmDestructive,
         setScreenDim,
         setDiscoverAutoPreview,
-        setPetEnabled,
         setDownloadDir,
         setDownloadQuality,
         setDownloadQualityFallback,
         setDownloadMaxConcurrent,
     } = useActions().ui;
+    const {requestConfirm} = useActions().dialog;
     const pluginList = usePluginState().list;
 
     /* 可选的优先音源：store 的插件列表（桌面端来自核心），只取已启用的 */
@@ -94,373 +87,209 @@ export default function SettingView() {
      */
     const source = catalogService.activeSource(pluginList);
 
-    /* 缓存占用是**本机核心**的数据：桌面端打开设置就查一次；浏览器预览如实说明不可用 */
-    const {requestConfirm} = useActions().dialog;
-    const cacheAvailable = coreAvailable();
-    const [cache, setCache] = useState<CacheStatusDto | null>(null);
-    const [cacheError, setCacheError] = useState<string | null>(null);
-    const [cacheNotice, setCacheNotice] = useState<string | null>(null);
-    const [cacheBusy, setCacheBusy] = useState(false);
-
-    const refreshCache = useCallback(async () => {
-        if (!cacheAvailable) return;
-        const result = await coreSystem.cacheStatus();
-        if (result.ok) {
-            setCache(result.data);
-            setCacheError(null);
-        } else {
-            setCacheError(errorText(t, result.error));
-        }
-    }, [cacheAvailable, t]);
-
-    useEffect(() => {
-        void refreshCache();
-    }, [refreshCache]);
-
-    const clearCache = useCallback(
-        (kind: CacheClearKind) => {
-            requestConfirm({
-                titleKey: 'page.setting.cacheClearConfirm',
-                descKey: 'page.setting.cacheClearDesc',
-                tone: 'danger',
-                onConfirm: async () => {
-                    setCacheBusy(true);
-                    const result = await coreSystem.cacheClear(kind);
-                    setCacheBusy(false);
-                    if (result.ok) {
-                        setCacheNotice(
-                            t('page.setting.cacheCleared', {
-                                files: result.data.removedFiles,
-                                size: formatBytes(result.data.removedBytes),
-                            }),
-                        );
-                        setCacheError(null);
-                        await refreshCache();
-                    } else {
-                        setCacheError(errorText(t, result.error));
-                    }
-                },
-            });
-        },
-        [requestConfirm, refreshCache, t],
-    );
-
-    /** 改缓存上限：核心立即按新上限淘汰，返回最新占用 */
-    const changeLimit = useCallback(
-        async (limitBytes: number) => {
-            if (!cacheAvailable) return;
-            setCacheBusy(true);
-            const result = await coreSystem.cacheConfig(limitBytes);
-            setCacheBusy(false);
-            if (result.ok) {
-                setCache(result.data);
-                setCacheError(null);
-                setCacheNotice(t('page.setting.cacheLimitSaved'));
-            } else {
-                setCacheError(errorText(t, result.error));
-            }
-        },
-        [cacheAvailable, t],
-    );
-
-    /* 歌词窗口锁定（点击穿透）：状态持久化在 localStorage，解锁只能在这里——锁定后
-       歌词窗口自己收不到点击，靠它自己的按钮解锁是死路 */
-    const [lyricsLocked, setLyricsLockedState] = useState(() => windowService.desktopLyricsLocked());
-    /* 歌词窗口的观感设置（背景 / 逐字展开）：与歌词窗口读同一份 localStorage */
-    const [lyricsWindow, setLyricsWindow] = useState(readLyricsWindowSettings);
-
-    /* 先切界面状态再落盘：锁定是个开关，点下去就该立刻看到结果；
-       写盘/窗口调用失败只记日志，不把开关弹回去（那会让人以为点击没生效） */
-    const setLyricsLocked = useCallback((locked: boolean) => {
-        setLyricsLockedState(locked);
-        void windowService.setDesktopLyricsLocked(locked);
-    }, []);
-
-    const cacheTotal = cache ? cache.mediaBytes + cache.catalogBytes + cache.coversBytes : 0;
-
     const currentLang = (i18n.resolvedLanguage ?? 'zh').slice(0, 2);
     /* 手机形态：桌面专有的设置项一律不显示（用户反馈 R121「大量 desktop 专有名词与设置项」）：
        宠物窗口、桌面歌词窗口、网页壁纸助手、诊断里的路径与「在文件夹中显示」、
        数据目录迁移——这些在手机上要么没有那个窗口，要么根本没有「路径」这个概念。 */
     const mobile = isMobilePlatform();
 
+    /* 锚点导航与分组的 id / 标题一一对应；手机上没有导航，也不需要这份清单 */
+    const anchors = useMemo<AnchorItem[]>(() => {
+        const list: AnchorItem[] = [{id: 'appearance', label: t('page.setting.appearanceGroup')}];
+        list.push({id: 'lyrics', label: t('page.setting.lyricsGroup')});
+        if (!mobile) list.push({id: 'playback', label: t('page.setting.playbackGroup')});
+        list.push(
+            {id: 'source', label: t('page.setting.sourceSection')},
+            {id: 'download', label: t('page.setting.download')},
+        );
+        if (!mobile) list.push({id: 'pet', label: t('page.setting.petSection')});
+        list.push(
+            {id: 'background', label: t('page.setting.backgroundGroup')},
+            {id: 'storage', label: t('page.setting.storageGroup')},
+            {id: 'about', label: t('page.setting.aboutGroup')},
+        );
+        return list;
+    }, [mobile, t]);
+
     return (
         <Page title={t('page.setting.title')} subtitle={t('page.setting.subtitle')}>
-            <section className={styles.card}>
-                <h2 className={styles.cardTitle}>{t('page.setting.appearance')}</h2>
+            <div className={styles.layout}>
+                {!mobile && <AnchorNav items={anchors} label={t('page.setting.sectionNav')}/>}
 
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.themeMode')}</span>
-                    <UnderlineRadioGroup
-                        name="theme-mode"
-                        value={mode}
-                        onChange={setMode}
-                        options={THEME_MODES.map((value) => ({
-                            value,
-                            label: t(`page.setting.theme${value[0].toUpperCase()}${value.slice(1)}`),
-                        }))}
-                    />
-                </div>
-
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('toolbar.themeMarket')}</span>
-                    <span className={styles.value}>
-                        <TextCell tone="muted">{preset.name}</TextCell>
-                        <Button size="sm" variant="ghost" onClick={() => navigate('/theme')}>
-                            {t('page.setting.openThemeMarket')}
-                        </Button>
-                    </span>
-                </div>
-
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.screenDim')}</span>
-                    <span className={styles.value}>
-                        <input
-                            className={styles.range}
-                            type="range"
-                            min={0}
-                            max={30}
-                            step={1}
-                            value={screenDim}
-                            aria-label={t('page.setting.screenDim')}
-                            onChange={(event) => setScreenDim(Number(event.target.value))}
+                <div className={styles.sections}>
+                    {/* ---------- 外观与语言 ---------- */}
+                    <Section
+                        id="appearance"
+                        title={t('page.setting.appearanceGroup')}
+                        description={t('page.setting.appearanceGroupHint')}
+                    >
+                        <ChoiceField
+                            label={t('page.setting.themeMode')}
+                            value={mode}
+                            onChange={(value) => setMode(value as ThemeMode)}
+                            options={THEME_MODES.map((value) => ({
+                                value,
+                                label: t(`page.setting.theme${value[0].toUpperCase()}${value.slice(1)}`),
+                            }))}
                         />
-                        <span className={styles.valueText}>{screenDim}%</span>
-                    </span>
-                </div>
-                <p className={styles.hint}>{t('page.setting.screenDimHint')}</p>
 
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.language')}</span>
-                    <UnderlineRadioGroup
-                        name="language"
-                        value={currentLang}
-                        onChange={(value) => void i18n.changeLanguage(value)}
-                        options={SUPPORTED_LANGS.map((value) => ({
-                            value,
-                            label: t(`language.${value}`),
-                        }))}
-                    />
-                </div>
+                        <Field label={t('toolbar.themeMarket')}>
+                            <TextCell tone="muted">{preset.name}</TextCell>
+                            <Button size="sm" variant="ghost" onClick={() => navigate('/theme')}>
+                                {t('page.setting.openThemeMarket')}
+                            </Button>
+                        </Field>
 
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.confirmDestructive')}</span>
-                    <span className={styles.value}>
-                        <UnderlineRadioGroup
-                            name="confirm-destructive"
-                            value={confirmDestructive ? 'on' : 'off'}
-                            onChange={(value) => setConfirmDestructive(value === 'on')}
-                            options={[
-                                {value: 'on', label: t('common.confirm')},
-                                {value: 'off', label: t('common.disable')},
-                            ]}
+                        <ChoiceField
+                            label={t('page.setting.language')}
+                            value={currentLang}
+                            onChange={(value) => void i18n.changeLanguage(value)}
+                            options={SUPPORTED_LANGS.map((value) => ({
+                                value,
+                                label: t(`language.${value}`),
+                            }))}
                         />
-                    </span>
-                </div>
-                <p className={styles.hint}>{t('page.setting.confirmHint')}</p>
 
-                {/* 发现页试听：手机 8 个入口里没有「发现」页，这个开关没有意义（R126） */}
-                {!mobile && (
-                    <>
-                        <div className={styles.field}>
-                            <span className={styles.label}>{t('page.setting.discoverPreview')}</span>
-                    <span className={styles.value}>
-                        <UnderlineRadioGroup
-                            name="discover-preview"
-                            value={discoverAutoPreview ? 'on' : 'off'}
-                            onChange={(value) => setDiscoverAutoPreview(value === 'on')}
-                            options={[
-                                {value: 'on', label: t('common.enable')},
-                                {value: 'off', label: t('common.disable')},
-                            ]}
+                        <Field label={t('page.setting.screenDim')} hint={t('page.setting.screenDimHint')}>
+                            <input
+                                className={styles.range}
+                                type="range"
+                                min={0}
+                                max={30}
+                                step={1}
+                                value={screenDim}
+                                aria-label={t('page.setting.screenDim')}
+                                onChange={(event) => setScreenDim(Number(event.target.value))}
+                            />
+                            <span className={styles.valueText}>{screenDim}%</span>
+                        </Field>
+
+                        <ToggleField
+                            label={t('page.setting.confirmDestructive')}
+                            hint={t('page.setting.confirmHint')}
+                            checked={confirmDestructive}
+                            onChange={setConfirmDestructive}
                         />
-                    </span>
-                </div>
-                <p className={styles.hint}>{t('page.setting.discoverPreviewHint')}</p>
-                    </>
-                )}
-            </section>
 
-            {/* ---------- 主页配置：仅移动端 ----------
-                选的是「启动后先打开哪一页」，不是首页模块网格（那版概念已移除） */}
-            {mobile && <HomePageCard/>}
-
-            {/* ---------- 宠物（Beta 1.0）：独立置顶窗口 + 独立引擎 pet-core，默认关 ----------
-                手机上还没有宠物渲染器（见 ANDROID-PLAN），所以整块隐藏，不给假入口 */}
-            {!mobile && (
-                <section className={styles.card}>
-                    <h2 className={styles.cardTitle}>{t('page.setting.petSection')}</h2>
-                    <PetCard enabled={petEnabled} onToggle={setPetEnabled}/>
-                </section>
-            )}
-
-            <BackgroundCard/>
-            {/* 网页壁纸助教写的是本机文件（下载/转换），手机上没有这条路 */}
-            {!mobile && <WallpaperAssistant/>}
-
-            {/* ---------- 桌面歌词（独立窗口）：手机没有这个窗口，整块隐藏 ---------- */}
-            {!mobile && (
-                <section className={styles.card}>
-                    <h2 className={styles.cardTitle}>{t('page.setting.lyricsSection')}</h2>
-
-                    <div className={styles.field}>
-                        <span className={styles.label}>{t('page.setting.lyricsLock')}</span>
-                        <span className={styles.value}>
-                            <UnderlineRadioGroup
-                                name="lyrics-lock"
-                                value={lyricsLocked ? 'lock' : 'free'}
-                                onChange={(value) => void setLyricsLocked(value === 'lock')}
-                                options={[
-                                    {value: 'free', label: t('page.setting.lyricsLockOff')},
-                                    {value: 'lock', label: t('page.setting.lyricsLockOn')},
-                                ]}
+                        {/* 发现页试听：手机 8 个入口里没有「发现」页，这个开关没有意义（R126） */}
+                        {!mobile && (
+                            <ToggleField
+                                label={t('page.setting.discoverPreview')}
+                                hint={t('page.setting.discoverPreviewHint')}
+                                checked={discoverAutoPreview}
+                                onChange={setDiscoverAutoPreview}
                             />
-                        </span>
-                    </div>
-                    <p className={styles.hint}>{t('page.setting.lyricsLockHint')}</p>
-
-                    {/* 背景三档：透明背景在浅色壁纸上可能看不清字，所以默认仍是不透明 */}
-                    <div className={styles.field}>
-                        <span className={styles.label}>{t('page.setting.lyricsBackground')}</span>
-                        <span className={styles.value}>
-                            <UnderlineRadioGroup
-                                name="lyrics-background"
-                                value={lyricsWindow.background}
-                                onChange={(value) =>
-                                    setLyricsWindow(
-                                        writeLyricsWindowSettings({background: value as LyricsBackground}),
-                                    )
-                                }
-                                options={[
-                                    {value: 'solid', label: t('page.setting.lyricsBgSolid')},
-                                    {value: 'translucent', label: t('page.setting.lyricsBgTranslucent')},
-                                    {value: 'transparent', label: t('page.setting.lyricsBgTransparent')},
-                                ]}
-                            />
-                        </span>
-                    </div>
-
-                    {/* 逐字展开（卡拉 OK 式）：默认关闭，用户显式打开 */}
-                    <div className={styles.field}>
-                        <span className={styles.label}>{t('page.setting.lyricsSweep')}</span>
-                        <span className={styles.value}>
-                            <UnderlineRadioGroup
-                                name="lyrics-sweep"
-                                value={lyricsWindow.sweep ? 'on' : 'off'}
-                                onChange={(value) =>
-                                    setLyricsWindow(writeLyricsWindowSettings({sweep: value === 'on'}))
-                                }
-                                options={[
-                                    {value: 'off', label: t('page.setting.lyricsSweepOff')},
-                                    {value: 'on', label: t('page.setting.lyricsSweepOn')},
-                                ]}
-                            />
-                        </span>
-                    </div>
-                    <p className={styles.hint}>{t('page.setting.lyricsSweepHint')}</p>
-                </section>
-            )}
-
-            {/* ---------- 音源与音质 ---------- */}
-            <section className={styles.card}>
-                <h2 className={styles.cardTitle}>{t('page.setting.sourceSection')}</h2>
-
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.sourceDisplay')}</span>
-                    <UnderlineRadioGroup
-                        name="source-display"
-                        value={display}
-                        onChange={setSourceDisplay}
-                        options={DISPLAY_MODES.map((value) => ({
-                            value,
-                            label: t(
-                                value === 'aggregate'
-                                    ? 'page.setting.sourceDisplayAggregate'
-                                    : 'page.setting.sourceDisplayPerSource',
-                            ),
-                        }))}
-                    />
-                </div>
-
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.sourceFilterStyle')}</span>
-                    <UnderlineRadioGroup
-                        name="source-filter-style"
-                        value={filterStyle}
-                        onChange={setSourceFilterStyle}
-                        options={FILTER_STYLES.map((value) => ({
-                            value,
-                            label: t(
-                                value === 'tabs'
-                                    ? 'page.setting.sourceFilterTabs'
-                                    : 'page.setting.sourceFilterDrawer',
-                            ),
-                        }))}
-                    />
-                </div>
-
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.preferredSource')}</span>
-                    <UnderlineRadioGroup
-                        name="preferred-source"
-                        value={preferredSource ?? 'auto'}
-                        onChange={(value) => setPreferredSource(value === 'auto' ? null : value)}
-                        options={[
-                            {value: 'auto', label: t('source.auto')},
-                            ...activeSources.map((item) => ({value: item.id, label: item.name})),
-                        ]}
-                    />
-                </div>
-
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.preferredQuality')}</span>
-                    <UnderlineRadioGroup
-                        name="preferred-quality"
-                        value={preferredQuality}
-                        onChange={(value) => setPreferredQuality(value as TrackQuality)}
-                        options={QUALITIES_DESC.map((value) => ({
-                            value,
-                            label: t(qualityLabelKey(value)),
-                        }))}
-                    />
-                </div>
-            </section>
-
-            <section className={styles.card}>
-                <h2 className={styles.cardTitle}>{t('page.setting.dataSource')}</h2>
-
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.activeSource')}</span>
-                    <span className={styles.value}>
-                        {source ? (
-                            <>
-                                <TextCell>{source.name}</TextCell>{' '}
-                                <BadgeCell tone="accent">v{source.version}</BadgeCell>
-                                <TextCell tone="muted">
-                                    {t('source.count', {count: activeSources.length})}
-                                </TextCell>
-                            </>
-                        ) : (
-                            /* 一个音源都没装：如实说「还没有安装任何插件」，不显示假音源 */
-                            <TextCell tone="muted">{t('page.plugin.empty')}</TextCell>
                         )}
-                    </span>
-                </div>
-            </section>
+                    </Section>
 
-            <section className={styles.card}>
-                <h2 className={styles.cardTitle}>{t('page.setting.download')}</h2>
+                    {/* ---------- 歌词（两端都可见；自动搜索默认关）---------- */}
+                    <Section
+                        id="lyrics"
+                        title={t('page.setting.lyricsGroup')}
+                        description={t('page.setting.lyricsGroupHint')}
+                    >
+                        <ToggleField
+                            label={t('page.setting.lyricsAutoSearch')}
+                            hint={t('page.setting.lyricsAutoSearchHint')}
+                            checked={lyricsAutoSearch}
+                            onChange={setLyricsAutoSearch}
+                        />
+                    </Section>
 
-                {/* 手机形态没有「下载目录」可填：如实说明文件落在应用私有目录（R130） */}
-                {mobile && <p className={styles.hint}>{t('page.setting.downloadDirMobileHint')}</p>}
+                    {/* ---------- 播放与歌词（桌面歌词窗口，手机没有这个窗口 → 整组隐藏）---------- */}
+                    {!mobile && (
+                        <Section
+                            id="playback"
+                            title={t('page.setting.playbackGroup')}
+                            description={t('page.setting.playbackGroupHint')}
+                        >
+                            <LyricsSettings/>
+                        </Section>
+                    )}
 
-                {/* 下载目录是一条**本机路径**：手机上既没有可粘贴的绝对路径，也没有「在文件夹中显示」，
-                    所以整块不显示（文件落在应用私有目录，由系统管理） */}
-                {!mobile && (
-                    <>
-                        <div className={styles.field}>
-                            <span className={styles.label}>{t('page.setting.downloadDir')}</span>
-                            <span className={styles.value}>
+                    {/* ---------- 音源与音质 ---------- */}
+                    <Section
+                        id="source"
+                        title={t('page.setting.sourceSection')}
+                        description={t('page.setting.sourceGroupHint')}
+                    >
+                        <ChoiceField
+                            label={t('page.setting.sourceDisplay')}
+                            value={display}
+                            onChange={(value) => setSourceDisplay(value as SourceDisplayMode)}
+                            options={DISPLAY_MODES.map((value) => ({
+                                value,
+                                label: t(
+                                    value === 'aggregate'
+                                        ? 'page.setting.sourceDisplayAggregate'
+                                        : 'page.setting.sourceDisplayPerSource',
+                                ),
+                            }))}
+                        />
+
+                        <ChoiceField
+                            label={t('page.setting.sourceFilterStyle')}
+                            value={filterStyle}
+                            onChange={(value) => setSourceFilterStyle(value as SourceFilterStyle)}
+                            options={FILTER_STYLES.map((value) => ({
+                                value,
+                                label: t(
+                                    value === 'tabs'
+                                        ? 'page.setting.sourceFilterTabs'
+                                        : 'page.setting.sourceFilterDrawer',
+                                ),
+                            }))}
+                        />
+
+                        <ChoiceField
+                            label={t('page.setting.preferredSource')}
+                            value={preferredSource ?? 'auto'}
+                            onChange={(value) => setPreferredSource(value === 'auto' ? null : value)}
+                            options={[
+                                {value: 'auto', label: t('source.auto')},
+                                ...activeSources.map((item) => ({value: item.id, label: item.name})),
+                            ]}
+                        />
+
+                        <ChoiceField
+                            label={t('page.setting.preferredQuality')}
+                            value={preferredQuality}
+                            onChange={(value) => setPreferredQuality(value as TrackQuality)}
+                            options={QUALITIES_DESC.map((value) => ({
+                                value,
+                                label: t(qualityLabelKey(value)),
+                            }))}
+                        />
+
+                        <Field label={t('page.setting.activeSource')}>
+                            {source ? (
+                                <>
+                                    <TextCell>{source.name}</TextCell>{' '}
+                                    <BadgeCell tone="accent">v{source.version}</BadgeCell>
+                                    <TextCell tone="muted">
+                                        {t('source.count', {count: activeSources.length})}
+                                    </TextCell>
+                                </>
+                            ) : (
+                                /* 一个音源都没装：如实说「还没有安装任何插件」，不显示假音源 */
+                                <TextCell tone="muted">{t('page.plugin.empty')}</TextCell>
+                            )}
+                        </Field>
+                    </Section>
+
+                    {/* ---------- 下载 ---------- */}
+                    <Section
+                        id="download"
+                        title={t('page.setting.download')}
+                        description={t('page.setting.downloadGroupHint')}
+                    >
+                        {/* 手机形态没有「下载目录」可填：如实说明文件落在应用私有目录（R130） */}
+                        {mobile && <p className={styles.hint}>{t('page.setting.downloadDirMobileHint')}</p>}
+
+                        {/* 下载目录是一条**本机路径**：手机上既没有可粘贴的绝对路径，也没有「在文件夹中显示」，
+                            所以整块不显示（文件落在应用私有目录，由系统管理） */}
+                        {!mobile && (
+                            <Field label={t('page.setting.downloadDir')} hint={t('page.setting.downloadDirHint')}>
                                 <input
                                     className={styles.input}
                                     type="text"
@@ -469,17 +298,12 @@ export default function SettingView() {
                                     aria-label={t('page.setting.downloadDir')}
                                     onChange={(event) => setDownloadDir(event.target.value)}
                                 />
-                            </span>
-                        </div>
-                        <p className={styles.hint}>{t('page.setting.downloadDirHint')}</p>
-                    </>
-                )}
+                            </Field>
+                        )}
 
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.maximumConcurrentDownloads')}</span>
-                    <span className={styles.value}>
-                        <UnderlineRadioGroup
-                            name="download-concurrent"
+                        <ChoiceField
+                            label={t('page.setting.maximumConcurrentDownloads')}
+                            hint={t('page.setting.downloadConcurrentHint')}
                             value={String(downloadMaxConcurrent)}
                             onChange={(value) => setDownloadMaxConcurrent(Number(value))}
                             options={appConfig.download.maxConcurrentOptions.map((value) => ({
@@ -487,15 +311,9 @@ export default function SettingView() {
                                 label: String(value),
                             }))}
                         />
-                    </span>
-                </div>
-                <p className={styles.hint}>{t('page.setting.downloadConcurrentHint')}</p>
 
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.defaultDownloadQuality')}</span>
-                    <span className={styles.value}>
-                        <UnderlineRadioGroup
-                            name="download-quality"
+                        <ChoiceField
+                            label={t('page.setting.defaultDownloadQuality')}
                             value={downloadQuality}
                             onChange={(value) => setDownloadQuality(value as TrackQuality)}
                             options={QUALITIES_DESC.map((value) => ({
@@ -503,14 +321,9 @@ export default function SettingView() {
                                 label: t(qualityLabelKey(value)),
                             }))}
                         />
-                    </span>
-                </div>
 
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('page.setting.whenDownloadQualityIsMissing')}</span>
-                    <span className={styles.value}>
-                        <UnderlineRadioGroup
-                            name="download-quality-fallback"
+                        <ChoiceField
+                            label={t('page.setting.whenDownloadQualityIsMissing')}
                             value={downloadQualityFallback}
                             onChange={(value) =>
                                 setDownloadQualityFallback(value as DownloadQualityFallback)
@@ -526,168 +339,98 @@ export default function SettingView() {
                                 },
                             ]}
                         />
-                    </span>
-                </div>
-            </section>
+                    </Section>
 
-            <section className={styles.card}>
-                <div className={styles.cacheHeader}>
-                    <h2 className={styles.cardTitle}>{t('page.setting.cache')}</h2>
-                    <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={!cacheAvailable || cacheBusy}
-                        onClick={() => void refreshCache()}
+                    {/* ---------- 宠物（Beta 1.0）：独立置顶窗口 + 独立引擎 pet-core，默认关 ----------
+                        手机上还没有宠物渲染器（见 ANDROID-PLAN），所以整组隐藏，不给假入口 */}
+                    {!mobile && (
+                        <Section
+                            id="pet"
+                            title={t('page.setting.petSection')}
+                            description={t('page.setting.petGroupHint')}
+                        >
+                            <PetCard/>
+                        </Section>
+                    )}
+
+                    {/* ---------- 背景与主页 ----------
+                        背景卡桌面 / 手机都有；壁纸助手写的是本机文件（桌面）；主页卡只在手机 */}
+                    <Section
+                        id="background"
+                        title={t('page.setting.backgroundGroup')}
+                        description={t('page.setting.backgroundGroupHint')}
                     >
-                        {t('page.setting.cacheRefresh')}
-                    </Button>
-                </div>
-                <p className={styles.hint}>{t('page.setting.cacheHint')}</p>
+                        <BackgroundCard/>
+                        <div className={styles.blockDivider}/>
+                        {mobile ? <HomePageCard/> : <WallpaperAssistant/>}
+                    </Section>
 
-                {!cacheAvailable ? (
-                    <p className={styles.hint}>{t('page.setting.cacheUnavailable')}</p>
-                ) : (
-                    <>
-                        <div className={styles.field}>
-                            <span className={styles.label}>{t('page.setting.cacheMedia')}</span>
-                            <span className={styles.value}>
-                                {cache
-                                    ? t('page.setting.cacheUsage', {
-                                        size: formatBytes(cache.mediaBytes),
-                                        count: cache.mediaCount,
-                                    })
-                                    : '—'}
-                            </span>
-                        </div>
+                    {/* ---------- 存储与缓存 ---------- */}
+                    <Section
+                        id="storage"
+                        title={t('page.setting.storageGroup')}
+                        description={t('page.setting.storageGroupHint')}
+                    >
+                        <CacheSettings/>
+                        <div className={styles.blockDivider}/>
+                        {/* 数据目录：默认在用户目录，可迁到别的盘（便携版默认跟着 exe 走）——
+                            手机上由系统分配、不能在应用内迁移，所以只显示一句说明 */}
+                        <DataDirCard mobile={mobile}/>
+                    </Section>
 
-                        <div className={styles.field}>
-                            <span className={styles.label}>{t('page.setting.cacheCatalog')}</span>
-                            <span className={styles.value}>
-                                {cache
-                                    ? t('page.setting.cacheUsage', {
-                                        size: formatBytes(cache.catalogBytes),
-                                        count: cache.catalogCount,
-                                    })
-                                    : '—'}
-                            </span>
-                        </div>
+                    {/* ---------- 关于与诊断（危险操作放最后一组） ---------- */}
+                    <Section
+                        id="about"
+                        title={t('page.setting.aboutGroup')}
+                        description={t('page.setting.aboutGroupHint')}
+                    >
+                        <Field label={t('app.title')}>
+                            <TextCell tone="muted">
+                                {t('page.setting.version', {version: appVersion})}
+                            </TextCell>
+                        </Field>
 
-                        <div className={styles.field}>
-                            <span className={styles.label}>{t('page.setting.cacheCovers')}</span>
-                            <span className={styles.value}>
-                                {cache
-                                    ? t('page.setting.cacheUsage', {
-                                        size: formatBytes(cache.coversBytes),
-                                        count: cache.coversCount,
-                                    })
-                                    : '—'}
-                            </span>
-                        </div>
+                        <Field label={config.meta.name}>
+                            <TextCell tone="muted">
+                                {t('page.setting.version', {version: config.meta.version})}
+                            </TextCell>
+                        </Field>
 
-                        {/* 上限可选：给几档固定值，避免「随便填一个数字」把缓存配成 0 或 100 GB */}
-                        <div className={styles.field}>
-                            <span className={styles.label}>{t('page.setting.cacheLimit')}</span>
-                            <UnderlineRadioGroup
-                                name="cache-limit"
-                                value={String(cache?.limitBytes ?? '')}
-                                onChange={(value) => void changeLimit(Number(value))}
-                                options={CACHE_LIMIT_OPTIONS.map((bytes) => ({
-                                    value: String(bytes),
-                                    label: formatBytes(bytes),
-                                }))}
-                            />
-                            <p className={styles.hint}>{t('page.setting.cacheLimitHint')}</p>
-                        </div>
+                        {/* 本机核心诊断（浏览器下显示「浏览器模式」）——
+                            诊断里有数据目录/日志目录路径与「在文件夹中显示」，手机上没有意义 */}
+                        {!mobile && (
+                            <>
+                                <div className={styles.blockDivider}/>
+                                <DiagnosticsCard/>
+                            </>
+                        )}
 
-                        <div className={styles.cacheActions}>
-                            <Button
-                                size="sm"
-                                variant="ghost"
-                                disabled={cacheBusy || (cache?.mediaCount ?? 0) === 0}
-                                onClick={() => clearCache('media')}
-                            >
-                                {t('page.setting.cacheClearMedia')}
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="ghost"
-                                disabled={cacheBusy || (cache?.catalogCount ?? 0) === 0}
-                                onClick={() => clearCache('catalog')}
-                            >
-                                {t('page.setting.cacheClearCatalog')}
-                            </Button>
+                        {/* 恢复默认设置：只清 UI 偏好（`gently:ui`），不动曲库 / 插件 / 下载 / 凭据；二次确认后重载 */}
+                        <div className={styles.blockDivider}/>
+                        <h3 className={styles.subTitle}>{t('page.setting.resetSection')}</h3>
+                        <p className={styles.hint}>{t('page.setting.resetHint')}</p>
+                        <div className={styles.actionRow}>
                             <Button
                                 size="sm"
                                 variant="danger"
-                                disabled={cacheBusy || cacheTotal === 0}
-                                onClick={() => clearCache('all')}
+                                onClick={() =>
+                                    requestConfirm({
+                                        titleKey: 'page.setting.resetConfirmTitle',
+                                        descKey: 'page.setting.resetConfirmDesc',
+                                        tone: 'danger',
+                                        onConfirm: () => {
+                                            resetPersistedUi();
+                                            window.location.reload();
+                                        },
+                                    })
+                                }
                             >
-                                {t('page.setting.cacheClearAll')}
+                                {t('page.setting.resetSettings')}
                             </Button>
                         </div>
-
-                        {cacheNotice && <p className={styles.notice}>{cacheNotice}</p>}
-                        {cacheError && <p className={styles.notice}>{cacheError}</p>}
-                    </>
-                )}
-            </section>
-
-            {/* 数据目录：默认在用户目录，可迁到别的盘（便携版默认跟着 exe 走）——
-                手机上由系统分配、不能在应用内迁移，所以只显示一句说明 */}
-            <DataDirCard mobile={mobile}/>
-
-            {/* ---------- 恢复默认设置 ----------
-                只清 UI 偏好（`gently:ui`），不动曲库 / 插件 / 下载 / 凭据；二次确认后重载。 */}
-            <section className={styles.card}>
-                <h2 className={styles.cardTitle}>{t('page.setting.resetSection')}</h2>
-                <p className={styles.hint}>{t('page.setting.resetHint')}</p>
-                <div className={styles.cacheActions}>
-                    <Button
-                        size="sm"
-                        variant="danger"
-                        onClick={() =>
-                            requestConfirm({
-                                titleKey: 'page.setting.resetConfirmTitle',
-                                descKey: 'page.setting.resetConfirmDesc',
-                                tone: 'danger',
-                                onConfirm: () => {
-                                    resetPersistedUi();
-                                    window.location.reload();
-                                },
-                            })
-                        }
-                    >
-                        {t('page.setting.resetSettings')}
-                    </Button>
+                    </Section>
                 </div>
-            </section>
-
-            <section className={styles.card}>
-                <h2 className={styles.cardTitle}>{t('page.setting.about')}</h2>
-
-                <div className={styles.field}>
-                    <span className={styles.label}>{t('app.title')}</span>
-                    <span className={styles.value}>
-                        <TextCell tone="muted">
-                            {t('page.setting.version', {version: appVersion})}
-                        </TextCell>
-                    </span>
-                </div>
-
-                <div className={styles.field}>
-                    <span className={styles.label}>{config.meta.name}</span>
-                    <span className={styles.value}>
-                        <TextCell tone="muted">
-                            {t('page.setting.version', {version: config.meta.version})}
-                        </TextCell>
-                    </span>
-                </div>
-            </section>
-
-            {/* ---------- 本机核心诊断（浏览器下显示「浏览器模式」）----------
-                诊断里有数据目录/日志目录路径与「在文件夹中显示」，手机上没有意义 */}
-            {!mobile && <DiagnosticsCard/>}
+            </div>
         </Page>
     );
 }
-

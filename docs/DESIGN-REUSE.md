@@ -70,7 +70,7 @@ tldr: 不是新方案，是把仓库里已经验证过、值得沿用到安卓�
 | 行操作统一构造器 | `src/hooks/useTrackActions.ts` | 「点当前曲目 = 暂停 / 点其他 = 切歌」、下载/收藏/队列的唯一入口，避免每个视图各写一份 |
 | 危险操作二次确认 | `useConfirm()` + `ConfirmHost` | 删除/清空/卸载/迁移一律走它；安卓端换成原生对话框也保留这个调用点 |
 | 异步列表的请求代号 | `views/favorites/components/source-favorites.tsx`、`store/slices/ranking.slice.ts` | R87 的错位根因；**任何**「按选中项取列表」都要带序号并按序号丢弃 |
-| 底部播放条 + 功能抽屉 | `components/shell/player-bar/**` | 信息集中：歌曲信息只在播放条；歌词页只有封面 + 歌词。安卓上可缩成 mini player + 抽屉 |
+| 播放条 + 歌词页功能栏 | `components/shell/player-bar/**`、`views/now-playing/**` | 信息集中：歌曲信息在播放条；功能性操作按平台分：桌面收进右上角竖排图标栏 + 右侧面板，手机是底部操作图标 + 底部工具面板。手机播放条只留上一首 / 播放暂停 / 下一首，功能不塞窄条；两端布局分文件，不共用一个组件里的 `isMobile` 分支 |
 
 ## 6. 工程约定（比代码更容易被忘掉）
 

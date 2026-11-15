@@ -49,7 +49,9 @@ static LAST_DIR: AtomicI32 = AtomicI32::new(-1);
 static LOCKED: AtomicBool = AtomicBool::new(false);
 /// 当前是否处于「忽略光标事件」状态（None = 还没设置过）
 static IGNORING: AtomicI32 = AtomicI32::new(-1);
-/// 可交互区域（CSS 像素，窗口内坐标）：x, y, w, h；还没收到时当作「整窗都可交互」
+/// 可交互区域（CSS 像素，窗口内坐标）：x, y, w, h；还没收到时当作「整窗都可交互」。
+/// 前端发**空列表**时存 `Some(vec![])`：表示「窗口里没有任何可交互东西」→ 整窗穿透，
+/// 与「还没收到」（`None`）区分开。
 static HITBOX: Mutex<Option<Vec<[f64; 4]>>> = Mutex::new(None);
 /// 精灵本体矩形（CSS 像素）：窗口里有 HUD 预留，看向方向要以本体为中心而不是窗口中心
 static BODY_BOX: Mutex<Option<[f64; 4]>> = Mutex::new(None);
@@ -416,9 +418,13 @@ fn stop_walking(app: &tauri::AppHandle) {
 #[cfg(windows)]
 fn poll_once(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window(PET_WINDOW_LABEL) else {
+        /* 窗口没了（关掉 / 前端卸载）：必须清掉热区，否则宿主会拿旧矩形继续判定 */
+        clear_hitboxes();
         return;
     };
-    if !window.is_visible().unwrap_or(false) {
+    let visible = window.is_visible().unwrap_or(false);
+    if should_clear_hitbox(true, visible) {
+        clear_hitboxes();
         return;
     }
     let Ok(position) = window.outer_position() else {
@@ -461,8 +467,17 @@ fn poll_once(app: &tauri::AppHandle) {
     /* 2. 只有「可交互区域」吃点击：光标不在任何一块里（或者用户锁定了）就穿透 */
     let inside = match &hitbox {
         Some(rects) => inside_any(dx, dy, rects, scale),
-        /* 还没收到矩形：保守一点，整窗都算可交互（宁可挡一点，也别让宠物突然点不到） */
-        None => true,
+        /* 还没收到矩形：只把窗口中心约 30% 当作本体，其余透明区域一律穿透。
+           旧逻辑「None => true」会让整块 920×937 的 HUD 画布在事件丢失时吃掉
+           主窗口的点击（R145 用户反馈歌词页/播放条点不动）。 */
+        None => {
+            let s = if scale > 0.0 { scale } else { 1.0 };
+            let css_w = f64::from(size.width) / s;
+            let css_h = f64::from(size.height) / s;
+            let w = css_w * 0.3;
+            let h = css_h * 0.3;
+            inside_rect(dx, dy, (css_w - w) / 2.0, (css_h - h) / 2.0, w, h, s)
+        }
     };
     let desired_ignore = should_ignore_cursor(
         LOCKED.load(Ordering::Relaxed),
@@ -482,8 +497,34 @@ fn poll_once(app: &tauri::AppHandle) {
     walk_step(app, &window, inside);
 }
 
-fn should_ignore_cursor(locked: bool, menu_open: bool, inside: bool) -> bool {
-    locked || (!menu_open && !inside)
+fn should_ignore_cursor(locked: bool, _menu_open: bool, inside: bool) -> bool {
+    /* R145：菜单打开 **不再** 让整窗可点。旧逻辑 `menu_open → 永不穿透` 会把
+       920×937 的透明 HUD 画布变成一块挡住主窗口的大玻璃：歌词页右上角按钮、
+       播放条全点不到，点一下宠物本体才恢复。现在只认真实热区（本体 / 状态卡 /
+       卡片 / 面板）；菜单打开时这些矩形已经由前端登记，按钮照样点得到。 */
+    locked || !inside
+}
+
+/// 窗口不存在或不可见时必须清空热区（隐藏/关闭后前端不会再发事件）。
+#[cfg(any(windows, test))]
+fn should_clear_hitbox(window_found: bool, visible: bool) -> bool {
+    !window_found || !visible
+}
+
+/// 清掉可交互区域与派生状态：窗口隐藏 / 关闭时调用。
+/// 不清的话宿主会一直拿隐藏前的矩形做命中判定（幽灵热区），
+/// 下次显示时还会沿用隐藏期间算出的穿透状态（可能出现「重新显示却点不到」）。
+#[cfg(windows)]
+fn clear_hitboxes() {
+    if let Ok(mut slot) = HITBOX.lock() {
+        *slot = None;
+    }
+    if let Ok(mut slot) = BODY_BOX.lock() {
+        *slot = None;
+    }
+    IGNORING.store(-1, Ordering::Relaxed);
+    LAST_DIR.store(-1, Ordering::Relaxed);
+    INSIDE_STREAK.store(0, Ordering::Relaxed);
 }
 
 /// 看向方向的原点（窗口内物理像素）：优先用精灵本体中心，没有就退回窗口中心
@@ -547,16 +588,32 @@ fn cursor_position() -> Option<(i32, i32)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        body_screen_x, body_walk_range, inside_any, inside_rect, look_origin, should_ignore_cursor,
-        walk_decision, WalkDecision, WALK_HOLD_LIMIT_TICKS,
+        body_screen_x, body_walk_range, inside_any, inside_rect, look_origin, should_clear_hitbox,
+        should_ignore_cursor, walk_decision, WalkDecision, WALK_HOLD_LIMIT_TICKS,
     };
 
     #[test]
     fn menu_keeps_buttons_clickable_and_lock_still_wins() {
-        assert!(!should_ignore_cursor(false, true, false));
+        /* 菜单打开时透明区域仍要穿透；面板/卡片自己的矩形算 inside，按钮才点得到 */
+        assert!(should_ignore_cursor(false, true, false));
+        assert!(!should_ignore_cursor(false, true, true));
         assert!(should_ignore_cursor(true, true, false));
         assert!(should_ignore_cursor(false, false, false));
         assert!(!should_ignore_cursor(false, false, true));
+    }
+
+    #[test]
+    fn empty_hitbox_and_hidden_window_mean_click_through() {
+        /* 前端发空列表 = 窗口里没有任何可交互东西：整窗必须穿透（不是「未知」） */
+        let empty: Vec<[f64; 4]> = Vec::new();
+        assert!(!inside_any(120, 90, &empty, 1.0));
+        assert!(should_ignore_cursor(false, false, inside_any(120, 90, &empty, 1.0)));
+        /* 菜单开着但光标在透明区：仍然穿透（R145） */
+        assert!(should_ignore_cursor(false, true, false));
+        /* 隐藏 / 关闭窗口必须清空热区；可见且有窗口时不清 */
+        assert!(should_clear_hitbox(false, true));
+        assert!(should_clear_hitbox(true, false));
+        assert!(!should_clear_hitbox(true, true));
     }
 
     #[test]

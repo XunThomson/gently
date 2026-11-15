@@ -9,7 +9,7 @@ import styles from './title-bar.module.css';
 export function Logo({compact = false}: {compact?: boolean}) {
     return (
         <div className={styles.logo}>
-            <span className={styles.logoMark}>G</span>
+            <img className={styles.logoMark} src="/logo.png" alt=""/>
             {!compact && <span className={styles.logoText}>Gently</span>}
         </div>
     );

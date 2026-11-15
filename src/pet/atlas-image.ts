@@ -12,13 +12,23 @@ import {
     stripBackground,
 } from './atlas-matte';
 import {frameCell, planAtlas, type AtlasPlan} from './frame-layout';
+import {
+    measureAtlasAlpha,
+    type AlphaBounds,
+    type AlphaSample,
+} from './alpha-bounds';
 
 export interface DecodedAtlas {
     image: HTMLImageElement;
     /** 已去底（或本来就有 alpha）的图片 URL */
     url: string;
     plan: AtlasPlan;
+    /** 逐帧不透明包围盒（命中判定用；算不出来时是 `EMPTY_ALPHA_BOUNDS`） */
+    alpha: AlphaBounds;
 }
+
+/** 包围盒采样图的最长边：1536×1872 的图集降采样到 512 长边，逐帧扫 alpha 只要几毫秒 */
+const MAX_ALPHA_SAMPLE_SIZE = 512;
 
 /** 把 base64 图集解码成可以画的图片，并按规格算好帧偏移；失败返回 `null` */
 export async function decodeAtlas(
@@ -44,7 +54,16 @@ export async function decodeAtlas(
             displayHeight,
         );
         if (!plan) return null;
-        return {image, url: matteAtlas(image) ?? url, plan};
+        const matted = matteAtlas(image);
+        /* 用**实际显示的那张图**算包围盒：去底之后角色才和屏幕一致 */
+        const source = matted?.canvas ?? image;
+        const sample = sampleAlpha(source, image.naturalWidth, image.naturalHeight);
+        return {
+            image,
+            url: matted?.url ?? url,
+            plan,
+            alpha: measureAtlasAlpha(sample, plan),
+        };
     } catch {
         return null;
     }
@@ -116,9 +135,12 @@ export function drawAtlasFrame(
  *
  * 用 canvas 而不是在核心里做：核心没有图像解码能力（也不想为一张图引入 image 依赖），
  * 而浏览器本来就要解码这张图——顺手做一次像素处理是最省的路径。
- * 失败（画布不可用、超大图）就原样返回 `null`，调用方继续用原图。
+ * 失败（画布不可用、超大图）就返回 `null`，调用方继续用原图。
+ *
+ * 返回画布本身（而不是只有 URL）：不透明包围盒要扫**去底之后**的像素，
+ * 否则白底图集会算出一个「整格」的假包围盒。
  */
-function matteAtlas(image: HTMLImageElement): string | null {
+function matteAtlas(image: HTMLImageElement): {url: string; canvas: HTMLCanvasElement} | null {
     const width = image.naturalWidth;
     const height = image.naturalHeight;
     if (!(width > 0) || !(height > 0)) return null;
@@ -127,7 +149,7 @@ function matteAtlas(image: HTMLImageElement): string | null {
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
-        const context = canvas.getContext('2d');
+        const context = canvas.getContext('2d', {willReadFrequently: true});
         if (!context) return null;
         context.drawImage(image, 0, 0);
         const frame = context.getImageData(0, 0, width, height);
@@ -135,7 +157,36 @@ function matteAtlas(image: HTMLImageElement): string | null {
         if (!background) return null;
         stripBackground(frame.data, background);
         context.putImageData(frame, 0, 0);
-        return canvas.toDataURL('image/png');
+        return {url: canvas.toDataURL('image/png'), canvas};
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * 把图集降采样一次，交给纯函数逐帧扫 alpha。
+ *
+ * 为什么降采样：1536×1872 的图集是 287 万像素，逐帧全分辨率扫描在启动时会掉帧；
+ * 缩到 512 长边后是 21 万像素（约 1/13），扫描 + 逐帧包围盒一共几毫秒，
+ * 代价是包围盒精度约 3~4 个原图像素——`scanCell` 会按采样比例把它补回来。
+ */
+function sampleAlpha(
+    source: CanvasImageSource,
+    width: number,
+    height: number,
+): AlphaSample | null {
+    if (!(width > 0) || !(height > 0)) return null;
+    try {
+        const scale = Math.min(1, MAX_ALPHA_SAMPLE_SIZE / Math.max(width, height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        const context = canvas.getContext('2d', {willReadFrequently: true});
+        if (!context) return null;
+        /* 默认开平滑：降采样时 alpha 会被平均，细边缘变成半透明，配合低阈值不会被丢掉 */
+        context.drawImage(source, 0, 0, canvas.width, canvas.height);
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+        return {data: pixels.data, width: canvas.width, height: canvas.height, scale};
     } catch {
         return null;
     }

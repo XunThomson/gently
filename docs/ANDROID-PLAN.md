@@ -1,10 +1,10 @@
 ---
 status: active
-last_verified: 2026-11-02
+last_verified: 2026-11-15
 owner: gently
 scope: 安卓端**执行计划**：P0 的逐步命令、期望输出、失败分支与验收证据；P1–P4 的拆分、验收口径与落地记录
 token_budget: 1900
-tldr: 安卓**同一仓库 + `src-tauri/gen/android` + 真机 USB**，P0（工具链）当天跑通，此后 P1 外壳、P2-1 前台服务、P2-3 续播、P3-1 SAF 导入陆续落地。每一步都留了一条「怎么验」的口径（熄屏 4 分钟 +253 秒、冷启动续播、SAF 选文件入库），**下一步是 P2-2（MediaSession + 通知栏传输控制）与 P4**。P0 期间查出三件必须记住的事：① `rquickjs-sys 0.7` 缺 android 绑定（vendored patch 解决）；② 多窗口配置下移动端加载的是 `?window=pet` 那一份 → 白屏，需 `tauri.android.conf.json` 只留 main 窗；③ `--apk` 默认四 ABI，armv7 仍缺绑定，只出 arm64 要加 `-t aarch64`。
+tldr: 安卓**同一仓库 + `src-tauri/gen/android` + 真机 USB**，P0（工具链）当天跑通，此后 P1 外壳、P2-1 前台服务、P2-3 续播、P3-1 SAF 导入陆续落地。每一步都留了一条「怎么验」的口径（熄屏 4 分钟 +253 秒、冷启动续播、SAF 选文件入库），**下一步是 P2-2（MediaSession + 通知栏传输控制）与 P4**。日常构建用 `pnpm build:android`（一键 debug APK + SHA256，`-Check` 只检查环境；见 P0-6a）。P0 期间查出三件必须记住的事：① `rquickjs-sys 0.7` 缺 android 绑定（vendored patch 解决）；② 多窗口配置下移动端加载的是 `?window=pet` 那一份 → 白屏，需 `tauri.android.conf.json` 只留 main 窗；③ `--apk` 默认四 ABI，armv7 仍缺绑定，只出 arm64 要加 `-t aarch64`。
 ---
 
 # ANDROID-PLAN：安卓端筹备与 P0–P4
@@ -198,6 +198,34 @@ pnpm tauri android build --debug -t aarch64 --apk
   只出 arm64：`-t aarch64`（见 §5 风险 9）。
 - 装 328 MB 的 debug 包**超过 120 秒**，别用短超时的前台命令等 `adb install`。
 
+### P0-6a 一键构建（`pnpm build:android`，日常用这个）
+
+P0-6 的手工命令已经收进 `scripts/build-android.ps1`，一条命令得到可安装的 debug APK（输出在 `release/`）：
+
+```powershell
+pnpm build:android                          # 默认 debug + aarch64 → release/gently-<版本>-android-debug.apk
+pnpm build:android -Release                 # release 变体（需要先在 gen/android 配好签名，见下）
+pnpm build:android -SkipWeb                 # 复用现有 dist/，不重跑 pnpm build
+pnpm build:android -Check                   # 只检查环境并打印将执行的命令，不构建（0 = 齐备，1 = 有缺失）
+pnpm build:android -Target universal -Check # 四个 ABI 全出（当前 vendor 只补了 arm64 绑定 → 会报缺绑定）
+```
+
+> 参数直接跟在脚本名后面即可（`pnpm build:android -Check`）。不要写成 `pnpm build:android -- -Check`：
+> pnpm 会把 `--` 原样传给 `pwsh -File`，PowerShell 会把它当成参数名而报「参数名称 '' 存在歧义」（实测）。
+
+- 检查项：pnpm / node / cargo / rustup / java（要求 17+）/ `ANDROID_HOME` / NDK / rust android target /
+  QuickJS 绑定 / `gen/android`。每个缺失项给一条可执行的修复建议，缺东西直接非零退出，不静默继续。
+  路径可用 `-AndroidHome` / `-NdkHome` / `-JavaHome` / `-CargoHome` 覆盖（只作用于本次进程，仓库不记录本机路径）。
+- 产物：`release/gently-<版本>-android-<debug|release>.apk` + 同名 `.sha256`
+  （`<hash>  <文件名>`，与 `package-portable.mjs` 一致）；非默认 ABI 追加 `-<target>` 后缀，避免两次构建互相覆盖。
+  脚本会打印最终路径、大小、SHA256 与 `adb install -r` 命令。
+- 默认只出 aarch64 的原因见 §3.1 与 §5 风险 9：`--apk` 默认四 ABI，而 armv7 / i686 / x86_64 缺 QuickJS 绑定。
+- 脚本先跑 `pnpm build`（带 `TAURI_ENV_PLATFORM=android`，与 Tauri 的 beforeBuildCommand 同环境，安卓产物才会剔除演示视频），
+  再用 `-c` 临时 JSON 把 `build.beforeBuildCommand` 置空，避免 Tauri 二次构建（`-SkipWeb` 也才真的跳过）。
+- release：`tauri android build` 的默认模式就是 release（CLI 没有 `--release`，只有 `-d/--debug`）；
+  可安装的 release APK 还需要 `src-tauri/gen/android` 的 `keystore.properties` + `signingConfigs`，没配时
+  Gradle 只产 `app-*-release-unsigned.apk`，脚本会把它当阻塞项报出来（不复制到 `release/`）。
+
 ### P0-7 收证据 —— ✅ 已完成
 
 ```powershell
@@ -297,13 +325,14 @@ pnpm tauri android build --debug -t aarch64 --apk
   （`Cover`、`SeekBar`、store 的 player 切片与 actions），只按手机宽度重排；点主体 → `/now-playing`。
   ⚠️ 与原计划「复用 MiniPlayer 整页」不同：MiniPlayer 是整页布局（含窗口按钮与歌词块），塞不进 62px 的条，
   所以复用的是**零件与状态**，不是那一页。
-- **手机歌词页默认省略封面**（用户 2026-11-01 要求：歌词才是主角），歌词卡片改用更高的高度
-  （`--now-playing-mobile-lyrics-height`，把封面省下的高度还回来）；右上角一个开关可在
-  「封面已省略 / 封面作为背景」之间切换，开启后封面铺满、压暗 + 虚化作为背景层
-  （`--now-playing-mobile-cover-opacity` / `-blur`），歌词压在上面。
-  偏好只影响手机、存 localStorage（`utils/nowPlayingCover.ts`，与桌面歌词窗口设置同一种做法），
-  桌面仍是「封面 + 歌词」两栏。**这个开关在桌面端不存在**。
-- `/now-playing` 现有的「功能抽屉」保留（收藏/下载/歌单），触摸下改为点击展开。
+- **手机歌词页（R145 定稿）**：全屏播放页——顶部「收起 + 标题/歌手」，居中歌词；底部依次是
+  4 个操作图标（收藏 / 播放顺序 / 音质 / 更多）、进度（时间 + SeekBar）、大号上一首 / 播放 / 下一首。
+  底部控制区上划打开左侧导航抽屉；工具面板由「更多 / 音质」按钮打开、下拉关闭（无 ✕）。
+  热门推荐 / 发现 / Three.js demo 为桌面端页面，手机进入这些路径会被重定向回手机主页。
+- **手机播放条只留四个位**：主体（点进歌词页）/ 上一首 / 播放暂停 / 下一首；收藏、歌单、
+  播放模式、音源音质、队列全部在歌词页的底部操作 / 工具面板。旧的「更多」底部抽屉
+  （`MobilePlayerSheet`）已删除（WebView 里打不开，窄条里也难点）。桌面歌词页是另一种布局：
+  居中歌词 + 右上角竖排图标栏 + 右侧面板。
 
 **触摸语义（只改交互层，不改 store）**
 
@@ -401,7 +430,7 @@ pnpm tauri android build --debug -t aarch64 --apk
 **下一步（P3 余项 / P2-2 余项）**：P2-2 只差两件——`ACTION_SEEK_TO` + `onSeekTo` 回页面（锁屏/车机拖进度，
 要先确认能真机验到才接）、`POST_NOTIFICATIONS` 运行时授权入口（API 33+ 才需要；本机 API 29 验不了）。
 注意本机 ROM（EMUI 10 / Android 10）的通知、控制中心、锁屏卡片**都不画进度条**，位置数据的可见面要等
-Android 11+ 或车机/蓝牙（§7.3 R117）；P3 只剩**音乐目录导出**（导入进度条已在 R136 落地）。**后台播放的硬骨头**（WebView 后台拒绝 `play()`）留给下一轮：让 `PlaybackService` 的 MediaSession 主动持有音频焦点（`requestAudioFocus`），或页面侧维护 `navigator.mediaSession`——两者都要 ≥5 分钟真机长测（GOTCHAS §70）。
+Android 11+ 或车机/蓝牙（§7.3 R117）；P3 只剩**音乐目录导出**与**导入副本登记表**（导入进度条已在 R136 落地；数据在哪、为什么不拷贝、删除保护方案见 `docs/ANDROID-STORAGE.md`，推荐 C 混合）。**后台播放的硬骨头**（WebView 后台拒绝 `play()`）留给下一轮：让 `PlaybackService` 的 MediaSession 主动持有音频焦点（`requestAudioFocus`），或页面侧维护 `navigator.mediaSession`——两者都要 ≥5 分钟真机长测（GOTCHAS §70）。
 **体验类问题（R121 起的收口批次）已全部落地**：手势（返回关浮层、面板下拉收起；左边缘横滑是负结果，GOTCHAS §67）、
 歌词页尺寸、桌面专有项、最近播放去重、动画穿模与过渡、背景适配、滚动重影、storage 适配（逐轮见 R121–R134）。
 

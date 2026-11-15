@@ -1,0 +1,127 @@
+/* 手机歌词页的底部工具面板（R144）：遮罩 + 底部卡片 + 顶部 tab。 */
+
+.scrim {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: var(--modal-scrim);
+    animation: scrimIn var(--motion-fast);
+}
+
+@keyframes scrimIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.sheet {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 520px;
+    max-height: 76%;
+    overflow: hidden;
+    padding: var(--mobile-sheet-padding) var(--mobile-sheet-padding)
+        calc(var(--mobile-sheet-padding) + env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    transition: transform var(--motion-fast);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-panel);
+    animation: sheetUp var(--motion-base);
+}
+
+@keyframes sheetUp {
+    from {
+        transform: translateY(100%);
+    }
+    to {
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .scrim,
+    .sheet {
+        animation: none;
+    }
+}
+
+.grabber {
+    display: flex;
+    justify-content: center;
+    flex: none;
+    padding: var(--space-2) 0;
+    touch-action: none;
+    cursor: grab;
+}
+
+.grabberBar {
+    width: var(--mobile-sheet-grabber-width);
+    height: var(--mobile-sheet-grabber-height);
+    border-radius: var(--radius-full);
+    background: var(--divider);
+}
+
+.head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: none;
+    padding: 0 var(--space-1) var(--space-2);
+    touch-action: none;
+}
+
+.tabs {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: var(--space-1);
+    border-radius: var(--radius-full);
+    background: var(--bg-surface);
+}
+
+.tab {
+    flex: 1;
+    height: var(--now-playing-tool-tab-height);
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+}
+
+.tab[data-active='true'] {
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-weight: var(--font-weight-medium);
+}
+
+.tab:active {
+    background: var(--bg-active);
+}
+
+.body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-3);
+    border-radius: var(--radius-lg);
+    background: var(--surface-content-alt);
+}
+
+.body [hidden] {
+    display: none;
+}

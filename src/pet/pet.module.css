@@ -8,6 +8,19 @@
 
 /* ---------------------------- 内置宠物（M1 程序化渲染） ---------------------------- */
 
+/* 宠物窗口的**整条根链**必须透明（透明底 + 无背景图 + 无阴影）。
+   `global.css` 只管了 `html[data-window=pet] body`；`#root`、外壳 `[data-pet-window]`
+   一旦被主题/皮肤写上底色，整窗就变成一个不透明方块（用户实测：宠物后面一块方底）。
+   全部钉在这里：id 选择器权重高于主题的类选择器，不靠 `!important`。 */
+:global(html[data-window='pet']),
+:global(html[data-window='pet'] body),
+:global(html[data-window='pet'] #root),
+:global(html[data-window='pet'] [data-pet-window]) {
+    background: transparent;
+    background-image: none;
+    box-shadow: none;
+}
+
 /* 停在窗口右下角（将来的宠物包会用 pet.json 的锚点，这里先给一个不挡内容的默认位置） */
 .builtin {
     position: absolute;
@@ -34,6 +47,8 @@
     width: calc(100vw - var(--space-4));
     max-width: var(--panel-width);
     pointer-events: none;
+    /* 气泡浮层的定位包含块（气泡锚在这条槽位的边上，而不是跟着列流走） */
+    position: relative;
 }
 
 /* 本体下方时：菜单离本体最近（视觉顺序反过来） */
@@ -70,7 +85,10 @@
     position: absolute;
 }
 
-/* 小家伙本体：可点、有焦点环（无障碍：它是个按钮） */
+/* 小家伙本体：可点，但**默认没有任何底色 / 圆角 / 阴影 / 边框**。
+   有图集时精灵自己就是宠物；程序化兜底形态才在 `[data-kind='fallback']` 里上品牌色。
+   这样 hover / [data-animation] / :focus-visible 都不可能把紫底、白框漏出来
+   （旧版把底色写在 `.body` 上、靠 `.body.sprite` 覆盖回去，类没加上或级联顺序一变就露紫块）。 */
 .body {
     display: grid;
     place-items: center;
@@ -79,37 +97,49 @@
     padding: 0;
     font-size: var(--font-size-xl);
     color: var(--text-inverse);
-    background: var(--brand);
+    background: none;
     border: 0;
-    border-radius: var(--radius-full);
-    box-shadow: var(--shadow-md);
+    border-radius: 0;
+    box-shadow: none;
     cursor: pointer;
     pointer-events: auto;
+}
+
+/* 程序化兜底形态（没有可用图集时才会出现）：品牌色圆形本体 */
+.body[data-kind='fallback'] {
+    background: var(--brand);
+    border-radius: var(--radius-full);
+    box-shadow: var(--shadow-md);
     transition: background-color var(--motion-base);
 }
 
-.body:hover {
+.body[data-kind='fallback']:hover {
     background: var(--brand-hover);
 }
 
+/* 「高兴」形态：颜色更亮（程序化宠物只有这两种状态） */
+.body[data-kind='fallback'][data-animation='1'] {
+    background: var(--brand-hover);
+}
+
+/* 焦点外框只在**键盘导航**时出现：宠物窗口里用鼠标点击本体不留白框。
+   （全局 `:focus-visible` 是品牌色 2px；宠物本体是像素画，套方框会露在角色外面。） */
 .body:focus-visible {
-    outline: 2px solid var(--text-primary);
+    outline: none;
+}
+
+.builtin[data-modality='keyboard'] .body[data-kind='fallback']:focus-visible {
+    outline: 2px solid var(--brand);
     outline-offset: 3px;
 }
 
-/* 「高兴」形态：颜色更亮 + 圆角略变化（程序化宠物只有这两种状态） */
-.body[data-animation='1'] {
-    background: var(--brand-hover);
-}
-
-/* 有图集时：精灵图自己就是宠物，按钮只负责「可点 + 焦点环」。
-   否则程序化的圆形底色会从精灵图后面透出来（实测就是一个大方块后面顶着个紫球）。 */
-.body.sprite {
-    background: transparent;
+/* 有图集时：本体只是「可点 + 可拖」的透明盒子，精灵图自己画角色。
+   像素画必须关掉平滑缩放：双线性插值会在深色描边旁边产生「黑色颗粒/毛边」。
+   `pixelated` 让浏览器取最近像素；再配合整数倍缩放（见 frame-layout 的 104px）才干净。 */
+.body[data-kind='sprite'] {
+    background: none;
     border-radius: 0;
     box-shadow: none;
-    /* 像素画必须关掉平滑缩放：双线性插值会在深色描边旁边产生「黑色颗粒/毛边」。
-       `pixelated` 让浏览器取最近像素；再配合整数倍缩放（见 frame-layout 的 104px）才干净。 */
     image-rendering: pixelated;
     image-rendering: crisp-edges;
     /* 告诉用户「这个可以拖」 */
@@ -135,36 +165,139 @@
     image-rendering: crisp-edges;
 }
 
-.body.sprite:active {
+.body[data-kind='sprite']:active {
     cursor: grabbing;
 }
 
 /* 正在被拖：光标保持「抓住」的样子（位置由渲染器自己搬窗口，不再用系统拖动） */
-.body.sprite.dragging {
+.body[data-kind='sprite'].dragging {
     cursor: grabbing;
 }
 
-.body.sprite:hover {
-    background: transparent;
+/* 气泡浮层：**绝对定位的独立一层**，锚在 HUD 槽位贴着本体的那条边。
+   它不参与状态卡/菜单的列布局，所以那两者怎么显隐都不会推挤气泡；
+   而槽位到本体永远隔着一份 PET_HUD_GAP，气泡到本体的距离因此恒定。
+   （旧版气泡和状态卡在同一个 flex 列里，靠 `justify-content: flex-end` 贴边，
+     状态卡/菜单一出现就把气泡顶高——这就是「气泡时高时低」的根因。） */
+.bubbleLayer {
+    position: absolute;
+    display: flex;
+    pointer-events: none;
+    /* 槽位被屏幕夹到本体上方时，气泡仍然要压在角色上面（不挡点击：pointer-events: none） */
+    z-index: var(--z-dropdown);
 }
 
-/* 气泡：只显示核心给的文案键翻出来的文本；不挡点击 */
+/* 本体在上：气泡底边贴着槽位底边，水平居中 */
+.bubbleLayer[data-side='above'] {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    justify-content: center;
+}
+
+/* 本体在下：气泡顶边贴着槽位顶边 */
+.bubbleLayer[data-side='below'] {
+    left: 0;
+    right: 0;
+    top: 0;
+    justify-content: center;
+}
+
+/* 本体在左：气泡右边贴着槽位右边，垂直居中 */
+.bubbleLayer[data-side='left'] {
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 100%;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+/* 本体在右：气泡左边贴着槽位左边 */
+.bubbleLayer[data-side='right'] {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    justify-content: flex-start;
+    align-items: center;
+}
+
+/* 气泡本体：现代浮层（浮起表面 + 软阴影 + 大圆角），长文本在最大宽度内换行 */
 .bubble {
-    max-width: 180px;
-    padding: var(--space-1) var(--space-2);
+    position: relative;
+    box-sizing: border-box;
+    width: max-content;
+    max-width: min(var(--panel-width), 100%);
+    padding: var(--space-2) var(--space-3);
     font-size: var(--font-size-xs);
     line-height: var(--line-height-relaxed);
     color: var(--text-primary);
-    text-align: center;
-    background: var(--surface-drawer);
-    backdrop-filter: var(--surface-drawer-blur);
+    text-align: left;
+    overflow-wrap: anywhere;
+    background: var(--surface-elevated);
     border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
     pointer-events: none;
+    opacity: 0;
+    /* 出现：从下方一点点浮上来；消失：反向淡出（reduced-motion 下关掉） */
+    transform: translateY(var(--space-1));
+    transition: opacity var(--motion-fast), transform var(--motion-fast);
 }
 
-.status,
-.menu {
+.bubble[data-visible='true'] {
+    opacity: 1;
+    transform: none;
+}
+
+/* 指向本体的小尾巴：45° 的小方块只露出半个角，两个外沿描边接上气泡的边框 */
+.bubble::after {
+    content: '';
+    position: absolute;
+    width: var(--space-2);
+    height: var(--space-2);
+    background: inherit;
+    border: 0 solid var(--border-subtle);
+}
+
+/* 本体在上：尾巴在下边 */
+.bubble[data-side='above']::after {
+    left: var(--pet-tail-x, 50%);
+    bottom: calc(var(--space-2) / -2);
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    transform: translateX(-50%) rotate(45deg);
+}
+
+/* 本体在下：尾巴在上边 */
+.bubble[data-side='below']::after {
+    left: var(--pet-tail-x, 50%);
+    top: calc(var(--space-2) / -2);
+    border-top-width: 1px;
+    border-left-width: 1px;
+    transform: translateX(-50%) rotate(45deg);
+}
+
+/* 本体在右：尾巴在左边 */
+.bubble[data-side='right']::after {
+    left: calc(var(--space-2) / -2);
+    top: var(--pet-tail-y, 50%);
+    border-left-width: 1px;
+    border-bottom-width: 1px;
+    transform: translateY(-50%) rotate(45deg);
+}
+
+/* 本体在左：尾巴在右边 */
+.bubble[data-side='left']::after {
+    right: calc(var(--space-2) / -2);
+    top: var(--pet-tail-y, 50%);
+    border-top-width: 1px;
+    border-right-width: 1px;
+    transform: translateY(-50%) rotate(45deg);
+}
+
+.status {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -235,14 +368,95 @@
     border-radius: var(--radius-full);
 }
 
-.menu {
+/* ---------------------------- 贴本体浮层：快捷卡片 / 控制面板 ----------------------------
+   两张浮层由渲染器保证互斥（单值状态），共用同一套「浮起表面」：
+   elevated 底色 + 细边 + 大圆角 + 面板阴影。卡片窄、行距紧，是「顺手点两下」的入口；
+   控制面板铺满 HUD 槽位，尺寸滑杆才有足够的拖动宽度。 */
+.dialog {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    box-sizing: border-box;
+    max-height: 100%;
+    padding: var(--space-3);
+    color: var(--text-primary);
+    font-size: var(--font-size-xs);
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel);
+    pointer-events: auto;
+    /* 面板比槽位高时（系统字号更大 / 主题字号更大）在自己的盒子内滚动，不会被窗口裁掉 */
+    overflow-y: auto;
+    /* `--motion-fast` 自带缓动函数（150ms ease），这里不能再追加一个 timing-function */
+    animation: dialog-in var(--motion-fast);
+}
+
+.card {
+    gap: var(--space-1);
+    width: min(100%, var(--menu-width));
+}
+
+.panel {
+    width: 100%;
+}
+
+.dialogHeader {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.dialogName {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dialogMeta {
+    flex: none;
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
     gap: var(--space-1);
 }
 
-.menuItem,
-.sizeButton {
+/* 分区小标题：覆盖全局 h3 的大字号，当「组标签」用 */
+.sectionTitle {
+    margin: 0;
+    padding: 0 var(--space-2);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-tight);
+}
+
+.rowList {
+    display: flex;
+    flex-direction: column;
+}
+
+/* 每一行都是原生 button：hover / active / focus-visible 都有明确状态 */
+.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    box-sizing: border-box;
+    width: 100%;
     min-height: var(--button-height-sm);
-    padding: var(--space-1) var(--space-2);
+    padding: 0 var(--space-2);
     color: var(--text-primary);
     font: inherit;
     text-align: left;
@@ -250,36 +464,75 @@
     border: 0;
     border-radius: var(--radius-sm);
     cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
 }
 
-.menuItem:hover,
-.sizeButton:hover {
+.row:hover {
     background: var(--bg-hover);
 }
 
-.menuItem:focus-visible,
-.sizeButton:focus-visible {
+.row:active {
+    background: var(--bg-active);
+}
+
+.row:focus-visible {
     outline: 2px solid var(--brand);
     outline-offset: -2px;
 }
 
-.menuLabel {
-    padding: var(--space-1) var(--space-2) 0;
-    color: var(--text-tertiary);
+.rowLabel {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.sizeGroup {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+/* 「控制面板」入口：与上面的快捷动作用一条分隔线分组，右端是 CSS 画的箭头（不用 emoji） */
+.entry {
+    margin-top: var(--space-1);
+    border-top: 1px solid var(--divider);
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+
+.entry::after {
+    content: '';
+    flex: none;
+    width: var(--space-2);
+    height: var(--space-2);
+    border-top: 1px solid var(--text-tertiary);
+    border-right: 1px solid var(--text-tertiary);
+    transform: rotate(45deg);
+}
+
+/* 外观：字段标题（左）与当前像素值（右）分开；值是等宽数字，拖动时不跳动 */
+.field {
+    display: flex;
+    flex-direction: column;
     gap: var(--space-1);
 }
 
-/* 自由尺寸：滑杆负责「拖着试」，数字框负责「精确输入」 */
-.sizeCustom {
+.fieldHead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 0 var(--space-2);
+}
+
+.fieldLabel {
+    color: var(--text-secondary);
+}
+
+.fieldValue {
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+.sizeControls {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    padding: 0 var(--space-1);
+    padding: 0 var(--space-2);
 }
 
 .sizeSlider {
@@ -292,37 +545,96 @@
     flex: none;
     width: calc(var(--space-12) + var(--space-2));
     padding: var(--space-1);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
     color: var(--text-primary);
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     text-align: right;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
 }
 
-.sizeButton {
-    text-align: center;
+.sizeInput:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: -2px;
 }
 
-.sizeButton.selected {
-    color: var(--brand);
-    background: var(--brand-soft);
+/* 开关：纯视觉（状态由 aria-pressed 表达）。关 = 中性轨道，开 = 品牌色 + 高对比滑块 */
+.switch {
+    position: relative;
+    flex: none;
+    width: var(--space-8);
+    height: var(--space-4);
+    background: var(--border-default);
+    border-radius: var(--radius-full);
+    transition: background-color var(--motion-fast);
+}
+
+.switch::after {
+    content: '';
+    position: absolute;
+    top: calc((var(--space-4) - var(--space-3)) / 2);
+    left: calc((var(--space-4) - var(--space-3)) / 2);
+    width: var(--space-3);
+    height: var(--space-3);
+    background: var(--bg-surface);
+    border-radius: var(--radius-full);
+    box-shadow: var(--shadow-xs);
+    transition: transform var(--motion-fast), background-color var(--motion-fast);
+}
+
+.row[aria-pressed='true'] .switch {
+    background: var(--brand);
+}
+
+.row[aria-pressed='true'] .switch::after {
+    background: var(--brand-contrast);
+    transform: translateX(var(--space-4));
+}
+
+/* 出现动画只动透明度：位移会让宿主量到的热区在动画期间短暂偏位 */
+@keyframes dialog-in {
+    from {
+        opacity: 0;
+    }
 }
 
 .status[hidden],
-.menu[hidden],
-.bubble[hidden],
+.dialog[hidden],
 .motionLayer[hidden] {
     display: none;
 }
 
-/* 系统要求减少动态效果时不上下浮动（信息仍在动画状态与气泡里） */
+/* 系统要求减少动态效果时不上下浮动、气泡与卡片不做淡入、开关不做滑块动画 */
 @media (prefers-reduced-motion: reduce) {
     .motionLayer {
         transform: none !important;
     }
+
+    .bubble {
+        transition: none;
+        transform: none;
+    }
+
+    .dialog {
+        animation: none;
+    }
+
+    .row,
+    .switch,
+    .switch::after {
+        transition: none;
+    }
 }
 
+/* 卡片/面板打开时由脚本 `focus()`：指针操作不应留下紫色焦点框；
+   只有键盘模态（Esc 打开/键盘导航）才画。 */
+.dialog:focus-visible {
+    outline: none;
+}
 
+.builtin[data-modality='keyboard'] .dialog:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+}
 

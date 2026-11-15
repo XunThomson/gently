@@ -59,6 +59,8 @@ import {pickQuality, pickQualityWithFallback} from '../src/utils/quality';
 import {playbackFailureText} from '../src/utils/playbackFailure';
 import {isStalled, STALL_THRESHOLD_MS} from '../src/utils/playbackStall';
 import {parseLastPlayback} from '../src/utils/lastPlayback';
+import {readLastRoute, readRecentRoute, rememberLastRoute} from '../src/utils/lastRoute';
+import {nowPlayingDragOpacity, shouldDismissNowPlaying} from '../src/utils/nowPlayingGesture';
 import {createPlayerSlice} from '../src/store/slices/player.slice';
 import {
     createBackgroundPreset,
@@ -82,7 +84,11 @@ import {
 import {canPreview, mediaKindOf, previewWindow, PREVIEW_SECONDS} from '../src/utils/discoverMedia';
 import {appConfig} from '../src/config/app.config';
 import {resolveShellMode} from '../src/utils/shellMode';
-import {activeNavKey, MOBILE_HOME_PATH, mobileNavItems} from '../src/components/shell/mobile/nav';
+import {
+    activeNavKey,
+    MOBILE_HOME_PATH,
+    mobileNavItems,
+} from '../src/components/shell/mobile/nav';
 import {MobileNavDrawer} from '../src/components/shell/mobile/MobileNavDrawer';
 import {revealInDirAvailable} from '../src/services';
 import {DataDirCard} from '../src/views/setting/components/data-dir-card';
@@ -142,12 +148,33 @@ import {
     writeLyricsWindowSettings,
 } from '../src/utils/lyricsWindowSettings';
 import {clearPets, listPets, PetHost, petPlaybackSnapshot, registerCorePet, registerPet} from '../src/pet';
+import {
+    PET_CARD_ACTIONS,
+    PET_PANEL_SECTIONS,
+    PET_SIZE_CONTROLS,
+    isPetSurfaceOpen,
+    nextPetSurface,
+} from '../src/pet/core-pet';
 import {BUILTIN_PET_SPEC} from '../src/pet/builtin';
 import {planAtlas, frameBox, lookBox} from '../src/pet/frame-layout';
 import {
+    animationOpaqueRect,
+    atlasBoundsToBox,
+    bodyHitRect,
+    lookOpaqueRect,
+    measureAtlasAlpha,
+    opaqueBoundsInRect,
+    unionRect,
+    type FrameAlphaBounds,
+    type PixelRect,
+} from '../src/pet/alpha-bounds';
+import {hitAreaKey, hitAreaPayload} from '../src/pet/hit-areas';
+import {
+    PET_BUBBLE_TAIL_INSET,
     PET_HUD_GAP,
     PET_HUD_RESERVE,
     PET_WINDOW_MARGIN,
+    bubbleTailOffset,
     layoutPetWindow,
     placePet,
 } from '../src/utils/petWindowPosition';
@@ -188,7 +215,10 @@ import {DownloadMark} from '../src/components/ui/download-mark';
 import PlaylistView from '../src/views/playlist';
 import CollectionView from '../src/views/collection';
 import NowPlayingView from '../src/views/now-playing';
-import {LyricsToolsDrawer, initialSearchState} from '../src/views/now-playing/components/LyricsToolsDrawer';
+import {MobileNowPlaying} from '../src/views/now-playing/mobile';
+import {Lyrics} from '../src/components/ui/lyrics';
+import {LyricsTools, initialSearchState} from '../src/views/now-playing/components/LyricsTools';
+import {PlaybackTools} from '../src/views/now-playing/components/PlaybackTools';
 import {
     cachedLyricSearchCount,
     clearCachedLyricSearch,
@@ -515,7 +545,10 @@ function readCssText(dir = 'src', acc: string[] = []): string {
  * 所有 `var(--token)` 引用的 token 都必须有定义：
  * 定义来源 = 主题注入的 CSS 变量 ∪ 任何 CSS 里 `--x:` 的本地定义 ∪ 内联样式注入的局部变量白名单。
  */
-const INLINE_STYLE_VARS = ['--grid-template'];
+/* 内联样式注入的局部变量（CSS 里只消费、不定义）：
+   - `--grid-template`：通用布局手写内联；
+   - `--pet-tail-x/y`：宠物气泡尾巴位置，由 `core-pet.ts` 按本体/气泡的实际矩形算出来写内联。 */
+const INLINE_STYLE_VARS = ['--grid-template', '--pet-tail-x', '--pet-tail-y'];
 
 function checkCssTokens(): void {
     const css = readCssText();
@@ -1381,7 +1414,7 @@ async function main(): Promise<void> {
         else globalScope.localStorage = backup;
     }
 
-    /* 歌词页：工具抽屉默认**不挂载**（惰性），展开后才出现搜索框与校正按钮 */
+    /* 歌词页（R144）：桌面「居中歌词 + 右上角图标栏」；移动「居中歌词 + 底部操作/进度/传输」 */
     {
         actions.player.play(first, s().library.local);
         const page = renderToString(
@@ -1392,32 +1425,77 @@ async function main(): Promise<void> {
             </MemoryRouter>,
         );
         check(
-            'now-playing: 默认收起时工具抽屉不挂载（歌词页只有封面 + 歌词）',
-            !page.includes('type="text"') && page.includes(first.title.slice(0, 1)),
-            page.length.toString(),
+            'now-playing(桌面): 歌词工具 / 更多 / 定时关闭，播放条已有功能不重复',
+            page.includes(first.title) &&
+                (page.match(/aria-expanded="false"/g) ?? []).length >= 1 &&
+                page.includes('aria-label="歌词工具"') &&
+                page.includes('aria-label="更多功能"') &&
+                page.includes('aria-label="定时关闭"') &&
+                !page.includes('data-tool-tab=') &&
+                !page.includes('type="text"'),
+            String((page.match(/aria-expanded="false"/g) ?? []).length),
         );
 
-        const closed = renderToString(<LyricsToolsDrawer open={false}/>);
-        const opened = renderToString(<LyricsToolsDrawer open/>);
-        check(
-            'now-playing: 抽屉收起时只隐藏不卸载',
-            closed.includes('hidden') && !opened.includes('hidden'),
-            JSON.stringify({closedHidden: closed.includes('hidden')}),
+        const mobile = renderToString(
+            <MemoryRouter>
+                <ThemeProvider>
+                    <MobileNowPlaying/>
+                </ThemeProvider>
+            </MemoryRouter>,
         );
         check(
-            'now-playing: 抽屉默认只挂「时间轴校正」一格（搜索那格惰性挂载）',
-            opened.includes('role="tablist"') &&
-                (opened.match(/role="tab"/g) ?? []).length === 3 &&
-                !opened.includes('type="text"'),
-            String((opened.match(/role="tab"/g) ?? []).length),
+            'now-playing(移动): 底部只放收藏 / 播放模式 / 音质 / 更多',
+            mobile.includes('role="slider"') &&
+                (mobile.match(/aria-label=/g) ?? []).length >= 6 &&
+                mobile.includes('aria-label="收藏"') &&
+                mobile.includes('音质：') &&
+                !mobile.includes('aria-label="下载"') &&
+                !mobile.includes('data-tool-tab='),
+            String((mobile.match(/aria-label=/g) ?? []).length),
         );
 
-        /* 校正按钮的步长：细调 0.1 / 粗调 0.5 都在（文案随语言，按 aria-label 断） */
+        const centeredLyrics = renderToString(
+            <Lyrics
+                lines={[{time: 0, text: '第一句'}, {time: 5, text: '第二句'}]}
+                elapsed={1}
+                onSeek={() => undefined}
+                centered
+            />,
+        );
+        const leftLyrics = renderToString(
+            <Lyrics
+                lines={[{time: 0, text: '第一句'}]}
+                elapsed={0}
+                onSeek={() => undefined}
+            />,
+        );
         check(
-            'now-playing: 抽屉里同时有细调与粗调按钮',
-            opened.includes(`aria-label="-${LYRICS_OFFSET_FINE_STEP_SEC}"`) &&
-                opened.includes(`aria-label="+${LYRICS_OFFSET_STEP_SEC}"`),
-            opened.length.toString(),
+            'now-playing: 歌词页用居中排版，桌面歌词窗口仍保持左对齐',
+            centeredLyrics.includes('data-align="center"') &&
+                leftLyrics.includes('data-align="left"'),
+            `${centeredLyrics.length}/${leftLyrics.length}`,
+        );
+
+        const lyrics = renderToString(<LyricsTools active/>);
+        check(
+            'now-playing: 歌词格同时有细调与粗调按钮，且搜索框在同一层',
+            lyrics.includes(`aria-label="-${LYRICS_OFFSET_FINE_STEP_SEC}"`) &&
+                lyrics.includes(`aria-label="+${LYRICS_OFFSET_STEP_SEC}"`) &&
+                lyrics.includes('type="text"'),
+            lyrics.length.toString(),
+        );
+
+        const playback = renderToString(
+            <MemoryRouter>
+                <ThemeProvider>
+                    <PlaybackTools onCollapse={() => undefined}/>
+                </ThemeProvider>
+            </MemoryRouter>,
+        );
+        check(
+            'now-playing: 播放格组合了播放模式、歌曲操作与音源音质',
+            playback.includes('aria-pressed') && playback.includes('role="dialog"'),
+            playback.length.toString(),
         );
     }
 
@@ -1943,6 +2021,36 @@ async function main(): Promise<void> {
                 clampPetSize(160.4) === 160 &&
                 nextPetSize(312) === 104,
         );
+
+        /* 右键先开卡片，卡片里的入口才进完整面板：单值状态机保证两者互斥。
+           浏览器里跑不到这条交互分支，所以状态机必须是纯函数（见 core-pet.ts）。 */
+        check(
+            'pet: 右键先开卡片、点入口才进控制面板（卡片与面板互斥）',
+            nextPetSurface('none', 'contextmenu') === 'card' &&
+                nextPetSurface('card', 'openPanel') === 'panel' &&
+                nextPetSurface('card', 'contextmenu') === 'none' &&
+                nextPetSurface('panel', 'contextmenu') === 'none' &&
+                nextPetSurface('panel', 'dismiss') === 'none' &&
+                isPetSurfaceOpen('card') &&
+                isPetSurfaceOpen('panel') &&
+                !isPetSurfaceOpen('none'),
+        );
+        check(
+            'pet: 卡片只放喂食 / 摸摸与「控制面板」入口（尺寸 / 走动 / 隐藏留在面板里）',
+            PET_CARD_ACTIONS.join(',') === 'feed,touch',
+            PET_CARD_ACTIONS.join(','),
+        );
+        check(
+            'pet: 控制面板分区为 快捷 / 外观 / 行为（后续功能有落点）',
+            PET_PANEL_SECTIONS.join(',') === 'quick,appearance,behavior',
+            PET_PANEL_SECTIONS.join(','),
+        );
+        /* 大小只有滑杆 + 数字输入：三档预设按钮已从面板里删除，不再有两套尺寸控件 */
+        check(
+            'pet: 大小只有滑杆 + 数字输入（面板里没有预设按钮）',
+            PET_SIZE_CONTROLS.join(',') === 'slider,number',
+            PET_SIZE_CONTROLS.join(','),
+        );
         const petPad = PET_HUD_RESERVE + PET_HUD_GAP;
         const petLargeWindow = petWindowDimensions({width: 288, height: 312});
         const petSmallWindow = petWindowDimensions({width: 104, height: 112});
@@ -2112,6 +2220,177 @@ async function main(): Promise<void> {
                 hudInCanvas(justFits) &&
                 hudInCanvas(justMisses),
             JSON.stringify({justFits, justMisses}),
+        );
+
+        /* ---------------- 本体尺寸 vs 精灵尺寸（R142 反馈 #1 的机制澄清） ---------------- */
+        // frameBox 返回的是「所有动画里最大的格子」（plan.width/height）：逐帧不变；
+        // 变的只有精灵图层的 frameWidth/frameHeight。所以「紫底大小逐帧不同」不可能来自
+        // body 的 width/height，只能是元素底色漏出来了（旧版靠 `.sprite` 类覆盖，漏一次就露）。
+        const boxSizes = gridPlan
+            ? gridPlan.frames.map((frames, animation) =>
+                  frames.map((_frame, frame) => frameBox(gridPlan!, animation, frame)),
+              )
+            : [];
+        check(
+            'pet: 本体盒子尺寸只由 plan 决定（逐帧不变，变的是精灵图层的格宽/格高）',
+            gridPlan !== null &&
+                boxSizes.length > 0 &&
+                boxSizes.every((boxes) =>
+                    boxes.every(
+                        (box) => box.width === gridPlan.width && box.height === gridPlan.height,
+                    ),
+                ) &&
+                boxSizes[0][0].frameWidth === 96 &&
+                boxSizes[0][0].frameHeight === 104,
+            JSON.stringify(boxSizes[0]?.[0]),
+        );
+
+        /* ---------------- 命中区域：只认角色真正占的像素（R142 反馈 #3） ---------------- */
+        // 扫 alpha：只有透明像素时没有包围盒；阈值以下的噪声不算角色像素；块状像素得到紧包围盒
+        const scanPixels = new Uint8ClampedArray(10 * 10 * 4);
+        for (let y = 3; y < 6; y += 1) {
+            for (let x = 2; x < 5; x += 1) scanPixels[(y * 10 + x) * 4 + 3] = 255;
+        }
+        scanPixels[(8 * 10 + 8) * 4 + 3] = 4;
+        const scanned = opaqueBoundsInRect(scanPixels, 10, 10, {x: 0, y: 0, width: 10, height: 10});
+        check(
+            'pet: 逐帧扫描 alpha 得到紧包围盒（低阈值噪声不算、全透明帧为 null）',
+            scanned !== null &&
+                scanned.x === 2 &&
+                scanned.y === 3 &&
+                scanned.width === 3 &&
+                scanned.height === 3 &&
+                opaqueBoundsInRect(new Uint8ClampedArray(16), 2, 2, {x: 0, y: 0, width: 2, height: 2}) === null,
+            JSON.stringify(scanned),
+        );
+
+        // 原图包围盒 → 本体盒子内坐标：必须和精灵图层的背景缩放/偏移完全一致
+        const mappedBounds = gridPlan
+            ? atlasBoundsToBox(frameBox(gridPlan, 0, 0), gridPlan, {x: 100, y: 200, width: 50, height: 60})
+            : null;
+        check(
+            'pet: 不透明包围盒按背景缩放/偏移换算到本体盒子（和精灵图层同一套坐标）',
+            mappedBounds !== null &&
+                mappedBounds.x === 50 &&
+                mappedBounds.y === 100 &&
+                mappedBounds.width === 25 &&
+                mappedBounds.height === 30,
+            JSON.stringify(mappedBounds),
+        );
+
+        // 合成包围盒（每帧都在自己的格子里）：命中矩形应比整个格子小——
+        // 这正是「鼠标没碰到宠物也能交互」的根因。
+        const syntheticBounds: FrameAlphaBounds = (gridPlan?.frames ?? []).map((animation) =>
+            animation.map((_offset, frame) => ({
+                x: 40 + frame * 192,
+                y: 60,
+                width: 100,
+                height: 100,
+            })),
+        );
+        const syntheticRect = gridPlan ? animationOpaqueRect(gridPlan, syntheticBounds, 0) : null;
+        const syntheticHit = syntheticRect
+            ? bodyHitRect({x: 20, y: 10, width: 96, height: 104}, syntheticRect, 2)
+            : null;
+        check(
+            'pet: 命中矩形只覆盖当前动画的不透明像素（不再上报整个图集格子）',
+            syntheticRect !== null &&
+                syntheticRect.x === 20 &&
+                syntheticRect.y === 30 &&
+                syntheticRect.width === 50 &&
+                syntheticRect.height === 50 &&
+                syntheticHit !== null &&
+                syntheticHit.x === 38 &&
+                syntheticHit.y === 38 &&
+                syntheticHit.width === 54 &&
+                syntheticHit.height === 54,
+            JSON.stringify({syntheticRect, syntheticHit}),
+        );
+        // 算不出包围盒（旧包 / 画布不可用）时退回整个本体盒子，不能让宠物点不到
+        check(
+            'pet: 算不出包围盒时命中区域退回整个本体（宁可多算，不能点不到）',
+            bodyHitRect({x: 1, y: 2, width: 3, height: 4}, null).width === 3 &&
+                unionRect(null, null) === null,
+        );
+        // 命中区域清空必须**发空列表**（旧版 `rects.length === 0` 直接 return，宿主会留下幽灵热区）
+        check(
+            'pet: 可交互区域为空时上报空列表（窗口隐藏/关闭不会留下陈旧热区）',
+            hitAreaKey([]) === 'empty' &&
+                hitAreaKey([{x: 1, y: 2, width: 3, height: 4}]) !== 'empty' &&
+                hitAreaPayload([]).rects.length === 0 &&
+                hitAreaPayload([]).body === null,
+            hitAreaKey([]),
+        );
+        // 一次降采样扫描出每帧包围盒：超界的帧为 null，包围盒不串到相邻格子
+        const samplePlan = planAtlas(
+            {
+                atlasLayout: {frameWidth: 8, frameHeight: 8, columns: 2, rows: 1},
+                animations: [{name: 'idle', frames: 2, row: 0}],
+            },
+            16,
+            8,
+            8,
+        );
+        const samplePixels = new Uint8ClampedArray(16 * 8 * 4);
+        for (let y = 2; y < 5; y += 1) {
+            for (let x = 2; x < 5; x += 1) samplePixels[(y * 16 + x) * 4 + 3] = 255;
+        }
+        const sampleBounds = samplePlan
+            ? measureAtlasAlpha({data: samplePixels, width: 16, height: 8, scale: 1}, samplePlan)
+            : null;
+        const firstSample = sampleBounds?.frames[0]?.[0] ?? null;
+        check(
+            'pet: 降采样一次扫出每帧包围盒（无像素的帧为 null，不会串格）',
+            sampleBounds !== null &&
+                firstSample !== null &&
+                firstSample.x >= 0 &&
+                firstSample.x + firstSample.width <= 8 &&
+                sampleBounds.frames[0]?.[1] === null,
+            JSON.stringify(sampleBounds?.frames),
+        );
+        // look 朝向也有自己的格子：命中矩形必须按 look 的绘制参数换算（不能沿用 idle 帧）
+        const lookBounds: (PixelRect | null)[] = Array.from({length: 16}, () => null);
+        lookBounds[0] = {x: 0, y: 9 * 208, width: 192, height: 208};
+        const lookRect = fitLookPlan ? lookOpaqueRect(fitLookPlan, lookBounds, 0) : null;
+        const lookBox0 = fitLookPlan ? lookBox(fitLookPlan, 0) : null;
+        check(
+            'pet: look 朝向的命中矩形按 look 格子换算（和 look 的绘制参数一致）',
+            lookRect !== null &&
+                lookBox0 !== null &&
+                lookRect.x === lookBox0.left &&
+                lookRect.y === lookBox0.top &&
+                lookRect.width === lookBox0.frameWidth &&
+                lookRect.height === lookBox0.frameHeight,
+            JSON.stringify({lookRect, lookBox0}),
+        );
+
+        /* ---------------- 气泡锚点与尾巴（R142 反馈 #2） ---------------- */
+        const tailAbove = bubbleTailOffset(
+            {x: 100, y: 200, width: 96, height: 104},
+            {x: 90, y: 100, width: 120, height: 60},
+        );
+        const tailPushed = bubbleTailOffset(
+            {x: 100, y: 200, width: 96, height: 104},
+            {x: 0, y: 100, width: 60, height: 40},
+        );
+        check(
+            'pet: 气泡尾巴指向本体中心，并被夹在气泡圆角内',
+            tailAbove.x === 58 &&
+                tailAbove.y === 42 &&
+                tailPushed.x === 42 &&
+                tailPushed.y === 40 - PET_BUBBLE_TAIL_INSET,
+            JSON.stringify({tailAbove, tailPushed}),
+        );
+        // 气泡挂在 HUD 槽位「朝本体那一侧」的边上：槽位到本体恰好 PET_HUD_GAP，
+        // 气泡是独立的一层（绝对定位），状态卡/菜单显隐都推不动它。
+        const bubbleAnchorLayout = layoutPetWindow({x: 960, y: 700}, petBody, petHud, petWindow, monitor);
+        const anchorBodyTop = bubbleAnchorLayout.anchor.y - petBody.height;
+        check(
+            'pet: 气泡锚定在槽位朝本体的一侧（到本体固定 PET_HUD_GAP，不受状态卡/菜单影响）',
+            bubbleAnchorLayout.hud === 'above' &&
+                bubbleAnchorLayout.hudRect.y + bubbleAnchorLayout.hudRect.height ===
+                    anchorBodyTop - PET_HUD_GAP,
+            JSON.stringify({slot: bubbleAnchorLayout.hudRect, anchorBodyTop}),
         );
 
         // 贴边爬行预备：允许本体伸出屏幕边缘时，HUD 仍然整块留在屏幕里
@@ -2322,6 +2601,10 @@ async function main(): Promise<void> {
     check('store: 主题模式写入', s().ui.themeMode === 'dark');
     actions.ui.setSearchQuery('测试');
     check('store: 搜索词写入', s().ui.searchQuery === '测试');
+    check('store: 歌词自动搜索默认关闭', s().ui.lyricsAutoSearch === false);
+    actions.ui.setLyricsAutoSearch(true);
+    check('store: 歌词自动搜索可开启', s().ui.lyricsAutoSearch === true);
+    actions.ui.setLyricsAutoSearch(false);
     actions.ui.toggleGroup('playlists');
     check('store: 分组折叠', s().ui.collapsedGroups.includes('playlists'));
     actions.ui.toggleGroup('playlists');
@@ -2708,7 +2991,7 @@ async function main(): Promise<void> {
                 resolveShellMode(700, 700, bp) === 'mini',
         );
         check(
-            '移动外壳：左侧抽屉 8 个入口，搜索是 home',
+            '移动外壳：左侧抽屉 8 个入口，搜索是 home（导航统一在侧边）',
             mobileNavItems.length === 8 &&
                 MOBILE_HOME_PATH === '/search' &&
                 mobileNavItems[0].path === MOBILE_HOME_PATH &&
@@ -2772,8 +3055,23 @@ async function main(): Promise<void> {
                 barSrc.includes('shouldOpenNowPlaying'),
             );
             check(
-                '移动播放条：功能位不超过 4 个（其余进抽屉）',
-                (barSrc.match(/className=\{styles\.control\}/g) ?? []).length === 4,
+                '移动播放条：只保留上一首 / 播放暂停 / 下一首三个功能位（其余在歌词页工具面板）',
+                (barSrc.match(/className=\{styles\.control\}/g) ?? []).length === 3 &&
+                    barSrc.includes('IconPrev') &&
+                    !barSrc.includes('MobilePlayerSheet'),
+            );
+            check(
+                '移动外壳：歌词页隐藏外壳顶栏，并把内容区改成不滚动的 flex（沉浸式）',
+                shellSrc.includes('NOW_PLAYING_PATH') &&
+                    shellSrc.includes('data-immersive') &&
+                    shellSrc.includes('scrollTop !== 0'),
+            );
+            const queueSrc = readFileSync('src/components/shell/player-bar/QueuePanel.tsx', 'utf8');
+            check(
+                '队列：打开时只滚自己的列表（scrollIntoView 会连带滚走歌词页顶栏）',
+                !queueSrc.includes('.scrollIntoView(') &&
+                    queueSrc.includes('list.scrollTop') &&
+                    queueSrc.includes('ref={listRef}'),
             );
         }
 
@@ -3074,7 +3372,7 @@ async function main(): Promise<void> {
         );
         check(
             'hot: ?tab=discover 直接渲染发现子视图（URL 即状态）',
-            discoverHtml.includes('aria-label="唱片架"'),
+            discoverHtml.includes('data-discover-demo='),
             discoverHtml.slice(0, 120),
         );
     }
@@ -3554,7 +3852,88 @@ async function main(): Promise<void> {
                 restored.state.candidates[0].track.id === 'smoke:resume',
             JSON.stringify(restored.state.candidates.map((candidate) => candidate.source)),
         );
+        /* 歌词不随快照持久化：恢复后先挂起，等用户打开歌词页再补（启动时不发外部请求） */
+        check('续播：歌词先挂起，打开歌词页才补（启动不联网）', restored.state.lyricsDeferred === true);
         store.setState({player: before});
+    }
+
+    /* 手机歌词页下滑关闭（R144）：阈值按「固定下限或视口 18%」，拖动越远越淡但不会先消失 */
+    {
+        check(
+            '歌词页下滑关闭：短拉不关、超过 96px 或 18% 视口才关',
+            !shouldDismissNowPlaying(20, 800) &&
+                shouldDismissNowPlaying(120, 800) &&
+                shouldDismissNowPlaying(150, 700) &&
+                shouldDismissNowPlaying(0, 0) === false &&
+                shouldDismissNowPlaying(Number.NaN, 800) === false,
+        );
+        check(
+            '歌词页下滑关闭：拖动时透明度单调下降且保留可见内容',
+            nowPlayingDragOpacity(0, 800) === 1 &&
+                nowPlayingDragOpacity(400, 800) < 1 &&
+                nowPlayingDragOpacity(9999, 800) >= 0.35,
+        );
+    }
+
+    /* 重载恢复（R144）：最后路由只跨 reload / 恢复，不跨冷启动；非法值不恢复 */
+    {
+        const globalScope = globalThis as unknown as {sessionStorage?: Storage};
+        const backup = globalScope.sessionStorage;
+        const values = new Map<string, string>();
+        globalScope.sessionStorage = {
+            getItem: (key: string) => values.get(key) ?? null,
+            setItem: (key: string, value: string) => void values.set(key, String(value)),
+            removeItem: (key: string) => void values.delete(key),
+            clear: () => values.clear(),
+            key: (index: number) => [...values.keys()][index] ?? null,
+            get length() {
+                return values.size;
+            },
+        };
+
+        rememberLastRoute('/now-playing');
+        check('重载恢复：记住并读回最后所在页面', readLastRoute() === '/now-playing');
+        rememberLastRoute('https://example.com');
+        check(
+            '重载恢复：只接受应用内路径（非法值不覆盖上一次）',
+            readLastRoute() === '/now-playing',
+        );
+
+        if (backup === undefined) delete globalScope.sessionStorage;
+        else globalScope.sessionStorage = backup;
+    }
+
+    /* 进程被杀后的最近路由快照（R145）：30 分钟内恢复，超时按冷启动 */
+    {
+        const globalScope = globalThis as unknown as {localStorage?: Storage; sessionStorage?: Storage};
+        const backupLocal = globalScope.localStorage;
+        const backupSession = globalScope.sessionStorage;
+        const values = new Map<string, string>();
+        const storage = {
+            getItem: (key: string) => values.get(key) ?? null,
+            setItem: (key: string, value: string) => void values.set(key, String(value)),
+            removeItem: (key: string) => void values.delete(key),
+            clear: () => values.clear(),
+            key: (index: number) => [...values.keys()][index] ?? null,
+            get length() {
+                return values.size;
+            },
+        } as Storage;
+        globalScope.localStorage = storage;
+        globalScope.sessionStorage = storage;
+
+        rememberLastRoute('/now-playing');
+        check('重载恢复：最近路由快照可读回', readRecentRoute() === '/now-playing');
+        storage.setItem(
+            'gently:last-route-snapshot',
+            JSON.stringify({path: '/setting', at: Date.now() - 31 * 60 * 1000}),
+        );
+        check('重载恢复：超过 30 分钟按冷启动', readRecentRoute() === null);
+
+        if (backupLocal === undefined) delete globalScope.localStorage;
+        else globalScope.localStorage = backupLocal;
+        if (backupSession === undefined) delete globalScope.sessionStorage;
+        else globalScope.sessionStorage = backupSession;
     }
 
     /* 通知栏歌词（P4）：只取「当前唱到的那一句」，没有就空串（通知第二行退回歌手） */

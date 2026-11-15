@@ -50,6 +50,13 @@ export interface UiState {
     preferredSource: string | null;
     /** 优先音质 */
     preferredQuality: TrackQuality;
+    /**
+     * 歌词自动搜索（R145，默认关）。
+     *
+     * 打开后：当前源没有歌词时，按曲目在各候选源的 id 取**第一份可用歌词**；
+     * 全都取不到就保持「暂无歌词」，不生成假词。
+     */
+    lyricsAutoSearch: boolean;
     /** 危险操作前是否二次确认 */
     confirmDestructive: boolean;
     /**
@@ -161,6 +168,14 @@ export interface PlayerState {
      * `null` 表示还没有歌词（或加载中），界面据此决定要不要显示来源行。
      */
     lyricsSource: LyricSourceInfo | null;
+    /**
+     * 恢复出来的曲目还没为本轮请求过歌词（歌词不随播放快照持久化）。
+     *
+     * 启动时**不自动取词**（AGENTS #16：用户动作之前不发起外部请求）；
+     * 歌词页第一次打开时用 `ensureLyrics()` 补一次，避免「冷启动恢复的歌点进歌词页
+     * 显示暂无歌词、必须重新点一次播放才出现」。
+     */
+    lyricsDeferred: boolean;
     /**
      * 歌词时间轴偏移（秒）。正值 = 歌词比音频**晚**，渲染时用 `elapsed + lyricsOffset`。
      * 按曲目持久化（`utils/lyricsOffset.ts`），切歌时读回该曲目上次校正过的值。
@@ -326,6 +341,7 @@ export interface UiActions {
     setSourceFilter: (sourceId: string) => void;
     setPreferredSource: (sourceId: string | null) => void;
     setPreferredQuality: (quality: TrackQuality) => void;
+    setLyricsAutoSearch: (enabled: boolean) => void;
     setConfirmDestructive: (enabled: boolean) => void;
     /** 夜间柔光压暗比例（0–30%） */
     setScreenDim: (value: number) => void;
@@ -456,6 +472,11 @@ export interface PlayerActions {
     switchSource: (sourceId: string) => void;
     /** 音质偏好变化后重新解析当前曲目 */
     reloadSource: () => void;
+    /**
+     * 歌词页打开时补一次歌词（只对「冷启动恢复、还没请求过」的曲目生效）。
+     * 已经加载 / 正在加载 / 正在播放时是空操作，不会重复打源。
+     */
+    ensureLyrics: (force?: boolean) => void;
     /**
      * 应用一份**手动挑选**的歌词（来自歌词搜索）。
      * 会覆盖自动加载的歌词；在本次播放内不再被自动加载覆盖。

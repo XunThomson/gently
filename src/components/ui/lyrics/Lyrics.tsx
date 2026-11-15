@@ -44,6 +44,11 @@ export interface LyricsProps {
     /** 点击某一行时跳转到该行时间点 */
     onSeek: (time: number) => void;
     className?: string;
+    /**
+     * 文本对齐。默认左对齐（桌面歌词窗口 / 列表语境）；
+     * 歌词页的「舞台」语境用居中（R144：桌面与移动的主流播放器都居中）。
+     */
+    centered?: boolean;
 }
 
 /**
@@ -54,7 +59,7 @@ export interface LyricsProps {
  * 每次把当前行滚到视口正中；用户滚轮 / 触摸 / 拖滚动条时暂停跟随 4 秒，
  * 松开后从读者停下的位置继续滑向当前行，而不是把人瞬间拽回去。
  */
-export function Lyrics({lines, elapsed, onSeek, className}: LyricsProps) {
+export function Lyrics({lines, elapsed, onSeek, className, centered = false}: LyricsProps) {
     const {t} = useTranslation();
     const containerRef = useRef<HTMLDivElement>(null);
     const frameRef = useRef<number | null>(null);
@@ -209,6 +214,7 @@ export function Lyrics({lines, elapsed, onSeek, className}: LyricsProps) {
             ref={containerRef}
             className={[styles.root, className].filter(Boolean).join(' ')}
             role="list"
+            data-align={centered ? 'center' : 'left'}
         >
             {lines.map((line, index) => (
                 <LyricRow

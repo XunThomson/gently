@@ -56,8 +56,8 @@ export function DiagnosticsCard() {
         !!status && status.credentialsBackend !== '' && status.credentialsBackend !== 'memory';
 
     return (
-        <section className={styles.card}>
-            <h2 className={styles.cardTitle}>{t('page.setting.diagnostics')}</h2>
+        <>
+            <h3 className={styles.subTitle}>{t('page.setting.diagnostics')}</h3>
             <div className={styles.field}>
                 <span className={styles.label}>{t('page.setting.diagRuntime')}</span>
                 <span className={styles.value}>
@@ -164,6 +164,6 @@ export function DiagnosticsCard() {
             )}
 
             {error && <p className={styles.hint}>{t('page.setting.diagErrorHint', {reason: error})}</p>}
-        </section>
+        </>
     );
 }

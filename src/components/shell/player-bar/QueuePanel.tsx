@@ -116,6 +116,7 @@ export function QueuePanel({onClose, inline = false}: { onClose: () => void; inl
     const {queue, index, current} = usePlayerState();
     const {play, playOrToggle, removeFromQueue, moveInQueue, clearQueue} = useActions().player;
     const currentRowRef = useRef<HTMLLIElement | null>(null);
+    const listRef = useRef<HTMLDivElement | null>(null);
 
     /* 正在播放 = queue[index]（回退到 current）；接下来 = index 之后；已播放 = index 之前 */
     const nowPlaying = useMemo<Track | null>(
@@ -125,12 +126,19 @@ export function QueuePanel({onClose, inline = false}: { onClose: () => void; inl
     const upNext = useMemo(() => queue.slice(index + 1), [queue, index]);
     const played = useMemo(() => (index > 0 ? queue.slice(0, index) : []), [queue, index]);
 
-    /* 打开抽屉时把当前曲目滚到可视区中部（SSR 下 scrollIntoView 不存在，需守卫） */
+    /* 打开抽屉时把当前曲目滚到列表可视区中部。
+       不能对行调 `scrollIntoView`：那会连带滚动**所有**可滚祖先——歌词页里它是
+       `MobileShell` 的 immersive 内容区，一滚就把「收起 + 标题」顶出屏幕（R143 真机复现：
+       打开队列后顶栏消失）。这里只改队列自己的滚动容器。 */
     useEffect(() => {
         const row = currentRowRef.current;
-        if (row && typeof row.scrollIntoView === 'function') {
-            row.scrollIntoView({block: 'center'});
-        }
+        const list = listRef.current;
+        if (!row || !list || typeof row.getBoundingClientRect !== 'function') return;
+        const rowRect = row.getBoundingClientRect();
+        const listRect = list.getBoundingClientRect();
+        const target =
+            list.scrollTop + (rowRect.top - listRect.top) - (list.clientHeight - rowRect.height) / 2;
+        list.scrollTop = Math.max(0, target);
     }, []);
 
     const toggle = (track: Track) => {
@@ -181,7 +189,7 @@ export function QueuePanel({onClose, inline = false}: { onClose: () => void; inl
             {empty ? (
                 <p className={styles.empty}>{t('player.queueEmpty')}</p>
             ) : (
-                <div className={styles.listScroll}>
+                <div className={styles.listScroll} ref={listRef}>
                     {nowPlaying && (
                         <section className={styles.group}>
                             <p className={styles.groupLabel}>{t('player.nowPlayingTag')}</p>

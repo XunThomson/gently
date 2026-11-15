@@ -3,6 +3,7 @@ import App from '../App'
 import {normalizeMobileHomePath} from '../config/mobileNav'
 import {RouterErrorPage} from '../components/ui/route-error'
 import {readPersistedUi} from '../store/persist'
+import {isSessionResume, readLastRoute, readRecentRoute} from '../utils/lastRoute'
 import {isMobilePlatform} from '../utils/platform'
 import {appRoutes} from './meta'
 import type {AppRoute} from './routes.types'
@@ -17,6 +18,20 @@ function mobileHomePath(): string {
     return normalizeMobileHomePath(readPersistedUi().homePath)
 }
 
+/**
+ * 首屏落在哪一页。
+ *
+ * - 正常冷启动 → 默认首页（手机可配置，桌面排行榜）；
+ * - **WebView 重载 / 前进后退恢复** → 回到上一次所在的页面（R144）；
+ * - **进程被杀后重新启动**（R145）→ 30 分钟内的最近页面也恢复，避免「后台回来
+ *   从头加载」；超过时限才真正回首页。
+ */
+function bootPath(): string {
+    const fallback = isMobilePlatform() ? mobileHomePath() : '/ranking'
+    if (!isSessionResume()) return readRecentRoute() ?? fallback
+    return readLastRoute() ?? fallback
+}
+
 export const router = createBrowserRouter([
     {
         path: '/',
@@ -27,7 +42,7 @@ export const router = createBrowserRouter([
         children: [
             // 根路径重定向到默认页面，避免首屏空白。
             // 手机端 home 默认是搜索页（可在设置里改），桌面端仍是排行榜。
-            {index: true, element: <Navigate to={isMobilePlatform() ? mobileHomePath() : '/ranking'} replace/>},
+            {index: true, element: <Navigate to={bootPath()} replace/>},
             ...toRouteObjects(appRoutes),
         ],
     },

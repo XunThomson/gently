@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "main",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding",
         "title": "gently",
         "width": 1280,
         "height": 800,
@@ -23,6 +24,7 @@
       },
       {
         "label": "desktop-lyrics",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding",
         "url": "index.html?window=desktop-lyrics",
         "title": "gently 桌面歌词",
         "width": 760,
@@ -41,6 +43,7 @@
       },
       {
         "label": "pet",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding",
         "url": "index.html?window=pet",
         "transparent": true,
         "title": "gently 宠物",
@@ -69,6 +72,3 @@
     ]
   }
 }
-
-
-

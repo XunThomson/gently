@@ -250,3 +250,38 @@
 .remove {
     margin-top: var(--space-2);
 }
+
+/* ---------- 手机：紧凑 2 列皮肤卡 ----------
+   桌面卡是「色板 + 描述 + 作者 + 标签 + 按钮」，手机上 220px 一列会把一屏占满；
+   只保留「色板 + 名字 + 使用状态」，描述/作者/标签在手机上隐藏。 */
+
+:global([data-shell='mobile']) .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+}
+
+:global([data-shell='mobile']) .card {
+    gap: var(--space-1);
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+}
+
+:global([data-shell='mobile']) .preview {
+    height: var(--space-10);
+    margin-bottom: var(--space-1);
+}
+
+:global([data-shell='mobile']) .name {
+    font-size: var(--font-size-sm);
+}
+
+:global([data-shell='mobile']) .description,
+:global([data-shell='mobile']) .author,
+:global([data-shell='mobile']) .cardTags {
+    display: none;
+}
+
+:global([data-shell='mobile']) .apply,
+:global([data-shell='mobile']) .remove {
+    margin-top: var(--space-1);
+}

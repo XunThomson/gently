@@ -90,25 +90,25 @@ export function DataDirCard({mobile = false}: {mobile?: boolean}) {
        这一支放在「没有核心」之前：手机上有没有核心都不影响这条事实。 */
     if (mobile) {
         return (
-            <section className={styles.card}>
-                <h2 className={styles.cardTitle}>{t('page.setting.dataDirTitle')}</h2>
+            <>
+                <h3 className={styles.subTitle}>{t('page.setting.dataDirTitle')}</h3>
                 <p className={styles.hint}>{t('page.setting.dataDirMobileHint')}</p>
-            </section>
+            </>
         );
     }
 
     if (!available) {
         return (
-            <section className={styles.card}>
-                <h2 className={styles.cardTitle}>{t('page.setting.dataDirTitle')}</h2>
+            <>
+                <h3 className={styles.subTitle}>{t('page.setting.dataDirTitle')}</h3>
                 <p className={styles.hint}>{t('page.setting.dataDirUnavailable')}</p>
-            </section>
+            </>
         );
     }
 
     return (
-        <section className={styles.card}>
-            <h2 className={styles.cardTitle}>{t('page.setting.dataDirTitle')}</h2>
+        <>
+            <h3 className={styles.subTitle}>{t('page.setting.dataDirTitle')}</h3>
             <p className={styles.hint}>{t('page.setting.dataDirHint')}</p>
 
             <div className={styles.field}>
@@ -185,7 +185,7 @@ export function DataDirCard({mobile = false}: {mobile?: boolean}) {
                     </div>
                 </>
             )}
-        </section>
+        </>
     );
 }
 

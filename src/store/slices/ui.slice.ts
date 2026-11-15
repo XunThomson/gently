@@ -50,6 +50,8 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
         sourceFilter: 'all',
         preferredSource: persisted.preferredSource ?? null,
         preferredQuality: persisted.preferredQuality ?? 'high',
+        /* 歌词自动搜索：默认关，用户显式开启才在缺词时按候选源 id 找词 */
+        lyricsAutoSearch: persisted.lyricsAutoSearch === true,
         confirmDestructive: persisted.confirmDestructive ?? true,
         screenDim: clampScreenDim(persisted.screenDim),
         downloadDir: persisted.downloadDir ?? '',
@@ -124,6 +126,11 @@ export function createUiSlice(ctx: StoreCtx, persisted: PersistedUi = {}) {
             patch({preferredQuality});
             // 音质偏好变化后立即重新解析当前曲目
             ctx.getActions().player.reloadSource();
+        },
+        setLyricsAutoSearch(lyricsAutoSearch) {
+            patch({lyricsAutoSearch});
+            /* 打开开关后当前曲目若还没词，立刻补一次（用户动作，不算启动联网） */
+            if (lyricsAutoSearch) void ctx.getActions().player.ensureLyrics(true);
         },
         setConfirmDestructive(confirmDestructive) {
             patch({confirmDestructive});

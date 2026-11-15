@@ -53,6 +53,7 @@ pnpm tauri dev     # 桌面端：真实核心 + SQLite + 插件沙箱
 | `node scripts/android-cdp.mjs ping\|eval\|tap\|shot\|net` | 真机 WebView 的 CDP 驱动（debug 包） |
 | `pwsh -File scripts/pet-window.ps1 -Drag -Output release/screenshots/pet.png` | （仅 Windows）驱动宠物窗口：拖动 / 走动 / 截图 |
 | `pnpm package:portable` | 离线可用的便携版 zip（输出在 `release/`） |
+| `pnpm build:android` | 安卓一键构建：debug APK → `release/`（`-Check` 只检查环境、`-Release` 打 release、`-Target universal` 四 ABI） |
 | `pnpm tauri build` | MSI / NSIS 安装包（首次需要联网取打包工具） |
 
 离线构建：crate 缓存只放一处，由 `CARGO_HOME` 指向；设好后 `pnpm verify` 默认给 cargo

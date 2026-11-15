@@ -9,10 +9,13 @@ import {DesktopLyricsApp} from "./widgets/desktop-lyrics";
 import {PetWindowApp} from "./widgets/pet-window";
 import {installErrorOverlay} from "./utils/errorOverlay";
 import {installBlankScreenWatchdog} from "./utils/blankScreenWatchdog";
+import {installBackgroundKeepAlive} from "./utils/backgroundKeepAlive";
 import {RootError} from "./components/ui/route-error";
 
 /* 挂载前先注入主题变量，避免首屏闪烁 */
 applyInitialTheme();
+/* 长时间后台不被 WebView 冻结/丢弃（R144）：必须在首帧之前就持锁 */
+installBackgroundKeepAlive();
 /* 未捕获错误 / 未处理的 Promise 拒绝：显示可读的面板，而不是白屏（R137） */
 installErrorOverlay();
 /**

@@ -2,7 +2,6 @@ import {useEffect, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {appConfig} from '../../../config/app.config';
 import {Button} from '../../../components/ui/button';
-import {UnderlineRadioGroup} from '../../../components/ui/radio-group';
 import {useConfirm} from '../../../hooks/useConfirm';
 import {backgroundService} from '../../../services';
 import {useActions, useSelect} from '../../../store';
@@ -12,6 +11,8 @@ import {createBackgroundPreset} from '../../../utils/backgroundSettings';
 import {parseExternalBackgroundPreset, exportExternalBackgroundPreset} from '../../../utils/backgroundPreset';
 import styles from '../setting.module.css';
 import {isMobilePlatform} from '../../../utils/platform';
+import {ChoiceField} from './choice-field';
+import {ToggleField} from './toggle-field';
 
 /**
  * 设置页「动态背景」卡片（P1：本地视频 / 静态单文件网页 + 展示参数预设）。
@@ -273,9 +274,9 @@ export function BackgroundCard() {
         window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     return (
-        <section className={styles.card}>
-            <div className={styles.cacheHeader}>
-                <h2 className={styles.cardTitle}>{t('page.background.title')}</h2>
+        <>
+            <div className={styles.subHeader}>
+                <h3 className={styles.subTitle}>{t('page.background.title')}</h3>
                 <Button
                     size="sm"
                     variant="ghost"
@@ -294,62 +295,36 @@ export function BackgroundCard() {
                 </Button>
             </div>
 
-            <div className={styles.field}>
-                <span className={styles.label}>{t('page.background.kind')}</span>
-                <span className={styles.value}>
-                    <UnderlineRadioGroup
-                        name="background-kind"
-                        value={background.kind}
-                        onChange={(value) =>
-                            setBackgroundKind(value === 'web' ? 'web' : 'video')
-                        }
-                        options={
-                            /* 网页背景 = 单个 HTML 塞进 iframe：桌面端的玩法；
-                               手机上素材难准备、还白白吃内存，手机形态只留视频（R128） */
-                            mobile
-                                ? [{value: 'video', label: t('page.background.kindVideo')}]                                : [
-                                      {value: 'video', label: t('page.background.kindVideo')},
-                                      {value: 'web', label: t('page.background.kindWeb')},
-                                  ]
-                        }
-                    />
-                </span>
-            </div>
+            {!mobile && (
+                <ChoiceField
+                    label={t('page.background.kind')}
+                    value={background.kind}
+                    onChange={(value) => setBackgroundKind(value === 'web' ? 'web' : 'video')}
+                    options={[
+                        {value: 'video', label: t('page.background.kindVideo')},
+                        {value: 'web', label: t('page.background.kindWeb')},
+                    ]}
+                />
+            )}
 
-            <div className={styles.field}>
-                <span className={styles.label}>{t('page.background.enabled')}</span>
-                <span className={styles.value}>
-                    <UnderlineRadioGroup
-                        name="background-enabled"
-                        value={background.enabled ? 'on' : 'off'}
-                        onChange={(value) => setBackgroundEnabled(value === 'on')}
-                        options={[
-                            {value: 'on', label: t('page.background.on')},
-                            {value: 'off', label: t('page.background.off')},
-                        ]}
-                    />
-                </span>
-            </div>
+            <ToggleField
+                label={t('page.background.enabled')}
+                checked={background.enabled}
+                onChange={setBackgroundEnabled}
+            />
 
-            <div className={styles.field}>
-                <span className={styles.label}>{t('page.background.reducedMotionSetting')}</span>
-                <span className={styles.value}>
-                    <UnderlineRadioGroup
-                        name="background-reduced-motion"
-                        value={background.playWhenReducedMotion ? 'play' : 'respect'}
-                        onChange={(value) =>
-                            setBackgroundPlayWhenReducedMotion(value === 'play')
-                        }
-                        options={[
-                            {
-                                value: 'respect',
-                                label: t('page.background.reducedMotionRespect'),
-                            },
-                            {value: 'play', label: t('page.background.reducedMotionPlay')},
-                        ]}
-                    />
-                </span>
-            </div>
+            <ChoiceField
+                label={t('page.background.reducedMotionSetting')}
+                value={background.playWhenReducedMotion ? 'play' : 'respect'}
+                onChange={(value) => setBackgroundPlayWhenReducedMotion(value === 'play')}
+                options={[
+                    {
+                        value: 'respect',
+                        label: t('page.background.reducedMotionRespect'),
+                    },
+                    {value: 'play', label: t('page.background.reducedMotionPlay')},
+                ]}
+            />
             <p className={styles.hint}>{t('page.background.reducedMotionHint')}</p>
 
             <div className={styles.field}>
@@ -391,31 +366,28 @@ export function BackgroundCard() {
 
             {background.kind === 'video' && (
                 <>
-                    <div className={styles.field}>
-                        <span className={styles.label}>{t('page.background.fit')}</span>
-                        <UnderlineRadioGroup
-                            name="background-fit"
-                            value={background.options.fit}
-                            onChange={(value) =>
-                                setBackgroundOptions({
-                                    fit:
-                                        value === 'contain'
-                                            ? 'contain'
-                                            : value === 'fill'
-                                              ? 'fill'
-                                              : value === 'free'
-                                                ? 'free'
-                                                : 'cover',
-                                })
-                            }
-                            options={[
-                                {value: 'cover', label: t('page.background.fitCover')},
-                                {value: 'contain', label: t('page.background.fitContain')},
-                                {value: 'fill', label: t('page.background.fitFill')},
-                                {value: 'free', label: t('page.background.fitFree')},
-                            ]}
-                        />
-                    </div>
+                    <ChoiceField
+                        label={t('page.background.fit')}
+                        value={background.options.fit}
+                        onChange={(value) =>
+                            setBackgroundOptions({
+                                fit:
+                                    value === 'contain'
+                                        ? 'contain'
+                                        : value === 'fill'
+                                          ? 'fill'
+                                          : value === 'free'
+                                            ? 'free'
+                                            : 'cover',
+                            })
+                        }
+                        options={[
+                            {value: 'cover', label: t('page.background.fitCover')},
+                            {value: 'contain', label: t('page.background.fitContain')},
+                            {value: 'fill', label: t('page.background.fitFill')},
+                            {value: 'free', label: t('page.background.fitFree')},
+                        ]}
+                    />
 
                     {/* 自由构图（R139）：主流做法是**选「自由」才可编辑**水平/垂直/缩放/翻转；
                         其它对齐方式下这些参数保持隐藏，避免「选了铺满却还被旧参数拉偏」。 */}
@@ -781,7 +753,7 @@ export function BackgroundCard() {
                 placeholder={t('page.background.presetPlaceholder')}
                 onChange={(event) => setPresetJson(event.target.value)}
             />
-            <div className={styles.cacheActions}>
+            <div className={styles.actionRow}>
                 <Button size="sm" disabled={!presetJson.trim()} onClick={importPreset}>
                     {t('page.background.presetImportAction')}
                 </Button>
@@ -812,7 +784,7 @@ export function BackgroundCard() {
                     confirmWebImport(file);
                 }}
             />
-        </section>
+        </>
     );
 }
 

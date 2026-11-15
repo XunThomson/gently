@@ -19,8 +19,10 @@ import {usePetWindowBridge} from "./hooks/usePetWindowBridge";
 import {useSleepTimer} from "./hooks/useSleepTimer";
 import {useShellMode} from "./hooks/useShellMode";
 import {useClampedShell} from "./hooks/useClampedShell";
-import {useActions, useSelect} from "./store";
+import {useActions, store, useSelect} from "./store";
 import {isTauri, probeCore, windowService} from "./services";
+import {rememberLastRoute} from "./utils/lastRoute";
+import {writeLastPlayback} from "./utils/lastPlayback";
 import {useTheme} from "./theme";
 import './App.css';
 
@@ -44,6 +46,50 @@ export default function App() {
     const mode = useShellMode();
     /* 换页时复位路由错误边界（R137）：某一页渲染抛错不该连累之后打开的页面 */
     const location = useLocation();
+    /* WebView 重载（后台久了被丢弃/恢复）时回到原页：只记 pathname+search，
+       不跨冷启动（sessionStorage），见 `utils/lastRoute.ts` */
+    useEffect(() => {
+        rememberLastRoute(`${location.pathname}${location.search}`);
+    }, [location.pathname, location.search]);
+
+    /**
+     * 后台/进程被杀前的最后快照（R145）。
+     *
+     * 路由快照每 20s 刷新一次（避免「路由变了但时间戳很旧」→ 重启被判成冷启动）；
+     * 页面进入后台 / 被关闭时再写一次播放进度，进程被杀后重开能接着播。
+     */
+    useEffect(() => {
+        const path = `${location.pathname}${location.search}`;
+        const remember = () => rememberLastRoute(path);
+        const save = () => {
+            remember();
+            const state = store.getState().player;
+            if (state.current) writeLastPlayback({track: state.current, position: state.elapsed});
+        };
+        const onVisibility = () => {
+            if (document.visibilityState === 'hidden') save();
+        };
+        const timer = window.setInterval(remember, 20_000);
+        window.addEventListener('pagehide', save);
+        document.addEventListener('visibilitychange', onVisibility);
+        return () => {
+            window.clearInterval(timer);
+            window.removeEventListener('pagehide', save);
+            document.removeEventListener('visibilitychange', onVisibility);
+        };
+    }, [location.pathname, location.search]);
+    /* 回到前台时主动唤醒一次主窗口（R145）：长时间后台后 WebView2 有时要等
+       第一个输入事件才恢复交互；show + setFocus 提前把它叫醒。 */
+    useEffect(() => {
+        const wake = () => {
+            if (document.visibilityState !== 'visible') return;
+            void windowService.wakeMainWindow();
+            window.dispatchEvent(new Event('resize'));
+        };
+        document.addEventListener('visibilitychange', wake);
+        return () => document.removeEventListener('visibilitychange', wake);
+    }, []);
+
     /* 外壳本身永远不该被滚动：被浏览器滚走就是「白屏 + 回不来」（R137，见 hook 注释） */
     const shellRef = useClampedShell();
 
@@ -105,7 +151,7 @@ export default function App() {
     };
 
     if (mode === "mobile") {
-        /* 手机外壳：导航换成底部 tab，路由 / store / 服务层与桌面完全共用 */
+        /* 手机外壳：导航在左侧抽屉，路由 / store / 服务层与桌面完全共用 */
         return (
             <div className="app" data-shell="mobile" ref={shellRef}>
                 <BackgroundVideo/>

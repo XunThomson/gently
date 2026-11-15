@@ -4,6 +4,16 @@
   },
   "pet": {
     "name": "Gently Mascot",
+    "card": {
+      "title": "Pet quick actions"
+    },
+    "panel": {
+      "title": "Pet control panel",
+      "open": "Control panel",
+      "quick": "Quick",
+      "appearance": "Appearance",
+      "behavior": "Behavior"
+    },
     "bubble": {
       "idle": "What are we listening to?",
       "petted": "Hehe~",
@@ -22,8 +32,7 @@
       "satiety": "Satiety",
       "affection": "Affection",
       "level": "Lv.{{level}}",
-      "streak": "{{days}}-day streak",
-      "xp": "XP {{xp}}/{{next}}"
+      "streak": "{{days}}-day streak"
     },
     "action": {
       "feed": "Feed",
@@ -33,11 +42,7 @@
       "roamStop": "Stop roaming",
       "hide": "Hide pet"
     },
-    "size": {
-      "small": "Small",
-      "medium": "Medium",
-      "large": "Large"
-    }
+    "size": {}
   },
   "routeError": {
     "title": "This page failed to render",
@@ -47,13 +52,13 @@
     "reload": "Reload"
   },
   "errors": {
-      "pet_invalid_argument": "Something this action needs is off — check it and try again",
-      "pet_not_found": "That pet is gone (removed?). Refresh settings and retry",
-      "pet_invalid_package": "Invalid pet package: a required field is missing, or a behaviour points at a missing animation",
-      "pet_incompatible": "This pet package needs a newer pet core — update the app first",
-      "pet_limit_exceeded": "Pet package exceeds the limits (size / animations / frames)",
-      "pet_io_error": "Could not read or write pet data — check that the data folder is writable",
-      "pet_internal": "Internal pet core error (should not happen) — restart the app",
+    "pet_invalid_argument": "Something this action needs is off — check it and try again",
+    "pet_not_found": "That pet is gone (removed?). Refresh settings and retry",
+    "pet_invalid_package": "Invalid pet package: a required field is missing, or a behaviour points at a missing animation",
+    "pet_incompatible": "This pet package needs a newer pet core — update the app first",
+    "pet_limit_exceeded": "Pet package exceeds the limits (size / animations / frames)",
+    "pet_io_error": "Could not read or write pet data — check that the data folder is writable",
+    "pet_internal": "Internal pet core error (should not happen) — restart the app",
     "common_invalid_argument": "Invalid argument",
     "common_not_found": "Resource not found",
     "common_conflict": "Changed elsewhere — refresh and try again",
@@ -83,7 +88,7 @@
   },
   "nav": {
     "ranking": "Rankings",
-    "hot": "Featured",
+    "hot": "Discover",
     "download": "Downloads",
     "local": "Local Music",
     "plugin": "Plugins",
@@ -186,22 +191,13 @@
     "none": "Not playable on any enabled source"
   },
   "recommend": {
-    "tracksTitle": "Made for you",
-    "tracksSubtitle": "Ranked by your taste",
-    "albumsTitle": "Albums for you",
-    "albumsSubtitle": "Worth a full listen",
-    "playlistsTitle": "Playlists for you",
-    "playlistsSubtitle": "Picked by style",
     "reasonArtist": "Because you played {{name}}",
     "reasonTag": "Because you like {{name}}",
     "reasonTrending": "Trending now",
     "reasonSimilar": "Similar to {{name}}",
-    "profile": "Taste profile",
     "profileEmpty": "Play a few songs to build your profile",
     "trackCount": "{{count}} songs",
-    "dislike": "Not interested",
-    "sourceTitle": "From the current source",
-    "sourceSubtitle": "Recommendations from {{source}} itself (not the local profile)"
+    "dislike": "Not interested"
   },
   "confirm": {
     "clearQueueTitle": "Clear queue",
@@ -226,8 +222,6 @@
     "deleteSkinDesc": "“{{name}}” will be removed.",
     "removeSubscriptionTitle": "Remove subscription",
     "removeSubscriptionDesc": "Subscription “{{name}}” and its cached index will be removed; installed plugins are unaffected.",
-    "removePetTitle": "Remove pet",
-    "removePetDesc": "“{{name}}”, its bond record and its assets will be removed. This cannot be undone.",
     "dataDirMoveTitle": "Move data folder",
     "dataDirMoveDesc": "Data will be copied to {{path}} and used after a restart; the old folder is kept (not deleted automatically)."
   },
@@ -277,8 +271,6 @@
     "repeatOne": "Repeat one",
     "shuffleOn": "Shuffle: on",
     "shuffleOff": "Shuffle: off",
-    "moreFunctions": "More functions",
-    "playbackSettings": "Playback settings",
     "volume": "Volume",
     "openDetail": "Open song details",
     "queue": "Play queue",
@@ -322,17 +314,17 @@
       "sourceErrorTitle": "This source hit an error",
       "loadMore": "Load more"
     },
+    "discoverDemo": {
+      "title": "Vinyl · 3D demo",
+      "subtitle": "A Three.js study of the reference photo: warm light, vinyl, tonearm and a standing sleeve",
+      "hint": "Drag to orbit · the record turns by itself",
+      "drag": "Drag to orbit"
+    },
     "hot": {
-      "title": "Featured",
-      "recommendSub": "Based on recent listening",
-      "emptyTitle": "Not enough listening history yet",
-      "emptyHint": "Play a few songs, favorite some albums, or scan your local music — this page ranks by your taste",
+      "discoverTitle": "Discover",
+      "discoverSubtitle": "Vinyl, sleeve and playback state; a testbed for player backgrounds and visual themes",
       "searchEmptyTitle": "No matching songs",
       "searchEmptyHint": "Try another keyword",
-      "tabRecommend": "Featured",
-      "tabDiscover": "Discover",
-      "discoverTitle": "Discover",
-      "discoverSubtitle": "Record shelf: each sleeve stands upright on the shelf — focus one to hear the chorus",
       "discoverShelf": "Record shelf",
       "discoverEmpty": "Nothing to display yet — listen to a few songs, or connect a source",
       "discoverPickHint": "Pick a sleeve from the shelf, or click the list on the right",
@@ -606,7 +598,6 @@
       "similarSubtitle": "Neighbours from your local library"
     },
     "nowPlaying": {
-      "lyrics": "Lyrics",
       "noLyrics": "No lyrics",
       "addedToPlaylist": "Added to “{{name}}”",
       "searchLyrics": "Search lyrics",
@@ -629,9 +620,9 @@
       "lyricsOffsetUnit": "s",
       "lyricsApplied": "Using lyrics for “{{title}}”",
       "toolsToggle": "Lyrics tools",
+      "toolTabs": "Lyrics page tools",
+      "collapse": "Collapse",
       "playbackTitle": "Playback",
-      "coverHidden": "Cover hidden",
-      "coverBackground": "Cover as background",
       "syncTitle": "Timeline sync",
       "syncRemembered": "This track only · remembered",
       "syncEarlier": "− Earlier",
@@ -646,8 +637,6 @@
       "title": "Dynamic background",
       "hint": "Video/image stays on this machine and is never uploaded. Videos: mp4 / webm / m4v; images: jpg / png / webp / gif. Presets only store display options; proprietary wallpaper packages are not parsed.",
       "enabled": "Enable background",
-      "on": "On",
-      "off": "Off",
       "kind": "Background type",
       "kindVideo": "Video / image",
       "kindWeb": "Web (static single file)",
@@ -765,7 +754,25 @@
     },
     "setting": {
       "title": "Settings",
-      "subtitle": "Appearance, language and data source",
+      "subtitle": "Appearance, playback, storage and about",
+      "appearanceGroup": "Appearance & language",
+      "appearanceGroupHint": "Theme, language and readability; changes apply immediately.",
+      "lyricsGroup": "Lyrics",
+      "lyricsGroupHint": "Where lyrics come from; automatic search is off by default so startup never fetches on your behalf.",
+      "lyricsAutoSearch": "Search lyrics automatically",
+      "lyricsAutoSearchHint": "When the current source has no lyrics, try each candidate source by track id and use the first available result; otherwise show “No lyrics”.",
+      "playbackGroup": "Playback & lyrics",
+      "playbackGroupHint": "Lock and appearance of the desktop lyrics window; desktop only.",
+      "sourceGroupHint": "How the list is shown, which source and quality to prefer, and the active source.",
+      "downloadGroupHint": "Where files go, how many download at once, and what to do when a quality is missing.",
+      "petGroupHint": "The pet in its own always-on-top window, off by default.",
+      "backgroundGroup": "Background & home",
+      "backgroundGroupHint": "Dynamic background; wallpaper prep on desktop and the start page on mobile.",
+      "storageGroup": "Storage & cache",
+      "storageGroupHint": "Cache usage and limit, plus the data directory; desktop can move it.",
+      "aboutGroup": "About & diagnostics",
+      "aboutGroupHint": "Version and resetting settings; desktop also shows local core diagnostics.",
+      "sectionNav": "Settings sections",
       "homePage": "Home page",
       "homePageHint": "Which page opens first after launch (takes effect on next start).",
       "homePageLabel": "Start page",
@@ -774,7 +781,6 @@
       "resetHint": "Restore appearance, sources, downloads, background and home page to their defaults. Local music, plugins, downloaded files and credentials are not deleted.",
       "resetConfirmTitle": "Reset settings",
       "resetConfirmDesc": "All UI settings will be cleared and restored to defaults after reload. Local music, plugins and downloaded files are not deleted. Continue?",
-      "appearance": "Appearance",
       "openThemeMarket": "Open theme market",
       "themeMode": "Theme mode",
       "themeLight": "Light",
@@ -783,7 +789,6 @@
       "screenDim": "Night dim",
       "screenDimHint": "Dim the whole screen a little to reduce glare in the light theme; 0% turns it off.",
       "language": "Language",
-      "dataSource": "Data source",
       "activeSource": "Active source",
       "sourceSection": "Sources & quality",
       "sourceDisplay": "List mode",
@@ -799,63 +804,10 @@
       "discoverPreview": "Auto preview on Discover",
       "discoverPreviewHint": "When on, focusing a sleeve on Discover plays 20 seconds at low volume without touching the main player. The start point is an estimate (mid-song): sources provide no chorus timestamps. Nothing plays when no playable address or duration is available.",
       "petSection": "Pet (Beta)",
-      "petBeta": "Beta 1.0",
       "petToggle": "Pet",
       "petHint": "The pet lives in its own always-on-top window. Left click to pat, drag its body to move it, hover for status, and right click for feeding and size controls. Transparent areas pass clicks through. It uses an independent engine and database, and is off by default.",
-      "petSize": "Pet size",
       "petSizeExact": "Pet size in pixels",
       "petSizeUnit": "{{value}} px",
-      "petSizeHint": "Drag the slider or type any height between {{min}} and {{max}} px; the three presets are shortcuts, not limits.",
-      "petNeedsDesktop": "The pet needs the desktop core; the browser preview has no pet engine, so it is unavailable.",
-      "petInstalled": "Installed",
-      "petNone": "No pets yet (turning the switch on installs a built-in one)",
-      "petCount": "{{count}} total (only one is shown at a time)",
-      "petActive": "Active",
-      "petIdle": "Resting",
-      "petAffection": "Bond {{value}}",
-      "petSwitch": "Make active",
-      "petRemove": "Remove",
-      "petImport": "Import package",
-      "petImportClose": "Hide import",
-      "petLock": "Click-through (lock pet window)",
-      "petLockHint": "When on, clicks pass through the pet window; the pet cannot be clicked or dragged — unlock only here.",
-      "petDebug": "Debug panel (dev)",
-      "petDebugOpen": "Expand",
-      "petDebugPet": "Active pet",
-      "petDebugWindow": "Pet window",
-      "petDebugVisible": "visible",
-      "petDebugHidden": "hidden",
-      "petDebugOff": "off",
-      "petDebugOn": "on",
-      "petDebugRequires": "package needs ≥",
-      "petDebugCore": "Pet core",
-      "petDebugAnyCore": "no version requirement",
-      "petDebugSwitches": "Window switches",
-      "petDebugSaved": "Saved position",
-      "petDebugAtlas": "Atlas",
-      "petDebugNoAtlas": "none (procedural rendering)",
-      "petDebugFrame": "Last frame",
-      "petDebugNoProbe": "not read yet (press Probe one frame to retry)",
-      "petDebugProbe": "Probe one frame",
-      "petDebugTouch": "Pet it",
-      "petDebugReset": "Reset window position",
-      "petDebugNone": "—",
-      "petDebugOk": "done",
-      "petDebugFailed": "failed",
-      "petDebugHint": "Read-only info from three layers: core data, host window, last rendered frame. Probing calls pet.tick once with dtMs = 0 and does not advance the animation.",      "petRoam": "Wander on screen",
-      "petRoamHint": "When on, the pet walks to a different spot along the bottom of the window every 10–40 seconds (using runLeft / runRight); it pauses while your cursor is on it.",
-      "petDropHint": "Drop pet.json and spritesheet.webp here (or paste the JSON and pick the atlas below)",
-      "petImportTitle": "Pet package (pet.json + optional atlas; Codex Pet v1 also works)",
-      "petSpecPlaceholder": "Paste pet.json here (our format, or Codex Pet v1: {id, displayName, spritesheetPath})",
-      "petAtlasLabel": "Choose an atlas image (png / webp, optional)",
-      "petAtlasHint": "Atlas is optional: a horizontal frame strip whose frame count comes from pet.json animations. Without an atlas the renderer draws a procedural pet.",
-      "petAtlasPicked": "Selected {{name}}",
-      "petInstall": "Install",
-      "petImported": "Pet package installed",
-      "petNeedSpec": "Paste the pet.json contents first",
-      "petFeed": "Feed",
-      "petHungry": "Hungry",
-      "lyricsSection": "Desktop lyrics",
       "lyricsLock": "Lock the lyrics window (clicks pass through)",
       "lyricsLockOff": "Not locked",
       "lyricsLockOn": "Locked",
@@ -868,7 +820,6 @@
       "lyricsSweepOff": "Off",
       "lyricsSweepOn": "On",
       "lyricsSweepHint": "When on, the current line lights up from left to right. The lyrics window interpolates the position itself; the main window syncs timing once per second.",
-      "about": "About",
       "version": "Version {{version}}",
       "diagnostics": "Local core",
       "diagRuntime": "Runtime",
@@ -959,21 +910,3 @@
     "en": "English"
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

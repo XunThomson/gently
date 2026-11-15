@@ -1,4 +1,4 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {PetHost, registerCorePet} from '../../pet';
 import {PET_WINDOW_EVENTS, isTauri, windowService} from '../../services';
 import {publishPetWindowPayload, petWindowContext} from './pet-window-context';
@@ -49,6 +49,26 @@ export function PetWindowApp() {
         if (!control.active) return;
         return registerCorePet();
     }, [control.active, control.revision]);
+
+    /**
+     * 宠物窗口的「空白看门狗」（R145）。
+     *
+     * 窗口可见但渲染器没挂上时，用户看到的是一个透明空窗（宠物像消失了）。
+     * 常见于 WebView 首次加载失败 / 主窗口切后台后宠物窗口被丢弃资源。
+     * 只重载一次，避免和真正的「没有宠物」死循环。
+     */
+    const reloading = useRef(false);
+    useEffect(() => {
+        if (!control.active || !isTauri()) return;
+        const timer = window.setInterval(() => {
+            if (reloading.current) return;
+            if (document.querySelector('[data-pet-host]')) return;
+            reloading.current = true;
+            console.warn('[pet] 窗口里没有渲染器，重载一次宠物窗口');
+            window.location.reload();
+        }, 6000);
+        return () => window.clearInterval(timer);
+    }, [control.active]);
 
     /* 用户把宠物窗口关掉时，通知主窗口把开关也关掉
        （否则会出现「设置里说开着、窗口却不见了」这种自相矛盾的状态） */

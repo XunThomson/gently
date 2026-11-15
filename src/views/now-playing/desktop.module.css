@@ -1,0 +1,277 @@
+/* 桌面歌词页（R145）：歌词居中；功能只留歌词工具 / 定时关闭。 */
+
+.page {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: var(--space-3) var(--space-4);
+    box-sizing: border-box;
+    overflow: hidden;
+    /* R145：不再用封面做整页背景，也不铺死黑底；半透明 + 轻模糊让用户自定义
+       动态背景（视频/图片/网页）能透出来，同时保证歌词可读。 */
+    background:
+        radial-gradient(90% 60% at 50% 0%, var(--brand-soft), transparent 65%),
+        color-mix(in srgb, var(--bg-app) 68%, transparent);
+    backdrop-filter: blur(10px);
+    --lyrics-inactive-opacity: var(--now-playing-lyrics-inactive-opacity);
+}
+
+/* ---------- 顶栏 ---------- */
+
+.topbar {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: none;
+    min-height: var(--space-12);
+    /* 给右上角图标栏让位，标题不会被压住 */
+    padding-right: calc(var(--now-playing-rail-button-size) + var(--space-4));
+}
+
+.back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: none;
+    padding: var(--space-1) var(--space-2);
+    margin-left: calc(var(--space-2) * -1);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.back:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.back:active {
+    background: var(--bg-active);
+}
+
+.nowPlaying {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.coverThumb {
+    flex: none;
+    width: var(--now-playing-cover-thumb-size);
+    height: var(--now-playing-cover-thumb-size);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+.nowPlayingMeta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.title {
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.meta {
+    overflow: hidden;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.topbarSpacer {
+    flex: 1;
+}
+
+/* ---------- 右上角竖排功能栏 ---------- */
+
+.rail {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-4);
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
+    box-shadow: var(--shadow-md);
+}
+
+.railButton {
+    display: grid;
+    place-items: center;
+    width: var(--now-playing-rail-button-size);
+    height: var(--now-playing-rail-button-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.railButton:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.railButton:active:not(:disabled) {
+    background: var(--bg-active);
+}
+
+.railButton[data-active='true'] {
+    background: var(--brand-soft);
+    color: var(--brand);
+}
+
+.railButton:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* ---------- 右侧功能面板 ---------- */
+
+.sidePanel {
+    position: absolute;
+    top: calc(var(--space-6) + var(--now-playing-cover-thumb-size));
+    right: calc(var(--space-4) + var(--now-playing-rail-button-size) + var(--space-4));
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    width: var(--now-playing-side-panel-width);
+    max-height: var(--now-playing-side-panel-max-height);
+    overflow: hidden;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
+    box-shadow: var(--shadow-panel);
+    animation: panelIn var(--motion-base);
+}
+
+@keyframes panelIn {
+    from {
+        opacity: 0;
+        transform: translateX(var(--space-2));
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sidePanel {
+        animation: none;
+    }
+}
+
+.panelHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    flex: none;
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--divider);
+}
+
+.panelTitle {
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+}
+
+.panelClose {
+    display: grid;
+    place-items: center;
+    width: var(--now-playing-rail-button-size);
+    height: var(--now-playing-rail-button-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+}
+
+.panelClose:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.panelBody {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-3);
+}
+
+.playbackPanel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.panelDivider {
+    height: 1px;
+    background: var(--divider);
+}
+
+/* ---------- 歌词舞台 ---------- */
+
+.stage {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex: 1;
+    justify-content: center;
+    min-height: 0;
+    padding: var(--space-3) 0;
+    transition: padding-right var(--motion-base);
+}
+
+/* 面板打开时把歌词列轻轻左移，文字不被面板压住 */
+.page[data-panel='true'] .stage {
+    padding-right: calc(var(--now-playing-side-panel-width) + var(--space-6));
+}
+
+.lyricsColumn {
+    width: 100%;
+    max-width: var(--now-playing-lyrics-max-width);
+    height: 100%;
+    min-height: 0;
+}
+
+/* 更多功能面板：歌曲操作 + 队列，共用右侧面板的滚动区 */
+.morePanel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}

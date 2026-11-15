@@ -1,7 +1,7 @@
 import {useTranslation} from 'react-i18next';
-import {UnderlineRadioGroup} from '../../../components/ui/radio-group';
 import {MOBILE_NAV_ENTRIES} from '../../../config/mobileNav';
 import {useActions, useSelect} from '../../../store';
+import {ChoiceField} from './choice-field';
 import styles from '../setting.module.css';
 
 /**
@@ -13,6 +13,8 @@ import styles from '../setting.module.css';
  *
  * 改动在下一次启动时生效：根路由 `/` 在模块加载时读取持久化值并重定向
  * （见 `router/index.tsx` 的 `mobileHomePath()`）。
+ *
+ * 只渲染「背景与主页」组里的这个子块：标题是组内 subTitle，不是第二层卡片。
  */
 export function HomePageCard() {
     const {t} = useTranslation();
@@ -20,24 +22,19 @@ export function HomePageCard() {
     const {setHomePath} = useActions().ui;
 
     return (
-        <section className={styles.card}>
-            <h2 className={styles.cardTitle}>{t('page.setting.homePage')}</h2>
+        <>
+            <h3 className={styles.subTitle}>{t('page.setting.homePage')}</h3>
             <p className={styles.hint}>{t('page.setting.homePageHint')}</p>
-            <div className={styles.field}>
-                <span className={styles.label}>{t('page.setting.homePageLabel')}</span>
-                <span className={styles.value}>
-                    <UnderlineRadioGroup
-                        name="home-path"
-                        value={homePath}
-                        onChange={setHomePath}
-                        options={MOBILE_NAV_ENTRIES.map((entry) => ({
-                            value: entry.path,
-                            label: t(entry.labelKey),
-                        }))}
-                    />
-                </span>
-            </div>
-        </section>
+            <ChoiceField
+                label={t('page.setting.homePageLabel')}
+                value={homePath}
+                onChange={setHomePath}
+                options={MOBILE_NAV_ENTRIES.map((entry) => ({
+                    value: entry.path,
+                    label: t(entry.labelKey),
+                }))}
+            />
+        </>
     );
 }
 

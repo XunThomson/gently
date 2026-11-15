@@ -21,6 +21,8 @@ export interface PersistedUi {
     sourceFilterStyle?: SourceFilterStyle;
     preferredSource?: string | null;
     preferredQuality?: TrackQuality;
+    /** 歌词自动搜索（默认关） */
+    lyricsAutoSearch?: boolean;
     confirmDestructive?: boolean;
     /** 夜间柔光：屏幕压暗比例（0–30，百分比） */
     screenDim?: number;

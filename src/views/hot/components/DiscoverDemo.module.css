@@ -1,0 +1,272 @@
+/* 「发现」页 3D 演示卡：CSS 只负责暗房氛围、渐晕与文案，3D 主体全部在 canvas 里。 */
+
+.root {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: linear-gradient(160deg, var(--bg-surface-alt), var(--bg-app));
+    box-shadow: var(--shadow-lg);
+    isolation: isolate;
+}
+
+.stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    max-height: 720px;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: pan-y;
+    user-select: none;
+    -webkit-user-select: none;
+    background-color: var(--bg-app);
+    background-image:
+        radial-gradient(
+            90% 70% at 70% 28%,
+            color-mix(in srgb, var(--warning) 20%, transparent),
+            transparent 68%
+        ),
+        radial-gradient(
+            70% 60% at 18% 12%,
+            color-mix(in srgb, var(--brand) 24%, transparent),
+            transparent 65%
+        ),
+        linear-gradient(var(--modal-scrim), var(--modal-scrim)),
+        linear-gradient(var(--modal-scrim), var(--modal-scrim));
+}
+
+.stage[data-dragging='true'] {
+    cursor: grabbing;
+}
+
+.stage[data-webgl='unavailable'] .canvas {
+    display: none;
+}
+
+.canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+}
+
+/* 渐晕 + 左上角压暗：让白色文案落在暗房里，而不是压在亮面上 */
+.veil {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background:
+        linear-gradient(
+            180deg,
+            color-mix(in srgb, var(--modal-scrim) 62%, transparent) 0%,
+            transparent 26%,
+            transparent 74%,
+            color-mix(in srgb, var(--modal-scrim) 78%, transparent) 100%
+        ),
+        radial-gradient(
+            120% 100% at 50% 45%,
+            transparent 40%,
+            color-mix(in srgb, var(--modal-scrim) 76%, transparent) 100%
+        ),
+        linear-gradient(
+            135deg,
+            color-mix(in srgb, var(--modal-scrim) 84%, transparent) 0%,
+            transparent 46%
+        );
+}
+
+/* 暖色 bloom：不替代 3D，只把画面里的灯晕推出来一点 */
+.glow {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0.55;
+    mix-blend-mode: screen;
+    background:
+        radial-gradient(
+            38% 34% at 66% 33%,
+            color-mix(in srgb, var(--warning) 30%, transparent),
+            transparent 72%
+        ),
+        radial-gradient(
+            30% 24% at 27% 63%,
+            color-mix(in srgb, var(--brand) 18%, transparent),
+            transparent 76%
+        );
+}
+
+.copy {
+    position: absolute;
+    top: var(--space-6);
+    left: var(--space-6);
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    max-width: 46%;
+    pointer-events: none;
+}
+
+.title {
+    font-size: clamp(var(--font-size-2xl), 4.2vw, var(--font-size-4xl));
+    font-weight: var(--font-weight-bold);
+    line-height: var(--line-height-tight);
+    letter-spacing: -0.02em;
+    color: var(--brand-contrast);
+    text-wrap: balance;
+    text-shadow: 0 var(--space-1) var(--space-4) var(--modal-scrim);
+}
+
+.subtitle {
+    max-width: 36ch;
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-normal);
+    color: color-mix(in srgb, var(--brand-contrast) 76%, transparent);
+    text-shadow: 0 var(--space-1) var(--space-3) var(--modal-scrim);
+}
+
+.footer {
+    position: absolute;
+    right: var(--space-6);
+    bottom: var(--space-5);
+    left: var(--space-6);
+    z-index: 3;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--space-3);
+    pointer-events: none;
+}
+
+.hint {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 56ch;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-normal);
+    color: color-mix(in srgb, var(--brand-contrast) 82%, transparent);
+    background: color-mix(in srgb, var(--modal-scrim) 64%, transparent);
+    border: 1px solid color-mix(in srgb, var(--brand-contrast) 12%, transparent);
+    border-radius: var(--radius-full);
+    backdrop-filter: var(--surface-blur);
+    -webkit-backdrop-filter: var(--surface-blur);
+}
+
+.hintDot {
+    flex: none;
+    width: var(--space-2);
+    height: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--warning);
+    box-shadow: 0 0 var(--space-2) var(--warning);
+}
+
+.dragTag {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-2);
+    padding-bottom: var(--space-1);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0.08em;
+    color: color-mix(in srgb, var(--brand-contrast) 72%, transparent);
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.dragGlyph {
+    display: grid;
+    place-items: center;
+    width: var(--space-6);
+    height: var(--space-6);
+    font-size: var(--font-size-sm);
+    color: var(--brand-contrast);
+    border: 1px solid color-mix(in srgb, var(--brand-contrast) 18%, transparent);
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--modal-scrim) 52%, transparent);
+}
+
+/* ---------- 竖屏：让舞台接近参考图的手机比例，关键物体仍由相机自适应取景 ---------- */
+
+@media (max-width: 720px) {
+    .stage {
+        aspect-ratio: 13 / 20;
+        max-height: none;
+    }
+
+    .copy {
+        top: var(--space-4);
+        left: var(--space-4);
+        max-width: 86%;
+        gap: var(--space-1);
+    }
+
+    .title {
+        font-size: var(--font-size-2xl);
+    }
+
+    .subtitle {
+        max-width: 30ch;
+        font-size: var(--font-size-xs);
+    }
+
+    .footer {
+        right: var(--space-4);
+        bottom: var(--space-4);
+        left: var(--space-4);
+        gap: var(--space-2);
+    }
+
+    .hint {
+        padding: var(--space-1) var(--space-2);
+        font-size: var(--font-size-xs);
+    }
+
+    .dragTag {
+        font-size: var(--font-size-xs);
+        letter-spacing: 0.04em;
+    }
+
+    .dragGlyph {
+        width: var(--space-5);
+        height: var(--space-5);
+    }
+}
+
+@media (max-width: 420px) {
+    .hint {
+        max-width: 100%;
+    }
+
+    .footer {
+        align-items: center;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hintDot {
+        box-shadow: none;
+    }
+}
+
+/* 封面背景（R145）：当前曲目的封面铺底，模糊 + 压暗；后续可换用户自定义背景 */
+.artworkBackdrop {
+    position: absolute;
+    inset: -8%;
+    z-index: 0;
+    background-position: center;
+    background-size: cover;
+    filter: blur(28px) saturate(1.1);
+    opacity: 0.38;
+    transform: scale(1.06);
+    pointer-events: none;
+}

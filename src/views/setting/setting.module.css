@@ -1,20 +1,149 @@
-.card {
+/* ==========================================================================
+   设置页：锚点导航 + 语义分组。
+   结构只有两层：分组卡（Section）→ 设置行（field）。组内的子块（动态背景 /
+   壁纸助手 / 缓存 / 数据目录 / 诊断）用 subTitle + 分隔线，不再套第二层卡片。
+   尺寸 / 圆角 / 颜色 / 动效一律走主题 token。
+   ========================================================================== */
+
+/* ---------- 页面骨架 ---------- */
+
+.layout {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-5);
+    min-width: 0;
+}
+
+.sections {
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
-    padding: var(--space-5);
-    margin-bottom: var(--space-4);
-    background: var(--surface-chrome);
-    backdrop-filter: var(--surface-blur);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
+    min-width: 0;
 }
 
-.cardTitle {
+/* ---------- 分组锚点导航 ---------- */
+
+.nav {
+    position: sticky;
+    top: var(--space-2);
+    align-self: start;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: calc(var(--space-12) * 2);
+    padding: var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
+}
+
+.navItem {
+    display: flex;
+    align-items: center;
+    height: var(--sidebar-item-height);
+    padding: 0 var(--sidebar-item-padding-x);
+    border: 0;
+    border-radius: var(--sidebar-item-radius);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-normal);
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background var(--motion-fast), color var(--motion-fast);
+}
+
+.navItem:hover {
+    background: var(--sidebar-hover-bg);
+    color: var(--text-primary);
+}
+
+.navItemActive,
+.navItemActive:hover {
+    background: var(--sidebar-active-bg);
+    color: var(--sidebar-active-text-color);
+    font-weight: var(--font-weight-semibold);
+}
+
+/* ---------- 分组卡 ---------- */
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: var(--space-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
+}
+
+.sectionHeader {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.sectionTitle {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+
+.sectionDesc {
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+    color: var(--text-tertiary);
+}
+
+/* 组内条目：行与行之间 12px；说明文字紧贴所属行（4px），不各占一段 */
+.sectionBody {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.sectionBody > * + * {
+    margin-top: var(--space-3);
+}
+
+.sectionBody > .field + .hint {
+    margin-top: var(--space-1);
+}
+
+/* 子块标题（缓存 / 恢复默认）后面紧跟的说明同样收紧 */
+.sectionBody > .subHeader + .hint,
+.sectionBody > .subTitle + .hint {
+    margin-top: var(--space-1);
+}
+
+/* 组内子块标题行：标题 + 右侧操作按钮 */
+.subHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.subTitle {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
 }
+
+.blockDivider {
+    height: 1px;
+    background: var(--border-subtle);
+}
+
+/* ---------- 设置行 ---------- */
 
 .field {
     display: flex;
@@ -22,12 +151,13 @@
     justify-content: space-between;
     gap: var(--space-4);
     flex-wrap: wrap;
+    min-width: 0;
 }
 
 .label {
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    min-width: 96px;
+    min-width: calc(var(--space-12) * 2);
 }
 
 .value {
@@ -45,7 +175,7 @@
 
 /* 设置项里的文本输入（下载目录等）：宽度跟随内容区，窄窗口下不撑破卡片 */
 .input {
-    width: min(420px, 100%);
+    width: min(calc(var(--space-12) * 8), 100%);
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
@@ -59,7 +189,7 @@
     color: var(--text-tertiary);
 }
 
-/* 字段下方的补充说明（默认关闭二次确认、诊断提示等） */
+/* 字段下方的补充说明（设置项的一句话解释） */
 .hint {
     font-size: var(--font-size-xs);
     line-height: var(--line-height-relaxed);
@@ -74,16 +204,8 @@
     word-break: break-all;
 }
 
-/* 卡片标题行：标题 + 右侧刷新按钮 */
-.cacheHeader {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-}
-
-/* 缓存操作按钮组：窄窗口下换行而不是溢出 */
-.cacheActions {
+/* 操作按钮组：窄窗口下换行而不是溢出 */
+.actionRow {
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -103,7 +225,7 @@
     color: var(--danger);
 }
 
-/* 背景设置：滑杆宽度跟随内容区，窄窗口下不撑破卡片 */
+/* 滑杆宽度跟随内容区，窄窗口下不撑破卡片 */
 .range {
     width: min(calc(var(--space-12) * 4.5), 100%);
     accent-color: var(--brand);
@@ -112,10 +234,10 @@
     touch-action: pan-y;
 }
 
-/* 背景自由构图里的「翻转」：原生 checkbox，只统一尺寸与强调色 */
+/* 原生 checkbox，只统一尺寸与强调色 */
 .checkbox {
-    width: 18px;
-    height: 18px;
+    width: var(--space-5);
+    height: var(--space-5);
     accent-color: var(--brand);
     cursor: pointer;
 }
@@ -140,16 +262,7 @@
     text-align: right;
 }
 
-.blockDivider {
-    height: 1px;
-    background: var(--border-subtle);
-}
-
-.subTitle {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
-}
+/* ---------- 背景预设 ---------- */
 
 .presetList {
     display: flex;
@@ -182,7 +295,7 @@
 }
 
 .presetActive {
-    padding: 1px var(--space-2);
+    padding: 0 var(--space-2);
     border-radius: var(--radius-full);
     background: var(--brand-soft);
     color: var(--brand);
@@ -221,12 +334,14 @@
     line-height: var(--line-height-relaxed);
 }
 
+/* ---------- 宠物 ---------- */
+
 /* 宠物缩略预览：画布内部 96×104，CSS 显示 48×52（2×，高 DPI 也清晰）。
    像素画必须关掉平滑缩放，否则缩略图会糊成一片。 */
 .petPreview {
     flex: none;
-    width: 48px;
-    height: 52px;
+    width: var(--space-12);
+    height: calc(var(--space-12) + var(--space-1));
     image-rendering: pixelated;
     border-radius: var(--radius-sm);
 }
@@ -251,8 +366,7 @@
     color: var(--text-primary);
 }
 
-/* 宠物列表：一行一只（预览 / 名字+状态 / 操作），窄窗口自动换行。
-   之前这几个类名是引用了不存在的类，等于没有布局，所以卡片里「名字、版本、好感、按钮」挤成一行。 */
+/* 宠物列表：一行一只（预览 / 名字+状态 / 操作），窄窗口自动换行 */
 .petList {
     display: flex;
     flex-direction: column;
@@ -286,6 +400,7 @@
     gap: var(--space-1);
     margin-left: auto;
 }
+
 /* 宠物调试面板：一行一个键值，等宽字体方便对齐数字 */
 .petDebug {
     display: flex;
@@ -312,4 +427,218 @@
     flex-wrap: wrap;
     gap: var(--space-1);
     margin-top: var(--space-1);
+}
+
+/* ---------- 窄窗口：单列 + 吸顶横向 chips 导航 ---------- */
+
+@media (max-width: 960px) {
+    .layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-3);
+    }
+
+    .nav {
+        position: sticky;
+        top: 0;
+        z-index: var(--z-dropdown);
+        flex-direction: row;
+        align-items: center;
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: auto;
+        border-radius: var(--radius-md);
+    }
+
+    .navItem {
+        flex: 0 0 auto;
+        height: var(--button-height-sm);
+    }
+
+    /* 锚点跳转后标题不被吸顶的 chips 导航盖住 */
+    .section {
+        scroll-margin-top: var(--space-12);
+    }
+}
+
+/* 窄屏设置行：标签在上、控件在下，不再硬挤一行 */
+@media (max-width: 720px) {
+    .field {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--space-2);
+    }
+
+    .label {
+        min-width: 0;
+    }
+
+    .value {
+        justify-content: flex-start;
+    }
+}
+
+/* ---------- 手机外壳：分组拆成扁平区块，用分隔线而不是一堆大卡片 ---------- */
+
+/* 手机不渲染锚点导航，单列布局必须显式声明（否则内容会落在 max-content 那一列） */
+:global([data-shell='mobile']) .layout {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+:global([data-shell='mobile']) .sections {
+    gap: var(--space-4);
+}
+
+:global([data-shell='mobile']) .section {
+    gap: var(--space-2);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    backdrop-filter: none;
+}
+
+/* 组与组之间只留一条分隔线，视觉上是一份连续设置而不是一串卡 */
+:global([data-shell='mobile']) .section + .section {
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border-subtle);
+}
+
+:global([data-shell='mobile']) .sectionTitle {
+    font-size: var(--font-size-sm);
+}
+
+/* 手机要更紧凑：行距收到 8px，说明仍紧贴所属行 */
+:global([data-shell='mobile']) .sectionBody > * + * {
+    margin-top: var(--space-2);
+}
+
+:global([data-shell='mobile']) .label {
+    min-width: 0;
+}
+
+/* ---------- 手机设置行（R144）：行 = 标签 + 当前值/开关 + 箭头 ---------- */
+
+.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    width: 100%;
+    min-height: var(--mobile-sheet-item-height);
+    padding: var(--space-2) 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.row:active {
+    background: var(--bg-active);
+}
+
+.rowText {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.rowLabel {
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+}
+
+.rowHint {
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+}
+
+.rowValue {
+    flex: none;
+    max-width: 46%;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.switch {
+    position: relative;
+    flex: none;
+    width: calc(var(--space-10) + var(--space-1));
+    height: var(--space-6);
+    border-radius: var(--radius-full);
+    background: var(--border-default);
+    transition: background-color var(--motion-fast);
+}
+
+.switch[data-on='true'] {
+    background: var(--brand);
+}
+
+.switchKnob {
+    position: absolute;
+    top: 50%;
+    left: var(--space-1);
+    width: var(--space-5);
+    height: var(--space-5);
+    border-radius: var(--radius-full);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-50%);
+    transition: transform var(--motion-fast);
+}
+
+.switch[data-on='true'] .switchKnob {
+    transform: translate(calc(var(--space-10) - var(--space-5) - var(--space-1)), -50%);
+}
+
+/* 手机：每组是一张卡（一行一行），不是连续平铺的表单 */
+:global([data-shell='mobile']) .section {
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--surface-content);
+}
+
+:global([data-shell='mobile']) .section + .section {
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-subtle);
+}
+
+:global([data-shell='mobile']) .sectionTitle {
+    font-size: var(--font-size-base);
+}
+
+:global([data-shell='mobile']) .sectionDesc {
+    font-size: var(--font-size-xs);
+}
+
+/* 行内布局：标签在左、控件在右；控件太宽时自动换到下一行 */
+:global([data-shell='mobile']) .field {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+}
+
+:global([data-shell='mobile']) .label {
+    flex: 1;
+    min-width: 0;
+}
+
+:global([data-shell='mobile']) .value {
+    flex: none;
+    justify-content: flex-end;
+    max-width: 58%;
+}
+
+:global([data-shell='mobile']) .hint {
+    margin-bottom: var(--space-2);
 }

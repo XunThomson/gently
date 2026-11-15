@@ -195,9 +195,9 @@ export function WallpaperAssistant() {
     };
 
     return (
-        <section className={styles.card}>
-            <div className={styles.cacheHeader}>
-                <h2 className={styles.cardTitle}>{t('page.background.assistantTitle')}</h2>
+        <>
+            <div className={styles.subHeader}>
+                <h3 className={styles.subTitle}>{t('page.background.assistantTitle')}</h3>
                 <Button size="sm" variant="ghost" onClick={pickDirectory}>
                     {t('page.background.assistantSelect')}
                 </Button>
@@ -240,7 +240,7 @@ export function WallpaperAssistant() {
                 </div>
             )}
 
-            <div className={styles.cacheActions}>
+            <div className={styles.actionRow}>
                 <Button size="sm" disabled={files.length === 0 || busy} onClick={() => void build()}>
                     {busy ? t('page.background.assistantBuilding') : t('page.background.assistantBuild')}
                 </Button>
@@ -319,7 +319,7 @@ export function WallpaperAssistant() {
                     event.currentTarget.value = '';
                 }}
             />
-        </section>
+        </>
     );
 }
 

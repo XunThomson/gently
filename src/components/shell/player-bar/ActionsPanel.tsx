@@ -12,7 +12,16 @@ import styles from './Panel.module.css';
  * 功能抽屉：播放相关的功能性操作都收敛在这里
  * （收藏 / 下载 / 加入歌单 / 打开歌词页），避免占用歌词页与列表空间。
  */
-export function ActionsPanel({onClose, inline = false}: { onClose: () => void; inline?: boolean }) {
+export function ActionsPanel({
+    onClose,
+    inline = false,
+    showDetail = true,
+}: {
+    onClose: () => void;
+    inline?: boolean;
+    /** 已经站在歌词页时不需要「打开歌曲详情」这颗按钮 */
+    showDetail?: boolean;
+}) {
     const {t} = useTranslation();
     const navigate = useNavigate();
     const {pathname} = useLocation();
@@ -43,9 +52,12 @@ export function ActionsPanel({onClose, inline = false}: { onClose: () => void; i
             role="dialog"
             aria-label={t('player.actions')}
         >
-            <div className={styles.head}>
-                <span className={styles.title}>{t('player.actions')}</span>
-            </div>
+            {/* 内嵌进歌词页 tab 时不需要再顶一个「更多功能」标题：tab 本身就是标题 */}
+            {!inline && (
+                <div className={styles.head}>
+                    <span className={styles.title}>{t('player.actions')}</span>
+                </div>
+            )}
 
             <div className={styles.actions}>
                 <Button
@@ -68,17 +80,19 @@ export function ActionsPanel({onClose, inline = false}: { onClose: () => void; i
                     {t('common.download')}
                 </Button>
 
-                <Button
-                    size="sm"
-                    variant="default"
-                    disabled={!current}
-                    onClick={() => {
-                        onClose();
-                        if (shouldOpenNowPlaying(pathname)) navigate('/now-playing');
-                    }}
-                >
-                    {t('player.openDetail')}
-                </Button>
+                {showDetail && (
+                    <Button
+                        size="sm"
+                        variant="default"
+                        disabled={!current}
+                        onClick={() => {
+                            onClose();
+                            if (shouldOpenNowPlaying(pathname)) navigate('/now-playing');
+                        }}
+                    >
+                        {t('player.openDetail')}
+                    </Button>
+                )}
             </div>
 
             <div className={styles.section}>

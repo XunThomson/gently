@@ -27,6 +27,7 @@
     background: var(--bg-elevated);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     box-shadow: var(--shadow-panel);
+    transition: transform var(--motion-fast);
     animation: sheetSlideUp var(--motion-base);
     overflow-y: auto;
 }
@@ -46,6 +47,8 @@
     display: flex;
     justify-content: center;
     padding: var(--space-2) 0;
+    touch-action: none;
+    cursor: grab;
 }
 
 .grabberBar {
@@ -60,29 +63,13 @@
     align-items: center;
     justify-content: space-between;
     padding: var(--space-2) var(--space-3);
+    touch-action: none;
 }
 
 .title {
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
-}
-
-.closeBtn {
-    display: grid;
-    place-items: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-}
-
-.closeBtn:active {
-    background: var(--bg-active);
 }
 
 .content {

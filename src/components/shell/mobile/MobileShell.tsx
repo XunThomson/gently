@@ -1,7 +1,11 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
-import {Outlet, useLocation} from 'react-router';
+import {Outlet, useLocation, Navigate} from 'react-router';
+import {normalizeMobileHomePath} from '../../../config/mobileNav';
+import {readPersistedUi} from '../../../store/persist';
 import {appConfig} from '../../../config/app.config';
+import {NOW_PLAYING_PATH} from '../../../utils/nowPlayingRoute';
+import {MOBILE_DRAWER_OPEN_EVENT} from './drawerBus';
 import {IconList} from '../../ui/icon';
 import {RowActionsProvider} from '../../ui/row-actions';
 import {RouteError} from '../../ui/route-error';
@@ -32,6 +36,19 @@ export function MobileShell() {
     const [drawerOpen, setDrawerOpen] = useState(false);
     const contentRef = useRef<HTMLElement>(null);
     const onSearch = location.pathname === '/search' || location.pathname.startsWith('/search/');
+    /* 歌词页是「沉浸式」：它自己有一条「收起 + 标题」的顶栏，外壳的顶栏不再叠一层。
+       同时歌词页要占满剩余高度（歌词滚、页面本身不滚），交给 `data-immersive` 样式。 */
+    const immersive = location.pathname === NOW_PLAYING_PATH;
+    /* 热门推荐 / 发现 / 排行榜是桌面端页面（R145）：手机上即使被深链或
+       「最近路由」恢复带进来，也重定向回手机主页，不渲染桌面布局。 */
+    const desktopOnly = location.pathname.startsWith('/ranking') || location.pathname.startsWith('/hot');
+
+    /* 歌词页上划 → 打开侧边抽屉（R145）。歌词页不持有 drawer 状态，用事件通知。 */
+    useEffect(() => {
+        const onOpen = () => setDrawerOpen(true);
+        window.addEventListener(MOBILE_DRAWER_OPEN_EVENT, onOpen);
+        return () => window.removeEventListener(MOBILE_DRAWER_OPEN_EVENT, onOpen);
+    }, []);
 
     /* 换页回到顶部（R123） */
     useEffect(() => {
@@ -49,7 +66,22 @@ export function MobileShell() {
         return () => element.removeEventListener('scroll', clamp);
     }, []);
 
-    /* ---------- 跟手拖动的状态 ---------- */
+    /* 歌词页（沉浸式）内容区不该有任何纵向滚动：页面自己 overflow:hidden，
+       但 `scrollIntoView` / 浏览器自动滚动仍能编程式改 scrollTop，一改就把顶栏顶出屏幕。
+       这里把纵向位置钉在 0（R143：打开队列后「收起 + 标题」消失，根因就是行 scrollIntoView）。 */
+    useEffect(() => {
+        if (!immersive) return;
+        const element = contentRef.current;
+        if (!element) return;
+        const clamp = () => {
+            if (element.scrollTop !== 0) element.scrollTop = 0;
+        };
+        element.scrollTop = 0;
+        element.addEventListener('scroll', clamp, {passive: true});
+        return () => element.removeEventListener('scroll', clamp);
+    }, [immersive]);
+
+    /* 跟手拖动的状态 */
     const [dragOffset, setDragOffset] = useState<number | null>(null);
     const dragState = useRef<{
         pointerId: number;
@@ -228,6 +260,11 @@ export function MobileShell() {
         setDragOffset(null);
     }, []);
 
+    /* 桌面端专属页：手机上不渲染，直接回手机主页。必须在所有 hooks 之后。 */
+    if (desktopOnly) {
+        return <Navigate to={normalizeMobileHomePath(readPersistedUi().homePath)} replace/>;
+    }
+
     return (
         <RowActionsProvider>
             <div
@@ -242,7 +279,7 @@ export function MobileShell() {
                 onPointerCancel={onPointerCancel}
                 onClickCapture={onClickCapture}
             >
-                <header className={styles.header}>
+                <header className={styles.header} hidden={immersive}>
                     <button
                         type="button"
                         className={styles.headerAction}
@@ -256,7 +293,7 @@ export function MobileShell() {
 
                 {onSearch && <MobileSearchBar/>}
 
-                <main className={styles.content} ref={contentRef}>
+                <main className={styles.content} ref={contentRef} data-immersive={immersive ? 'true' : 'false'}>
                     <div className={styles.pageFade} key={location.key}>
                         <RouteError key={location.pathname}>
                             <Outlet/>
@@ -264,7 +301,7 @@ export function MobileShell() {
                     </div>
                 </main>
 
-                <MobilePlayerBar/>
+                {!immersive && <MobilePlayerBar/>}
 
                 <MobileNavDrawer
                     open={drawerOpen}

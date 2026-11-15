@@ -1,82 +1,45 @@
+/* 歌词页（R145）：R143/R144 的封面垫底已移除，页面只保留主题底色。
+   这个文件仍服务于工具内容里的零散类；布局在 desktop/mobile 两份 CSS 里。 */
+
 .page {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
     width: 100%;
-    max-width: var(--view-max-width);
-    margin: 0 auto;
-    padding: var(--view-padding-y) var(--view-padding-x) var(--space-8);
+    /* 封面垫底时非当前行也要读得清：歌词组件的全局不透明度是给纯色背景调的 */
+    --lyrics-inactive-opacity: var(--now-playing-lyrics-inactive-opacity);
+    /* 桌面端的内容区有确定高度（SplitLayout 的 flex 区域），整页占满：
+       页面本身不滚，只让歌词滚——这样当前的歌词行才能稳定停在视觉中心。 */
+    height: 100%;
+    min-height: 0;
+    padding: var(--view-padding-y) var(--view-padding-x) var(--space-3);
     box-sizing: border-box;
-    /* 「封面作为背景」时铺满整页（见 .coverBackdrop） */
-    position: relative;
+    overflow: hidden;
 }
 
-/* ---------- 顶部一行：返回 + 手机端的封面开关 ---------- */
+/* ---------- 封面垫底已移除（R145）---------- */
+
+.topbar,
+.stage {
+    position: relative;
+    z-index: 1;
+}
+
+/* ---------- 顶部：返回 / 收起 ---------- */
 
 .topbar {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-}
-
-.coverToggle {
-    margin-left: auto;
-    padding: var(--space-1) var(--space-2);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    background: none;
-    color: var(--text-secondary);
-    font-family: inherit;
-    font-size: var(--font-size-xs);
-    cursor: pointer;
-}
-
-.coverToggle[aria-pressed='true'] {
-    border-color: var(--brand);
-    color: var(--brand);
-}
-
-.coverToggle:active {
-    background: var(--bg-active);
-}
-
-/* ---------- 手机端「封面作为背景」：铺满、压暗 + 虚化，歌词压在上面 ---------- */
-
-.coverBackdrop {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    overflow: hidden;
-    pointer-events: none;
-    opacity: var(--now-playing-mobile-cover-opacity);
-    filter: blur(var(--now-playing-mobile-cover-blur));
-}
-
-.coverBackdropImage {
-    width: 100%;
-    height: 100%;
-}
-
-/* 手机端默认不看封面：把省下来的高度还给歌词卡片。
-   封面当背景时同样用手机那档高度——封面在手机上是**背景层**、不占布局，
-   歌词区域不该因为「开不开封面背景」而变矮（用户反馈 #2：歌词展示受封面尺寸影响）。 */
-.page[data-cover='hidden'],
-.page[data-cover='background'] {
-    --now-playing-lyrics-height: var(--now-playing-mobile-lyrics-height);
-}
-
-/* 背景层不参与布局层级：内容必须在它上面 */
-.page[data-cover='background'] .topbar,
-.page[data-cover='background'] .layout {
-    position: relative;
-    z-index: 1;
+    gap: var(--space-3);
+    flex: none;
+    min-height: var(--space-8);
 }
 
 .back {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
-    align-self: flex-start;
+    flex: none;
     padding: var(--space-1) var(--space-2);
     margin-left: calc(var(--space-2) * -1);
     border: 0;
@@ -94,41 +57,78 @@
     color: var(--text-primary);
 }
 
-.layout {
+.back:active {
+    background: var(--bg-active);
+}
+
+.topbarSpacer {
+    flex: 1;
+}
+
+/* 手机端标题：只有这里能看歌名歌手（封面不占正文） */
+.heading {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+}
+
+.headingTitle {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.headingMeta {
+    overflow: hidden;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---------- 主区：桌面两栏 / 手机单栏 ---------- */
+
+.stage {
     display: grid;
-    /* 首列在宽窗口给到上限，窄窗口按比例收缩但不少于下限——歌词栏始终留得下文字 */
+    /* 首列有上限：封面不再吃掉视觉中心，歌词栏始终拿到大部分宽度 */
     grid-template-columns:
         minmax(var(--now-playing-cover-min),
             min(var(--now-playing-cover-max), var(--now-playing-cover-ratio)))
         minmax(0, 1fr);
-    gap: var(--space-8);
-    align-items: start;
+    gap: var(--space-6);
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    max-width: var(--view-max-width);
+    margin: 0 auto;
+    padding-top: var(--space-4);
 }
 
-/* ---------- 封面 ---------- */
+/* ---------- 桌面：封面栏 ---------- */
 
 .artwork {
     display: flex;
     flex-direction: column;
+    gap: var(--space-4);
+    align-self: center;
     min-width: 0;
+    width: 100%;
+    max-width: var(--now-playing-cover-max);
 }
 
 .cover {
     position: relative;
-    display: grid;
-    place-items: center;
-    aspect-ratio: 1;
     width: 100%;
+    aspect-ratio: 1;
+    overflow: hidden;
     border-radius: var(--radius-2xl);
     box-shadow: var(--shadow-lg);
-    overflow: hidden;
-}
-
-.initial {
-    font-size: 84px;
-    font-weight: var(--font-weight-bold);
-    color: var(--brand-contrast);
-    opacity: 0.92;
 }
 
 .coverPlay {
@@ -137,110 +137,155 @@
     bottom: var(--space-4);
     display: grid;
     place-items: center;
-    width: 52px;
-    height: 52px;
+    width: var(--space-12);
+    height: var(--space-12);
+    padding: 0;
     border: 0;
     border-radius: var(--radius-full);
     background: var(--bg-elevated);
     color: var(--brand);
-    cursor: pointer;
     box-shadow: var(--shadow-md);
-    transition: transform var(--motion-fast);
+    cursor: pointer;
+    transition: transform var(--motion-fast), background-color var(--motion-fast);
 }
 
 .coverPlay:hover {
     transform: scale(1.06);
 }
 
-.caption {
-    margin-top: var(--space-4);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-secondary);
-    text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* ---------- 歌词 ---------- */
-
-.lyricsPanel {
+.artworkMeta {
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--space-1);
     min-width: 0;
-    /* 固定高度：歌词需要确定的可滚动区域才能把当前行滚到中间 */
-    height: var(--now-playing-lyrics-height);
-    padding: var(--space-5);
-    background: var(--surface-chrome);
-    backdrop-filter: var(--surface-blur);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-xl);
+    text-align: center;
 }
 
-/* 音频律动：只作歌词页的补充，36px 高、半透明，静音时是一条细直线（R139） */
+.artworkTitle {
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.artworkArtist {
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.artworkAlbum {
+    overflow: hidden;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 音频律动：只作补充，不抢歌词 */
 .oscillogram {
     display: block;
     flex: none;
     width: 100%;
-    height: 36px;
-    opacity: 0.55;
+    height: var(--space-8);
+    opacity: 0.5;
     pointer-events: none;
 }
 
-.lyricsTitle {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-secondary);
-}
+/* ---------- 歌词 + 工具 tabs（同一列） ---------- */
 
-/* 标题 + 「歌词工具」按钮同一行；标题过长时省略，不把按钮挤出卡片 */
-.lyricsHeader {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    flex-wrap: wrap;
-}
-
-/* ---------- 工具抽屉（默认收起，首次展开才挂载） ---------- */
-
-.drawer {
+.lyricsSection {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    /* 卡片高度固定，抽屉自己滚动：展开时把歌词区挤小，而不是把内容顶出卡片。
-       「搜索」那格要放下输入框 + 说明 + 结果列表，所以上限给到 66%（歌词区留 ~100px） */
-    flex: none;
-    max-height: min(430px, 66%);
-    overflow-y: auto;
-    padding: var(--space-3);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
-    background: var(--surface-drawer);
-    backdrop-filter: var(--surface-drawer-blur);
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    max-width: var(--now-playing-lyrics-max-width);
+    margin: 0 auto;
 }
 
-/* 收起时只是「藏起来」，不卸载：刚搜到的结果与关键词留着 */
-.drawer[hidden] {
+/* 歌词不是卡片：没有底色/边框，只有一条随滚动渐隐的文本流 */
+.lyricsViewport {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+}
+
+/* ---------- 工具 tabs ---------- */
+
+.tools {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.toolPanel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    max-height: var(--now-playing-tool-panel-max-height);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
+    box-shadow: var(--shadow-lg);
+    animation: toolPanelIn var(--motion-base);
+}
+
+.toolPanel[hidden] {
     display: none;
 }
 
-/* 分格：每格一屏放得下（竖排三段会把搜索挤到要滚动才看得见的地方） */
-.tabs {
+@keyframes toolPanelIn {
+    from {
+        opacity: 0;
+        transform: translateY(var(--space-1));
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .toolPanel {
+        animation: none;
+    }
+}
+
+.tabBar {
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    flex-wrap: wrap;
+    padding: var(--space-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    background: var(--surface-chrome);
+    backdrop-filter: var(--surface-blur);
 }
 
 .tab {
-    padding: var(--space-1) var(--space-2);
-    border: 1px solid transparent;
-    border-radius: var(--radius-md);
+    display: inline-flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    height: var(--now-playing-tool-tab-height);
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-full);
     background: none;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     font-family: inherit;
     font-size: var(--font-size-xs);
     cursor: pointer;
@@ -249,18 +294,39 @@
 
 .tab:hover {
     background: var(--bg-hover);
-    color: var(--text-secondary);
+    color: var(--text-primary);
 }
 
 .tab[data-active='true'] {
-    background: var(--bg-surface);
-    border-color: var(--border-default);
-    color: var(--text-primary);
+    background: var(--brand-soft);
+    color: var(--brand);
     font-weight: var(--font-weight-medium);
 }
 
-.block[hidden] {
-    display: none;
+.tab:active {
+    background: var(--bg-active);
+}
+
+/* ---------- 「播放」格 ---------- */
+
+.playbackTools {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.toolDivider {
+    flex: none;
+    height: 1px;
+    background: var(--divider);
+}
+
+/* ---------- 「歌词」格 ---------- */
+
+.lyricsTools {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
 }
 
 .block {
@@ -271,7 +337,7 @@
 
 .block + .block {
     padding-top: var(--space-3);
-    border-top: 1px solid var(--border-subtle);
+    border-top: 1px solid var(--divider);
 }
 
 .blockHead {
@@ -283,27 +349,23 @@
 }
 
 .blockTitle {
-    margin: 0;
-    font-size: var(--font-size-xs);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-secondary);
 }
 
 .blockHint {
-    font-size: var(--font-size-xs);
     color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
 }
 
-.toolsChevron {
-    display: inline-flex;
-    transition: transform var(--motion-fast);
+.notice {
+    color: var(--success);
+    font-size: var(--font-size-xs);
 }
 
-.toolsChevron[data-open='true'] {
-    transform: rotate(180deg);
-}
-
-/* ---------- 歌词搜索面板 ---------- */
+/* ---------- 歌词搜索 ---------- */
 
 .searchForm {
     display: flex;
@@ -329,16 +391,16 @@
 
 .searchHint,
 .status {
+    color: var(--text-tertiary);
     font-size: var(--font-size-xs);
     line-height: var(--line-height-relaxed);
-    color: var(--text-tertiary);
 }
 
 .results {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-    max-height: 132px;
+    max-height: calc(var(--space-12) * 3);
     overflow-y: auto;
     margin: 0;
     padding: 0;
@@ -362,7 +424,7 @@
 .resultMeta {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-1);
     min-width: 0;
 }
 
@@ -372,10 +434,10 @@
     gap: var(--space-2);
     min-width: 0;
     overflow: hidden;
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--font-size-sm);
-    color: var(--text-primary);
 }
 
 .sourceBadge {
@@ -389,10 +451,10 @@
 
 .resultSub {
     overflow: hidden;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--font-size-xs);
-    color: var(--text-tertiary);
 }
 
 /* ---------- 时间轴校正 ---------- */
@@ -402,8 +464,8 @@
     align-items: center;
     gap: var(--space-2);
     flex-wrap: wrap;
-    font-size: var(--font-size-xs);
     color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
 }
 
 .syncLegend {
@@ -412,8 +474,8 @@
     justify-content: space-between;
     gap: var(--space-2);
     flex-wrap: wrap;
-    font-size: var(--font-size-xs);
     color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
 }
 
 .syncKeys {
@@ -422,10 +484,10 @@
 }
 
 .offsetValue {
-    min-width: 64px;
-    text-align: center;
-    font-family: var(--font-mono);
+    min-width: var(--now-playing-offset-input-width);
     color: var(--text-primary);
+    font-family: var(--font-mono);
+    text-align: center;
 }
 
 /* 没校正过时压低对比度：一眼看出「这首还没调」 */
@@ -433,7 +495,6 @@
     color: var(--text-tertiary);
 }
 
-/* 大跨度校正：滑杆 + 数字输入，极端偏移不用连点几十次 */
 .offsetRow {
     display: flex;
     align-items: center;
@@ -467,8 +528,8 @@
 }
 
 .sourceLine {
-    font-size: var(--font-size-sm);
     color: var(--text-primary);
+    font-size: var(--font-size-sm);
     overflow-wrap: anywhere;
 }
 
@@ -481,33 +542,82 @@
 }
 
 .manualHint {
+    color: var(--text-tertiary);
     font-size: var(--font-size-xs);
     line-height: var(--line-height-relaxed);
-    color: var(--text-tertiary);
 }
 
 .syncHint {
     color: var(--text-tertiary);
-}
-
-.notice {
     font-size: var(--font-size-xs);
-    color: var(--success);
+    line-height: var(--line-height-relaxed);
 }
 
-/* 歌词滚动区：占满剩余高度（固定高度的卡片里必须能收缩，否则会把工具行挤出去） */
-.lyricsBody {
+/* ============================== 移动端 ============================== */
+
+/* 手机：整页交给 `MobileShell` 的 `data-immersive`，这里只做「顶栏 + 歌词 + tabs」三段 */
+.page[data-shell='mobile'] {
+    /* 手机上的歌词需要比桌面大一档；只在歌词页覆盖，桌面歌词窗口不受影响 */
+    --lyrics-font-size: var(--now-playing-mobile-lyrics-font-size);
+    --lyrics-padding-y: var(--space-8);
+    --lyrics-padding-x: var(--space-2);
+    display: flex;
     flex: 1;
-    min-height: 96px;
+    min-height: 0;
+    height: 100%;
+    padding: 0;
 }
 
-/* 只在「被强制展开成完整界面」的迷你尺寸才单列；断点来自 useShellMode，不再与 CSS 双写 */
-.layout[data-stack='true'] {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-6);
+.page[data-shell='mobile'] .topbar {
+    gap: var(--space-2);
+    min-height: var(--mobile-header-height);
+    padding: 0 var(--mobile-padding-x);
 }
 
-.layout[data-stack='true'] .cover {
-    max-width: var(--now-playing-cover-stack-max);
-    margin: 0 auto;
+.page[data-shell='mobile'] .back {
+    justify-content: center;
+    width: var(--mobile-control-size);
+    height: var(--mobile-control-size);
+    padding: 0;
+    margin-left: 0;
+    border-radius: var(--radius-full);
+}
+
+.page[data-shell='mobile'] .topbarSpacer {
+    flex: none;
+    width: var(--mobile-control-size);
+}
+
+.page[data-shell='mobile'] .stage {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    max-width: none;
+    padding: var(--space-2) var(--mobile-padding-x) 0;
+}
+
+.page[data-shell='mobile'] .lyricsSection {
+    flex: 1;
+    gap: var(--space-2);
+    max-width: none;
+}
+
+.page[data-shell='mobile'] .tools {
+    padding-bottom: var(--space-1);
+}
+
+.page[data-shell='mobile'] .toolPanel {
+    max-height: var(--now-playing-tool-panel-mobile-max-height);
+    padding: var(--space-3);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel);
+}
+
+/* 手机上没有悬浮：tabs 的按压态要明确（同时由全局去掉 WebView 的蓝色 tap highlight） */
+.page[data-shell='mobile'] .tab:active {
+    background: var(--bg-active);
+}
+
+.page[data-shell='mobile'] .tab {
+    font-size: var(--font-size-sm);
 }

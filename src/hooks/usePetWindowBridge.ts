@@ -57,6 +57,32 @@ export function usePetWindowBridge(enabled: boolean, revision: number): void {
         })();
     }, [enabled]);
 
+    /**
+     * 窗口健康检查（R145）：窗口被系统隐藏 / 最小化 / 显示桌面盖掉时，
+     * `enabled` 仍是 true，但用户看不到宠物。每 5 秒确认一次可见性，
+     * 不可见就重新 show；窗口被真正销毁时 show 会失败，至少日志能说明原因。
+     */
+    useEffect(() => {
+        if (!isTauri() || !enabled) return;
+        let disposed = false;
+        let checking = false;
+        const check = async () => {
+            if (disposed || checking) return;
+            checking = true;
+            try {
+                const visible = await windowService.petWindowVisible();
+                if (!disposed && !visible) await windowService.showPetWindow();
+            } finally {
+                checking = false;
+            }
+        };
+        const timer = window.setInterval(() => void check(), 5000);
+        return () => {
+            disposed = true;
+            window.clearInterval(timer);
+        };
+    }, [enabled]);
+
     /* 宠物被安装 / 切换 / 卸载：推一次，宠物窗口据此重挂渲染器 */
     useEffect(() => {
         if (!isTauri()) return;
