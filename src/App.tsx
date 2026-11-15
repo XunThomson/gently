@@ -98,6 +98,20 @@ export default function App() {
         return () => window.removeEventListener('pointerdown', dismissPanel, true);
     }, []);
 
+    /* R146：Alt+Tab 回窗口时有时先看到一帧黑/旧 surface（WebView2 合成层）。
+       焦点事件本身不保证触发 visibilitychange，这里主动强制一次布局/重绘。 */
+    useEffect(() => {
+        const repaint = () => {
+            document.documentElement.dataset.focusTick = String(Date.now());
+            window.dispatchEvent(new Event('resize'));
+            requestAnimationFrame(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
+        };
+        window.addEventListener('focus', repaint);
+        return () => window.removeEventListener('focus', repaint);
+    }, []);
+
     /* 外壳本身永远不该被滚动：被浏览器滚走就是「白屏 + 回不来」（R137，见 hook 注释） */
     const shellRef = useClampedShell();
 
