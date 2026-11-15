@@ -90,6 +90,14 @@ export default function App() {
         return () => document.removeEventListener('visibilitychange', wake);
     }, []);
 
+    /* R146：独立宠物面板是另一个置顶窗口。用户点回主窗口任意位置时，
+       宿主事件不可靠，这里直接收起面板——避免它看起来像关不掉的遮罩。 */
+    useEffect(() => {
+        const dismissPanel = () => void windowService.hidePetPanel();
+        window.addEventListener('pointerdown', dismissPanel, true);
+        return () => window.removeEventListener('pointerdown', dismissPanel, true);
+    }, []);
+
     /* 外壳本身永远不该被滚动：被浏览器滚走就是「白屏 + 回不来」（R137，见 hook 注释） */
     const shellRef = useClampedShell();
 

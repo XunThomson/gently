@@ -4,6 +4,7 @@ import {Cover} from '../../components/ui/cover';
 import {IconChevronLeft, IconClose, IconLyrics, IconMoon, IconMore} from '../../components/ui/icon';
 import {ActionsPanel} from '../../components/shell/player-bar';
 import {useActions, useSelect} from '../../store';
+import {useShellMode} from '../../hooks/useShellMode';
 import {NowPlayingLyrics} from './components/NowPlayingLyrics';
 import {LyricsTools} from './components/LyricsTools';
 import {useNowPlayingBack} from './useNowPlayingBack';
@@ -29,6 +30,7 @@ export function DesktopNowPlaying() {
     const current = useSelect((s) => s.player.current);
     const detail = useSelect((s) => s.player.detail);
     const sleepTimerMode = useSelect((s) => s.ui.sleepTimerMode);
+    const shellMode = useShellMode();
     const {setSleepTimer, setSleepTimerEndOfTrack, cancelSleepTimer} = useActions().ui;
 
     const [lyricsOpen, setLyricsOpen] = useState(false);
@@ -154,7 +156,12 @@ export function DesktopNowPlaying() {
                     <div className={styles.panelBody}>
                         {moreOpen ? (
                             <div className={styles.morePanel}>
-                                <ActionsPanel inline showDetail={false} onClose={closePanel}/>
+                                <ActionsPanel
+                                    inline
+                                    showDetail={false}
+                                    showSourceQuality={shellMode === 'compact'}
+                                    onClose={closePanel}
+                                />
                             </div>
                         ) : (
                             <LyricsTools active/>

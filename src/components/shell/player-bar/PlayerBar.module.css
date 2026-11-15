@@ -346,3 +346,18 @@
 .playerCompact .right {
     gap: var(--space-1);
 }
+
+/* R146：560 左右的紧凑窗放不下两个 picker，先收进功能抽屉；
+   音源/音质在 ActionsPanel 里仍有入口。 */
+.pickers {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+@media (max-width: 700px) {
+    .pickers {
+        display: none;
+    }
+}

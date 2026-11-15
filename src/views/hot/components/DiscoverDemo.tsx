@@ -649,12 +649,12 @@ function buildTurntable(renderer: THREE.WebGLRenderer): {
 
     /* 标签上的偏心贴纸：黑胶的同心纹旋转几乎看不出来，这颗亮点是「在转」的视觉锚 */
     const sticker = new THREE.Mesh(
-        new THREE.CircleGeometry(0.055, 24),
+        new THREE.CircleGeometry(0.085, 24),
         new THREE.MeshStandardMaterial({
-            color: 0xf2c38f,
-            emissive: 0x6b351d,
-            emissiveIntensity: 0.5,
-            roughness: 0.6,
+            color: 0xffe1b0,
+            emissive: 0x8a4a26,
+            emissiveIntensity: 0.7,
+            roughness: 0.55,
         }),
     );
     sticker.rotation.x = -Math.PI / 2;

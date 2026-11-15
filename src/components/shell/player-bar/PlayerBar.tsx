@@ -148,7 +148,7 @@ export function PlayerBar({compact = false}: {compact?: boolean}) {
             <PlayerSeekBar skin={progressSkin}/>
 
             {panel === 'queue' && <QueuePanel onClose={() => setPanel(null)}/>}
-            {panel === 'actions' && <ActionsPanel onClose={() => setPanel(null)}/>}
+            {panel === 'actions' && <ActionsPanel onClose={() => setPanel(null)} showSourceQuality={compact}/>}
 
             <div className={styles.row}>
                 {/* ---------- 左：歌曲信息 ---------- */}
@@ -272,8 +272,10 @@ export function PlayerBar({compact = false}: {compact?: boolean}) {
 
                 {/* ---------- 右：音源 / 音质 / 模式 / 抽屉 / 音量 ---------- */}
                 <div className={styles.right}>
-                    <SourcePicker/>
-                    <QualityPicker/>
+                    <span className={styles.pickers}>
+                        <SourcePicker/>
+                        <QualityPicker/>
+                    </span>
 
                     <button
                         type="button"

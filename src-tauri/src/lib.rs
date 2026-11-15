@@ -196,6 +196,14 @@ pub fn run() {
             if window.label() == "pet-panel" && matches!(event, tauri::WindowEvent::Focused(false)) {
                 let _ = window.hide();
             }
+            /* 点回主窗口 = 关闭独立面板；不依赖 WebView2 的 blur 事件。 */
+            if window.label() == "main"
+                && matches!(event, tauri::WindowEvent::Focused(true))
+            {
+                if let Some(panel) = window.app_handle().get_webview_window("pet-panel") {
+                    let _ = panel.hide();
+                }
+            }
         })
         .setup(|app| {
             /* 数据目录：三种来源按优先级裁决（`paths::resolve_data_paths`）——

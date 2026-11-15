@@ -3,6 +3,8 @@ import {useTranslation} from 'react-i18next';
 import {useLocation, useNavigate} from 'react-router';
 import {Button} from '../../ui/button';
 import {IconDownload, IconHeart, IconPlus} from '../../ui/icon';
+import {QualityPicker} from './QualityPicker';
+import {SourcePicker} from './SourcePicker';
 import {useActions, usePlayerState, useSelect} from '../../../store';
 import {downloadQueueKeyString, isQueued, parseQueueKeyString} from '../../../utils/downloadQueue';
 import {shouldOpenNowPlaying} from '../../../utils/nowPlayingRoute';
@@ -16,11 +18,14 @@ export function ActionsPanel({
     onClose,
     inline = false,
     showDetail = true,
+    showSourceQuality = false,
 }: {
     onClose: () => void;
     inline?: boolean;
     /** 已经站在歌词页时不需要「打开歌曲详情」这颗按钮 */
     showDetail?: boolean;
+    /** 窄窗播放条把音源/音质收进功能抽屉，保证这里仍有入口（R146） */
+    showSourceQuality?: boolean;
 }) {
     const {t} = useTranslation();
     const navigate = useNavigate();
@@ -94,6 +99,16 @@ export function ActionsPanel({
                     </Button>
                 )}
             </div>
+
+            {showSourceQuality && (
+                <div className={styles.section}>
+                    <span className={styles.sectionLabel}>{t('source.label')}</span>
+                    <div className={styles.pickers}>
+                        <SourcePicker/>
+                        <QualityPicker/>
+                    </div>
+                </div>
+            )}
 
             <div className={styles.section}>
                 <span className={styles.sectionLabel}>{t('page.playlist.addToPlaylist')}</span>
