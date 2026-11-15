@@ -4,7 +4,7 @@ last_verified: 2026-11-15
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低机位、当前曲目封面铺底、仅播放时旋转）；两端歌词页改半透明，用户自定义背景可透出；设置里的宠物只留启用开关；歌词自动搜索改为候选 id + 聚合搜索取第一份带词结果；标题栏与启动屏换用 `src-tauri/icons/icon.png`，内置背景换成提供的 wallpaper.mp4；桌面歌词返回/更多功能/宠物 HUD 点击穿透已修；移动底部面板支持内容区下拉。typecheck / smoke 623 / verify 通过；后台重载、宠物独立面板窗口、小尺寸 UI 仍未收口。
+tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低机位、当前曲目封面铺底、仅播放时旋转）；两端歌词页改半透明，用户自定义背景可透出；设置里的宠物只留启用开关，控制面板拆成独立 `pet-panel` 窗口；歌词自动搜索改为候选 id + 聚合搜索取第一份带词结果；标题栏与启动屏换用 `src-tauri/icons/icon.png`，内置背景换成提供的 wallpaper.mp4；桌面歌词返回/更多功能/宠物 HUD 点击穿透已修；移动底部面板支持内容区下拉。typecheck / smoke 623 / verify 通过；后台重载、气泡精细对齐、小尺寸 UI 仍未收口。
 ---
 
 # STATE
@@ -27,7 +27,8 @@ tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低
 | **R145 回归修复** | ① 热门推荐 / 发现 / 排行榜在手机上重定向回手机主页；② 歌词页返回在「无历史」时不再 `navigate('/')`（会被最近路由快照弹回歌词页），改为直接去手机主页 / 桌面排行榜；③ 宠物窗口显示时先整窗穿透，只在真实热区放开；`menu_open` 不再让整块 HUD 画布吃点击（这是歌词页/播放条点不动的真因）；④ 宠物 5s 可见性心跳 |
 | **发现页合并推荐** | `/hot` 去掉「热门推荐 / 发现」双 tab，整页只保留发现 3D demo；侧栏入口文案改为「发现」；手机的 `/hot`、`/ranking` 仍重定向 |
 | **歌词页背景通透** | 桌面/手机歌词页去掉不透明底色，改为半透明 `--bg-app` + 轻模糊，用户自定义视频/图片背景能透出来；桌面播放条/面板仍保持可读表面 |
-| **宠物设置收敛** | 设置页宠物组只留「启用」一个开关；锁定 / 大小 / 走动 / 安装包配置全部移到宠物控制面板（本轮先完成移除，独立面板窗口见未做） |
+| **宠物设置收敛** | 设置页宠物组只保留「启用」开关；锁定 / 大小 / 走动 / 安装包配置全部移到宠物控制面板（R145 已拆成独立 `pet-panel` Tauri 窗口） |
+| **宠物独立面板** | 新增 `pet-panel` 窗口（340×430，卡片自己的表面）；右键卡片 →「控制面板」打开；含喂食/摸头、大小滑杆、游走开关、隐藏宠物，Esc/关闭按钮收起；设置页不再重复 |
 | **歌词自动搜索聚合** | 开启开关后先按候选源 id 找词；仍没有时调用 `catalog.searchLyrics(标题 歌手)`，按核心返回顺序取第一份**真正带歌词**的结果；手动选词仍可覆盖 |
 | **3D 背景/旋转** | demo 用当前曲目封面铺底（模糊压暗，`backgroundUrl` 为后续背景仓库预留）；唱片只在 `player.playing=true` 时旋转，暂停即停 |
 | **品牌与背景** | 标题栏/启动屏 favicon 改为 `src-tauri/icons/icon.png`；内置背景视频换为 `D:\Xun\Videos\3375392695_extracted\wallpaper.mp4`（复制到 `src/assets/bgc.mp4`） |
@@ -46,7 +47,7 @@ tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低
 | `pnpm smoke` | **623 项全过** |
 | `pnpm verify` | **通过**（typecheck + smoke 623 + 契约 / 可达性 + cargo 两 core/宿主 + check:pet） |
 | `pnpm build:android` | 通过：`release/gently-0.1.0-android-debug.apk` 156.7 MB，SHA256 `6308b0351bfa99be79a6cce2ab24f88156fc8dc5a8886910d106b3df8db0eb3b`，已安装真机 |
-| 实图 | `release/screenshots/r145-desktop-lyrics.png`、`r145-desktop-demo-low.png`、`r145-mobile-lyrics.png`、`r145-mobile-quality.png`、`r145-mobile-drawer.png`、`r145-discover-demo.png`、`r145-discover-demo-mobile.png`、`r145-android-demo.png`、`r145-android-drawer.png`、`r145-android-setting.png`、`r145-android-lyrics.png`、`r145-pet.png` |
+| 实图 | `release/screenshots/r145-desktop-lyrics.png`、`r145-desktop-demo-low.png`、`r145-mobile-lyrics.png`、`r145-mobile-quality.png`、`r145-mobile-drawer.png`、`r145-discover-demo.png`、`r145-discover-demo-mobile.png`、`r145-android-demo.png`、`r145-android-drawer.png`、`r145-android-setting.png`、`r145-android-lyrics.png`、`r145-pet.png`、`r145-pet-panel-window.png` |
 | 手势 | 浏览器 CDP 拖动：歌词工具/音质面板下拉后 `dialogs=0`；底部控制区上划后左侧抽屉打开（`x=0`），系统返回关闭；真机同样 |
 | 真机 | R145 APK 安装：路由恢复 `/hot?tab=discover`、Three.js demo 正常渲染；底部只 4 个动作图标；设置「歌词」组与自动搜索开关可见；底部上划打开左侧抽屉、面板下拉关；暂停后按 Home 15 分钟回来 `window.__r145long` 仍在、点收起立即回 `/search`（页面未重载且可交互） |
 | 回归修复验证 | 直接打开歌词页点收起 → `/search`（手机）/ `/ranking`（桌面）；手机打开 `/hot` 被重定向 `/search`；桌面「更多功能」面板含收藏/下载/加入歌单/队列；宠物卡片打开时点主窗口主题按钮仍生效（宠物 HUD 透明区不再吃点击）；Tauri dev 实图 3D demo 显示黑胶/封套 |
@@ -54,9 +55,9 @@ tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低
 | 启动屏 | 同一会话 reload 时 `html.is-resuming` 直接隐藏 `#boot-splash`，至少不再闪启动页（底层重载仍未根治） |
 | 3D 低机位 | `data-webgl='ready'`；实图 `r145-desktop-demo-low.png` 为唱片前景/封套直立的低机位视角 |
 | 移动面板 | 真机从音质面板**内容区**（不是抓手）下滑，`dialogs` 从 1 → 0，关闭生效 |
-| 宠物 | WebView2 实跑：窗口从 200×160 被主窗口 reload 自动校回 920×937；宠物可见、位置不因 reload 重摆 |
+| 宠物 | WebView2 实跑：窗口从 200×160 被主窗口 reload 自动校回 920×937；宠物可见、位置不因 reload 重摆；独立控制面板窗口 `pet-panel` 可打开（340×430） |
 | 路由恢复 | 从 `/setting` 直接导航到 `/`（冷启动路径），30 分钟内快照生效回到 `/setting` |
-| 未做 | 30 分钟以上后台长测；**任务栏恢复仍会重载**（本轮只隐藏了 reload 启动屏，未根治）；宠物控制面板仍是宠物窗口 HUD（未拆成独立窗口）；小尺寸窗口 UI 未系统重做；demo 在低端 Android 上的帧率/发热 |
+| 未做 | 30 分钟以上后台长测；**任务栏恢复仍会重载**（本轮只隐藏了 reload 启动屏，底层未根治）；气泡与本体尾部的精细对齐仍待按 vpet 调；小尺寸窗口 UI 未系统重做 |
 
 ## 本轮目标（第一百四十四轮）
 

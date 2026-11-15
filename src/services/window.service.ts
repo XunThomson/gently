@@ -268,6 +268,48 @@ export const windowService = {
     /* ---------------- 宠物窗口（独立置顶小窗） ---------------- */
 
     /**
+     * 宠物控制面板窗口（R145）：与宠物本体分开的 Tauri 窗口。
+     *
+     * 为什么独立：面板（尺寸/行为/隐藏）一打开就有 300+px，塞在宠物窗口的 HUD
+     * 预留里会让透明画布挡住主窗口，还会和气泡抢位置；独立窗口可以自己聚焦、
+     * 自己关闭，宠物窗口继续只负责本体。
+     */
+    showPetPanel: async (): Promise<boolean> => {
+        if (!isTauri()) return false;
+        try {
+            const win = await petPanelWindow();
+            if (!win) return false;
+            await win.setAlwaysOnTop(true).catch(() => undefined);
+            await win.show();
+            await win.setFocus().catch(() => undefined);
+            return true;
+        } catch (err) {
+            console.warn('[window] 显示宠物控制面板失败', err);
+            return false;
+        }
+    },
+
+    hidePetPanel: async (): Promise<void> => {
+        if (!isTauri()) return;
+        try {
+            const win = await petPanelWindow();
+            if (win) await win.hide();
+        } catch (err) {
+            console.warn('[window] 隐藏宠物控制面板失败', err);
+        }
+    },
+
+    petPanelVisible: async (): Promise<boolean> => {
+        if (!isTauri()) return false;
+        try {
+            const win = await petPanelWindow();
+            return win ? await win.isVisible() : false;
+        } catch {
+            return false;
+        }
+    },
+
+    /**
      * 显示宠物窗口。
      *
      * 为什么宠物要独立成窗口：留在主窗口里就注定「跟着音乐软件一起最小化、一起被盖住」，
@@ -352,6 +394,7 @@ export const windowService = {
         try {
             const win = await petWindow();
             if (win) await win.hide();
+            await windowService.hidePetPanel();
         } catch (err) {
             console.warn('[window] 隐藏宠物窗口失败', err);
         }
@@ -476,6 +519,8 @@ export const windowService = {
 
 /** 宠物窗口（label 与 `tauri.conf.json` 里的一致） */
 export const PET_WINDOW_LABEL = 'pet';
+/** 宠物控制面板的独立窗口（R145） */
+export const PET_PANEL_LABEL = 'pet-panel';
 
 /** 宠物本体脚底锚点（与主窗口同源，localStorage 共享） */
 export const PET_BODY_ANCHOR_KEY = 'gently:pet-body-anchor';
@@ -528,6 +573,11 @@ export const PET_WINDOW_EVENTS = {
 async function petWindow() {
     const {WebviewWindow} = await import('@tauri-apps/api/webviewWindow');
     return WebviewWindow.getByLabel(PET_WINDOW_LABEL);
+}
+
+async function petPanelWindow() {
+    const {WebviewWindow} = await import('@tauri-apps/api/webviewWindow');
+    return WebviewWindow.getByLabel(PET_PANEL_LABEL);
 }
 
 type PetWin = NonNullable<Awaited<ReturnType<typeof petWindow>>>;

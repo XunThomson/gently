@@ -55,8 +55,24 @@
         "decorations": false,
         "shadow": false,
         "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "transparent": true
+        "skipTaskbar": true
+      },
+      {
+        "label": "pet-panel",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding",
+        "url": "index.html?window=pet-panel",
+        "transparent": true,
+        "title": "gently 宠物面板",
+        "width": 340,
+        "height": 430,
+        "center": true,
+        "visible": false,
+        "focus": true,
+        "resizable": false,
+        "decorations": false,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true
       }
     ],
     "security": {

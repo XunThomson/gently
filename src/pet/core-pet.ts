@@ -1231,7 +1231,12 @@ export function createCorePet(): PetDefinition {
             };
             for (const button of [cardFeed, panelFeed]) button.addEventListener('click', runFeed);
             for (const button of [cardTouch, panelTouch]) button.addEventListener('click', runTouch);
-            panelEntry.addEventListener('click', () => setSurface(nextPetSurface(surface, 'openPanel')));
+            panelEntry.addEventListener('click', () => {
+                /* R145：控制面板是独立 Tauri 窗口，不在宠物窗口的 HUD 里展开。
+                   先收卡片，再让面板窗口自己聚焦。 */
+                setSurface('none');
+                void windowService.showPetPanel();
+            });
 
             /* 尺寸的唯一一套控件：滑杆拖动实时应用、松手持久化（每帧写 localStorage 太贵）；
                数字框回车 / 失焦提交。两者写同一份尺寸状态，不存在「两套尺寸控件打架」。 */

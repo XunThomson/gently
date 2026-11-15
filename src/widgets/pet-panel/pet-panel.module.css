@@ -1,0 +1,178 @@
+/* 独立宠物控制面板：窗口透明，卡片自己画表面。 */
+
+.root {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    width: 100%;
+    height: 100%;
+    padding: var(--space-3);
+    box-sizing: border-box;
+    overflow: auto;
+    color: var(--text-primary);
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel);
+}
+
+.head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+
+.title {
+    margin: 0;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+}
+
+.meta {
+    margin: var(--space-1) 0 0;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+}
+
+.close {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: var(--mobile-control-size);
+    height: var(--mobile-control-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+}
+
+.close:active {
+    background: var(--bg-active);
+}
+
+.error {
+    margin: 0;
+    color: var(--danger);
+    font-size: var(--font-size-xs);
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--divider);
+}
+
+.sectionTitle {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+}
+
+.actions {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.action {
+    flex: 1;
+    min-height: var(--mobile-control-size);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface-content);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+}
+
+.action:active {
+    background: var(--bg-active);
+}
+
+.action:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.sizeRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: var(--font-size-sm);
+}
+
+.value {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.range {
+    width: 100%;
+    accent-color: var(--brand);
+}
+
+.switchRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: var(--mobile-control-size);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    text-align: left;
+    cursor: pointer;
+}
+
+.switch {
+    position: relative;
+    width: calc(var(--space-10) + var(--space-1));
+    height: var(--space-6);
+    border-radius: var(--radius-full);
+    background: var(--border-default);
+    transition: background-color var(--motion-fast);
+}
+
+.switch[data-on='true'] {
+    background: var(--brand);
+}
+
+.switch i {
+    position: absolute;
+    top: 50%;
+    left: var(--space-1);
+    width: var(--space-5);
+    height: var(--space-5);
+    border-radius: var(--radius-full);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-50%);
+    transition: transform var(--motion-fast);
+}
+
+.switch[data-on='true'] i {
+    transform: translate(calc(var(--space-10) - var(--space-5) - var(--space-1)), -50%);
+}
+
+.hide {
+    align-self: flex-start;
+    min-height: var(--mobile-control-size);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--danger);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+}

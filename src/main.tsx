@@ -7,6 +7,7 @@ import {router} from "./router";
 import {applyInitialTheme, ThemeProvider} from "./theme";
 import {DesktopLyricsApp} from "./widgets/desktop-lyrics";
 import {PetWindowApp} from "./widgets/pet-window";
+import {PetPanelApp} from "./widgets/pet-panel";
 import {installErrorOverlay} from "./utils/errorOverlay";
 import {installBlankScreenWatchdog} from "./utils/blankScreenWatchdog";
 import {installBackgroundKeepAlive} from "./utils/backgroundKeepAlive";
@@ -31,9 +32,10 @@ const windowMode =
         : null;
 const desktopLyricsMode = windowMode === 'desktop-lyrics';
 const petWindowMode = windowMode === 'pet';
+const petPanelMode = windowMode === 'pet-panel';
 
 /* 给独立窗口打标记：整页要透明（见 assets/css/global.css），主窗口不受影响 */
-if (desktopLyricsMode || petWindowMode) {
+if (desktopLyricsMode || petWindowMode || petPanelMode) {
     document.documentElement.dataset.window = windowMode as string;
 } else {
     /* 白屏看门狗只在主窗口装：歌词窗 / 宠物窗本来就是小块透明区域 */
@@ -48,6 +50,8 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
                     <DesktopLyricsApp/>
                 ) : petWindowMode ? (
                     <PetWindowApp/>
+                ) : petPanelMode ? (
+                    <PetPanelApp/>
                 ) : (
                     <RouterProvider router={router}/>
                 )}

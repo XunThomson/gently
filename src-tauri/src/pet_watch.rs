@@ -467,17 +467,10 @@ fn poll_once(app: &tauri::AppHandle) {
     /* 2. 只有「可交互区域」吃点击：光标不在任何一块里（或者用户锁定了）就穿透 */
     let inside = match &hitbox {
         Some(rects) => inside_any(dx, dy, rects, scale),
-        /* 还没收到矩形：只把窗口中心约 30% 当作本体，其余透明区域一律穿透。
-           旧逻辑「None => true」会让整块 920×937 的 HUD 画布在事件丢失时吃掉
-           主窗口的点击（R145 用户反馈歌词页/播放条点不动）。 */
-        None => {
-            let s = if scale > 0.0 { scale } else { 1.0 };
-            let css_w = f64::from(size.width) / s;
-            let css_h = f64::from(size.height) / s;
-            let w = css_w * 0.3;
-            let h = css_h * 0.3;
-            inside_rect(dx, dy, (css_w - w) / 2.0, (css_h - h) / 2.0, w, h, s)
-        }
+        /* 还没收到矩形：**整窗穿透**。旧实现把中心 30% 当本体，
+           启动时 pet-core 尚未上报，鼠标恰好落在那个大区域就会把主窗口锁住，
+           表现为「进软件先点一下宠物才能操作」。等 hitbox 到了再按真实热区放开。 */
+        None => false,
     };
     let desired_ignore = should_ignore_cursor(
         LOCKED.load(Ordering::Relaxed),
