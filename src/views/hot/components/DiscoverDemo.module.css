@@ -21,7 +21,8 @@
     touch-action: pan-y;
     user-select: none;
     -webkit-user-select: none;
-    background-color: var(--bg-app);
+    /* 透明舞台：默认看封面背板；用户换了自定义背景时直接透出全局背景 */
+    background-color: transparent;
     background-image:
         radial-gradient(
             90% 70% at 70% 28%,
@@ -35,6 +36,25 @@
         ),
         linear-gradient(var(--modal-scrim), var(--modal-scrim)),
         linear-gradient(var(--modal-scrim), var(--modal-scrim));
+}
+
+.stage[data-custom-background='true'] {
+    background-image: none;
+}
+
+.root[data-custom-background='true'] {
+    background: transparent;
+}
+
+/* 舞台上的文字/按钮需要压住任意用户背景，但不要盖掉背景本身 */
+.stage[data-custom-background='true'] .veil {
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--modal-scrim) 45%, transparent) 0%,
+        transparent 28%,
+        transparent 72%,
+        color-mix(in srgb, var(--modal-scrim) 55%, transparent) 100%
+    );
 }
 
 .stage[data-dragging='true'] {

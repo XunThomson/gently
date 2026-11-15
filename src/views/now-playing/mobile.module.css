@@ -12,11 +12,9 @@
         max(var(--space-3), env(safe-area-inset-bottom, 0px));
     box-sizing: border-box;
     overflow: hidden;
-    /* R145：不再用封面做背景；半透明 + 轻模糊让自定义动态背景透出来 */
-    background:
-        radial-gradient(120% 70% at 50% 0%, var(--brand-soft), transparent 62%),
-        color-mix(in srgb, var(--bg-app) 68%, transparent);
-    backdrop-filter: blur(8px);
+    /* R145：不再自带底色；全局主题/动态背景直接透出 */
+    background: transparent;
+    backdrop-filter: none;
     /* 歌词比桌面大一档；非当前行在封面上也读得清 */
     --lyrics-font-size: var(--now-playing-mobile-lyrics-font-size);
     --lyrics-padding-y: var(--space-8);

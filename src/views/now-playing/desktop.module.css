@@ -10,12 +10,10 @@
     padding: var(--space-3) var(--space-4);
     box-sizing: border-box;
     overflow: hidden;
-    /* R145：不再用封面做整页背景，也不铺死黑底；半透明 + 轻模糊让用户自定义
-       动态背景（视频/图片/网页）能透出来，同时保证歌词可读。 */
-    background:
-        radial-gradient(90% 60% at 50% 0%, var(--brand-soft), transparent 65%),
-        color-mix(in srgb, var(--bg-app) 68%, transparent);
-    backdrop-filter: blur(10px);
+    /* R145：歌词页不再自带底色/毛玻璃；完全交给全局主题与动态背景，
+       页面只负责排版，避免「局部脱离整体主题」。 */
+    background: transparent;
+    backdrop-filter: none;
     --lyrics-inactive-opacity: var(--now-playing-lyrics-inactive-opacity);
 }
 
@@ -274,4 +272,88 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+}
+
+/* ---------- 桌面定时关闭浮层（R145） ---------- */
+
+.timerPopover {
+    position: absolute;
+    top: calc(var(--space-12) + var(--space-6));
+    right: calc(var(--space-4) + var(--now-playing-rail-button-size) + var(--space-2));
+    z-index: var(--z-dropdown);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: var(--now-playing-timer-width);
+    padding: var(--space-3);
+    box-sizing: border-box;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel);
+}
+
+.timerHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+
+.timerTitle {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+}
+
+.timerClose {
+    display: grid;
+    place-items: center;
+    width: var(--space-6);
+    height: var(--space-6);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.timerClose:hover {
+    background: var(--bg-hover);
+}
+
+.timerGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-1);
+}
+
+.timerOption,
+.timerAction,
+.timerCancel {
+    min-height: var(--mobile-control-size);
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface-content);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+}
+
+.timerOption:hover,
+.timerAction:hover {
+    background: var(--bg-hover);
+}
+
+.timerAction {
+    width: 100%;
+}
+
+.timerCancel {
+    width: 100%;
+    border-color: transparent;
+    background: none;
+    color: var(--danger);
 }

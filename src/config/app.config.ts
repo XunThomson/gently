@@ -27,7 +27,9 @@ export const appConfig = {
          */
         breakpoints: {
             compactWidth: 960,
-            miniWidth: 720,
+            /* R146：小窗不再一切到 720 就整壳换成迷你播放器；560–720 仍用
+               紧凑外壳，保证详情页和其他页面是同一个程序。迷你只留给极窄窗口。 */
+            miniWidth: 480,
             miniHeight: 480,
         },
     },

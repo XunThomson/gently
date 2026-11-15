@@ -647,6 +647,20 @@ function buildTurntable(renderer: THREE.WebGLRenderer): {
     label.position.y = 0.021;
     record.add(label);
 
+    /* 标签上的偏心贴纸：黑胶的同心纹旋转几乎看不出来，这颗亮点是「在转」的视觉锚 */
+    const sticker = new THREE.Mesh(
+        new THREE.CircleGeometry(0.055, 24),
+        new THREE.MeshStandardMaterial({
+            color: 0xf2c38f,
+            emissive: 0x6b351d,
+            emissiveIntensity: 0.5,
+            roughness: 0.6,
+        }),
+    );
+    sticker.rotation.x = -Math.PI / 2;
+    sticker.position.set(0.33, 0.026, 0.12);
+    record.add(sticker);
+
     const vinylEdge = new THREE.Mesh(
         new THREE.TorusGeometry(1.55, 0.012, 8, 160),
         new THREE.MeshStandardMaterial({
@@ -853,6 +867,12 @@ export function DiscoverDemo({className, backgroundUrl}: DiscoverDemoProps) {
     const playing = useSelect((s) => s.player.playing);
     const detail = useSelect((s) => s.player.detail);
     const current = useSelect((s) => s.player.current);
+    const background = useSelect((s) => s.ui.background);
+    /* 用户自定义过背景（图片/视频/网页）时，让全局背景直接透进 demo；
+       只有用默认主题时，才用当前曲目封面做 demo 的背板。 */
+    const customBackground = Boolean(background.asset) || background.kind === 'web';
+    const customBackgroundRef = useRef(customBackground);
+    customBackgroundRef.current = customBackground;
     /* 播放态用 ref 传进 effect：切歌/暂停不应该重建整个 WebGL 场景 */
     const playingRef = useRef(playing);
     playingRef.current = playing;
@@ -987,6 +1007,8 @@ export function DiscoverDemo({className, backgroundUrl}: DiscoverDemoProps) {
         );
         wall.position.set(0, 5.5, -4.4);
         wall.receiveShadow = true;
+        /* 自定义背景时不要这面不透明墙，否则会把用户的视频/图片完全盖住 */
+        wall.visible = !customBackgroundRef.current;
         scene.add(wall);
 
         /* ---------------- 主体 ---------------- */
@@ -1263,8 +1285,9 @@ export function DiscoverDemo({className, backgroundUrl}: DiscoverDemoProps) {
 
             if (!reduceMotion && playingRef.current) {
                 /* 唱盘严格跟随播放态：暂停/未播放时停在当前角度（预备接口，
-                   后续接主播放器时不需要再改场景）。 */
-                turntable.record.rotation.y = (turntable.record.rotation.y - delta * 0.42) % (Math.PI * 2);
+                   后续接主播放器时不需要再改场景）。速度比旧版更快，标签与
+                   贴纸的偏心才看得出来。 */
+                turntable.record.rotation.y = (turntable.record.rotation.y - delta * 1.05) % (Math.PI * 2);
                 dust.rotation.y += delta * 0.008;
             }
 
@@ -1334,16 +1357,18 @@ export function DiscoverDemo({className, backgroundUrl}: DiscoverDemoProps) {
             className={`${styles.root}${className ? ` ${className}` : ''}`}
             aria-labelledby={titleId}
             data-discover-demo=""
+            data-custom-background={customBackground}
         >
             <div
                 ref={stageRef}
                 className={styles.stage}
                 data-dragging="false"
                 data-playing={playing}
+                data-custom-background={customBackground}
                 role="group"
                 aria-describedby={hintId}
             >
-                {artwork && (
+                {artwork && !customBackground && (
                     <div
                         className={styles.artworkBackdrop}
                         style={{backgroundImage: `url("${artwork}")`}}

@@ -461,6 +461,7 @@
       "railButtonSize": 36,
       "sidePanelWidth": 340,
       "sidePanelMaxHeight": "62vh",
+      "timerWidth": 240,
       "offsetInputWidth": 88
     },
 

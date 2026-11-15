@@ -15,7 +15,7 @@ import {
     IconPlay,
     IconPrev,
 } from '../../ui/icon';
-import {MiniLyrics} from '../../ui/lyrics';
+import {Lyrics} from '../../ui/lyrics';
 import {SeekBar} from '../player-bar';
 import styles from './MiniPlayer.module.css';
 
@@ -170,10 +170,11 @@ export function MiniPlayer({onExpand}: MiniPlayerProps) {
                     </section>
 
                     <div className={styles.lyrics}>
-                        <MiniLyrics
+                        <Lyrics
                             lines={lyrics}
                             elapsed={elapsed + lyricsOffset}
                             onSeek={(time) => seek(Math.max(0, time - lyricsOffset))}
+                            centered
                         />
                     </div>
 

@@ -2960,15 +2960,15 @@ async function main(): Promise<void> {
         );
         check(
             '窗口：小于迷你阈值切换到迷你播放器',
-            resolveShellMode(700, 700, bp) === 'mini' &&
+            resolveShellMode(400, 700, bp) === 'mini' &&
                 resolveShellMode(1000, 470, bp) === 'mini',
         );
         check(
             '窗口：断点边界与无尺寸兜底',
             resolveShellMode(960, 640, bp) === 'regular' &&
                 resolveShellMode(959, 640, bp) === 'compact' &&
-                resolveShellMode(720, 480, bp) === 'compact' &&
-                resolveShellMode(719, 480, bp) === 'mini' &&
+                resolveShellMode(480, 480, bp) === 'compact' &&
+                resolveShellMode(479, 480, bp) === 'mini' &&
                 resolveShellMode(0, 0, bp) === 'regular',
         );
 
@@ -2988,7 +2988,7 @@ async function main(): Promise<void> {
             '窗口：桌面端三档不因新增形态而改变',
             resolveShellMode(1180, 760, bp) === 'regular' &&
                 resolveShellMode(800, 700, bp) === 'compact' &&
-                resolveShellMode(700, 700, bp) === 'mini',
+                resolveShellMode(400, 700, bp) === 'mini',
         );
         check(
             '移动外壳：左侧抽屉 8 个入口，搜索是 home（导航统一在侧边）',

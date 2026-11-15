@@ -484,6 +484,8 @@ export interface ComponentTokens {
         sidePanelWidth: number;
         /** 桌面功能侧栏最大高度 */
         sidePanelMaxHeight: string;
+        /** 桌面歌词页定时关闭浮层宽度 */
+        timerWidth: number;
         /** 时间轴偏移的数字输入框宽度（px） */
         offsetInputWidth: number;
     };

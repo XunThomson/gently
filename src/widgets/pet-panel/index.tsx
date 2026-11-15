@@ -32,7 +32,17 @@ export function PetPanelApp() {
 
     useEffect(() => {
         void refresh();
-        const timer = window.setInterval(() => void refresh(), 1200);
+        let focusedOnce = false;
+        const timer = window.setInterval(() => {
+            void refresh();
+            /* WebView2 子窗口的 window.blur 不稳：用 hasFocus 轮询补一刀，
+               用户点主窗口/其他程序就收起，不再像一块关不掉的遮罩。 */
+            if (document.hasFocus()) {
+                focusedOnce = true;
+            } else if (focusedOnce) {
+                void windowService.hidePetPanel();
+            }
+        }, 1200);
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') void windowService.hidePetPanel();
         };

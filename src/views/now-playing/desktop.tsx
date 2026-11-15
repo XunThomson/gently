@@ -2,13 +2,14 @@ import {useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Cover} from '../../components/ui/cover';
 import {IconChevronLeft, IconClose, IconLyrics, IconMoon, IconMore} from '../../components/ui/icon';
-import {SleepTimerSheet} from '../../components/ui/sleep-timer/SleepTimerSheet';
-import {ActionsPanel, QueuePanel} from '../../components/shell/player-bar';
-import {useSelect} from '../../store';
+import {ActionsPanel} from '../../components/shell/player-bar';
+import {useActions, useSelect} from '../../store';
 import {NowPlayingLyrics} from './components/NowPlayingLyrics';
 import {LyricsTools} from './components/LyricsTools';
 import {useNowPlayingBack} from './useNowPlayingBack';
 import styles from './desktop.module.css';
+
+const TIMER_PRESETS = [3, 5, 10, 15, 30, 45, 60] as const;
 
 /**
  * 桌面歌词页（R145 收敛）。
@@ -28,6 +29,7 @@ export function DesktopNowPlaying() {
     const current = useSelect((s) => s.player.current);
     const detail = useSelect((s) => s.player.detail);
     const sleepTimerMode = useSelect((s) => s.ui.sleepTimerMode);
+    const {setSleepTimer, setSleepTimerEndOfTrack, cancelSleepTimer} = useActions().ui;
 
     const [lyricsOpen, setLyricsOpen] = useState(false);
     const [moreOpen, setMoreOpen] = useState(false);
@@ -39,18 +41,19 @@ export function DesktopNowPlaying() {
         setMoreOpen(false);
     };
 
-    /* 面板开着时按 Esc 收起：不抢输入框（歌词搜索）里的 Esc */
+    /* 面板 / 定时浮层开着时按 Esc 收起：不抢输入框（歌词搜索）里的 Esc */
     useEffect(() => {
-        if (!panelOpen) return;
+        if (!panelOpen && !timerOpen) return;
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key !== 'Escape') return;
             const target = event.target as HTMLElement | null;
             if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return;
-            closePanel();
+            if (timerOpen) setTimerOpen(false);
+            else closePanel();
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [panelOpen]);
+    }, [panelOpen, timerOpen]);
 
     if (!current) return null;
 
@@ -120,8 +123,10 @@ export function DesktopNowPlaying() {
                     data-active={sleepTimerMode !== null}
                     title={t('sleepTimer.title')}
                     aria-label={t('sleepTimer.title')}
-                    onClick={() => setTimerOpen(true)}
-                >
+                    onClick={() => {
+                        setTimerOpen((prev) => !prev);
+                        closePanel();
+                    }}                >
                     <IconMoon size={18}/>
                 </button>
             </nav>
@@ -150,8 +155,6 @@ export function DesktopNowPlaying() {
                         {moreOpen ? (
                             <div className={styles.morePanel}>
                                 <ActionsPanel inline showDetail={false} onClose={closePanel}/>
-                                <div className={styles.panelDivider}/>
-                                <QueuePanel inline onClose={closePanel}/>
                             </div>
                         ) : (
                             <LyricsTools active/>
@@ -167,7 +170,63 @@ export function DesktopNowPlaying() {
                 </div>
             </main>
 
-            {timerOpen && <SleepTimerSheet onClose={() => setTimerOpen(false)}/>}
+            {timerOpen && (
+                <div
+                    className={styles.timerPopover}
+                    role="dialog"
+                    aria-label={t('sleepTimer.title')}
+                >
+                    <div className={styles.timerHead}>
+                        <span className={styles.timerTitle}>{t('sleepTimer.title')}</span>
+                        <button
+                            type="button"
+                            className={styles.timerClose}
+                            aria-label={t('toolbar.close')}
+                            title={t('toolbar.close')}
+                            onClick={() => setTimerOpen(false)}
+                        >
+                            <IconClose size={13}/>
+                        </button>
+                    </div>
+                    <div className={styles.timerGrid}>
+                        {TIMER_PRESETS.map((minutes) => (
+                            <button
+                                key={minutes}
+                                type="button"
+                                className={styles.timerOption}
+                                onClick={() => {
+                                    setSleepTimer(minutes);
+                                    setTimerOpen(false);
+                                }}
+                            >
+                                {t('sleepTimer.minutes', {count: minutes})}
+                            </button>
+                        ))}
+                    </div>
+                    <button
+                        type="button"
+                        className={styles.timerAction}
+                        onClick={() => {
+                            setSleepTimerEndOfTrack();
+                            setTimerOpen(false);
+                        }}
+                    >
+                        {t('sleepTimer.endOfTrack')}
+                    </button>
+                    {sleepTimerMode !== null && (
+                        <button
+                            type="button"
+                            className={styles.timerCancel}
+                            onClick={() => {
+                                cancelSleepTimer();
+                                setTimerOpen(false);
+                            }}
+                        >
+                            {t('sleepTimer.cancel')}
+                        </button>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

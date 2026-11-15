@@ -451,6 +451,7 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--now-playing-rail-button-size': px(c.nowPlaying.railButtonSize),
         '--now-playing-side-panel-width': px(c.nowPlaying.sidePanelWidth),
         '--now-playing-side-panel-max-height': c.nowPlaying.sidePanelMaxHeight,
+        '--now-playing-timer-width': px(c.nowPlaying.timerWidth),
         '--now-playing-offset-input-width': px(c.nowPlaying.offsetInputWidth),
 
         /* ---------- 组件：业务列表（表格） ---------- */

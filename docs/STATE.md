@@ -35,6 +35,7 @@ tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低
 | **移动抽屉手势** | `useSwipeDownClose` 增加原生 touch 监听：除抓手外，面板内容滚到顶部时也可下滑关闭；按钮/输入/滑杆不抢手势 |
 | **小窗视觉** | 迷你播放器铺一层当前封面（模糊 + 主题 token 控制透明度/模糊），小窗不再只有纯色底；720/560 两档实图已检查，560 进入迷你播放器；空态补了显式「展开」按钮 |
 | **唤醒重载定位** | 最小化/遮挡恢复均无法复现；确认属于 Chromium/WebView2 唤醒重载（Tauri #8304），目前靠 Web Lock + 路由/播放快照 + 隐藏启动屏降低影响，见 GOTCHAS §90 |
+| **R146 桌面修复** | ① 桌面定时关闭改成歌词页右上方内联浮层（不再用底部 sheet），实机点 3 分钟生效；② 去掉「更多功能」里重复的播放队列；③ 歌词页彻底去掉独立底色，只做排版；④ 宠物控制面板保留独立窗口并在失焦/点外部时收起；⑤ 迷你阈值从 720 降到 480，560–720 仍走同一套紧凑外壳与同一套 `Lyrics`；⑥ demo 增加偏心贴纸、提高转速，自定义背景时隐藏不透明墙让全局 bgc 透出 |
 | **气泡收口** | 气泡层向本体方向收 8px，尾巴不再悬空；独立面板窗口已把「面板/气泡抢位置」从结构上拆开 |
 | **移除封面背景** | 桌面/手机歌词页删除模糊封面垫底与顶栏大封面，只保留主题色轻微渐变；桌面顶栏保留 44px 缩略图 |
 | **歌词自动搜索** | 新增 `ui.lyricsAutoSearch`（默认 **false**）；设置新增「歌词」组（桌面/手机都可见）；开启后当前源无词时按候选源曲目 id 顺序取第一份可用歌词，全空显示「暂无歌词」；`ensureLyrics(true)` 让开关立即生效 |
@@ -50,7 +51,7 @@ tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低
 | `pnpm smoke` | **623 项全过** |
 | `pnpm verify` | **通过**（typecheck + smoke 623 + 契约 / 可达性 + cargo 两 core/宿主 + check:pet） |
 | `pnpm build:android` | 通过：`release/gently-0.1.0-android-debug.apk` 156.7 MB，SHA256 `4f4e247fba8d3d56a68392e20fef93974167fd2df201f8e6fcc272fb6d2dcbd9`，已安装真机 |
-| 实图 | `release/screenshots/r145-desktop-lyrics.png`、`r145-desktop-demo-low.png`、`r145-mobile-lyrics.png`、`r145-mobile-quality.png`、`r145-mobile-drawer.png`、`r145-discover-demo.png`、`r145-discover-demo-mobile.png`、`r145-android-demo.png`、`r145-android-drawer.png`、`r145-android-setting.png`、`r145-android-lyrics.png`、`r145-pet.png`、`r145-pet-panel-window.png` |
+| 实图 | `release/screenshots/r145-desktop-lyrics.png`、`r145-desktop-demo-low.png`、`r145-mobile-lyrics.png`、`r145-mobile-quality.png`、`r145-mobile-drawer.png`、`r145-discover-demo.png`、`r145-discover-demo-mobile.png`、`r145-android-demo.png`、`r145-android-drawer.png`、`r145-android-setting.png`、`r145-android-lyrics.png`、`r145-pet.png`、`r145-pet-panel-window.png`、`r146-timer-popover.png`、`r146-small-560.png`、`r146-mini-shared-lyrics.png`、`r146-demo.png` |
 | 手势 | 浏览器 CDP 拖动：歌词工具/音质面板下拉后 `dialogs=0`；底部控制区上划后左侧抽屉打开（`x=0`），系统返回关闭；真机同样 |
 | 真机 | R145 APK 安装：路由恢复 `/hot?tab=discover`、Three.js demo 正常渲染；底部只 4 个动作图标；设置「歌词」组与自动搜索开关可见；底部上划打开左侧抽屉、面板下拉关；暂停后按 Home 15 分钟回来 `window.__r145long` 仍在、点收起立即回 `/search`（页面未重载且可交互） |
 | 回归修复验证 | 直接打开歌词页点收起 → `/search`（手机）/ `/ranking`（桌面）；手机打开 `/hot` 被重定向 `/search`；桌面「更多功能」面板含收藏/下载/加入歌单/队列；宠物卡片打开时点主窗口主题按钮仍生效（宠物 HUD 透明区不再吃点击）；Tauri dev 实图 3D demo 显示黑胶/封套 |

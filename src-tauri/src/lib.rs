@@ -190,6 +190,13 @@ pub fn run() {
         .plugin(playback::plugin())
         /* 导入插件：Android 注册 Kotlin 侧 ImportPlugin（SAF 选文件），其它平台是空插件 */
         .plugin(importer::plugin())
+        /* 独立宠物面板：一旦失去焦点就收起。WebView 的 window.blur 在
+           WebView2 子窗口上并不可靠，放在宿主窗口事件里才能做到「点外面就关」。 */
+        .on_window_event(|window, event| {
+            if window.label() == "pet-panel" && matches!(event, tauri::WindowEvent::Focused(false)) {
+                let _ = window.hide();
+            }
+        })
         .setup(|app| {
             /* 数据目录：三种来源按优先级裁决（`paths::resolve_data_paths`）——
                环境变量 > 迁移指针 > 便携版（exe 同目录有 `portable.txt`）> 系统默认。
