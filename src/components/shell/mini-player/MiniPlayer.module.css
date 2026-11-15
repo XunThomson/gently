@@ -1,6 +1,7 @@
 /* 迷你播放器：窗口小于断点后替换整个外壳。尺寸全部来自 theme.config.json 的 miniPlayer 段 */
 
 .page {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -11,6 +12,24 @@
     overflow: hidden;
     background: var(--surface-chrome);
     backdrop-filter: var(--surface-blur);
+}
+
+/* 小窗的封面底：只做氛围，文字和控件仍在最上层 */
+.backdrop {
+    position: absolute;
+    inset: -12%;
+    z-index: 0;
+    background-position: center;
+    background-size: cover;
+    filter: blur(var(--mini-player-backdrop-blur));
+    opacity: var(--mini-player-backdrop-opacity);
+    transform: scale(1.08);
+    pointer-events: none;
+}
+
+.page > :not(.backdrop) {
+    position: relative;
+    z-index: 1;
 }
 
 /* ---------- 顶栏：品牌 + 展开 / 窗口控制（整窗拖动由根节点提供） ---------- */

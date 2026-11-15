@@ -260,6 +260,9 @@ export interface ComponentTokens {
         controlSize: number;
         iconButtonSize: number;
         windowButtonSize: number;
+        /** 小窗封面背景的透明度与模糊（R145） */
+        backdropOpacity: number;
+        backdropBlur: number;
     };
     /** 手机外壳（左侧导航抽屉 + 常驻播放条） */
     mobile: {

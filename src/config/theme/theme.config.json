@@ -228,7 +228,9 @@
       "lyricsSlotHeight": 30,
       "controlSize": 38,
       "iconButtonSize": 28,
-      "windowButtonSize": 26
+      "windowButtonSize": 26,
+      "backdropOpacity": 0.32,
+      "backdropBlur": 28
     },
 
     "mobile": {

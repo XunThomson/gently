@@ -56,6 +56,13 @@ export function MiniPlayer({onExpand}: MiniPlayerProps) {
 
     return (
         <div className={styles.page}>
+            {artwork?.artwork && (
+                <div
+                    className={styles.backdrop}
+                    style={{backgroundImage: `url("${artwork.artwork}")`}}
+                    aria-hidden="true"
+                />
+            )}
             {/*
              * 拖动区只放在顶栏，不铺满整页：SeekBar 是 div，不在 Tauri 的
              * 「可点击元素阻断拖动」名单里，铺满整页会让进度条拖拽变成拖窗口。

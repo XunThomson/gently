@@ -274,6 +274,8 @@ export function buildCssVars(config: ThemeConfig, scheme: ColorScheme): CssVarMa
         '--mini-player-control-size': px(c.miniPlayer.controlSize),
         '--mini-player-icon-button-size': px(c.miniPlayer.iconButtonSize),
         '--mini-player-window-button-size': px(c.miniPlayer.windowButtonSize),
+        '--mini-player-backdrop-opacity': String(c.miniPlayer.backdropOpacity),
+        '--mini-player-backdrop-blur': px(c.miniPlayer.backdropBlur),
 
         /* ---------- 组件：手机外壳（底部 tab / 常驻播放条 / 更多抽屉） ---------- */
         '--mobile-header-height': px(c.mobile.headerHeight),

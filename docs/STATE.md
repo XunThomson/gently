@@ -33,6 +33,7 @@ tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低
 | **3D 背景/旋转** | demo 用当前曲目封面铺底（模糊压暗，`backgroundUrl` 为后续背景仓库预留）；唱片只在 `player.playing=true` 时旋转，暂停即停 |
 | **品牌与背景** | 标题栏/启动屏 favicon 改为 `src-tauri/icons/icon.png`；内置背景视频换为 `D:\Xun\Videos\3375392695_extracted\wallpaper.mp4`（复制到 `src/assets/bgc.mp4`） |
 | **移动抽屉手势** | `useSwipeDownClose` 增加原生 touch 监听：除抓手外，面板内容滚到顶部时也可下滑关闭；按钮/输入/滑杆不抢手势 |
+| **小窗视觉** | 迷你播放器铺一层当前封面（模糊 + 主题 token 控制透明度/模糊），小窗不再只有纯色底；720/560 两档实图已检查，560 进入迷你播放器 |
 | **移除封面背景** | 桌面/手机歌词页删除模糊封面垫底与顶栏大封面，只保留主题色轻微渐变；桌面顶栏保留 44px 缩略图 |
 | **歌词自动搜索** | 新增 `ui.lyricsAutoSearch`（默认 **false**）；设置新增「歌词」组（桌面/手机都可见）；开启后当前源无词时按候选源曲目 id 顺序取第一份可用歌词，全空显示「暂无歌词」；`ensureLyrics(true)` 让开关立即生效 |
 | **发现页 3D demo** | 发现 tab 清空原书架内容，改为 Three.js 唱片/专辑场景（程序化封面纹理、黑胶、唱臂、暖光、拖拽环绕、自动旋转、reduced-motion 停止）；新增 `three` 依赖。**StrictMode/重挂时每次新建 canvas**，避免第一次 `forceContextLoss` 让第二次 WebGLRenderer 读到 null precision 而整块空白；相机改为低机位（`basePhi=1.48`、视线压到唱片上沿），贴近参考照片 |

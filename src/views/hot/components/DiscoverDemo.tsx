@@ -1091,8 +1091,7 @@ export function DiscoverDemo({className, backgroundUrl}: DiscoverDemoProps) {
         const baseTheta = -0.45;
         /* R145：参考照片是「坐在唱机前、镜头略高于唱片」的低机位；
            1.1 太俯（能看到整块转盘顶面），1.48 几乎与唱片平视，封套更直立、唱片更前景。 */
-        const basePhi = 1.48;
-        const yawLimit = 0.3;
+        const basePhi = 1.48;        const yawLimit = 0.3;
         const pitchMin = -0.08;
         const pitchMax = 0.13;
         let targetYaw = 0;
