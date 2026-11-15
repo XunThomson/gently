@@ -46,13 +46,13 @@ tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低
 | `pnpm typecheck` | 通过 |
 | `pnpm smoke` | **623 项全过** |
 | `pnpm verify` | **通过**（typecheck + smoke 623 + 契约 / 可达性 + cargo 两 core/宿主 + check:pet） |
-| `pnpm build:android` | 通过：`release/gently-0.1.0-android-debug.apk` 156.7 MB，SHA256 `6308b0351bfa99be79a6cce2ab24f88156fc8dc5a8886910d106b3df8db0eb3b`，已安装真机 |
+| `pnpm build:android` | 通过：`release/gently-0.1.0-android-debug.apk` 156.7 MB，SHA256 `6b0c7b0ffb0e2bb76270c13a626a0d348450fd61db0f95a70f5a9df9bde6d100`，已安装真机 |
 | 实图 | `release/screenshots/r145-desktop-lyrics.png`、`r145-desktop-demo-low.png`、`r145-mobile-lyrics.png`、`r145-mobile-quality.png`、`r145-mobile-drawer.png`、`r145-discover-demo.png`、`r145-discover-demo-mobile.png`、`r145-android-demo.png`、`r145-android-drawer.png`、`r145-android-setting.png`、`r145-android-lyrics.png`、`r145-pet.png`、`r145-pet-panel-window.png` |
 | 手势 | 浏览器 CDP 拖动：歌词工具/音质面板下拉后 `dialogs=0`；底部控制区上划后左侧抽屉打开（`x=0`），系统返回关闭；真机同样 |
 | 真机 | R145 APK 安装：路由恢复 `/hot?tab=discover`、Three.js demo 正常渲染；底部只 4 个动作图标；设置「歌词」组与自动搜索开关可见；底部上划打开左侧抽屉、面板下拉关；暂停后按 Home 15 分钟回来 `window.__r145long` 仍在、点收起立即回 `/search`（页面未重载且可交互） |
 | 回归修复验证 | 直接打开歌词页点收起 → `/search`（手机）/ `/ranking`（桌面）；手机打开 `/hot` 被重定向 `/search`；桌面「更多功能」面板含收藏/下载/加入歌单/队列；宠物卡片打开时点主窗口主题按钮仍生效（宠物 HUD 透明区不再吃点击）；Tauri dev 实图 3D demo 显示黑胶/封套 |
 | 发现页合并 | `?tab=discover` 不再存在双 tab；桌面 `/hot` 标题「发现」，只有 3D demo；侧栏入口「发现」 |
-| 启动屏 | 同一会话 reload 时 `html.is-resuming` 直接隐藏 `#boot-splash`，至少不再闪启动页（底层重载仍未根治） |
+| 启动屏 | 同一会话 reload 时 `html.is-resuming` 直接隐藏 `#boot-splash`，至少不再闪启动页；`wakeMainWindow` 改为 `unminimize + setFocus`，不再在任务栏恢复时 `show()`（底层重载仍待复现收口） |
 | 3D 低机位 | `data-webgl='ready'`；实图 `r145-desktop-demo-low.png` 为唱片前景/封套直立的低机位视角 |
 | 移动面板 | 真机从音质面板**内容区**（不是抓手）下滑，`dialogs` 从 1 → 0，关闭生效 |
 | 宠物 | WebView2 实跑：窗口从 200×160 被主窗口 reload 自动校回 920×937；宠物可见、位置不因 reload 重摆；独立控制面板窗口 `pet-panel` 可打开（340×430） |

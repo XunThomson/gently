@@ -114,7 +114,9 @@ export const windowService = {
      */
     wakeMainWindow: () =>
         runDesktop(async (w) => {
-            await w.show();
+            /* 只还原 + 聚焦；不再 show()。show() 在部分 Windows/WebView2 组合上
+               会让任务栏恢复看起来像一次重载（R145 用户反馈）。 */
+            await w.unminimize().catch(() => undefined);
             await w.setFocus();
         }),
     toggleMaximize: () => runDesktop((w) => w.toggleMaximize()),
