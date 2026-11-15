@@ -1212,3 +1212,12 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
   3. `index.html` 检测同会话 reload，直接隐藏 `#boot-splash`；
   4. `wakeMainWindow` 只 `unminimize + setFocus`，不再 `show()`。
 - 验证：最小化 2 分钟、被其他窗口遮挡 20 秒均未复现；真正睡眠/唤醒需要用户现场日志才能继续定位。
+
+## 91. Alt+Tab 每次 visible 都无条件 unminimize 会惊动 WebView2（R146）
+
+- 现象：用户切到 IDE/浏览器再切回，程序重载成启动状态；本地最小化/遮挡测试却复现不了。
+- 根因候选：`wakeMainWindow()` 在每次 `visibilitychange=visible` 都调用 `unminimize()`；
+  Tauri 会把它翻译成一次窗口 restore，部分 WebView2 组合下会重新挂载控制器。
+- 规避：先 `isMinimized()`，只有确实最小化才 `unminimize()`；其余只 `setFocus()`。
+  同一套窗口恢复仍保留路由 / 暂停态播放 / 隐藏 reload 启动屏。
+- 验证：Notepad 切走 2s 再切回，页面 marker 不变；真正睡眠唤醒仍无法本地复现。
