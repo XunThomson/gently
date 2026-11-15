@@ -193,6 +193,8 @@
     right: 0;
     bottom: 0;
     justify-content: center;
+    /* 尾巴尖 + 槽位间距会让气泡看起来离头太远：往本体方向收一格 */
+    transform: translateY(var(--space-2));
 }
 
 /* 本体在下：气泡顶边贴着槽位顶边 */
@@ -201,6 +203,7 @@
     right: 0;
     top: 0;
     justify-content: center;
+    transform: translateY(calc(-1 * var(--space-2)));
 }
 
 /* 本体在左：气泡右边贴着槽位右边，垂直居中 */
