@@ -4,7 +4,7 @@ last_verified: 2026-11-15
 owner: gently
 scope: 当前迭代状态与下一步
 token_budget: 250
-tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低机位、当前曲目封面铺底、仅播放时旋转）；两端歌词页改半透明，用户自定义背景可透出；设置里的宠物只留启用开关，控制面板拆成独立 `pet-panel` 窗口；歌词自动搜索改为候选 id + 聚合搜索取第一份带词结果；标题栏与启动屏换用 `src-tauri/icons/icon.png`，内置背景换成提供的 wallpaper.mp4；桌面歌词返回/更多功能/宠物 HUD 点击穿透已修；移动底部面板支持内容区下拉。typecheck / smoke 623 / verify 通过；后台重载、气泡精细对齐、小尺寸 UI 仍未收口。
+tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低机位、当前曲目封面铺底、仅播放时旋转）；两端歌词页改半透明，用户自定义背景可透出；设置里的宠物只留启用开关，控制面板拆成独立 `pet-panel` 窗口；歌词自动搜索改为候选 id + 聚合搜索取第一份带词结果；标题栏与启动屏换用 `src-tauri/icons/icon.png`，内置背景换成提供的 wallpaper.mp4；桌面歌词返回/更多功能/宠物 HUD 点击穿透已修；移动底部面板支持内容区下拉。typecheck / smoke 623 / verify 通过；后台重载仍未定位（只降低可见影响）、小尺寸视觉只是补了封面底，尚未整体重做。
 ---
 
 # STATE
@@ -34,6 +34,7 @@ tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低
 | **品牌与背景** | 标题栏/启动屏 favicon 改为 `src-tauri/icons/icon.png`；内置背景视频换为 `D:\Xun\Videos\3375392695_extracted\wallpaper.mp4`（复制到 `src/assets/bgc.mp4`） |
 | **移动抽屉手势** | `useSwipeDownClose` 增加原生 touch 监听：除抓手外，面板内容滚到顶部时也可下滑关闭；按钮/输入/滑杆不抢手势 |
 | **小窗视觉** | 迷你播放器铺一层当前封面（模糊 + 主题 token 控制透明度/模糊），小窗不再只有纯色底；720/560 两档实图已检查，560 进入迷你播放器 |
+| **气泡收口** | 气泡层向本体方向收 8px，尾巴不再悬空；独立面板窗口已把「面板/气泡抢位置」从结构上拆开 |
 | **移除封面背景** | 桌面/手机歌词页删除模糊封面垫底与顶栏大封面，只保留主题色轻微渐变；桌面顶栏保留 44px 缩略图 |
 | **歌词自动搜索** | 新增 `ui.lyricsAutoSearch`（默认 **false**）；设置新增「歌词」组（桌面/手机都可见）；开启后当前源无词时按候选源曲目 id 顺序取第一份可用歌词，全空显示「暂无歌词」；`ensureLyrics(true)` 让开关立即生效 |
 | **发现页 3D demo** | 发现 tab 清空原书架内容，改为 Three.js 唱片/专辑场景（程序化封面纹理、黑胶、唱臂、暖光、拖拽环绕、自动旋转、reduced-motion 停止）；新增 `three` 依赖。**StrictMode/重挂时每次新建 canvas**，避免第一次 `forceContextLoss` 让第二次 WebGLRenderer 读到 null precision 而整块空白；相机改为低机位（`basePhi=1.48`、视线压到唱片上沿），贴近参考照片 |
@@ -47,7 +48,7 @@ tldr: 当前 R145：发现页合并推荐，只保留 Three.js 黑胶 demo（低
 | `pnpm typecheck` | 通过 |
 | `pnpm smoke` | **623 项全过** |
 | `pnpm verify` | **通过**（typecheck + smoke 623 + 契约 / 可达性 + cargo 两 core/宿主 + check:pet） |
-| `pnpm build:android` | 通过：`release/gently-0.1.0-android-debug.apk` 156.7 MB，SHA256 `6b0c7b0ffb0e2bb76270c13a626a0d348450fd61db0f95a70f5a9df9bde6d100`，已安装真机 |
+| `pnpm build:android` | 通过：`release/gently-0.1.0-android-debug.apk` 156.7 MB，SHA256 `4f4e247fba8d3d56a68392e20fef93974167fd2df201f8e6fcc272fb6d2dcbd9`，已安装真机 |
 | 实图 | `release/screenshots/r145-desktop-lyrics.png`、`r145-desktop-demo-low.png`、`r145-mobile-lyrics.png`、`r145-mobile-quality.png`、`r145-mobile-drawer.png`、`r145-discover-demo.png`、`r145-discover-demo-mobile.png`、`r145-android-demo.png`、`r145-android-drawer.png`、`r145-android-setting.png`、`r145-android-lyrics.png`、`r145-pet.png`、`r145-pet-panel-window.png` |
 | 手势 | 浏览器 CDP 拖动：歌词工具/音质面板下拉后 `dialogs=0`；底部控制区上划后左侧抽屉打开（`x=0`），系统返回关闭；真机同样 |
 | 真机 | R145 APK 安装：路由恢复 `/hot?tab=discover`、Three.js demo 正常渲染；底部只 4 个动作图标；设置「歌词」组与自动搜索开关可见；底部上划打开左侧抽屉、面板下拉关；暂停后按 Home 15 分钟回来 `window.__r145long` 仍在、点收起立即回 `/search`（页面未重载且可交互） |
