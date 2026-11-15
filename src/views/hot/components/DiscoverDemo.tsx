@@ -661,6 +661,19 @@ function buildTurntable(renderer: THREE.WebGLRenderer): {
     sticker.position.set(0.33, 0.026, 0.12);
     record.add(sticker);
 
+    /* 外圈再放一颗更亮的标记：盘面与标签都偏暗时，边缘的移动更容易被眼睛捕捉 */
+    const edgeMark = new THREE.Mesh(
+        new THREE.SphereGeometry(0.055, 16, 10),
+        new THREE.MeshStandardMaterial({
+            color: 0xfff1cf,
+            emissive: 0xa65a2a,
+            emissiveIntensity: 0.8,
+            roughness: 0.4,
+        }),
+    );
+    edgeMark.position.set(1.24, 0.06, 0.35);
+    record.add(edgeMark);
+
     const vinylEdge = new THREE.Mesh(
         new THREE.TorusGeometry(1.55, 0.012, 8, 160),
         new THREE.MeshStandardMaterial({
