@@ -196,6 +196,9 @@ export function MiniPlayer({onExpand}: MiniPlayerProps) {
                     <IconMusic size={28}/>
                     <p className={styles.emptyTitle}>{t('miniPlayer.noTrack')}</p>
                     <p className={styles.emptyHint}>{t('miniPlayer.pickSong')}</p>
+                    <button type="button" className={styles.emptyAction} onClick={onExpand}>
+                        {t('miniPlayer.expand')}
+                    </button>
                 </div>
             )}
         </div>

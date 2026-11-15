@@ -1199,3 +1199,16 @@ tldr: 只保留「不读就会再踩」的坑：现象 → 根因 → 规避 →
 - 修法：effect 里每次 `document.createElement('canvas')` 插到 stage 里，cleanup 移除；
   不再复用 React 的 canvas。WebGL 初始化失败仍保留 CSS 文案，不白屏。
 - 验收：Tauri dev 打开发现页 `data-webgl='ready'`，实图有唱机/封套；`pnpm typecheck` / smoke 通过。
+
+## 90. Windows 唤醒后 WebView 前端被 Chromium 重载（R145，外部根因）
+
+- 现象：Windows 11 上后台一段时间（睡眠/唤醒、任务栏恢复）后回到应用，前端 state 归零，
+  看起来像重新启动了程序；Rust 侧进程/数据库并没有重启。Tauri 也有长期 issue：
+  https://github.com/tauri-apps/tauri/issues/8304 。
+- 结论：这是 **Chromium/WebView2 在唤醒/恢复时的页面重载**，不是 React 状态层能阻止的；
+  应用层能做的是让重载**可恢复、不可见**：
+  1. `utils/backgroundKeepAlive.ts` 在首帧前持 Web Lock；
+  2. `utils/lastRoute.ts` / `lastPlayback.ts` 恢复最后页面与暂停态播放；
+  3. `index.html` 检测同会话 reload，直接隐藏 `#boot-splash`；
+  4. `wakeMainWindow` 只 `unminimize + setFocus`，不再 `show()`。
+- 验证：最小化 2 分钟、被其他窗口遮挡 20 秒均未复现；真正睡眠/唤醒需要用户现场日志才能继续定位。
